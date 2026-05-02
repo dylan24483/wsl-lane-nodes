@@ -1,0 +1,18 @@
+# Python virtual env (machine-specific, regenerated from requirements.txt)
+.venv/
+venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Logs
+*.log
