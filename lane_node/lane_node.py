@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Lane node daemon — runs on each Raspberry Pi controlling one VDB pair.
-
-Reads sensor inputs (ball-detect, foul, pin-state) via GPIO and drives
-outputs (pinsetter cycle, reset). Communicates with WSL-SRV via a
-persistent WebSocket connection.
-
-For prototype: button on GPIO 17 = ball-detect simulator.
-                LED on GPIO 27 = pinsetter cycle relay simulator.
-"""
+"""Lane node daemon — Pi side. Reads sensors, drives outputs, talks to WSL-SRV."""
 
 import asyncio
 import json
@@ -21,46 +13,29 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s')
 log = logging.getLogger('lane_node')
 
-# ============================================================
-# CONFIG
-# ============================================================
-SERVER_URL = "ws://localhost:8765"   # change to WSL-SRV IP later
+SERVER_URL = "ws://localhost:8765"
 NODE_ID = "lane-node-dev-22"
 LANE_ID = 22
 
-# ============================================================
-# HARDWARE
-# ============================================================
 BALL_DETECT = Button(17, pull_up=True, bounce_time=0.05)
 PINSETTER_CYCLE = LED(27)
 
-# ============================================================
-# PROTOCOL
-# ============================================================
 class Msg:
     HELLO = "hello"
     BALL_EVENT = "ball_event"
     HEARTBEAT = "heartbeat"
     CYCLE = "cycle"
+    OPEN_LANE = "open_lane"
+    CLOSE_LANE = "close_lane"
+    RESET = "reset"
 
-def encode(msg_type, **fields):
-    return json.dumps({"type": msg_type, "ts": time.time(), **fields})
-
-def decode(raw):
-    return json.loads(raw)
-
-# ============================================================
-# GPIO ↔ ASYNCIO BRIDGE
-# ============================================================
-# gpiozero callbacks run in their own thread, NOT the asyncio loop.
-# We bridge by scheduling a put_nowait on the asyncio loop from the
-# gpiozero thread via call_soon_threadsafe.
+def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
+def decode(r): return json.loads(r)
 
 event_queue = None
 main_loop = None
 
 def on_ball_detected():
-    """gpiozero callback. Runs in gpiozero's thread."""
     log.info(f"GPIO: ball detected on lane {LANE_ID}")
     if main_loop and event_queue:
         main_loop.call_soon_threadsafe(
@@ -70,32 +45,51 @@ def on_ball_detected():
 
 BALL_DETECT.when_pressed = on_ball_detected
 
-# ============================================================
-# ASYNCIO TASKS
-# ============================================================
 async def heartbeat_loop(ws):
-    """Send heartbeat every 5 seconds."""
     while True:
         await asyncio.sleep(5)
         await ws.send(encode(Msg.HEARTBEAT, node=NODE_ID))
 
 async def event_sender(ws):
-    """Drain the queue and send each event over the WebSocket."""
     while True:
         msg = await event_queue.get()
         log.info(f"→ {msg}")
         await ws.send(msg)
 
+async def pulse(times, on_ms, off_ms):
+    """Drive the LED in a custom blink pattern."""
+    for _ in range(times):
+        PINSETTER_CYCLE.on()
+        await asyncio.sleep(on_ms / 1000)
+        PINSETTER_CYCLE.off()
+        await asyncio.sleep(off_ms / 1000)
+
 async def command_handler(ws):
-    """Receive commands from the server and drive GPIO outputs."""
     async for raw in ws:
         msg = decode(raw)
         log.info(f"← {raw}")
-        if msg.get("type") == Msg.CYCLE:
-            log.info(f"Pulsing cycle relay for lane {msg.get('lane')}")
-            PINSETTER_CYCLE.on()
-            await asyncio.sleep(0.15)
-            PINSETTER_CYCLE.off()
+        cmd_type = msg.get("type")
+        lane = msg.get("lane")
+
+        if cmd_type == Msg.CYCLE:
+            log.info(f"  Pinsetter cycle, lane {lane}")
+            await pulse(1, 150, 0)
+
+        elif cmd_type == Msg.OPEN_LANE:
+            bowlers = msg.get("bowlers", [])
+            log.info(f"  OPEN LANE {lane} with bowlers: {bowlers}")
+            await pulse(3, 300, 100)  # 3 medium pulses = "first set" sequence
+
+        elif cmd_type == Msg.CLOSE_LANE:
+            log.info(f"  CLOSE LANE {lane}")
+            await pulse(1, 1000, 0)   # 1 long pulse = pinsetter to rest
+
+        elif cmd_type == Msg.RESET:
+            log.info(f"  RESET pin deck on lane {lane}")
+            await pulse(4, 60, 60)    # 4 rapid blinks = re-rack
+
+        else:
+            log.warning(f"Unknown command type: {cmd_type}")
 
 async def main():
     global event_queue, main_loop
@@ -106,9 +100,8 @@ async def main():
         try:
             log.info(f"Connecting to {SERVER_URL} ...")
             async with connect(SERVER_URL) as ws:
-                log.info(f"Connected. Sending hello.")
+                log.info("Connected. Sending hello.")
                 await ws.send(encode(Msg.HELLO, node=NODE_ID, lane=LANE_ID))
-
                 await asyncio.gather(
                     heartbeat_loop(ws),
                     event_sender(ws),

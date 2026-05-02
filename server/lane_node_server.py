@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""WSL-SRV-side WebSocket server + tiny HTTP display.
-
-NOW USING THE REAL wsl_scoring_engine.LaneScoring — same code path that
-runs on WSL-SRV in production, just driven by Pi GPIO events instead of
-the BPP_LANE poller.
-"""
+"""WSL-SRV-side WebSocket + HTTP. Now with desk-app-simulator endpoints."""
 
 import asyncio
 import json
@@ -14,7 +9,6 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Add project root so we can import wsl_scoring_engine
 sys.path.insert(0, '/home/pi/wsl-lane-nodes')
 from wsl_scoring_engine import LaneScoring
 
@@ -24,52 +18,35 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s')
 log = logging.getLogger('server')
 
-# ============================================================
-# SCORING STATE — one LaneScoring per lane, accessed under lock
-# ============================================================
 state_lock = threading.Lock()
-lane_scoring = {}  # lane_id (int) → LaneScoring
+lane_scoring = {}
+ball_counters = {}
+clients = {}
+main_loop = None
 
-def get_or_create_lane(lane_id):
-    """Returns the LaneScoring for this lane, creating a default one if needed."""
+def get_or_create_lane(lane_id, bowlers=None):
     if lane_id not in lane_scoring:
         ls = LaneScoring(lane_id)
-        ls.add_bowler('TEST', number=1, hdcp=0)
+        for i, name in enumerate(bowlers or ['TEST']):
+            ls.add_bowler(name, number=i+1, hdcp=0)
         ls.is_active = True
         lane_scoring[lane_id] = ls
-        log.info(f"Lane {lane_id}: created scoring state with default bowler 'TEST'")
+        log.info(f"Lane {lane_id}: created with bowlers {[b.name for b in ls.bowlers]}")
     return lane_scoring[lane_id]
 
-# Cycle through pin_masks to make the demo interesting
-PIN_MASK_CYCLE = [
-    0b0000011111,  # 5 pins still standing (5 down)
-    0,             # all down (spare on second ball, strike on first)
-    0,             # all down again
-    0b0001111111,  # 7 standing (3 down)
-    0b0000001111,  # 4 standing (3 more down)
-    0,             # all down (spare)
-]
+PIN_MASK_CYCLE = [0b0000011111, 0, 0, 0b0001111111, 0b0000001111, 0]
 
-# ============================================================
-# PROTOCOL
-# ============================================================
 class Msg:
     HELLO = "hello"
     BALL_EVENT = "ball_event"
     HEARTBEAT = "heartbeat"
     CYCLE = "cycle"
+    OPEN_LANE = "open_lane"
+    CLOSE_LANE = "close_lane"
+    RESET = "reset"
 
-def encode(msg_type, **fields):
-    return json.dumps({"type": msg_type, "ts": time.time(), **fields})
-
-def decode(raw):
-    return json.loads(raw)
-
-# ============================================================
-# WEBSOCKET HANDLER
-# ============================================================
-clients = {}
-ball_counters = {}  # lane_id → int, used to index PIN_MASK_CYCLE
+def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
+def decode(r): return json.loads(r)
 
 async def handle_node(websocket):
     addr = websocket.remote_address
@@ -78,14 +55,14 @@ async def handle_node(websocket):
     try:
         async for raw in websocket:
             msg = decode(raw)
-            msg_type = msg.get("type")
+            mt = msg.get("type")
 
-            if msg_type == Msg.HELLO:
+            if mt == Msg.HELLO:
                 node_id = msg.get("node", "<unknown>")
                 clients[node_id] = websocket
                 log.info(f"Node {node_id!r} registered")
 
-            elif msg_type == Msg.BALL_EVENT:
+            elif mt == Msg.BALL_EVENT:
                 lane = msg.get("lane")
                 with state_lock:
                     ls = get_or_create_lane(lane)
@@ -93,19 +70,14 @@ async def handle_node(websocket):
                     pin_mask = PIN_MASK_CYCLE[n % len(PIN_MASK_CYCLE)]
                     ball_counters[lane] = n + 1
                     bowl = ls.record_ball(pin_mask)
-
                 if bowl:
-                    pins_down = 10 - bin(pin_mask).count("1")
-                    log.info(f"Lane {lane}: {ls.current_bowler.name if ls.current_bowler else '?'} "
-                             f"→ {bowl.display} ({pins_down} pins down)")
-                else:
-                    log.info(f"Lane {lane}: ball not recorded (game over?)")
-
+                    pd = 10 - bin(pin_mask).count("1")
+                    log.info(f"Lane {lane}: {ls.current_bowler.name if ls.current_bowler else '?'}"
+                             f" → {bowl.display} ({pd} pins)")
                 await websocket.send(encode(Msg.CYCLE, lane=lane))
 
-            elif msg_type == Msg.HEARTBEAT:
+            elif mt == Msg.HEARTBEAT:
                 pass
-
     except Exception as e:
         log.warning(f"Handler error: {e}")
     finally:
@@ -113,17 +85,38 @@ async def handle_node(websocket):
             del clients[node_id]
             log.info(f"Node {node_id!r} disconnected")
 
+def send_to_all_nodes(msg_str):
+    """Schedule a send on the asyncio loop from the HTTP handler thread."""
+    sent = 0
+    for node_id, ws in list(clients.items()):
+        try:
+            fut = asyncio.run_coroutine_threadsafe(ws.send(msg_str), main_loop)
+            fut.result(timeout=2)
+            sent += 1
+        except Exception as e:
+            log.warning(f"send_to {node_id} failed: {e}")
+    return sent
+
 # ============================================================
-# HTTP DISPLAY
+# HTML DISPLAY + DESK SIMULATOR
 # ============================================================
 DISPLAY_HTML = """<!doctype html>
-<html><head><title>Lane Score Display</title>
+<html><head><title>Lane Display</title>
 <style>
   body { font-family: -apple-system, system-ui, sans-serif;
          background: #0a0a0a; color: #f0f0f0; padding: 1.5em; margin: 0; }
   h1 { color: #888; font-weight: 300; font-size: 1.1em; margin: 0 0 1em 0; }
-  .lane { background: #1a1a1a; border-radius: 12px; padding: 1.2em; margin: 1em 0;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  .controls { background: #1a1a1a; border-radius: 12px; padding: 1em;
+              margin-bottom: 1em; display: flex; gap: 0.6em; align-items: center; }
+  .controls label { color: #888; font-size: 0.9em; }
+  .controls button { background: #2a2a2a; color: #f0f0f0; border: 1px solid #444;
+                     padding: 0.5em 1em; border-radius: 6px; cursor: pointer;
+                     font-size: 0.9em; }
+  .controls button:hover { background: #3a3a3a; }
+  .controls button.open { border-color: #2d6a3e; color: #b8e8c5; }
+  .controls button.close { border-color: #6a2d2d; color: #e8b8b8; }
+  .controls button.reset { border-color: #6a5b2d; color: #e8d8b8; }
+  .lane { background: #1a1a1a; border-radius: 12px; padding: 1.2em; margin: 1em 0; }
   .lane-header { display: flex; justify-content: space-between; align-items: baseline;
                  margin-bottom: 0.8em; }
   .lane-num { color: #ffce42; font-size: 1.5em; font-weight: 700; }
@@ -138,20 +131,36 @@ DISPLAY_HTML = """<!doctype html>
            min-width: 3.2em; text-align: center; font-family: ui-monospace, Menlo, monospace; }
   .frame .num { color: #555; font-size: 0.7em; }
   .frame .bowls { font-size: 1.1em; font-weight: 600; }
-  .frame .pts { color: #aaa; font-size: 0.85em; margin-top: 0.1em; }
+  .frame .pts { color: #aaa; font-size: 0.85em; }
   .frame.strike { background: #2d6a3e; }
   .frame.spare  { background: #2d4a6a; }
   .stats { display: flex; gap: 1em; color: #888; font-size: 0.85em; margin-top: 0.6em; }
   .empty { color: #555; padding: 2em; text-align: center; }
+  .toast { position: fixed; bottom: 1em; right: 1em; background: #2d6a3e;
+           padding: 0.8em 1.2em; border-radius: 8px; color: #fff;
+           opacity: 0; transition: opacity 0.2s; }
+  .toast.show { opacity: 1; }
 </style>
 <script>
+async function action(lane, op) {
+  const r = await fetch(`/api/lane/${lane}/${op}`, { method: 'POST' });
+  const data = await r.json();
+  toast(`${op.toUpperCase()} sent to lane ${lane} (${data.sent_to} node${data.sent_to===1?'':'s'})`);
+  refresh();
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1500);
+}
 async function refresh() {
   try {
     const r = await fetch('/api/state');
     const data = await r.json();
     const root = document.getElementById('lanes');
     if (Object.keys(data).length === 0) {
-      root.innerHTML = '<div class="empty">No lane events yet — press the button on the Pi</div>';
+      root.innerHTML = '<div class="empty">No lane events yet — press the button on the Pi or click Open Lane</div>';
       return;
     }
     root.innerHTML = '';
@@ -165,19 +174,14 @@ async function refresh() {
           const isSpare = (f.bowls || []).some(b => b.display === '/');
           const cls = isStrike ? 'strike' : (isSpare ? 'spare' : '');
           const bowlsStr = (f.bowls || []).map(b => b.display).join(' ');
-          return `<div class="frame ${cls}">
-                    <div class="num">${f.frame}</div>
-                    <div class="bowls">${bowlsStr || '·'}</div>
-                    <div class="pts">${f.points || 0}</div>
-                  </div>`;
+          return `<div class="frame ${cls}"><div class="num">${f.frame}</div>
+                  <div class="bowls">${bowlsStr || '·'}</div>
+                  <div class="pts">${f.points || 0}</div></div>`;
         }).join('');
-        return `<div class="bowler">
-                  <div class="bowler-row">
-                    <span class="bowler-name">${p.name}</span>
-                    <span class="bowler-total">${p.current_total || 0}</span>
-                  </div>
-                  <div class="frames">${framesHtml}</div>
-                </div>`;
+        return `<div class="bowler"><div class="bowler-row">
+                  <span class="bowler-name">${p.name}</span>
+                  <span class="bowler-total">${p.current_total || 0}</span></div>
+                <div class="frames">${framesHtml}</div></div>`;
       }).join('');
       const stats = scoring.stats || {};
       div.innerHTML = `
@@ -190,44 +194,76 @@ async function refresh() {
           <span>Strikes: ${stats.strikes || 0}</span>
           <span>Spares: ${stats.spares || 0}</span>
           <span>Gutters: ${stats.gutters || 0}</span>
-        </div>
-      `;
+        </div>`;
       root.appendChild(div);
     }
-  } catch (e) {
-    console.error(e);
-  }
+  } catch (e) { console.error(e); }
 }
 setInterval(refresh, 500);
-refresh();
+window.addEventListener('load', refresh);
 </script>
 </head>
 <body>
-  <h1>WSL Lane Node Display — driven by wsl_scoring_engine.LaneScoring</h1>
+  <h1>WSL Lane Node Display — desk simulator + live scoring</h1>
+  <div class="controls">
+    <label>Lane 22:</label>
+    <button class="open" onclick="action(22, 'open')">Open Lane</button>
+    <button class="close" onclick="action(22, 'close')">Close Lane</button>
+    <button class="reset" onclick="action(22, 'reset')">Reset Pins</button>
+  </div>
   <div id="lanes" class="empty">Loading...</div>
+  <div id="toast" class="toast"></div>
 </body></html>
 """
 
 class HttpHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/':
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.end_headers()
-            self.wfile.write(DISPLAY_HTML.encode('utf-8'))
+            self._send(200, 'text/html; charset=utf-8', DISPLAY_HTML.encode('utf-8'))
         elif self.path == '/api/state':
             with state_lock:
-                snapshot = {
-                    str(lane): ls.to_scoring_response()
-                    for lane, ls in lane_scoring.items()
-                }
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps(snapshot).encode('utf-8'))
+                snap = {str(l): ls.to_scoring_response() for l, ls in lane_scoring.items()}
+            self._send(200, 'application/json', json.dumps(snap).encode('utf-8'))
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send(404, 'text/plain', b'Not found')
+
+    def do_POST(self):
+        # /api/lane/{N}/{open|close|reset}
+        parts = self.path.strip('/').split('/')
+        if len(parts) == 4 and parts[0] == 'api' and parts[1] == 'lane':
+            try:
+                lane = int(parts[2])
+                action = parts[3]
+            except ValueError:
+                return self._send(400, 'application/json', b'{"error":"bad lane"}')
+
+            type_map = {'open': Msg.OPEN_LANE, 'close': Msg.CLOSE_LANE, 'reset': Msg.RESET}
+            msg_type = type_map.get(action)
+            if not msg_type:
+                return self._send(400, 'application/json', b'{"error":"bad action"}')
+
+            # If opening, reset the scoring state
+            if msg_type == Msg.OPEN_LANE:
+                with state_lock:
+                    lane_scoring.pop(lane, None)
+                    ball_counters.pop(lane, None)
+                    get_or_create_lane(lane, bowlers=['ALICE', 'BOB'])
+                log.info(f"OPEN_LANE: reset scoring for lane {lane} with new bowlers")
+
+            msg = encode(msg_type, lane=lane)
+            sent = send_to_all_nodes(msg)
+            log.info(f"→ {action.upper()} lane {lane} sent to {sent} node(s)")
+            self._send(200, 'application/json',
+                       json.dumps({"sent_to": sent, "msg": json.loads(msg)}).encode('utf-8'))
+        else:
+            self._send(404, 'application/json', b'{"error":"not found"}')
+
+    def _send(self, code, ctype, body):
+        self.send_response(code)
+        self.send_header('Content-Type', ctype)
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, fmt, *args):
         pass
@@ -235,13 +271,12 @@ class HttpHandler(BaseHTTPRequestHandler):
 def http_thread():
     HTTPServer(('0.0.0.0', 8766), HttpHandler).serve_forever()
 
-# ============================================================
-# MAIN
-# ============================================================
 async def main():
+    global main_loop
+    main_loop = asyncio.get_running_loop()
     threading.Thread(target=http_thread, daemon=True).start()
-    log.info("HTTP display: http://0.0.0.0:8766")
-    log.info("WebSocket:    ws://0.0.0.0:8765")
+    log.info("HTTP display + desk simulator: http://0.0.0.0:8766")
+    log.info("WebSocket: ws://0.0.0.0:8765")
     async with serve(handle_node, "0.0.0.0", 8765):
         await asyncio.Future()
 
