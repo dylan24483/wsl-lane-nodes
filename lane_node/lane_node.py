@@ -17,7 +17,7 @@ SERVER_URL = "ws://localhost:8765"
 NODE_ID = "lane-node-dev-22"
 LANE_ID = 22
 
-BALL_DETECT = Button(17, pull_up=True, bounce_time=0.05)
+BALL_DETECT = Button(17, pull_up=False, bounce_time=0.05)
 PINSETTER_CYCLE = LED(27)
 
 class Msg:
