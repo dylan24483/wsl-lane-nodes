@@ -18,10 +18,12 @@ electrically stuck (welded contacts, etc.), no software can help.
 """
 from gpiozero import LED
 
-# Keep this list in sync with lane_node.py's relay outputs. As we
-# wire more channels (lane 21 cycle/power, etc.), add their BCM pin
-# numbers here.
+# Keep this list in sync with lane_node.py's LANE_GPIO cycle+power
+# values. ExecStopPost runs once when the main daemon is reaped; it
+# needs to know every relay GPIO the daemon could have left HIGH.
 RELAY_PINS = [
+    24,  # PINSETTER_CYCLE for lane 21
+    25,  # PINSETTER_POWER for lane 21
     27,  # PINSETTER_CYCLE for lane 22
     23,  # PINSETTER_POWER for lane 22
 ]

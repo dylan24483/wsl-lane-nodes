@@ -210,6 +210,14 @@ window.addEventListener('load', refresh);
 <body>
   <h1>WSL Lane Node Display — desk simulator + live scoring</h1>
   <div class="controls">
+    <label>Lane 21:</label>
+    <button class="open" onclick="action(21, 'open')">Open Lane</button>
+    <button class="close" onclick="action(21, 'close')">Close Lane</button>
+    <button class="reset" onclick="action(21, 'reset')">Reset Pins</button>
+    <button class="power-on" onclick="action(21, 'power-on')">Power On</button>
+    <button class="power-off" onclick="action(21, 'power-off')">Power Off</button>
+  </div>
+  <div class="controls">
     <label>Lane 22:</label>
     <button class="open" onclick="action(22, 'open')">Open Lane</button>
     <button class="close" onclick="action(22, 'close')">Close Lane</button>

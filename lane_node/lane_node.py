@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Lane node daemon — Pi side. Reads sensors, drives outputs, talks to WSL-SRV."""
+"""Lane node daemon — Pi side. Reads sensors, drives outputs, talks to WSL-SRV.
+
+Each Pi node controls one PAIR of lanes (e.g., lanes 21 + 22). Per-lane GPIO
+assignments live in LANE_GPIO; gpiozero devices and per-lane callbacks are
+instantiated by iterating LANES at startup. Server commands carry a `lane`
+field that routes to the right physical GPIO.
+"""
 
 import asyncio
 import json
@@ -15,15 +21,28 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger('lane_node')
 
 SERVER_URL = "ws://localhost:8765"
-NODE_ID = "lane-node-dev-22"
-LANE_ID = 22
+NODE_ID = "lane-node-dev-pair-21-22"
+LANES = [21, 22]
 
-BALL_DETECT = Button(17, pull_up=False, bounce_time=0.05)
-PINSETTER_CYCLE = LED(27)
-# PINSETTER_POWER is a *latched* output — held HIGH while the pinsetter
-# is meant to be running, dropped LOW to stop it. SIX BOX terminal: the
-# "to control desk switch" line per T-VISION drawing T.30.032.
-PINSETTER_POWER = LED(23)
+# Per-lane GPIO assignments. Keep relay_cleanup.py's RELAY_PINS in sync
+# with the cycle+power values here.
+LANE_GPIO = {
+    21: {"foul": 5,  "ball2": 6,  "cycle": 24, "power": 25},
+    22: {"foul": 17, "ball2": 22, "cycle": 27, "power": 23},
+}
+
+# gpiozero devices instantiated per-lane below. Dicts keyed by lane id.
+BALL_DETECT = {}     # foul input — when_pressed fires BALL_EVENT to server
+BALL2_DETECT = {}    # 2nd-ball-lamp input — wired, no callback yet (state-only)
+PINSETTER_CYCLE = {} # momentary pulse output (relay closes briefly)
+PINSETTER_POWER = {} # latched on/off output (relay holds closed until told otherwise)
+
+for lane_id in LANES:
+    pins = LANE_GPIO[lane_id]
+    BALL_DETECT[lane_id] = Button(pins["foul"], pull_up=False, bounce_time=0.05)
+    BALL2_DETECT[lane_id] = Button(pins["ball2"], pull_up=False, bounce_time=0.05)
+    PINSETTER_CYCLE[lane_id] = LED(pins["cycle"])
+    PINSETTER_POWER[lane_id] = LED(pins["power"])
 
 class Msg:
     HELLO = "hello"
@@ -42,15 +61,19 @@ def decode(r): return json.loads(r)
 event_queue = None
 main_loop = None
 
-def on_ball_detected():
-    log.info(f"GPIO: ball detected on lane {LANE_ID}")
-    if main_loop and event_queue:
-        main_loop.call_soon_threadsafe(
-            event_queue.put_nowait,
-            encode(Msg.BALL_EVENT, lane=LANE_ID)
-        )
+def make_foul_callback(lane_id):
+    """Bind a per-lane foul/ball-detect callback that captures lane_id in closure."""
+    def on_ball_detected():
+        log.info(f"GPIO: ball detected on lane {lane_id}")
+        if main_loop and event_queue:
+            main_loop.call_soon_threadsafe(
+                event_queue.put_nowait,
+                encode(Msg.BALL_EVENT, lane=lane_id)
+            )
+    return on_ball_detected
 
-BALL_DETECT.when_pressed = on_ball_detected
+for lane_id in LANES:
+    BALL_DETECT[lane_id].when_pressed = make_foul_callback(lane_id)
 
 async def heartbeat_loop(ws):
     while True:
@@ -63,8 +86,8 @@ async def event_sender(ws):
         log.info(f"→ {msg}")
         await ws.send(msg)
 
-async def pulse(times, on_ms, off_ms):
-    """Drive the relay in a pulse pattern. Always release on exit.
+async def pulse(lane_id, times, on_ms, off_ms):
+    """Drive a lane's cycle relay in a pulse pattern. Always release on exit.
 
     The try/finally is critical: if a CancelledError is raised mid-pulse
     (e.g. WebSocket drops while we're awaiting asyncio.sleep), the
@@ -72,14 +95,15 @@ async def pulse(times, on_ms, off_ms):
     on lgpio release — the relay would stay closed indefinitely. The
     finally guarantees we drive the line LOW before propagating cancel.
     """
+    relay = PINSETTER_CYCLE[lane_id]
     try:
         for _ in range(times):
-            PINSETTER_CYCLE.on()
+            relay.on()
             await asyncio.sleep(on_ms / 1000)
-            PINSETTER_CYCLE.off()
+            relay.off()
             await asyncio.sleep(off_ms / 1000)
     finally:
-        PINSETTER_CYCLE.off()
+        relay.off()
 
 async def command_handler(ws):
     async for raw in ws:
@@ -88,36 +112,40 @@ async def command_handler(ws):
         cmd_type = msg.get("type")
         lane = msg.get("lane")
 
+        if lane not in LANES:
+            log.warning(f"Command for unknown lane {lane}; this node handles {LANES}")
+            continue
+
         if cmd_type == Msg.CYCLE:
             log.info(f"  Pinsetter cycle, lane {lane}")
-            await pulse(1, 150, 0)
+            await pulse(lane, 1, 150, 0)
 
         elif cmd_type == Msg.OPEN_LANE:
             bowlers = msg.get("bowlers", [])
             log.info(f"  OPEN LANE {lane} with bowlers: {bowlers}")
-            await pulse(3, 300, 100)  # 3 medium pulses = "first set" sequence
+            await pulse(lane, 3, 300, 100)  # 3 medium pulses = "first set" sequence
 
         elif cmd_type == Msg.CLOSE_LANE:
             log.info(f"  CLOSE LANE {lane}")
-            await pulse(1, 1000, 0)   # 1 long pulse = pinsetter to rest
+            await pulse(lane, 1, 1000, 0)   # 1 long pulse = pinsetter to rest
 
         elif cmd_type == Msg.RESET:
             log.info(f"  RESET pin deck on lane {lane}")
-            await pulse(4, 60, 60)    # 4 rapid blinks = re-rack
+            await pulse(lane, 4, 60, 60)    # 4 rapid blinks = re-rack
 
         elif cmd_type == Msg.POWER_ON:
             log.info(f"  POWER ON lane {lane}")
-            PINSETTER_POWER.on()      # latched — relay holds closed
+            PINSETTER_POWER[lane].on()      # latched — relay holds closed
 
         elif cmd_type == Msg.POWER_OFF:
             log.info(f"  POWER OFF lane {lane}")
-            PINSETTER_POWER.off()     # latched — relay holds open
+            PINSETTER_POWER[lane].off()     # latched — relay holds open
 
         else:
             log.warning(f"Unknown command type: {cmd_type}")
 
 def _cleanup_gpio():
-    """Drive outputs LOW and release gpiozero devices.
+    """Drive outputs LOW and release gpiozero devices for every lane.
 
     Runs on graceful shutdown (SIGTERM / SIGINT / normal exit). Cannot
     run on SIGKILL — that path is covered by systemd's ExecStopPost=
@@ -125,11 +153,13 @@ def _cleanup_gpio():
     daemon is reaped.
     """
     try:
-        PINSETTER_CYCLE.off()
-        PINSETTER_POWER.off()
-        PINSETTER_CYCLE.close()
-        PINSETTER_POWER.close()
-        BALL_DETECT.close()
+        for lane_id in LANES:
+            PINSETTER_CYCLE[lane_id].off()
+            PINSETTER_POWER[lane_id].off()
+            PINSETTER_CYCLE[lane_id].close()
+            PINSETTER_POWER[lane_id].close()
+            BALL_DETECT[lane_id].close()
+            BALL2_DETECT[lane_id].close()
         log.info("GPIO cleanup complete.")
     except Exception as e:
         log.warning(f"GPIO cleanup error: {e}")
@@ -151,8 +181,8 @@ async def main():
             try:
                 log.info(f"Connecting to {SERVER_URL} ...")
                 async with connect(SERVER_URL) as ws:
-                    log.info("Connected. Sending hello.")
-                    await ws.send(encode(Msg.HELLO, node=NODE_ID, lane=LANE_ID))
+                    log.info(f"Connected. Sending hello (lanes={LANES}).")
+                    await ws.send(encode(Msg.HELLO, node=NODE_ID, lanes=LANES))
                     await asyncio.gather(
                         heartbeat_loop(ws),
                         event_sender(ws),
