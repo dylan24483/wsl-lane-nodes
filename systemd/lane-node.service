@@ -1,0 +1,36 @@
+[Unit]
+Description=WSL Lane Node daemon (AMF 8270 control via Pi GPIO)
+Documentation=https://github.com/dylan24483/wsl-lane-nodes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/wsl-lane-nodes
+
+# Run lane_node.py via the venv's python so we get gpiozero + websockets.
+ExecStart=/home/pi/wsl-lane-nodes/.venv/bin/python3 lane_node/lane_node.py
+
+# After the main process is reaped (any reason — clean exit, SIGTERM,
+# SIGKILL, segfault, OOM), force all relay GPIOs LOW. This is the
+# safety net for the BCM2711 GPIO-state-retention behavior: if the
+# main process died with a relay GPIO HIGH, the pad would keep
+# driving HIGH until something explicitly drives it LOW. ExecStopPost=
+# is that "something."
+ExecStopPost=/home/pi/wsl-lane-nodes/.venv/bin/python3 lane_node/relay_cleanup.py
+
+# Send SIGTERM on stop, give the main process up to 10s to clean up
+# via its own signal handler before escalating to SIGKILL. ExecStopPost
+# runs after either path completes.
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# Auto-restart on failure (segfault, OOM, etc.) but back off so we
+# don't burn CPU if there's a persistent crash bug.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

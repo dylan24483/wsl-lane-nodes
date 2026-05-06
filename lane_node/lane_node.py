@@ -4,6 +4,7 @@
 import asyncio
 import json
 import logging
+import signal
 import time
 
 from gpiozero import Button, LED
@@ -57,12 +58,22 @@ async def event_sender(ws):
         await ws.send(msg)
 
 async def pulse(times, on_ms, off_ms):
-    """Drive the LED in a custom blink pattern."""
-    for _ in range(times):
-        PINSETTER_CYCLE.on()
-        await asyncio.sleep(on_ms / 1000)
+    """Drive the relay in a pulse pattern. Always release on exit.
+
+    The try/finally is critical: if a CancelledError is raised mid-pulse
+    (e.g. WebSocket drops while we're awaiting asyncio.sleep), the
+    .off() in the loop body is skipped, but BCM2711 retains GPIO state
+    on lgpio release — the relay would stay closed indefinitely. The
+    finally guarantees we drive the line LOW before propagating cancel.
+    """
+    try:
+        for _ in range(times):
+            PINSETTER_CYCLE.on()
+            await asyncio.sleep(on_ms / 1000)
+            PINSETTER_CYCLE.off()
+            await asyncio.sleep(off_ms / 1000)
+    finally:
         PINSETTER_CYCLE.off()
-        await asyncio.sleep(off_ms / 1000)
 
 async def command_handler(ws):
     async for raw in ws:
@@ -91,28 +102,56 @@ async def command_handler(ws):
         else:
             log.warning(f"Unknown command type: {cmd_type}")
 
+def _cleanup_gpio():
+    """Drive outputs LOW and release gpiozero devices.
+
+    Runs on graceful shutdown (SIGTERM / SIGINT / normal exit). Cannot
+    run on SIGKILL — that path is covered by systemd's ExecStopPost=
+    relay_cleanup.py, which is its own process and runs after the main
+    daemon is reaped.
+    """
+    try:
+        PINSETTER_CYCLE.off()
+        PINSETTER_CYCLE.close()
+        BALL_DETECT.close()
+        log.info("GPIO cleanup complete.")
+    except Exception as e:
+        log.warning(f"GPIO cleanup error: {e}")
+
 async def main():
     global event_queue, main_loop
     main_loop = asyncio.get_running_loop()
     event_queue = asyncio.Queue()
 
-    while True:
-        try:
-            log.info(f"Connecting to {SERVER_URL} ...")
-            async with connect(SERVER_URL) as ws:
-                log.info("Connected. Sending hello.")
-                await ws.send(encode(Msg.HELLO, node=NODE_ID, lane=LANE_ID))
-                await asyncio.gather(
-                    heartbeat_loop(ws),
-                    event_sender(ws),
-                    command_handler(ws),
-                )
-        except Exception as e:
-            log.warning(f"Connection lost: {e}. Retrying in 5s...")
-            await asyncio.sleep(5)
+    # SIGTERM is systemd's default stop signal. Without a handler, Python
+    # exits without running atexit, and BCM2711 retains the GPIO output
+    # state — relays stay stuck closed. Cancelling the main task lets
+    # the finally clause below run cleanup.
+    main_task = asyncio.current_task()
+    main_loop.add_signal_handler(signal.SIGTERM, main_task.cancel)
+
+    try:
+        while True:
+            try:
+                log.info(f"Connecting to {SERVER_URL} ...")
+                async with connect(SERVER_URL) as ws:
+                    log.info("Connected. Sending hello.")
+                    await ws.send(encode(Msg.HELLO, node=NODE_ID, lane=LANE_ID))
+                    await asyncio.gather(
+                        heartbeat_loop(ws),
+                        event_sender(ws),
+                        command_handler(ws),
+                    )
+            except asyncio.CancelledError:
+                raise  # let the outer finally run cleanup
+            except Exception as e:
+                log.warning(f"Connection lost: {e}. Retrying in 5s...")
+                await asyncio.sleep(5)
+    finally:
+        _cleanup_gpio()
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         log.info("Shutting down.")
