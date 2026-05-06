@@ -36,6 +36,13 @@ def get_or_create_lane(lane_id, bowlers=None):
 
 PIN_MASK_CYCLE = [0b0000011111, 0, 0, 0b0001111111, 0b0000001111, 0]
 
+# Bump this whenever a message type's shape changes incompatibly.
+# Compared against the node's PROTOCOL_VERSION on HELLO; mismatch logs
+# a warning but does NOT reject the connection (we'd rather degrade
+# than refuse, since the alternative is a silently-broken pinsetter).
+# v1 = single-lane (HELLO carries `lane`); v2 = multi-lane (HELLO carries `lanes`).
+PROTOCOL_VERSION = 2
+
 class Msg:
     HELLO = "hello"
     BALL_EVENT = "ball_event"
@@ -62,7 +69,18 @@ async def handle_node(websocket):
             if mt == Msg.HELLO:
                 node_id = msg.get("node", "<unknown>")
                 clients[node_id] = websocket
-                log.info(f"Node {node_id!r} registered")
+                node_version = msg.get("protocol_version")
+                node_lanes = msg.get("lanes") or (
+                    [msg["lane"]] if "lane" in msg else []
+                )
+                if node_version != PROTOCOL_VERSION:
+                    log.warning(
+                        f"Node {node_id!r} protocol version mismatch: "
+                        f"node={node_version}, server={PROTOCOL_VERSION}. "
+                        f"Continuing — message handling may degrade."
+                    )
+                log.info(f"Node {node_id!r} registered "
+                         f"(lanes={node_lanes}, protocol_version={node_version})")
 
             elif mt == Msg.BALL_EVENT:
                 lane = msg.get("lane")

@@ -24,6 +24,11 @@ SERVER_URL = "ws://localhost:8765"
 NODE_ID = "lane-node-dev-pair-21-22"
 LANES = [21, 22]
 
+# Bump this whenever a message type's shape changes incompatibly. The
+# server compares against its own PROTOCOL_VERSION on HELLO and logs a
+# warning on mismatch. v1 = single-lane (LANE_ID); v2 = multi-lane (LANES).
+PROTOCOL_VERSION = 2
+
 # Per-lane GPIO assignments. Keep relay_cleanup.py's RELAY_PINS in sync
 # with the cycle+power values here.
 LANE_GPIO = {
@@ -181,8 +186,10 @@ async def main():
             try:
                 log.info(f"Connecting to {SERVER_URL} ...")
                 async with connect(SERVER_URL) as ws:
-                    log.info(f"Connected. Sending hello (lanes={LANES}).")
-                    await ws.send(encode(Msg.HELLO, node=NODE_ID, lanes=LANES))
+                    log.info(f"Connected. Sending hello (lanes={LANES}, "
+                             f"protocol_version={PROTOCOL_VERSION}).")
+                    await ws.send(encode(Msg.HELLO, node=NODE_ID, lanes=LANES,
+                                         protocol_version=PROTOCOL_VERSION))
                     await asyncio.gather(
                         heartbeat_loop(ws),
                         event_sender(ws),
