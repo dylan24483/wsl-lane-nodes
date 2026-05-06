@@ -20,6 +20,10 @@ LANE_ID = 22
 
 BALL_DETECT = Button(17, pull_up=False, bounce_time=0.05)
 PINSETTER_CYCLE = LED(27)
+# PINSETTER_POWER is a *latched* output — held HIGH while the pinsetter
+# is meant to be running, dropped LOW to stop it. SIX BOX terminal: the
+# "to control desk switch" line per T-VISION drawing T.30.032.
+PINSETTER_POWER = LED(23)
 
 class Msg:
     HELLO = "hello"
@@ -29,6 +33,8 @@ class Msg:
     OPEN_LANE = "open_lane"
     CLOSE_LANE = "close_lane"
     RESET = "reset"
+    POWER_ON = "power_on"
+    POWER_OFF = "power_off"
 
 def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
 def decode(r): return json.loads(r)
@@ -99,6 +105,14 @@ async def command_handler(ws):
             log.info(f"  RESET pin deck on lane {lane}")
             await pulse(4, 60, 60)    # 4 rapid blinks = re-rack
 
+        elif cmd_type == Msg.POWER_ON:
+            log.info(f"  POWER ON lane {lane}")
+            PINSETTER_POWER.on()      # latched — relay holds closed
+
+        elif cmd_type == Msg.POWER_OFF:
+            log.info(f"  POWER OFF lane {lane}")
+            PINSETTER_POWER.off()     # latched — relay holds open
+
         else:
             log.warning(f"Unknown command type: {cmd_type}")
 
@@ -112,7 +126,9 @@ def _cleanup_gpio():
     """
     try:
         PINSETTER_CYCLE.off()
+        PINSETTER_POWER.off()
         PINSETTER_CYCLE.close()
+        PINSETTER_POWER.close()
         BALL_DETECT.close()
         log.info("GPIO cleanup complete.")
     except Exception as e:

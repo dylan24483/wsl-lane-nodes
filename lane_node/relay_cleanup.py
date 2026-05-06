@@ -19,10 +19,11 @@ electrically stuck (welded contacts, etc.), no software can help.
 from gpiozero import LED
 
 # Keep this list in sync with lane_node.py's relay outputs. As we
-# wire more channels (Power on/off, lane 21 cycle, etc.), add their
-# BCM pin numbers here.
+# wire more channels (lane 21 cycle/power, etc.), add their BCM pin
+# numbers here.
 RELAY_PINS = [
     27,  # PINSETTER_CYCLE for lane 22
+    23,  # PINSETTER_POWER for lane 22
 ]
 
 if __name__ == '__main__':

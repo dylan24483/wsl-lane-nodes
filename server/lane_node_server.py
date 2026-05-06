@@ -44,6 +44,8 @@ class Msg:
     OPEN_LANE = "open_lane"
     CLOSE_LANE = "close_lane"
     RESET = "reset"
+    POWER_ON = "power_on"
+    POWER_OFF = "power_off"
 
 def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
 def decode(r): return json.loads(r)
@@ -116,6 +118,8 @@ DISPLAY_HTML = """<!doctype html>
   .controls button.open { border-color: #2d6a3e; color: #b8e8c5; }
   .controls button.close { border-color: #6a2d2d; color: #e8b8b8; }
   .controls button.reset { border-color: #6a5b2d; color: #e8d8b8; }
+  .controls button.power-on { border-color: #2d5a6a; color: #b8d8e8; }
+  .controls button.power-off { border-color: #4a4a4a; color: #aaa; }
   .lane { background: #1a1a1a; border-radius: 12px; padding: 1.2em; margin: 1em 0; }
   .lane-header { display: flex; justify-content: space-between; align-items: baseline;
                  margin-bottom: 0.8em; }
@@ -210,6 +214,8 @@ window.addEventListener('load', refresh);
     <button class="open" onclick="action(22, 'open')">Open Lane</button>
     <button class="close" onclick="action(22, 'close')">Close Lane</button>
     <button class="reset" onclick="action(22, 'reset')">Reset Pins</button>
+    <button class="power-on" onclick="action(22, 'power-on')">Power On</button>
+    <button class="power-off" onclick="action(22, 'power-off')">Power Off</button>
   </div>
   <div id="lanes" class="empty">Loading...</div>
   <div id="toast" class="toast"></div>
@@ -237,7 +243,13 @@ class HttpHandler(BaseHTTPRequestHandler):
             except ValueError:
                 return self._send(400, 'application/json', b'{"error":"bad lane"}')
 
-            type_map = {'open': Msg.OPEN_LANE, 'close': Msg.CLOSE_LANE, 'reset': Msg.RESET}
+            type_map = {
+                'open': Msg.OPEN_LANE,
+                'close': Msg.CLOSE_LANE,
+                'reset': Msg.RESET,
+                'power-on': Msg.POWER_ON,
+                'power-off': Msg.POWER_OFF,
+            }
             msg_type = type_map.get(action)
             if not msg_type:
                 return self._send(400, 'application/json', b'{"error":"bad action"}')
