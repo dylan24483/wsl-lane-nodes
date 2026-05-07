@@ -8,8 +8,15 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
-sys.path.insert(0, '/home/pi/wsl-lane-nodes')
+# Make wsl_scoring_engine importable from sys.path regardless of OS
+# or where this file is launched from. This used to be a hardcoded
+# Pi path; now it derives from __file__ so the server can run on
+# WSL-SRV (Windows) too.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 from wsl_scoring_engine import LaneScoring
 from state_store import save_lanes, load_lanes
 

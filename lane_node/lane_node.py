@@ -20,8 +20,13 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s')
 log = logging.getLogger('lane_node')
 
-SERVER_URL = "ws://localhost:8765"
-NODE_ID = "lane-node-dev-pair-21-22"
+import os
+# SERVER_URL: defaults to localhost for dev (server + node on same Pi),
+# overridable via env var for production where the server runs on
+# WSL-SRV. Example for production:
+#   WSL_LANE_SERVER_URL=ws://192.168.86.36:8765 python3 lane_node.py
+SERVER_URL = os.environ.get("WSL_LANE_SERVER_URL", "ws://localhost:8765")
+NODE_ID = os.environ.get("WSL_LANE_NODE_ID", "lane-node-dev-pair-21-22")
 LANES = [21, 22]
 
 # Bump this whenever a message type's shape changes incompatibly. The
