@@ -51,7 +51,8 @@ for lane_id in LANES:
 
 class Msg:
     HELLO = "hello"
-    BALL_EVENT = "ball_event"
+    BALL_EVENT = "ball_event"   # ball was thrown (DIELL ball-detect or sim)
+    FOUL_EVENT = "foul_event"   # foul lamp lit (AL-ZARD foul circuit input)
     HEARTBEAT = "heartbeat"
     CYCLE = "cycle"
     OPEN_LANE = "open_lane"
@@ -67,15 +68,23 @@ event_queue = None
 main_loop = None
 
 def make_foul_callback(lane_id):
-    """Bind a per-lane foul/ball-detect callback that captures lane_id in closure."""
-    def on_ball_detected():
-        log.info(f"GPIO: ball detected on lane {lane_id}")
+    """Bind a per-lane foul callback that captures lane_id in closure.
+
+    The AL-ZARD foul input asserts when the foul lamp circuit lights —
+    i.e., the player crossed the foul line. This is NOT the same signal
+    as ball-detect; in production, ball-detect comes from the DIELL
+    photoelectric sensors at the ball-release point. Until DIELL is
+    wired into the bench rig, ball-detect events are simulated via
+    the desk simulator's "Trigger Ball" button.
+    """
+    def on_foul_detected():
+        log.info(f"GPIO: foul detected on lane {lane_id}")
         if main_loop and event_queue:
             main_loop.call_soon_threadsafe(
                 event_queue.put_nowait,
-                encode(Msg.BALL_EVENT, lane=lane_id)
+                encode(Msg.FOUL_EVENT, lane=lane_id)
             )
-    return on_ball_detected
+    return on_foul_detected
 
 for lane_id in LANES:
     BALL_DETECT[lane_id].when_pressed = make_foul_callback(lane_id)

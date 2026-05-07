@@ -40,6 +40,33 @@ def get_or_create_lane(lane_id, bowlers=None):
 
 PIN_MASK_CYCLE = [0b0000011111, 0, 0, 0b0001111111, 0b0000001111, 0]
 
+
+def _process_ball_event(lane):
+    """Record a ball for the given lane. Shared by WS-handler and the
+    desk simulator's Trigger-Ball HTTP endpoint.
+
+    Consumes any pending foul flag — if FOUL_EVENT was received between
+    the previous ball and this one, this bowl gets recorded as a foul
+    (display 'F', scored 0 regardless of pins).
+
+    Returns (bowl, pin_mask, foul) — caller can use these for logging
+    or HTTP response payloads.
+    """
+    with state_lock:
+        ls = get_or_create_lane(lane)
+        n = ball_counters.get(lane, 0)
+        pin_mask = PIN_MASK_CYCLE[n % len(PIN_MASK_CYCLE)]
+        ball_counters[lane] = n + 1
+        foul = pending_foul.pop(lane, False)
+        bowl = ls.record_ball(pin_mask, foul=foul)
+        save_lanes(lane_scoring, ball_counters)
+    if bowl:
+        pd = 10 - bin(pin_mask).count("1")
+        foul_marker = " [FOUL]" if foul else ""
+        log.info(f"Lane {lane}: {ls.current_bowler.name if ls.current_bowler else '?'}"
+                 f" → {bowl.display} ({pd} pins){foul_marker}")
+    return bowl, pin_mask, foul
+
 # Bump this whenever a message type's shape changes incompatibly.
 # Compared against the node's PROTOCOL_VERSION on HELLO; mismatch logs
 # a warning but does NOT reject the connection (we'd rather degrade
@@ -49,7 +76,8 @@ PROTOCOL_VERSION = 2
 
 class Msg:
     HELLO = "hello"
-    BALL_EVENT = "ball_event"
+    BALL_EVENT = "ball_event"   # ball was thrown (DIELL ball-detect or sim)
+    FOUL_EVENT = "foul_event"   # foul lamp lit (AL-ZARD foul circuit input)
     HEARTBEAT = "heartbeat"
     CYCLE = "cycle"
     OPEN_LANE = "open_lane"
@@ -57,6 +85,13 @@ class Msg:
     RESET = "reset"
     POWER_ON = "power_on"
     POWER_OFF = "power_off"
+
+# Lane-id → True if a foul has been flagged for the next ball on that
+# lane. The flag is set by FOUL_EVENT, consumed (and cleared) by the
+# next BALL_EVENT. This separates "player crossed the foul line" from
+# "player rolled the ball" — they're distinct signals from different
+# physical sensors (AL-ZARD foul circuit vs DIELL ball-detect).
+pending_foul: dict = {}
 
 def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
 def decode(r): return json.loads(r)
@@ -88,18 +123,21 @@ async def handle_node(websocket):
 
             elif mt == Msg.BALL_EVENT:
                 lane = msg.get("lane")
-                with state_lock:
-                    ls = get_or_create_lane(lane)
-                    n = ball_counters.get(lane, 0)
-                    pin_mask = PIN_MASK_CYCLE[n % len(PIN_MASK_CYCLE)]
-                    ball_counters[lane] = n + 1
-                    bowl = ls.record_ball(pin_mask)
-                    save_lanes(lane_scoring, ball_counters)  # write-through
-                if bowl:
-                    pd = 10 - bin(pin_mask).count("1")
-                    log.info(f"Lane {lane}: {ls.current_bowler.name if ls.current_bowler else '?'}"
-                             f" → {bowl.display} ({pd} pins)")
+                _process_ball_event(lane)
                 await websocket.send(encode(Msg.CYCLE, lane=lane))
+
+            elif mt == Msg.FOUL_EVENT:
+                lane = msg.get("lane")
+                # Flag the next ball on this lane as a foul. If a ball
+                # event comes within a reasonable window, it'll consume
+                # this flag and score as a foul. If no ball arrives
+                # (false trigger, player stepped over without throwing),
+                # the flag stays set until the next ball — which is
+                # arguably wrong but matches AMF/Brunswick foul semantics
+                # where the foul lamp latches until ball-detect fires.
+                with state_lock:
+                    pending_foul[lane] = True
+                log.info(f"Lane {lane}: FOUL flagged (will apply to next ball)")
 
             elif mt == Msg.HEARTBEAT:
                 pass
@@ -143,6 +181,7 @@ DISPLAY_HTML = """<!doctype html>
   .controls button.reset { border-color: #6a5b2d; color: #e8d8b8; }
   .controls button.power-on { border-color: #2d5a6a; color: #b8d8e8; }
   .controls button.power-off { border-color: #4a4a4a; color: #aaa; }
+  .controls button.trigger-ball { border-color: #5a4a8a; color: #c8b8e8; }
   .lane { background: #1a1a1a; border-radius: 12px; padding: 1.2em; margin: 1em 0; }
   .lane-header { display: flex; justify-content: space-between; align-items: baseline;
                  margin-bottom: 0.8em; }
@@ -239,6 +278,7 @@ window.addEventListener('load', refresh);
     <button class="reset" onclick="action(21, 'reset')">Reset Pins</button>
     <button class="power-on" onclick="action(21, 'power-on')">Power On</button>
     <button class="power-off" onclick="action(21, 'power-off')">Power Off</button>
+    <button class="trigger-ball" onclick="action(21, 'trigger-ball')">Trigger Ball</button>
   </div>
   <div class="controls">
     <label>Lane 22:</label>
@@ -247,6 +287,7 @@ window.addEventListener('load', refresh);
     <button class="reset" onclick="action(22, 'reset')">Reset Pins</button>
     <button class="power-on" onclick="action(22, 'power-on')">Power On</button>
     <button class="power-off" onclick="action(22, 'power-off')">Power Off</button>
+    <button class="trigger-ball" onclick="action(22, 'trigger-ball')">Trigger Ball</button>
   </div>
   <div id="lanes" class="empty">Loading...</div>
   <div id="toast" class="toast"></div>
@@ -265,7 +306,7 @@ class HttpHandler(BaseHTTPRequestHandler):
             self._send(404, 'text/plain', b'Not found')
 
     def do_POST(self):
-        # /api/lane/{N}/{open|close|reset}
+        # /api/lane/{N}/{open|close|reset|power-on|power-off|trigger-ball}
         parts = self.path.strip('/').split('/')
         if len(parts) == 4 and parts[0] == 'api' and parts[1] == 'lane':
             try:
@@ -273,6 +314,25 @@ class HttpHandler(BaseHTTPRequestHandler):
                 action = parts[3]
             except ValueError:
                 return self._send(400, 'application/json', b'{"error":"bad lane"}')
+
+            # trigger-ball is special: synthesizes a BALL_EVENT in-process
+            # rather than sending a command to the Pi. Used for bench-testing
+            # foul semantics without DIELL ball-detect sensors wired.
+            # The CYCLE message still gets sent to the Pi so the relay clicks.
+            if action == 'trigger-ball':
+                bowl, pin_mask, foul = _process_ball_event(lane)
+                # Send CYCLE to the Pi so its relay clicks like a real bowl
+                cycle_msg = encode(Msg.CYCLE, lane=lane)
+                sent = send_to_all_nodes(cycle_msg)
+                payload = {
+                    "sent_to": sent,
+                    "lane": lane,
+                    "pin_mask": pin_mask,
+                    "foul": foul,
+                    "display": bowl.display if bowl else None,
+                }
+                return self._send(200, 'application/json',
+                                  json.dumps(payload).encode('utf-8'))
 
             type_map = {
                 'open': Msg.OPEN_LANE,
