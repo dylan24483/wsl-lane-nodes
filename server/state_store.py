@@ -174,4 +174,4 @@ if __name__ == '__main__':
                   f"ball_counter={bc.get(lane_id, 0)}")
             for b in lane.bowlers:
                 print(f"    - {b.name}: frame {b.current_frame_idx + 1}, "
-                      f"score {b.frames[-1].running_total if b.frames else 0}")
+                      f"score {b.current_total}")
