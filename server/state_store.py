@@ -31,18 +31,28 @@ CAVEATS:
 from __future__ import annotations
 
 import logging
+import os
 import pickle
 import sqlite3
+import sys
 import threading
 import time
 from pathlib import Path
+
+# Make wsl_scoring_engine importable regardless of how this module is
+# entered. The pickled blobs reference wsl_scoring_engine.LaneScoring,
+# and pickle.loads needs to be able to find that class on sys.path.
+# lane_node_server.py adds the same path before importing us, but the
+# state_store.py __main__ CLI is a separate entry point that doesn't.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 log = logging.getLogger('state_store')
 
 # Default DB location — sits alongside the repo for easy inspection.
 # Override via STATE_DB_PATH env var if you want it elsewhere.
-import os
-DEFAULT_DB_PATH = Path.home() / "wsl-lane-nodes" / "lane_state.db"
+DEFAULT_DB_PATH = _REPO_ROOT / "lane_state.db"
 DB_PATH = Path(os.environ.get("STATE_DB_PATH", DEFAULT_DB_PATH))
 
 # Threading lock for SQLite write access. The server runs the HTTP
