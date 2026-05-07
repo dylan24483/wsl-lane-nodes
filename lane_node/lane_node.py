@@ -16,6 +16,16 @@ import time
 from gpiozero import Button, LED
 from websockets.asyncio.client import connect
 
+# pin_detect is the OpenCV pipeline that classifies the 10 pin spots
+# into a 10-bit pin_mask. Until the T-Camera + USB capture dongle is
+# on the bench, we use a stub that returns synthetic masks from a
+# fixed rotation. When the camera is wired, capture_frame() runs
+# and detect_pins() processes a real frame.
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
+import pin_detect
+
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s')
 log = logging.getLogger('lane_node')
@@ -68,6 +78,31 @@ class Msg:
 
 def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
 def decode(r): return json.loads(r)
+
+# Pin-detect stub state — increments on each call to mimic the rotation
+# the server's PIN_MASK_CYCLE currently does. Replace with real camera
+# capture once the bench has a T-Camera + USB dongle wired.
+_STUB_PIN_MASKS = [0b0000011111, 0, 0, 0b0001111111, 0b0000001111, 0]
+_stub_counter = {lane_id: 0 for lane_id in LANES}
+
+def detect_current_pins(lane_id: int) -> int:
+    """Return the current pin_mask for the lane.
+
+    With camera wired: cv2.VideoCapture → pin_detect.detect_pins → mask.
+    Without camera (current state): rotates through synthetic masks
+    that mimic the server's old PIN_MASK_CYCLE. This keeps bench
+    behavior identical to the pre-integration state — just with the
+    pin_mask sourced on the Pi side instead of the server side, which
+    is the production architecture.
+    """
+    # TODO: when camera is on bench, replace this stub with:
+    #   frame = pin_detect.capture_frame(camera_handle)
+    #   if frame is None: return 0x3FF  # all pins, safe default
+    #   result = pin_detect.detect_pins(frame)
+    #   return result.pin_mask
+    n = _stub_counter[lane_id]
+    _stub_counter[lane_id] = n + 1
+    return _STUB_PIN_MASKS[n % len(_STUB_PIN_MASKS)]
 
 event_queue = None
 main_loop = None

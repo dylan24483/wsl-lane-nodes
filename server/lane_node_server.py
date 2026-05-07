@@ -48,9 +48,15 @@ def get_or_create_lane(lane_id, bowlers=None):
 PIN_MASK_CYCLE = [0b0000011111, 0, 0, 0b0001111111, 0b0000001111, 0]
 
 
-def _process_ball_event(lane):
+def _process_ball_event(lane, pin_mask=None):
     """Record a ball for the given lane. Shared by WS-handler and the
     desk simulator's Trigger-Ball HTTP endpoint.
+
+    pin_mask: 10-bit mask of pins still standing AFTER the ball. In
+    production, computed on the Pi side by pin_detect from the
+    T-Camera frame. If None (synthetic Trigger Ball without a real
+    Pi-side detection chain), fall back to PIN_MASK_CYCLE rotation
+    so bench-test behavior is unchanged.
 
     Consumes any pending foul flag — if FOUL_EVENT was received between
     the previous ball and this one, this bowl gets recorded as a foul
@@ -62,7 +68,8 @@ def _process_ball_event(lane):
     with state_lock:
         ls = get_or_create_lane(lane)
         n = ball_counters.get(lane, 0)
-        pin_mask = PIN_MASK_CYCLE[n % len(PIN_MASK_CYCLE)]
+        if pin_mask is None:
+            pin_mask = PIN_MASK_CYCLE[n % len(PIN_MASK_CYCLE)]
         ball_counters[lane] = n + 1
         foul = pending_foul.pop(lane, False)
         bowl = ls.record_ball(pin_mask, foul=foul)
@@ -71,7 +78,7 @@ def _process_ball_event(lane):
         pd = 10 - bin(pin_mask).count("1")
         foul_marker = " [FOUL]" if foul else ""
         log.info(f"Lane {lane}: {ls.current_bowler.name if ls.current_bowler else '?'}"
-                 f" → {bowl.display} ({pd} pins){foul_marker}")
+                 f" → {bowl.display} ({pd} pins, mask={pin_mask:#012b}){foul_marker}")
     return bowl, pin_mask, foul
 
 # Bump this whenever a message type's shape changes incompatibly.
@@ -130,7 +137,11 @@ async def handle_node(websocket):
 
             elif mt == Msg.BALL_EVENT:
                 lane = msg.get("lane")
-                _process_ball_event(lane)
+                # Pi-provided pin_mask if pin_detect ran; None means
+                # the Pi didn't include it (no camera, no DIELL chain
+                # yet) and we fall back to PIN_MASK_CYCLE simulation.
+                pin_mask = msg.get("pin_mask")
+                _process_ball_event(lane, pin_mask=pin_mask)
                 await websocket.send(encode(Msg.CYCLE, lane=lane))
 
             elif mt == Msg.FOUL_EVENT:
