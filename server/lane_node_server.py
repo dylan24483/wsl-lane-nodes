@@ -33,7 +33,9 @@ state_lock = threading.Lock()
 # for the failure-handling.
 lane_scoring, ball_counters = load_lanes()
 clients = {}
+client_metadata = {}  # node_id -> {"lanes": [...], "protocol_version": N, "connected_at": float}
 main_loop = None
+SERVER_START_TIME = time.time()
 
 def get_or_create_lane(lane_id, bowlers=None):
     if lane_id not in lane_scoring:
@@ -126,6 +128,11 @@ async def handle_node(websocket):
                 node_lanes = msg.get("lanes") or (
                     [msg["lane"]] if "lane" in msg else []
                 )
+                client_metadata[node_id] = {
+                    "lanes": node_lanes,
+                    "protocol_version": node_version,
+                    "connected_at": time.time(),
+                }
                 if node_version != PROTOCOL_VERSION:
                     log.warning(
                         f"Node {node_id!r} protocol version mismatch: "
@@ -164,6 +171,7 @@ async def handle_node(websocket):
     finally:
         if node_id and clients.get(node_id) is websocket:
             del clients[node_id]
+            client_metadata.pop(node_id, None)
             log.info(f"Node {node_id!r} disconnected")
 
 def send_to_all_nodes(msg_str):
@@ -320,6 +328,42 @@ class HttpHandler(BaseHTTPRequestHandler):
             with state_lock:
                 snap = {str(l): ls.to_scoring_response() for l, ls in lane_scoring.items()}
             self._send(200, 'application/json', json.dumps(snap).encode('utf-8'))
+        elif self.path == '/api/health':
+            now = time.time()
+            uptime_sec = now - SERVER_START_TIME
+            with state_lock:
+                lanes_summary = {
+                    str(l): {
+                        "bowlers": [b.name for b in ls.bowlers],
+                        "current_frame": (ls.current_bowler.current_frame_idx + 1
+                                          if ls.current_bowler else None),
+                        "ball_counter": ball_counters.get(l, 0),
+                        "scores": {b.name: b.current_total for b in ls.bowlers},
+                    }
+                    for l, ls in lane_scoring.items()
+                }
+                pending_fouls = list(pending_foul.keys())
+            health = {
+                "ok": True,
+                "uptime_sec": round(uptime_sec, 1),
+                "uptime_human": f"{int(uptime_sec // 3600)}h {int((uptime_sec % 3600) // 60)}m {int(uptime_sec % 60)}s",
+                "protocol_version": PROTOCOL_VERSION,
+                "nodes_connected": len(clients),
+                "nodes": [
+                    {
+                        "node_id": nid,
+                        "lanes": meta["lanes"],
+                        "protocol_version": meta["protocol_version"],
+                        "connected_for_sec": round(now - meta["connected_at"], 1),
+                    }
+                    for nid, meta in client_metadata.items()
+                ],
+                "lanes": lanes_summary,
+                "pending_fouls": pending_fouls,
+                "state_db": str(__import__('state_store').DB_PATH),
+            }
+            self._send(200, 'application/json',
+                       json.dumps(health, indent=2).encode('utf-8'))
         else:
             self._send(404, 'text/plain', b'Not found')
 
