@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, '/home/pi/wsl-lane-nodes')
 from wsl_scoring_engine import LaneScoring
+from state_store import save_lanes, load_lanes
 
 from websockets.asyncio.server import serve
 
@@ -19,8 +20,11 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger('server')
 
 state_lock = threading.Lock()
-lane_scoring = {}
-ball_counters = {}
+# Restore lane scoring + ball counters from disk so server restarts
+# don't wipe in-progress games. If the load fails (no file, corrupted,
+# class-shape mismatch), we start fresh — see state_store.load_lanes
+# for the failure-handling.
+lane_scoring, ball_counters = load_lanes()
 clients = {}
 main_loop = None
 
@@ -90,6 +94,7 @@ async def handle_node(websocket):
                     pin_mask = PIN_MASK_CYCLE[n % len(PIN_MASK_CYCLE)]
                     ball_counters[lane] = n + 1
                     bowl = ls.record_ball(pin_mask)
+                    save_lanes(lane_scoring, ball_counters)  # write-through
                 if bowl:
                     pd = 10 - bin(pin_mask).count("1")
                     log.info(f"Lane {lane}: {ls.current_bowler.name if ls.current_bowler else '?'}"
@@ -286,6 +291,7 @@ class HttpHandler(BaseHTTPRequestHandler):
                     lane_scoring.pop(lane, None)
                     ball_counters.pop(lane, None)
                     get_or_create_lane(lane, bowlers=['ALICE', 'BOB'])
+                    save_lanes(lane_scoring, ball_counters)  # persist reset
                 log.info(f"OPEN_LANE: reset scoring for lane {lane} with new bowlers")
 
             msg = encode(msg_type, lane=lane)
@@ -323,3 +329,11 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         log.info("Shutting down.")
+    finally:
+        # Final save on graceful shutdown — write-through during normal
+        # operation should mean the on-disk state is already current,
+        # but this catches the case where a state mutation happened
+        # between the last write-through and shutdown signal.
+        with state_lock:
+            save_lanes(lane_scoring, ball_counters)
+        log.info("Final state saved.")
