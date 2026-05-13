@@ -53,9 +53,11 @@ Digital lane control signals (Pi GPIO → AEDIKO IN, AL-ZARD O → Pi GPIO) do N
    ┌─ AC channel 1 ─────────────────────────────────────┐
    │  TB_AC_IN_CH1.1 (24VAC L1) ─► DA1.A                │
    │                              DA1.K ─► CA1.+ ──► TB_DC_OUT_CH1.1
+   │                                  ╰─► Rb1.1 ───────┘   (bleeder, parallel to CA1)
    │  TB_AC_IN_CH1.2 (24VAC L2) ────────► CA1.− ──► TB_DC_OUT_CH1.2
+   │                                  ╰─► Rb1.2 ───────┘
    └────────────────────────────────────────────────────┘
-   (repeat 3×: channels 2, 3, 4 — each with its own pair-isolated return)
+   (repeat 3×: channels 2, 3, 4 — each with its own pair-isolated return + bleeder)
 ```
 
 ---
@@ -78,7 +80,9 @@ N-channel MOSFET (AO3400 SOT-23) gates the AEDIKO PWR V− return path. AEDIKO V
 
 ### 3c. AC interposer (4 independent channels)
 
-Each channel: 1× 1N4007 (M7 SMA) half-wave rectifier in series with the L1 line, 1× 10µF/50V aluminum electrolytic across DC+ and DC−. L2 ties directly to DC− (no rectification on the return).
+Each channel: 1× 1N4007 (M7 SMA) half-wave rectifier in series with the L1 line, 1× 10µF/50V aluminum electrolytic across DC+ and DC−, 1× 100kΩ bleeder resistor in parallel with the cap. L2 ties directly to DC− (no rectification on the return).
+
+**Why the bleeder (Rb1..Rb4):** without a discharge path, the cap holds charge after the AC source goes away (microamp leakage only ⟹ minute-scale retention). In normal operation the AL-ZARD draws ~10mA and dominates discharge (~25ms decay to de-assert threshold), so the bleeder is invisible — but if the AL-ZARD is disconnected during service or swapped for a higher-impedance module later, the bleeder ensures the cap reaches sub-volt within ~5s (τ=RC=100k×10µF=1s, 5τ ≈ 99% discharge). 6.25mW dissipation per channel, 0.25mA continuous draw on the AC bus. Per Codex review 2026-05-13.
 
 **Voltage math** (verified at bench 2026-05-11):
 - AC source measured at lane 22: ~28V RMS, ~40V peak
@@ -117,17 +121,17 @@ Net names use UPPER_SNAKE. Each line lists every pin on that net.
 | `LED2_ANODE_DRIVE` | R9.2, LED2.A |
 | `IC1.5` (NE555 CTRL) | leave open OR add optional CFILT 10nF MLCC to GND for noise immunity (recommended) |
 | AC channel 1: `AC_CH1_L1` | TB_AC_IN_CH1.1, DA1.A |
-| AC channel 1: `DC_CH1_POS` | DA1.K, CA1.+, TB_DC_OUT_CH1.1 |
-| AC channel 1: `CH1_RETURN` | TB_AC_IN_CH1.2, CA1.−, TB_DC_OUT_CH1.2 |
+| AC channel 1: `DC_CH1_POS` | DA1.K, CA1.+, Rb1.1, TB_DC_OUT_CH1.1 |
+| AC channel 1: `CH1_RETURN` | TB_AC_IN_CH1.2, CA1.−, Rb1.2, TB_DC_OUT_CH1.2 |
 | AC channel 2: `AC_CH2_L1` | TB_AC_IN_CH2.1, DA2.A |
-| AC channel 2: `DC_CH2_POS` | DA2.K, CA2.+, TB_DC_OUT_CH2.1 |
-| AC channel 2: `CH2_RETURN` | TB_AC_IN_CH2.2, CA2.−, TB_DC_OUT_CH2.2 |
+| AC channel 2: `DC_CH2_POS` | DA2.K, CA2.+, Rb2.1, TB_DC_OUT_CH2.1 |
+| AC channel 2: `CH2_RETURN` | TB_AC_IN_CH2.2, CA2.−, Rb2.2, TB_DC_OUT_CH2.2 |
 | AC channel 3: `AC_CH3_L1` | TB_AC_IN_CH3.1, DA3.A |
-| AC channel 3: `DC_CH3_POS` | DA3.K, CA3.+, TB_DC_OUT_CH3.1 |
-| AC channel 3: `CH3_RETURN` | TB_AC_IN_CH3.2, CA3.−, TB_DC_OUT_CH3.2 |
+| AC channel 3: `DC_CH3_POS` | DA3.K, CA3.+, Rb3.1, TB_DC_OUT_CH3.1 |
+| AC channel 3: `CH3_RETURN` | TB_AC_IN_CH3.2, CA3.−, Rb3.2, TB_DC_OUT_CH3.2 |
 | AC channel 4: `AC_CH4_L1` | TB_AC_IN_CH4.1, DA4.A |
-| AC channel 4: `DC_CH4_POS` | DA4.K, CA4.+, TB_DC_OUT_CH4.1 |
-| AC channel 4: `CH4_RETURN` | TB_AC_IN_CH4.2, CA4.−, TB_DC_OUT_CH4.2 |
+| AC channel 4: `DC_CH4_POS` | DA4.K, CA4.+, Rb4.1, TB_DC_OUT_CH4.1 |
+| AC channel 4: `CH4_RETURN` | TB_AC_IN_CH4.2, CA4.−, Rb4.2, TB_DC_OUT_CH4.2 |
 
 **Total net count:** 12 watchdog/output + 3 nets × 4 AC channels = 24 nets.
 
@@ -150,6 +154,7 @@ All parts SMT except screw terminals (through-hole, 5.08mm pitch). LCSC codes ar
 | C2 | 1 | MLCC, NE555 V+ bypass | 0805 | 0.1µF, 50V, X7R | C49678 | Basic |
 | CFILT (optional) | 1 | MLCC, NE555 CTRL pin filter | 0805 | 10nF, 50V, X7R | C1633 | Basic |
 | R1 | 1 | Timing resistor | 0805 | 100kΩ, 1% | C17407 | Basic |
+| Rb1..Rb4 | 4 | AC interposer bleeder | 0805 | 100kΩ, 1% | C17407 (same as R1) | Basic |
 | R2 | 1 | TRIG pullup | 0805 | 10kΩ, 1% | C17414 | Basic |
 | R3 | 1 | Q1 gate series | 0805 | 1kΩ, 1% | C17513 | Basic |
 | R4 | 1 | Q1 gate pulldown | 0805 | 10kΩ, 1% | C17414 | Basic |
@@ -232,6 +237,7 @@ The board lives in a field-service context. Silkscreen everything:
 5. **D1, D2 are switching diodes, NOT 1N4007.** The 1N4007's slow recovery (~3µs) is too sluggish for clean diode-OR isolation at the NE555's MHz-class internal speeds. 1N4148W (or similar fast switching) is correct.
 6. **NE555 CTRL pin (IC1.5):** leave open OR add CFILT 10nF MLCC to GND. The optional filter cap improves immunity to power-rail noise; cheap insurance.
 7. **Each AC channel's return is floating** relative to other channels and to watchdog GND. Do NOT pour a continuous GND plane across the AC interposer section. Use channel-isolated return traces (or zoned pours).
+7a. **Bleeders Rb1..Rb4** sit in parallel with CA1..CA4 (same net pair: `DC_CHx_POS` and `CHx_RETURN`). Same physical channel zone, no separate isolation considerations.
 8. **Q2 power dissipation:** worst-case ~9mW (560mA × 28mΩ). No heatsink needed. But add a small thermal copper pad anyway — costs nothing on a 2-layer board.
 9. **Test points (1mm round pads, silkscreened `TP1`..`TP4`):**
    - `TP1` on Q1_DRAIN (probe the diode-OR node, watch kick behavior on a scope)
