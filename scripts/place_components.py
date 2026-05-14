@@ -66,12 +66,16 @@ PLACEMENT = {
     'J2':  (8, 45, 90),    # TB_AEDIKO_PWR (middle)
     'J3':  (8, 78, 90),    # TB_KICK  (bottom)
 
-    # ---- D_PROT: reverse-polarity Schottky immediately beside J1.
+    # ---- D_PROT: reverse-polarity Schottky.
     # SKiDL assigns refdes D9 (defined last among diode-prefix parts).
-    # Rotation 180 puts anode (pin 2) on LEFT toward J1.1, cathode (pin 1)
-    # on RIGHT toward the rest of VCC_5V. VCC_5V_RAW trace from J1 to D9.A
-    # is a straight ~5mm horizontal stub.
-    'D9':  (15, 22, 180),  # SS14 Schottky, A toward J1, K toward VCC_5V loads
+    # Originally placed at (15, 22) immediately right of J1, but that
+    # caused courtyard overlaps with both J1 (body extends to x=12) AND
+    # channel 1 D3 at x=20. Moved DOWN to (10, 35) — in the gap between
+    # J1 (y=22) and J2 (y=45), at x=10 which is OUTSIDE the B.Cu keepout
+    # zone (gap_J1_to_ch1 starts at x=14). VCC_5V_RAW trace is ~13mm
+    # diagonal from J1.1 — still short and clean.
+    # Rotation 180: A on LEFT toward J1 side, K on RIGHT toward VCC_5V loads.
+    'D9':  (10, 35, 180),  # SS14 Schottky
 
     # ---- AC interposer channels: 4 vertical columns aligned with terminals
     # All rotated 90° so pads run TOP/BOTTOM (in line with the vertical
@@ -115,7 +119,9 @@ PLACEMENT = {
     # Pin layout (rotation 0): VCC=pin8 top-left, CTRL=pin5 top-right, THRES=pin6
     # top-mid-right, DISCH=pin7 top-mid-left, TRIG=pin2 bottom-mid-left.
     'C1':  (30, 58, 0),    # 100uF timing — directly above U1.7/U1.6 (THRES/DISCH)
-    'C2':  (28, 65, 0),    # 0.1uF VCC bypass — left of U1.8 (VCC) and U1.1 (GND)
+    # C2 was at (28, 65) but pad 2 (GND, at x=28.95) was 0.7mm from U1 pin 2
+    # (TRIG, at x=29.525) — DRC short violation. Pushed left 4mm to clear.
+    'C2':  (24, 65, 0),    # 0.1uF VCC bypass — left of U1.8 (VCC) and U1.1 (GND)
     'C3':  (37, 60, 0),    # 10nF CTRL filter — right of U1.5 (CTRL)
 
     'R1':  (32, 52, 0),    # 100k timing pullup — directly above C1, short TIMING_NODE
@@ -280,6 +286,10 @@ def create_test_pad(board, ref, net_name, x, y):
     fp.SetReference(ref)
     fp.SetValue(net_name)
     fp.SetPosition(pcbnew.VECTOR2I_MM(x, y))
+    # Set FPID so FreeRouting's DSN export has a valid image_id for this
+    # footprint. Without it, the .ses comes back with an unparseable empty
+    # (component ) line.
+    fp.SetFPID(pcbnew.LIB_ID("custom", "test_pad_1.5mm"))
 
     pad = pcbnew.PAD(fp)
     pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
