@@ -276,39 +276,33 @@ TEST_PADS = [
 ]
 
 
-def create_test_pad(board, ref, net_name, x, y):
-    """Create a 1.5mm round SMD test pad on F.Cu at (x,y), wired to net_name.
+TESTPOINT_LIB = r"C:\Program Files\KiCad\10.0\share\kicad\footprints\TestPoint.pretty"
+TESTPOINT_FP = "TestPoint_Pad_1.5x1.5mm"
 
-    Wraps the pad in a 'footprint' so KiCad treats it as a placeable item
-    with a refdes. Pad exposes copper through soldermask for probing.
+
+def create_test_pad(board, ref, net_name, x, y):
+    """Load the standard KiCad TestPoint footprint, place at (x,y), tie to net.
+
+    Earlier attempts built the footprint by hand with SetFPID('custom:...').
+    KiCad's DSN export drops FPIDs that don't resolve to a real library,
+    leaving '(image "")' which crashes the .ses re-import. Loading a real
+    library footprint avoids this entirely.
     """
-    fp = pcbnew.FOOTPRINT(board)
+    fp = pcbnew.FootprintLoad(TESTPOINT_LIB, TESTPOINT_FP)
+    if fp is None:
+        raise RuntimeError(f"Could not load TestPoint footprint from {TESTPOINT_LIB}")
     fp.SetReference(ref)
     fp.SetValue(net_name)
     fp.SetPosition(pcbnew.VECTOR2I_MM(x, y))
-    # Set FPID so FreeRouting's DSN export has a valid image_id for this
-    # footprint. Without it, the .ses comes back with an unparseable empty
-    # (component ) line.
-    fp.SetFPID(pcbnew.LIB_ID("custom", "test_pad_1.5mm"))
 
-    pad = pcbnew.PAD(fp)
-    pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
-    pad.SetSize(pcbnew.VECTOR2I_MM(1.5, 1.5))
-    pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
-    # F.Cu + F.Mask (mask aperture exposes the copper); skip F.Paste
-    layer_set = pcbnew.LSET()
-    layer_set.AddLayer(pcbnew.F_Cu)
-    layer_set.AddLayer(pcbnew.F_Mask)
-    pad.SetLayerSet(layer_set)
-    pad.SetNumber("1")
-
+    # The loaded TestPoint footprint already has its pad. Just wire it up.
     net = board.FindNet(net_name)
-    if net:
-        pad.SetNet(net)
-    else:
+    if net is None:
         print(f"  WARN: net '{net_name}' not found for {ref}")
+    else:
+        for pad in fp.Pads():
+            pad.SetNet(net)
 
-    fp.Add(pad)
     board.Add(fp)
 
 
