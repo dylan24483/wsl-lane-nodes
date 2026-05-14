@@ -190,6 +190,65 @@ def add_mounting_holes(board, positions):
 
 
 # ----------------------------------------------------------------------
+# B.Cu keepout zones in gap areas between AC channel columns (per Codex
+# rev A pass-4 audit). AC channels are at x=20, 40, 60, 80. Adding
+# bottom-layer keepouts in the gaps forces FreeRouting to keep AC return
+# nets within their channel columns rather than running them across the
+# board on B.Cu. F.Cu unaffected, so watchdog routes are not blocked.
+# ----------------------------------------------------------------------
+
+BCU_KEEPOUT_GAPS = [
+    # (x_min, x_max, name)
+    (14, 18, 'gap_J1_to_ch1'),    # left edge: between J1-J3 column and ch1
+    (23, 37, 'gap_ch1_to_ch2'),
+    (43, 57, 'gap_ch2_to_ch3'),
+    (63, 77, 'gap_ch3_to_ch4'),
+    (83, 92, 'gap_ch4_to_right'), # right edge
+]
+KEEPOUT_Y_MIN = 5
+KEEPOUT_Y_MAX = 95
+
+
+def add_bcu_keepouts(board, gaps):
+    """Add B.Cu Rule Areas in the named gap zones. Idempotent."""
+    # Remove any existing rule areas from previous runs
+    to_remove = []
+    for zone in board.Zones():
+        try:
+            if zone.GetIsRuleArea():
+                to_remove.append(zone)
+        except AttributeError:
+            continue
+    for zone in to_remove:
+        board.Remove(zone)
+
+    added = 0
+    for x_min, x_max, _name in gaps:
+        zone = pcbnew.ZONE(board)
+        zone.SetLayer(pcbnew.B_Cu)
+        zone.SetIsRuleArea(True)
+        zone.SetDoNotAllowTracks(True)
+        zone.SetDoNotAllowVias(True)
+        # KiCad 10 renamed CopperPour -> ZoneFills
+        if hasattr(zone, 'SetDoNotAllowZoneFills'):
+            zone.SetDoNotAllowZoneFills(True)
+        # Pads/footprints aren't expected in these zones anyway
+        zone.SetDoNotAllowPads(False)
+        zone.SetDoNotAllowFootprints(False)
+
+        # 4-corner rectangle outline
+        zone.AppendCorner(pcbnew.VECTOR2I_MM(x_min, KEEPOUT_Y_MIN), 0)
+        zone.AppendCorner(pcbnew.VECTOR2I_MM(x_max, KEEPOUT_Y_MIN), 0)
+        zone.AppendCorner(pcbnew.VECTOR2I_MM(x_max, KEEPOUT_Y_MAX), 0)
+        zone.AppendCorner(pcbnew.VECTOR2I_MM(x_min, KEEPOUT_Y_MAX), 0)
+        # Polygon auto-closes; no explicit Fix() needed in KiCad 10 API
+
+        board.Add(zone)
+        added += 1
+    return added
+
+
+# ----------------------------------------------------------------------
 # Test pads (per Codex rev A audit) — single SMD pad per net, exposed copper
 # for probing. 14 pads total: 6 critical watchdog nets + 8 per-channel
 # (DC_POS + RETURN per AC channel).
@@ -369,6 +428,9 @@ def main():
 
     mounts_added = add_mounting_holes(board, MOUNTING_HOLE_POSITIONS)
     print(f"Added {mounts_added} M3 mounting holes at corners.")
+
+    keepouts_added = add_bcu_keepouts(board, BCU_KEEPOUT_GAPS)
+    print(f"Added {keepouts_added} B.Cu keepout zones in AC channel gaps.")
 
     tps_added = add_test_pads(board, TEST_PADS)
     print(f"Added {tps_added} test pads.")
