@@ -68,39 +68,45 @@ PLACEMENT = {
 
     # ---- D_PROT: reverse-polarity Schottky immediately beside J1.
     # SKiDL assigns refdes D9 (defined last among diode-prefix parts).
-    # At (15, 22) the SMA body sits 0.5mm clear of J1's right edge,
-    # making VCC_5V_RAW only a few mm long (per Codex rev A audit).
-    'D9':  (15, 22, 0),    # SS14 Schottky, SMA package
+    # Rotation 180 puts anode (pin 2) on LEFT toward J1.1, cathode (pin 1)
+    # on RIGHT toward the rest of VCC_5V. VCC_5V_RAW trace from J1 to D9.A
+    # is a straight ~5mm horizontal stub.
+    'D9':  (15, 22, 180),  # SS14 Schottky, A toward J1, K toward VCC_5V loads
 
     # ---- AC interposer channels: 4 vertical columns aligned with terminals
-    # Each column has D (top, near DC_OUT) -> C (middle) -> R (bottom)
-    # The 50mm vertical run from R to AC_IN is clear of watchdog parts.
+    # All rotated 90° so pads run TOP/BOTTOM (in line with the vertical
+    # column traces) instead of LEFT/RIGHT. K (cathode, pin 1) ends up at
+    # top toward DC_OUT, A (anode) at bottom toward AC_IN. + side of cap
+    # at top toward DC_POS, - at bottom toward CH_RETURN.
     # Channel 1 (x=20, below J8)
-    'D3':  (20, 18, 0),    # M7 rectifier
-    'C4':  (20, 30, 0),    # 10uF smoothing
-    'R9':  (20, 42, 0),    # 100k bleeder
+    'D3':  (20, 18, 90),   # M7 rectifier, vertical, K up toward J8
+    'C4':  (20, 30, 90),   # 10uF smoothing, + up toward DC_POS
+    'R9':  (20, 42, 90),   # 100k bleeder, pads aligned to column trace
     # Channel 2 (x=40, below J9)
-    'D4':  (40, 18, 0),
-    'C5':  (40, 30, 0),
-    'R10': (40, 42, 0),
+    'D4':  (40, 18, 90),
+    'C5':  (40, 30, 90),
+    'R10': (40, 42, 90),
     # Channel 3 (x=60, below J10)
-    'D5':  (60, 18, 0),
-    'C6':  (60, 30, 0),
-    'R11': (60, 42, 0),
+    'D5':  (60, 18, 90),
+    'C6':  (60, 30, 90),
+    'R11': (60, 42, 90),
     # Channel 4 (x=80, below J11)
-    'D6':  (80, 18, 0),
-    'C7':  (80, 30, 0),
-    'R12': (80, 42, 0),
+    'D6':  (80, 18, 90),
+    'C7':  (80, 30, 90),
+    'R12': (80, 42, 90),
 
     # ---- Watchdog cluster (y=55-80, fills the gaps between channel columns)
     # Critical clearance check: channel return traces run vertically at
     # x=20, 40, 60, 80 from y=42 down to y=92. Watchdog parts MUST sit
     # in the x-gaps (x≈10, 28, 48, 70) to avoid blocking these traces.
 
-    'U1':  (32, 65, 0),    # NE555 (between channel 1 and 2 columns)
+    'U1':  (32, 66, 0),    # NE555 (moved down 1mm for C1 courtyard clearance)
 
-    'D1':  (45, 62, 0),    # 1N4148WS D1 (between U1 and Q1, diode-OR to TIMING_NODE)
-    'D2':  (45, 68, 0),    # 1N4148WS D2 (between U1 and Q2, diode-OR to TRIG)
+    # D1/D2 rotated 180 so anode (pin 2) faces U1 left side (TIMING_NODE/TRIG),
+    # cathode (pin 1) faces Q1 right side (Q1_DRAIN). Shortens the critical
+    # noise-sensitive TIMING_NODE and NE555_TRIG traces.
+    'D1':  (45, 62, 180),  # 1N4148WS D1 (A toward U1 TIMING_NODE, K toward Q1_DRAIN)
+    'D2':  (45, 68, 180),  # 1N4148WS D2 (A toward U1 TRIG, K toward Q1_DRAIN)
 
     'Q1':  (52, 60, 0),    # AO3400 Q1 discharge (between ch2 and ch3 cols)
     'Q2':  (52, 70, 0),    # AO3400 Q2 output
