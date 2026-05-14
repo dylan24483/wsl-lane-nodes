@@ -31,77 +31,90 @@ KICAD_PCB = r"C:\Users\Dylan DeYoung\wsl-lane-nodes\kicad\wsl-phase8a.kicad_pcb"
 BOARD_WIDTH_MM = 100
 BOARD_HEIGHT_MM = 100
 
-# Layout: refdes -> (x_mm, y_mm, rotation_degrees)
+# Layout v2: refdes -> (x_mm, y_mm, rotation_degrees)
+#
+# Key insight: align each AC channel's components vertically with its
+# top (DC OUT) and bottom (AC IN) terminals. Channel N components live
+# in the x=20/40/60/80 column above the watchdog, so each channel's
+# DC_POS and CH_RETURN traces run as clean vertical strokes from
+# J(7+N) at the top down through D, C, R to J(3+N) at the bottom.
+# Watchdog cluster occupies the lower half (y=55-80) in the gaps
+# BETWEEN channel columns, so channel return traces (vertical at x=20,
+# 40, 60, 80) pass through the watchdog zone without hitting parts.
+#
 # Zones:
-#   Top edge (y~8):       J8-J11 (DC OUT to AL-ZARD, channels 1-4)
-#   Bottom edge (y~92):   J4-J7  (24VAC IN from foul/2nd-ball lamps, ch 1-4)
+#   Top edge (y~8):       J8-J11 (DC OUT, channels 1-4 left to right)
+#   Bottom edge (y~92):   J4-J7  (24VAC IN, channels 1-4 left to right)
 #   Left edge (x~8):      J1, J2, J3 (TB_PWR_IN, TB_AEDIKO_PWR, TB_KICK)
-#   Interior left:        watchdog cluster (U1, Q1, Q2, D1, D2, C1-C3, R1-R8, LEDs)
-#   Interior right:       4 AC channels stacked vertically (D + C + R per channel)
+#   Upper interior:       4 AC channel columns at x=20, 40, 60, 80
+#   Lower interior:       Watchdog (U1, Q1/Q2, D1/D2, C1-C3, R1-R8, LEDs)
 PLACEMENT = {
-    # ---- Top edge: DC OUT terminals, screws facing up (rotation 0)
-    'J8':  (20, 8, 0),     # Channel 1 DC OUT
-    'J9':  (40, 8, 0),     # Channel 2 DC OUT
-    'J10': (60, 8, 0),     # Channel 3 DC OUT
-    'J11': (80, 8, 0),     # Channel 4 DC OUT
+    # ---- Top edge: DC OUT terminals
+    'J8':  (20, 8, 0),     # Channel 1
+    'J9':  (40, 8, 0),     # Channel 2
+    'J10': (60, 8, 0),     # Channel 3
+    'J11': (80, 8, 0),     # Channel 4
 
-    # ---- Bottom edge: 24VAC IN terminals, screws facing down (180)
-    'J4':  (20, 92, 180),  # Channel 1 AC IN
-    'J5':  (40, 92, 180),  # Channel 2 AC IN
-    'J6':  (60, 92, 180),  # Channel 3 AC IN
-    'J7':  (80, 92, 180),  # Channel 4 AC IN
+    # ---- Bottom edge: 24VAC IN terminals (180° rotation: screws face down)
+    'J4':  (20, 92, 180),  # Channel 1
+    'J5':  (40, 92, 180),  # Channel 2
+    'J6':  (60, 92, 180),  # Channel 3
+    'J7':  (80, 92, 180),  # Channel 4
 
-    # ---- Left edge: Power terminals, screws facing left (90 CCW)
-    'J1':  (8, 28, 90),    # TB_PWR_IN
-    'J2':  (8, 50, 90),    # TB_AEDIKO_PWR
-    'J3':  (8, 72, 90),    # TB_KICK
+    # ---- Left edge: Power terminals (90° rotation: screws face left)
+    'J1':  (8, 22, 90),    # TB_PWR_IN  (top)
+    'J2':  (8, 45, 90),    # TB_AEDIKO_PWR (middle)
+    'J3':  (8, 78, 90),    # TB_KICK  (bottom)
 
-    # ---- Watchdog block (left-center interior)
-    'U1':  (32, 50, 0),    # NE555D
+    # ---- AC interposer channels: 4 vertical columns aligned with terminals
+    # Each column has D (top, near DC_OUT) -> C (middle) -> R (bottom)
+    # The 50mm vertical run from R to AC_IN is clear of watchdog parts.
+    # Channel 1 (x=20, below J8)
+    'D3':  (20, 18, 0),    # M7 rectifier
+    'C4':  (20, 30, 0),    # 10uF smoothing
+    'R9':  (20, 42, 0),    # 100k bleeder
+    # Channel 2 (x=40, below J9)
+    'D4':  (40, 18, 0),
+    'C5':  (40, 30, 0),
+    'R10': (40, 42, 0),
+    # Channel 3 (x=60, below J10)
+    'D5':  (60, 18, 0),
+    'C6':  (60, 30, 0),
+    'R11': (60, 42, 0),
+    # Channel 4 (x=80, below J11)
+    'D6':  (80, 18, 0),
+    'C7':  (80, 30, 0),
+    'R12': (80, 42, 0),
 
-    'Q1':  (44, 45, 0),    # AO3400 Q1 (discharge MOSFET)
-    'Q2':  (44, 55, 0),    # AO3400 Q2 (output MOSFET, low-side coil switch)
+    # ---- Watchdog cluster (y=55-80, fills the gaps between channel columns)
+    # Critical clearance check: channel return traces run vertically at
+    # x=20, 40, 60, 80 from y=42 down to y=92. Watchdog parts MUST sit
+    # in the x-gaps (x≈10, 28, 48, 70) to avoid blocking these traces.
 
-    'D1':  (25, 55, 180),  # 1N4148W D1 (TIMING_NODE side, anode toward TIMING_NODE)
-    'D2':  (25, 45, 180),  # 1N4148W D2 (NE555_TRIG side, anode toward TRIG)
+    'U1':  (32, 65, 0),    # NE555 (between channel 1 and 2 columns)
 
-    'C1':  (22, 35, 0),    # 100uF/16V timing cap
-    'C2':  (35, 38, 0),    # 0.1uF NE555 VCC bypass
-    'C3':  (42, 40, 0),    # 10nF NE555 CTRL filter
+    'D1':  (45, 62, 0),    # 1N4148WS D1 (between U1 and Q1, diode-OR to TIMING_NODE)
+    'D2':  (45, 68, 0),    # 1N4148WS D2 (between U1 and Q2, diode-OR to TRIG)
 
-    'R1':  (28, 28, 0),    # 100k timing pullup
-    'R2':  (35, 28, 0),    # 10k TRIG pullup
+    'Q1':  (52, 60, 0),    # AO3400 Q1 discharge (between ch2 and ch3 cols)
+    'Q2':  (52, 70, 0),    # AO3400 Q2 output
 
-    'R3':  (50, 42, 90),   # 1k Q1 gate series (rotated for vertical orientation near Q1)
-    'R4':  (50, 48, 90),   # 10k Q1 gate pulldown
-    'R5':  (50, 53, 90),   # 1k Q2 gate series (Python R6)
-    'R6':  (50, 59, 90),   # 10k Q2 gate pulldown (Python R7)
+    'C1':  (12, 65, 0),    # 100uF timing cap (far left, clears ch1 trace)
+    'C2':  (28, 55, 0),    # 0.1uF NE555 VCC bypass (above U1, x-gap)
+    'C3':  (28, 75, 0),    # 10nF NE555 CTRL filter (below U1, x-gap)
 
-    'R7':  (35, 66, 0),    # 470 LED1 current limit (Python R8)
-    'R8':  (45, 66, 0),    # 470 LED2 current limit (Python R9)
+    'R1':  (12, 55, 0),    # 100k NE555 timing pullup (far left, x-gap)
+    'R2':  (24, 55, 0),    # 10k TRIG pullup
 
-    'D7':  (40, 70, 0),    # LED1 (watchdog-healthy)
-    'D8':  (50, 70, 0),    # LED2 (power-good)
+    'R3':  (48, 55, 0),    # 1k Q1 gate series
+    'R4':  (48, 60, 0),    # 10k Q1 gate pulldown
+    'R5':  (48, 70, 0),    # 1k Q2 gate series (Python R6 in script)
+    'R6':  (48, 75, 0),    # 10k Q2 gate pulldown (Python R7)
 
-    # ---- AC interposer: 4 channels stacked vertically on right interior
-    # Each row: D (rectifier) | C (smoothing cap) | R (bleeder)
-    # Spacing: ~17mm between channels vertically
-    # Channel 1 (top)
-    'D3':  (62, 22, 0),
-    'C4':  (75, 22, 0),
-    'R9':  (87, 22, 90),
-    # Channel 2
-    'D4':  (62, 40, 0),
-    'C5':  (75, 40, 0),
-    'R10': (87, 40, 90),
-    # Channel 3
-    'D5':  (62, 58, 0),
-    'C6':  (75, 58, 0),
-    'R11': (87, 58, 90),
-    # Channel 4 (bottom)
-    'D6':  (62, 76, 0),
-    'C7':  (75, 76, 0),
-    'R12': (87, 76, 90),
+    'R7':  (72, 60, 0),    # 470 LED1 current limit (right-side gap, ch3-ch4)
+    'R8':  (72, 70, 0),    # 470 LED2 current limit
+    'D7':  (76, 60, 0),    # LED1 (watchdog-healthy indicator)
+    'D8':  (76, 70, 0),    # LED2 (power-good indicator)
 }
 
 
