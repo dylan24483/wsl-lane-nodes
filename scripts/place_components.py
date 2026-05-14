@@ -180,6 +180,140 @@ def add_mounting_holes(board, positions):
     return added
 
 
+# ----------------------------------------------------------------------
+# Test pads (per Codex rev A audit) — single SMD pad per net, exposed copper
+# for probing. 14 pads total: 6 critical watchdog nets + 8 per-channel
+# (DC_POS + RETURN per AC channel).
+# ----------------------------------------------------------------------
+
+TEST_PADS = [
+    # (ref, net_name, x_mm, y_mm)
+    ('TP1',  'VCC_5V',          25, 22),   # near J1 +5V (post-D_PROT)
+    ('TP2',  'GND',             25, 28),   # near J1 GND
+    ('TP3',  'KICK',            18, 80),   # near J3
+    ('TP4',  'TIMING_NODE',      6, 60),   # near C1
+    ('TP5',  'NE555_OUT',       40, 65),   # right of U1
+    ('TP6',  'COIL_GND_RETURN', 58, 70),   # near Q2.D
+    # Per-channel: DC_POS and RETURN test points
+    ('TP7',  'DC_CH1_POS',      14, 36),   ('TP8',  'CH1_RETURN', 26, 36),
+    ('TP9',  'DC_CH2_POS',      34, 36),   ('TP10', 'CH2_RETURN', 46, 36),
+    ('TP11', 'DC_CH3_POS',      54, 36),   ('TP12', 'CH3_RETURN', 66, 36),
+    ('TP13', 'DC_CH4_POS',      74, 36),   ('TP14', 'CH4_RETURN', 86, 36),
+]
+
+
+def create_test_pad(board, ref, net_name, x, y):
+    """Create a 1.5mm round SMD test pad on F.Cu at (x,y), wired to net_name.
+
+    Wraps the pad in a 'footprint' so KiCad treats it as a placeable item
+    with a refdes. Pad exposes copper through soldermask for probing.
+    """
+    fp = pcbnew.FOOTPRINT(board)
+    fp.SetReference(ref)
+    fp.SetValue(net_name)
+    fp.SetPosition(pcbnew.VECTOR2I_MM(x, y))
+
+    pad = pcbnew.PAD(fp)
+    pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
+    pad.SetSize(pcbnew.VECTOR2I_MM(1.5, 1.5))
+    pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
+    # F.Cu + F.Mask (mask aperture exposes the copper); skip F.Paste
+    layer_set = pcbnew.LSET()
+    layer_set.AddLayer(pcbnew.F_Cu)
+    layer_set.AddLayer(pcbnew.F_Mask)
+    pad.SetLayerSet(layer_set)
+    pad.SetNumber("1")
+
+    net = board.FindNet(net_name)
+    if net:
+        pad.SetNet(net)
+    else:
+        print(f"  WARN: net '{net_name}' not found for {ref}")
+
+    fp.Add(pad)
+    board.Add(fp)
+
+
+def add_test_pads(board, test_pads):
+    """Add test pads to the board. Removes existing TP* footprints first.
+
+    KiCad's SWIG bindings can return SwigPyObjects without proper FOOTPRINT
+    methods after manipulations earlier in the same session. Use try/except
+    to skip those gracefully.
+    """
+    to_remove = []
+    for fp in board.GetFootprints():
+        try:
+            if fp.GetReference().startswith('TP'):
+                to_remove.append(fp)
+        except AttributeError:
+            continue  # SwigPyObject without GetReference — skip
+    for fp in to_remove:
+        board.Remove(fp)
+
+    for ref, net_name, x, y in test_pads:
+        create_test_pad(board, ref, net_name, x, y)
+    return len(test_pads)
+
+
+# ----------------------------------------------------------------------
+# Silkscreen field labels (per Codex rev A audit) — readable text on
+# F.Silkscreen so a field installer can wire the board without the spec
+# doc in hand.
+# ----------------------------------------------------------------------
+
+SILKSCREEN_LABELS = [
+    # (text, x_mm, y_mm, size_mm, rotation_deg)
+    # Title block (top-left corner)
+    ('WSL Phase 8a Rev A', 25, 4, 1.2, 0),
+
+    # Power terminals (left edge)
+    ('+5V', 16, 17, 1.0, 0),
+    ('GND', 16, 27, 1.0, 0),
+    ('AEDIKO V+', 16, 40, 1.0, 0),
+    ('AEDIKO V-', 16, 50, 1.0, 0),
+    ('KICK',     16, 73, 1.0, 0),
+    ('GND',      16, 83, 1.0, 0),
+
+    # DC OUT terminals (top edge) — channel numbers below the connectors
+    ('CH1 DC OUT', 20, 17, 0.9, 0),
+    ('CH2 DC OUT', 40, 17, 0.9, 0),
+    ('CH3 DC OUT', 60, 17, 0.9, 0),
+    ('CH4 DC OUT', 80, 17, 0.9, 0),
+
+    # AC IN terminals (bottom edge) — above the connectors
+    ('CH1 24VAC', 20, 83, 0.9, 0),
+    ('CH2 24VAC', 40, 83, 0.9, 0),
+    ('CH3 24VAC', 60, 83, 0.9, 0),
+    ('CH4 24VAC', 80, 83, 0.9, 0),
+
+    # Indicator LEDs
+    ('WD',  82, 60, 1.0, 0),   # watchdog-healthy near D7
+    ('PWR', 82, 70, 1.0, 0),   # power-good near D8
+
+    # Service note near NE555
+    ('T_OUT ~11s', 32, 85, 0.8, 0),
+]
+
+
+def add_silkscreen_labels(board, labels):
+    """Add silkscreen text items to F.Silkscreen layer."""
+    for text, x, y, size, rot in labels:
+        item = pcbnew.PCB_TEXT(board)
+        item.SetText(text)
+        item.SetLayer(pcbnew.F_SilkS)
+        item.SetPosition(pcbnew.VECTOR2I_MM(x, y))
+        item.SetTextSize(pcbnew.VECTOR2I(pcbnew.FromMM(size),
+                                          pcbnew.FromMM(size)))
+        item.SetTextThickness(pcbnew.FromMM(0.15))
+        try:
+            item.SetTextAngle(pcbnew.EDA_ANGLE(rot, pcbnew.DEGREES_T))
+        except Exception:
+            item.SetTextAngle(rot * 10)
+        board.Add(item)
+    return len(labels)
+
+
 def draw_board_outline(board, width_mm, height_mm):
     """Add a rectangular outline on Edge.Cuts (replace any existing)."""
     # Remove any existing Edge.Cuts drawings
@@ -211,14 +345,25 @@ def main():
 
     placed, missing = place_components(board)
     print(f"Placed {placed} footprints.")
-    if missing:
-        print(f"WARNING: No placement defined for: {missing}")
+    # Filter out test pad (TP*) and mounting hole (MK*) refdes — those are
+    # added programmatically by add_test_pads / add_mounting_holes, not
+    # listed in PLACEMENT.
+    truly_missing = [r for r in missing
+                     if not r.startswith('TP') and not r.startswith('MK')]
+    if truly_missing:
+        print(f"WARNING: No placement defined for: {truly_missing}")
 
     removed_cuts = draw_board_outline(board, BOARD_WIDTH_MM, BOARD_HEIGHT_MM)
     print(f"Replaced board outline (removed {removed_cuts} prior shapes, added 4 segments forming {BOARD_WIDTH_MM}x{BOARD_HEIGHT_MM}mm rectangle).")
 
     mounts_added = add_mounting_holes(board, MOUNTING_HOLE_POSITIONS)
     print(f"Added {mounts_added} M3 mounting holes at corners.")
+
+    tps_added = add_test_pads(board, TEST_PADS)
+    print(f"Added {tps_added} test pads.")
+
+    labels_added = add_silkscreen_labels(board, SILKSCREEN_LABELS)
+    print(f"Added {labels_added} silkscreen labels.")
 
     print(f"Saving {KICAD_PCB}...")
     pcbnew.SaveBoard(KICAD_PCB, board)
