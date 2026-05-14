@@ -66,11 +66,11 @@ PLACEMENT = {
     'J2':  (8, 45, 90),    # TB_AEDIKO_PWR (middle)
     'J3':  (8, 78, 90),    # TB_KICK  (bottom)
 
-    # ---- D_PROT: reverse-polarity Schottky (between J1 raw input and VCC_5V).
-    # SKiDL assigns refdes D9 since it's defined last among diode-prefix parts.
-    # Placed in the x-gap between J1 (x=8) and channel 1 column (x=20), at
-    # y=33 (between J1 at y=22 and J2 at y=45 to clear both terminals).
-    'D9':  (16, 33, 0),    # SS14 Schottky, SMA package
+    # ---- D_PROT: reverse-polarity Schottky immediately beside J1.
+    # SKiDL assigns refdes D9 (defined last among diode-prefix parts).
+    # At (15, 22) the SMA body sits 0.5mm clear of J1's right edge,
+    # making VCC_5V_RAW only a few mm long (per Codex rev A audit).
+    'D9':  (15, 22, 0),    # SS14 Schottky, SMA package
 
     # ---- AC interposer channels: 4 vertical columns aligned with terminals
     # Each column has D (top, near DC_OUT) -> C (middle) -> R (bottom)
@@ -105,12 +105,15 @@ PLACEMENT = {
     'Q1':  (52, 60, 0),    # AO3400 Q1 discharge (between ch2 and ch3 cols)
     'Q2':  (52, 70, 0),    # AO3400 Q2 output
 
-    'C1':  (12, 65, 0),    # 100uF timing cap (far left, clears ch1 trace)
-    'C2':  (28, 55, 0),    # 0.1uF NE555 VCC bypass (above U1, x-gap)
-    'C3':  (28, 75, 0),    # 10nF NE555 CTRL filter (below U1, x-gap)
+    # Per Codex rev A audit: tighten timing network around U1 pins 6/7/5/8.
+    # Pin layout (rotation 0): VCC=pin8 top-left, CTRL=pin5 top-right, THRES=pin6
+    # top-mid-right, DISCH=pin7 top-mid-left, TRIG=pin2 bottom-mid-left.
+    'C1':  (30, 58, 0),    # 100uF timing — directly above U1.7/U1.6 (THRES/DISCH)
+    'C2':  (28, 65, 0),    # 0.1uF VCC bypass — left of U1.8 (VCC) and U1.1 (GND)
+    'C3':  (37, 60, 0),    # 10nF CTRL filter — right of U1.5 (CTRL)
 
-    'R1':  (12, 55, 0),    # 100k NE555 timing pullup (far left, x-gap)
-    'R2':  (24, 55, 0),    # 10k TRIG pullup
+    'R1':  (32, 52, 0),    # 100k timing pullup — directly above C1, short TIMING_NODE
+    'R2':  (25, 67, 0),    # 10k TRIG pullup — left of U1.2 (TRIG, bottom-mid-left)
 
     'R3':  (48, 55, 0),    # 1k Q1 gate series
     'R4':  (48, 60, 0),    # 10k Q1 gate pulldown
@@ -275,17 +278,19 @@ SILKSCREEN_LABELS = [
     ('KICK',     16, 73, 1.0, 0),
     ('GND',      16, 83, 1.0, 0),
 
-    # DC OUT terminals (top edge) — channel numbers below the connectors
-    ('CH1 DC OUT', 20, 17, 0.9, 0),
-    ('CH2 DC OUT', 40, 17, 0.9, 0),
-    ('CH3 DC OUT', 60, 17, 0.9, 0),
-    ('CH4 DC OUT', 80, 17, 0.9, 0),
+    # DC OUT terminals (top edge) — short labels in narrow gap between
+    # J8-J11 (y=2-14) and D3-D6 (y=16.5-19.5).
+    ('DC1+', 18, 15, 0.8, 0),   ('DC1-', 22, 15, 0.8, 0),
+    ('DC2+', 38, 15, 0.8, 0),   ('DC2-', 42, 15, 0.8, 0),
+    ('DC3+', 58, 15, 0.8, 0),   ('DC3-', 62, 15, 0.8, 0),
+    ('DC4+', 78, 15, 0.8, 0),   ('DC4-', 82, 15, 0.8, 0),
 
-    # AC IN terminals (bottom edge) — above the connectors
-    ('CH1 24VAC', 20, 83, 0.9, 0),
-    ('CH2 24VAC', 40, 83, 0.9, 0),
-    ('CH3 24VAC', 60, 83, 0.9, 0),
-    ('CH4 24VAC', 80, 83, 0.9, 0),
+    # AC IN terminals (bottom edge) — short labels in gap between
+    # R9-R12 (bleeders at y=42) and J4-J7 (y=86-98).
+    ('AC1 L1', 18, 85, 0.8, 0), ('AC1 L2', 22, 85, 0.8, 0),
+    ('AC2 L1', 38, 85, 0.8, 0), ('AC2 L2', 42, 85, 0.8, 0),
+    ('AC3 L1', 58, 85, 0.8, 0), ('AC3 L2', 62, 85, 0.8, 0),
+    ('AC4 L1', 78, 85, 0.8, 0), ('AC4 L2', 82, 85, 0.8, 0),
 
     # Indicator LEDs
     ('WD',  82, 60, 1.0, 0),   # watchdog-healthy near D7
