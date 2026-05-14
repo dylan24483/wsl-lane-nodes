@@ -144,13 +144,13 @@ C2 = Part('Device', 'C', value='0.1uF/50V',
           footprint='Capacitor_SMD:C_0805_2012Metric')
 C3 = Part('Device', 'C', value='10nF/50V',
           footprint='Capacitor_SMD:C_0805_2012Metric')
-C4 = Part('Device', 'C_Polarized', value='10uF/50V',
+C4 = Part('Device', 'C_Polarized', value='10uF/63V',
           footprint='Capacitor_SMD:CP_Elec_6.3x5.4')
-C5 = Part('Device', 'C_Polarized', value='10uF/50V',
+C5 = Part('Device', 'C_Polarized', value='10uF/63V',
           footprint='Capacitor_SMD:CP_Elec_6.3x5.4')
-C6 = Part('Device', 'C_Polarized', value='10uF/50V',
+C6 = Part('Device', 'C_Polarized', value='10uF/63V',
           footprint='Capacitor_SMD:CP_Elec_6.3x5.4')
-C7 = Part('Device', 'C_Polarized', value='10uF/50V',
+C7 = Part('Device', 'C_Polarized', value='10uF/63V',
           footprint='Capacitor_SMD:CP_Elec_6.3x5.4')
 
 # Resistors
@@ -176,6 +176,15 @@ LED1 = Part('Device', 'LED', value='Green',
 LED2 = Part('Device', 'LED', value='Green',
             footprint='LED_SMD:LED_0805_2012Metric')
 
+# Reverse-polarity protection Schottky on +5V input (per Codex rev A audit).
+# Defined LAST among diode-prefix parts so it gets the highest D-number (D9).
+# Series Schottky between J1 raw input and the rest of VCC_5V. If +5V/GND
+# are reversed at install, D_PROT reverse-biases and the supply is open
+# (no damage). SS14 drops ~0.3V at 1A — VCC rail becomes ~4.7V which is
+# fine for AEDIKO + NE555 (rated 4.5-15V).
+D_PROT = Part('Device', 'D_Schottky', value='SS14',
+              footprint='Diode_SMD:D_SMA')
+
 # Terminal blocks (5.08mm pitch 2-pos screw terminal — pluggable in production
 # per Dylan's LCSC pick DLL 2EDG-5.08-2ALS; KiCad footprint is generic 5.08mm 2P)
 TB_FP = 'TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal'
@@ -195,7 +204,8 @@ J11 = Part('Connector_Generic', 'Conn_01x02', value='5.08mm 2P TB', footprint=TB
 # Nets (mirrors spec Section 4 net list table exactly)
 # ----------------------------------------------------------------------
 
-VCC         = Net('VCC_5V')
+VCC_RAW     = Net('VCC_5V_RAW')   # J1 input side of reverse-polarity diode
+VCC         = Net('VCC_5V')        # Protected side (downstream of D_PROT)
 GND         = Net('GND')
 KICK        = Net('KICK')
 Q1_GATE     = Net('Q1_GATE')
@@ -222,8 +232,12 @@ CH3_RET = Net('CH3_RETURN'); CH4_RET = Net('CH4_RETURN')
 # Connections
 # ----------------------------------------------------------------------
 
-# --- VCC_5V net ---
-VCC += J1[1]      # TB_PWR_IN.1 (V+ in)
+# --- VCC_5V_RAW: from J1 input to D_PROT anode ---
+VCC_RAW += J1[1]      # TB_PWR_IN.1 (V+ raw input — unprotected)
+VCC_RAW += D_PROT['A']  # Schottky anode
+
+# --- VCC_5V: protected rail downstream of D_PROT ---
+VCC += D_PROT['K']  # Schottky cathode (now ~Vin - 0.3V)
 VCC += U1[4]      # NE555 RESET (held HIGH = enabled)
 VCC += U1[8]      # NE555 VCC
 VCC += R1[1]      # 100k timing pullup, top

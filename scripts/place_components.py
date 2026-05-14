@@ -66,6 +66,12 @@ PLACEMENT = {
     'J2':  (8, 45, 90),    # TB_AEDIKO_PWR (middle)
     'J3':  (8, 78, 90),    # TB_KICK  (bottom)
 
+    # ---- D_PROT: reverse-polarity Schottky (between J1 raw input and VCC_5V).
+    # SKiDL assigns refdes D9 since it's defined last among diode-prefix parts.
+    # Placed in the x-gap between J1 (x=8) and channel 1 column (x=20), at
+    # y=33 (between J1 at y=22 and J2 at y=45 to clear both terminals).
+    'D9':  (16, 33, 0),    # SS14 Schottky, SMA package
+
     # ---- AC interposer channels: 4 vertical columns aligned with terminals
     # Each column has D (top, near DC_OUT) -> C (middle) -> R (bottom)
     # The 50mm vertical run from R to AC_IN is clear of watchdog parts.
@@ -134,6 +140,46 @@ def place_components(board):
     return placed, missing
 
 
+MOUNTING_HOLE_POSITIONS = [
+    (3.5, 3.5),    # top-left
+    (96.5, 3.5),   # top-right
+    (3.5, 96.5),   # bottom-left
+    (96.5, 96.5),  # bottom-right
+]
+
+MOUNTING_HOLE_LIB = r"C:\Program Files\KiCad\10.0\share\kicad\footprints\MountingHole.pretty"
+MOUNTING_HOLE_NAME = "MountingHole_3.2mm_M3"
+
+
+def add_mounting_holes(board, positions):
+    """Add M3 mounting holes (3.2mm NPTH) at the given (x,y) positions.
+
+    Removes any existing MountingHole-prefixed footprints first so the
+    script is idempotent.
+    """
+    # Remove existing mounting holes (idempotency)
+    existing = [fp for fp in board.GetFootprints()
+                if fp.GetReference().startswith('MK')]
+    for fp in existing:
+        board.Remove(fp)
+
+    added = 0
+    for i, (x, y) in enumerate(positions, start=1):
+        try:
+            fp = pcbnew.FootprintLoad(MOUNTING_HOLE_LIB, MOUNTING_HOLE_NAME)
+        except Exception as e:
+            print(f"  Could not load mounting hole footprint: {e}")
+            return added
+        if fp is None:
+            print(f"  FootprintLoad returned None for mounting hole {i}")
+            continue
+        fp.SetReference(f"MK{i}")
+        fp.SetPosition(pcbnew.VECTOR2I_MM(x, y))
+        board.Add(fp)
+        added += 1
+    return added
+
+
 def draw_board_outline(board, width_mm, height_mm):
     """Add a rectangular outline on Edge.Cuts (replace any existing)."""
     # Remove any existing Edge.Cuts drawings
@@ -170,6 +216,9 @@ def main():
 
     removed_cuts = draw_board_outline(board, BOARD_WIDTH_MM, BOARD_HEIGHT_MM)
     print(f"Replaced board outline (removed {removed_cuts} prior shapes, added 4 segments forming {BOARD_WIDTH_MM}x{BOARD_HEIGHT_MM}mm rectangle).")
+
+    mounts_added = add_mounting_holes(board, MOUNTING_HOLE_POSITIONS)
+    print(f"Added {mounts_added} M3 mounting holes at corners.")
 
     print(f"Saving {KICAD_PCB}...")
     pcbnew.SaveBoard(KICAD_PCB, board)
