@@ -343,37 +343,31 @@ def add_test_pads(board, test_pads):
 
 SILKSCREEN_LABELS = [
     # (text, x_mm, y_mm, size_mm, rotation_deg)
-    # Title block (top-left corner)
-    ('WSL Phase 8a Rev A', 25, 4, 1.2, 0),
+    # Polish pass: consolidate per-pin labels into single per-channel
+    # labels to clear 22 silkscreen DRC warnings. Pad numbers (1/2) on
+    # the terminal footprint outlines already identify polarity.
 
-    # Power terminals (left edge)
-    ('+5V', 16, 17, 1.0, 0),
-    ('GND', 16, 27, 1.0, 0),
-    ('AEDIKO V+', 16, 40, 1.0, 0),
-    ('AEDIKO V-', 16, 50, 1.0, 0),
-    ('KICK',     16, 73, 1.0, 0),
-    ('GND',      16, 83, 1.0, 0),
+    # Power terminals (left edge) — single label per terminal, placed
+    # just to the RIGHT of each so they don't overlap J1-J3 bodies.
+    ('+5V/GND',     17, 22, 0.9, 0),   # next to J1
+    ('AEDIKO',      17, 45, 0.9, 0),   # next to J2
+    ('KICK/GND',    17, 78, 0.9, 0),   # next to J3
 
-    # DC OUT terminals (top edge) — short labels in narrow gap between
-    # J8-J11 (y=2-14) and D3-D6 (y=16.5-19.5).
-    ('DC1+', 18, 15, 0.8, 0),   ('DC1-', 22, 15, 0.8, 0),
-    ('DC2+', 38, 15, 0.8, 0),   ('DC2-', 42, 15, 0.8, 0),
-    ('DC3+', 58, 15, 0.8, 0),   ('DC3-', 62, 15, 0.8, 0),
-    ('DC4+', 78, 15, 0.8, 0),   ('DC4-', 82, 15, 0.8, 0),
+    # DC OUT terminals (top edge) — one label per channel, centered above
+    ('CH1 DC',  20, 15, 1.0, 0),
+    ('CH2 DC',  40, 15, 1.0, 0),
+    ('CH3 DC',  60, 15, 1.0, 0),
+    ('CH4 DC',  80, 15, 1.0, 0),
 
-    # AC IN terminals (bottom edge) — short labels in gap between
-    # R9-R12 (bleeders at y=42) and J4-J7 (y=86-98).
-    ('AC1 L1', 18, 85, 0.8, 0), ('AC1 L2', 22, 85, 0.8, 0),
-    ('AC2 L1', 38, 85, 0.8, 0), ('AC2 L2', 42, 85, 0.8, 0),
-    ('AC3 L1', 58, 85, 0.8, 0), ('AC3 L2', 62, 85, 0.8, 0),
-    ('AC4 L1', 78, 85, 0.8, 0), ('AC4 L2', 82, 85, 0.8, 0),
+    # AC IN terminals (bottom edge) — one label per channel
+    ('CH1 24VAC', 20, 85, 0.9, 0),
+    ('CH2 24VAC', 40, 85, 0.9, 0),
+    ('CH3 24VAC', 60, 85, 0.9, 0),
+    ('CH4 24VAC', 80, 85, 0.9, 0),
 
-    # Indicator LEDs
-    ('WD',  82, 60, 1.0, 0),   # watchdog-healthy near D7
-    ('PWR', 82, 70, 1.0, 0),   # power-good near D8
-
-    # Service note near NE555
-    ('T_OUT ~11s', 32, 85, 0.8, 0),
+    # Indicator LEDs (right side of watchdog)
+    ('WD',  82, 60, 1.0, 0),   # watchdog-healthy
+    ('PWR', 82, 70, 1.0, 0),   # power-good
 ]
 
 
