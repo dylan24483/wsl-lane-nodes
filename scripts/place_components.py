@@ -268,11 +268,15 @@ TEST_PADS = [
     ('TP4',  'TIMING_NODE',      6, 60),   # near C1
     ('TP5',  'NE555_OUT',       40, 65),   # right of U1
     ('TP6',  'COIL_GND_RETURN', 58, 70),   # near Q2.D
-    # Per-channel: DC_POS and RETURN test points
-    ('TP7',  'DC_CH1_POS',      14, 36),   ('TP8',  'CH1_RETURN', 26, 36),
-    ('TP9',  'DC_CH2_POS',      34, 36),   ('TP10', 'CH2_RETURN', 46, 36),
-    ('TP11', 'DC_CH3_POS',      54, 36),   ('TP12', 'CH3_RETURN', 66, 36),
-    ('TP13', 'DC_CH4_POS',      74, 36),   ('TP14', 'CH4_RETURN', 86, 36),
+    # Per-channel: DC_POS and RETURN test points.
+    # Moved to y=48 (was y=36) — y=36 put them too close to D9/J2 in the
+    # upper-left area. y=48 is the clean gap between AC bleeders (y=42)
+    # and watchdog components (y=55+). x-positions split between channel
+    # columns and gap centers for clean trace stubs.
+    ('TP7',  'DC_CH1_POS',      15, 48),   ('TP8',  'CH1_RETURN', 25, 48),
+    ('TP9',  'DC_CH2_POS',      35, 48),   ('TP10', 'CH2_RETURN', 45, 48),
+    ('TP11', 'DC_CH3_POS',      55, 48),   ('TP12', 'CH3_RETURN', 65, 48),
+    ('TP13', 'DC_CH4_POS',      75, 48),   ('TP14', 'CH4_RETURN', 85, 48),
 ]
 
 
