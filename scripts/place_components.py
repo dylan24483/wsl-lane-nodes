@@ -294,6 +294,9 @@ def create_test_pad(board, ref, net_name, x, y):
     fp.SetReference(ref)
     fp.SetValue(net_name)
     fp.SetPosition(pcbnew.VECTOR2I_MM(x, y))
+    # FootprintLoad sets the FPID without the library prefix. Restore the
+    # full "TestPoint:..." form so DSN export gets a valid image_id.
+    fp.SetFPID(pcbnew.LIB_ID("TestPoint", TESTPOINT_FP))
 
     # The loaded TestPoint footprint already has its pad. Just wire it up.
     net = board.FindNet(net_name)
