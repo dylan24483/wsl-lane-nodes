@@ -55,18 +55,64 @@ NEXT STEP:
 """
 
 import os
+import re
+import sys
+
+# ----------------------------------------------------------------------
+# KiCad library path setup (MUST happen before skidl import)
+# ----------------------------------------------------------------------
+
+KICAD_CANDIDATE_ROOTS = [
+    r"C:\Program Files\KiCad\10.0\share\kicad",
+    r"C:\Program Files\KiCad\9.0\share\kicad",
+    r"C:\Program Files\KiCad\8.0\share\kicad",
+    r"C:\Program Files\KiCad\7.0\share\kicad",
+    r"C:\Program Files (x86)\KiCad\10.0\share\kicad",
+    r"C:\Program Files (x86)\KiCad\9.0\share\kicad",
+]
+
+kicad_root = next((p for p in KICAD_CANDIDATE_ROOTS if os.path.isdir(p)), None)
+if kicad_root is None:
+    print("ERROR: Couldn't find KiCad install. Tried:", file=sys.stderr)
+    for p in KICAD_CANDIDATE_ROOTS:
+        print(f"  {p}", file=sys.stderr)
+    print("Edit KICAD_CANDIDATE_ROOTS in this script to add your install path.",
+          file=sys.stderr)
+    sys.exit(1)
+
+m = re.search(r"KiCad\\(\d+)\.\d+", kicad_root)
+major = m.group(1) if m else "10"
+
+symbol_dir = os.path.join(kicad_root, "symbols")
+footprint_dir = os.path.join(kicad_root, "footprints")
+
+# Set every env var SKiDL might check (it looks at generic + per-version)
+for var in ["KICAD_SYMBOL_DIR"] + [f"KICAD{v}_SYMBOL_DIR" for v in (6, 7, 8, 9, 10)]:
+    os.environ[var] = symbol_dir
+for var in ["KICAD_FOOTPRINT_DIR"] + [f"KICAD{v}_FOOTPRINT_DIR" for v in (6, 7, 8, 9, 10)]:
+    os.environ[var] = footprint_dir
+
+print(f"Using KiCad {major}.x libraries at {kicad_root}")
+
+# ----------------------------------------------------------------------
+# Now import SKiDL
+# ----------------------------------------------------------------------
+
 from skidl import (
     Part, Net, generate_netlist, set_default_tool, KICAD, ERC, lib_search_paths
 )
 
 set_default_tool(KICAD)
 
+# Belt-and-suspenders: also push the symbol path into SKiDL's search list
+lib_search_paths[KICAD].append(symbol_dir)
+
 # ----------------------------------------------------------------------
 # Components
 # ----------------------------------------------------------------------
 
 # Watchdog block
-U1 = Part('Timer', 'NE555',
+U1 = Part('Timer', 'NE555D',
           value='NE555',
           footprint='Package_SO:SOIC-8_3.9x4.9mm_P1.27mm')
 
@@ -92,19 +138,19 @@ D5 = Part('Device', 'D', value='M7 (1N4007)', footprint='Diode_SMD:D_SMA')
 D6 = Part('Device', 'D', value='M7 (1N4007)', footprint='Diode_SMD:D_SMA')
 
 # Caps
-C1 = Part('Device', 'CP', value='100uF/16V',
+C1 = Part('Device', 'C_Polarized', value='100uF/16V',
           footprint='Capacitor_SMD:CP_Elec_6.3x5.4')
 C2 = Part('Device', 'C', value='0.1uF/50V',
           footprint='Capacitor_SMD:C_0805_2012Metric')
 C3 = Part('Device', 'C', value='10nF/50V',
           footprint='Capacitor_SMD:C_0805_2012Metric')
-C4 = Part('Device', 'CP', value='10uF/50V',
+C4 = Part('Device', 'C_Polarized', value='10uF/50V',
           footprint='Capacitor_SMD:CP_Elec_6.3x5.4')
-C5 = Part('Device', 'CP', value='10uF/50V',
+C5 = Part('Device', 'C_Polarized', value='10uF/50V',
           footprint='Capacitor_SMD:CP_Elec_6.3x5.4')
-C6 = Part('Device', 'CP', value='10uF/50V',
+C6 = Part('Device', 'C_Polarized', value='10uF/50V',
           footprint='Capacitor_SMD:CP_Elec_6.3x5.4')
-C7 = Part('Device', 'CP', value='10uF/50V',
+C7 = Part('Device', 'C_Polarized', value='10uF/50V',
           footprint='Capacitor_SMD:CP_Elec_6.3x5.4')
 
 # Resistors
@@ -132,7 +178,7 @@ LED2 = Part('Device', 'LED', value='Green',
 
 # Terminal blocks (5.08mm pitch 2-pos screw terminal — pluggable in production
 # per Dylan's LCSC pick DLL 2EDG-5.08-2ALS; KiCad footprint is generic 5.08mm 2P)
-TB_FP = 'TerminalBlock:TerminalBlock_bornier-2_P5.08mm'
+TB_FP = 'TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal'
 J1  = Part('Connector_Generic', 'Conn_01x02', value='5.08mm 2P TB', footprint=TB_FP)
 J2  = Part('Connector_Generic', 'Conn_01x02', value='5.08mm 2P TB', footprint=TB_FP)
 J3  = Part('Connector_Generic', 'Conn_01x02', value='5.08mm 2P TB', footprint=TB_FP)
@@ -190,7 +236,7 @@ VCC += J2[1]      # TB_AEDIKO_PWR.1 (V+ direct to AEDIKO)
 # --- GND net ---
 GND += J1[2]      # TB_PWR_IN.2 (V- in)
 GND += U1[1]      # NE555 GND
-GND += C1['-']    # Timing cap negative
+GND += C1[2]    # Timing cap negative
 GND += C2[2]      # NE555 bypass cap, other side
 GND += C3[2]      # CFILT, other side (CTRL filter to GND)
 GND += R4[2]      # Q1 gate pulldown, bottom
@@ -218,7 +264,7 @@ Q1_DRAIN += D2['K']  # D2 cathode
 TIMING_NODE += U1[6]    # THRES (NE555 pin 6)
 TIMING_NODE += U1[7]    # DISCH (NE555 pin 7)
 TIMING_NODE += R1[2]    # Timing pullup, bottom
-TIMING_NODE += C1['+']  # Timing cap +
+TIMING_NODE += C1[1]  # Timing cap +
 TIMING_NODE += D1['A']  # D1 anode — when Q1 ON, D1 pulls TIMING_NODE down
 
 # --- NE555_TRIG ---
@@ -257,23 +303,23 @@ CTRL += C3[1]    # CFILT, hot side
 
 # Channel 1
 AC1_L1  += J4[1];  AC1_L1  += D3['A']
-DC1_POS += D3['K']; DC1_POS += C4['+']; DC1_POS += R10[1]; DC1_POS += J8[1]
-CH1_RET += J4[2];   CH1_RET += C4['-']; CH1_RET += R10[2]; CH1_RET += J8[2]
+DC1_POS += D3['K']; DC1_POS += C4[1]; DC1_POS += R10[1]; DC1_POS += J8[1]
+CH1_RET += J4[2];   CH1_RET += C4[2]; CH1_RET += R10[2]; CH1_RET += J8[2]
 
 # Channel 2
 AC2_L1  += J5[1];  AC2_L1  += D4['A']
-DC2_POS += D4['K']; DC2_POS += C5['+']; DC2_POS += R11[1]; DC2_POS += J9[1]
-CH2_RET += J5[2];   CH2_RET += C5['-']; CH2_RET += R11[2]; CH2_RET += J9[2]
+DC2_POS += D4['K']; DC2_POS += C5[1]; DC2_POS += R11[1]; DC2_POS += J9[1]
+CH2_RET += J5[2];   CH2_RET += C5[2]; CH2_RET += R11[2]; CH2_RET += J9[2]
 
 # Channel 3
 AC3_L1  += J6[1];  AC3_L1  += D5['A']
-DC3_POS += D5['K']; DC3_POS += C6['+']; DC3_POS += R12[1]; DC3_POS += J10[1]
-CH3_RET += J6[2];   CH3_RET += C6['-']; CH3_RET += R12[2]; CH3_RET += J10[2]
+DC3_POS += D5['K']; DC3_POS += C6[1]; DC3_POS += R12[1]; DC3_POS += J10[1]
+CH3_RET += J6[2];   CH3_RET += C6[2]; CH3_RET += R12[2]; CH3_RET += J10[2]
 
 # Channel 4
 AC4_L1  += J7[1];  AC4_L1  += D6['A']
-DC4_POS += D6['K']; DC4_POS += C7['+']; DC4_POS += R13[1]; DC4_POS += J11[1]
-CH4_RET += J7[2];   CH4_RET += C7['-']; CH4_RET += R13[2]; CH4_RET += J11[2]
+DC4_POS += D6['K']; DC4_POS += C7[1]; DC4_POS += R13[1]; DC4_POS += J11[1]
+CH4_RET += J7[2];   CH4_RET += C7[2]; CH4_RET += R13[2]; CH4_RET += J11[2]
 
 # ----------------------------------------------------------------------
 # ERC + netlist generation
