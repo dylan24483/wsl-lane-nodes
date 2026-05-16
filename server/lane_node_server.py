@@ -554,9 +554,14 @@ class HttpHandler(BaseHTTPRequestHandler):
             if not msg_type:
                 return self._send(400, 'application/json', b'{"error":"bad action"}')
 
+            send_hardware_command = True
+
             # If opening, reset the scoring state. Bowlers can be supplied
             # in the request body as {"bowlers": ["name", ...] or
-            # [{"name": "...", "hdcp": int, "bowler_id": int}, ...]}.
+            # [{"name": "...", "hdcp": int, "bowler_id": int}, ...],
+            # plus optional {"send_open_command": false} for WSL-SRV
+            # restart rehydrate where we need display state but must not
+            # pulse the pinsetter.
             # If no body / no bowlers field, falls back to a single TEST bowler
             # so bench smoke-tests still work without a payload.
             if msg_type == Msg.OPEN_LANE:
@@ -570,6 +575,7 @@ class HttpHandler(BaseHTTPRequestHandler):
                         return self._send(400, 'application/json',
                                           b'{"error":"invalid JSON body"}')
                     raw_bowlers = body.get('bowlers')
+                    send_hardware_command = body.get('send_open_command') is not False
                     if isinstance(raw_bowlers, list):
                         # Normalize: accept either ["name", ...] or
                         # [{"name": "...", ...}, ...]. We keep just the name
@@ -616,16 +622,24 @@ class HttpHandler(BaseHTTPRequestHandler):
                 log.info(f"CLOSE_LANE: cleared scoring for lane(s) {cleared}")
 
             msg = encode(msg_type, lane=lane)
-            sent = send_to_all_nodes(msg)
-            log.info(f"→ {action.upper()} lane {lane} sent to {sent} node(s)")
+            if send_hardware_command:
+                sent = send_to_all_nodes(msg)
+                log.info(f"→ {action.upper()} lane {lane} sent to {sent} node(s)")
+            else:
+                sent = 0
+                log.info(f"→ {action.upper()} lane {lane}: state-only, hardware command suppressed")
             self._send(200, 'application/json',
-                       json.dumps({"sent_to": sent, "msg": json.loads(msg)}).encode('utf-8'))
+                       json.dumps({
+                           "sent_to": sent,
+                           "msg": json.loads(msg),
+                           "hardware_command_sent": send_hardware_command,
+                       }).encode('utf-8'))
         elif len(parts) == 4 and parts[0] == 'api' and parts[1] == 'pair' and parts[3] == 'open-league':
             # POST /api/pair/<L>-<R>/open-league
             # Body: { team1_bowlers: [...], team2_bowlers: [...],
             #         team1_name?: str, team2_name?: str }
             # Each bowler is either "Name" (string) or
-            # { name, hdcp?, average?, bowler_id?, team_id? } (dict).
+            # { name, hdcp?/handicap?, average?/current_avg?, bowler_id?, team_id? } (dict).
             # Creates a CrossLaneScoring registered under BOTH lane keys.
             # Replaces any existing scoring on either lane (idempotent re-run
             # supported for roster corrections).
@@ -649,6 +663,7 @@ class HttpHandler(BaseHTTPRequestHandler):
             t2_bowlers = body.get('team2_bowlers') or []
             t1_name = body.get('team1_name')
             t2_name = body.get('team2_name')
+            send_open_command = body.get('send_open_command') is not False
             if not isinstance(t1_bowlers, list) or not isinstance(t2_bowlers, list):
                 return self._send(400, 'application/json',
                                   b'{"error":"team1_bowlers and team2_bowlers must be lists"}')
@@ -666,7 +681,10 @@ class HttpHandler(BaseHTTPRequestHandler):
                     elif isinstance(item, dict):
                         name = str(item.get('name') or '').strip()
                         try:
-                            hdcp = int(item.get('hdcp', 0) or 0)
+                            hdcp_raw = item.get('hdcp')
+                            if hdcp_raw is None:
+                                hdcp_raw = item.get('handicap', 0)
+                            hdcp = int(hdcp_raw or 0)
                         except (ValueError, TypeError):
                             hdcp = 0
                         try:
@@ -703,10 +721,15 @@ class HttpHandler(BaseHTTPRequestHandler):
                      f"team1={t1_names} team2={t2_names}")
 
             # Pulse OPEN_LANE on both Pis so the relays kick the
-            # "first set" 3-pulse pattern. Pi-side handler is unchanged.
-            for lid in (lane_left, lane_right):
-                send_to_all_nodes(encode(Msg.OPEN_LANE, lane=lid,
-                                         bowlers=[b.name for b in cls.bowlers]))
+            # "first set" 3-pulse pattern. WSL-SRV startup rehydrate sets
+            # send_open_command=false to rebuild display state without
+            # touching hardware on an already-active pair.
+            sent_open = 0
+            if send_open_command:
+                for lid in (lane_left, lane_right):
+                    sent_open += send_to_all_nodes(encode(
+                        Msg.OPEN_LANE, lane=lid,
+                        bowlers=[b.name for b in cls.bowlers]))
 
             return self._send(200, 'application/json',
                               json.dumps({
@@ -718,6 +741,8 @@ class HttpHandler(BaseHTTPRequestHandler):
                                   "team1_bowlers": t1_names,
                                   "team2_bowlers": t2_names,
                                   "game": cls.game_number,
+                                  "hardware_command_sent": send_open_command,
+                                  "sent_open_commands": sent_open,
                               }).encode('utf-8'))
         else:
             self._send(404, 'application/json', b'{"error":"not found"}')
