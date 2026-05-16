@@ -45,15 +45,23 @@ LANES = [21, 22]
 PROTOCOL_VERSION = 2
 
 # Per-lane GPIO assignments. Keep relay_cleanup.py's RELAY_PINS in sync
-# with the cycle+power values here.
+# with the cycle+power values here. DIELL pins are read-only inputs so
+# they don't need to be mirrored to relay_cleanup.
 LANE_GPIO = {
-    21: {"foul": 5,  "ball2": 6,  "cycle": 24, "power": 25},
-    22: {"foul": 17, "ball2": 22, "cycle": 27, "power": 23},
+    21: {"foul": 5,  "ball2": 6,  "cycle": 24, "power": 25,
+         "diell_left": 13, "diell_right": 16},
+    22: {"foul": 17, "ball2": 22, "cycle": 27, "power": 23,
+         "diell_left": 19, "diell_right": 20},
 }
 
 # gpiozero devices instantiated per-lane below. Dicts keyed by lane id.
-BALL_DETECT = {}     # foul input — when_pressed fires BALL_EVENT to server
+# Naming note: BALL_DETECT is the foul-lamp input — kept this name for
+# backward-compat with relay_cleanup.py and prototypes/. The actual ball
+# is detected by DIELL_LEFT/DIELL_RIGHT (photoelectric beams at the pin deck).
+BALL_DETECT = {}     # foul-lamp input — when_pressed fires FOUL_EVENT to server
 BALL2_DETECT = {}    # 2nd-ball-lamp input — wired, no callback yet (state-only)
+DIELL_LEFT = {}      # DIELL left photoelectric — when_released fires BALL_EVENT
+DIELL_RIGHT = {}     # DIELL right photoelectric — when_released fires BALL_EVENT
 PINSETTER_CYCLE = {} # momentary pulse output (relay closes briefly)
 PINSETTER_POWER = {} # latched on/off output (relay holds closed until told otherwise)
 
@@ -61,6 +69,8 @@ for lane_id in LANES:
     pins = LANE_GPIO[lane_id]
     BALL_DETECT[lane_id] = Button(pins["foul"], pull_up=False, bounce_time=0.05)
     BALL2_DETECT[lane_id] = Button(pins["ball2"], pull_up=False, bounce_time=0.05)
+    DIELL_LEFT[lane_id] = Button(pins["diell_left"], pull_up=False, bounce_time=0.02)
+    DIELL_RIGHT[lane_id] = Button(pins["diell_right"], pull_up=False, bounce_time=0.02)
     PINSETTER_CYCLE[lane_id] = LED(pins["cycle"])
     PINSETTER_POWER[lane_id] = LED(pins["power"])
 
@@ -110,12 +120,10 @@ main_loop = None
 def make_foul_callback(lane_id):
     """Bind a per-lane foul callback that captures lane_id in closure.
 
-    The AL-ZARD foul input asserts when the foul lamp circuit lights —
-    i.e., the player crossed the foul line. This is NOT the same signal
-    as ball-detect; in production, ball-detect comes from the DIELL
-    photoelectric sensors at the ball-release point. Until DIELL is
-    wired into the bench rig, ball-detect events are simulated via
-    the desk simulator's "Trigger Ball" button.
+    The AL-ZARD/DONGKER foul input asserts when the foul lamp circuit
+    lights — i.e., the player crossed the foul line. This is NOT the same
+    signal as ball-detect; ball-detect comes from DIELL via
+    make_ball_detect_callback below.
     """
     def on_foul_detected():
         log.info(f"GPIO: foul detected on lane {lane_id}")
@@ -128,6 +136,55 @@ def make_foul_callback(lane_id):
 
 for lane_id in LANES:
     BALL_DETECT[lane_id].when_pressed = make_foul_callback(lane_id)
+
+
+# Per-lane ball-detect lockout. The left and right DIELL beams trigger
+# milliseconds apart for one ball passing through; without a lockout we'd
+# emit two BALL_EVENT messages per real ball. 200ms is well above the
+# inter-sensor delay (a 20mph ball traverses the kickback in ~5ms) but
+# well below typical between-balls interval (>1 second).
+_ball_detect_lockout: dict = {lane_id: 0.0 for lane_id in LANES}
+BALL_DETECT_LOCKOUT_S = 0.2
+
+
+def make_ball_detect_callback(lane_id):
+    """Bind a per-lane ball-detect callback that captures lane_id in closure.
+
+    DIELL LSC/AN-2C6J sensors are NPN open-collector with an external
+    10kΩ pull-up to +12V (replacing T-VISION's internal pull-up after
+    Phase 8 retires T-VISION). Signal behavior:
+
+      Idle (beam unbroken):  signal = 12V → DONGKER input asserted →
+                             Pi GPIO reads HIGH
+      Beam broken (ball):    NPN sinks to GND → DONGKER deasserted →
+                             Pi GPIO reads LOW
+
+    So a ball-detect event is a FALLING edge on the Pi pin — we bind to
+    `when_released` rather than `when_pressed`. The signal sense is
+    INVERTED relative to the foul/2nd-ball lamp inputs, where ASSERTING
+    the AC lamp drives the Pi pin HIGH (and we bind `when_pressed`).
+    """
+    def on_ball_detected():
+        now = time.time()
+        if now < _ball_detect_lockout[lane_id]:
+            return  # within lockout window — already emitted for this ball
+        _ball_detect_lockout[lane_id] = now + BALL_DETECT_LOCKOUT_S
+
+        pin_mask = detect_current_pins(lane_id)
+        log.info(f"GPIO: ball detected on lane {lane_id}, "
+                 f"pin_mask=0x{pin_mask:03x}")
+        if main_loop and event_queue:
+            main_loop.call_soon_threadsafe(
+                event_queue.put_nowait,
+                encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=pin_mask)
+            )
+    return on_ball_detected
+
+
+for lane_id in LANES:
+    cb = make_ball_detect_callback(lane_id)
+    DIELL_LEFT[lane_id].when_released = cb
+    DIELL_RIGHT[lane_id].when_released = cb
 
 async def heartbeat_loop(ws):
     while True:
@@ -214,6 +271,8 @@ def _cleanup_gpio():
             PINSETTER_POWER[lane_id].close()
             BALL_DETECT[lane_id].close()
             BALL2_DETECT[lane_id].close()
+            DIELL_LEFT[lane_id].close()
+            DIELL_RIGHT[lane_id].close()
         log.info("GPIO cleanup complete.")
     except Exception as e:
         log.warning(f"GPIO cleanup error: {e}")

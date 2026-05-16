@@ -378,11 +378,39 @@ class HttpHandler(BaseHTTPRequestHandler):
                 return self._send(400, 'application/json', b'{"error":"bad lane"}')
 
             # trigger-ball is special: synthesizes a BALL_EVENT in-process
-            # rather than sending a command to the Pi. Used for bench-testing
-            # foul semantics without DIELL ball-detect sensors wired.
+            # rather than sending a command to the Pi. Two use cases:
+            #   1. Bench-testing without DIELL ball-detect sensors wired
+            #   2. Desk-side manual scoring during Phase 8a soak before
+            #      T-Camera + pin_detect is calibrated. The desk operator
+            #      enters the actual pin count after each ball and POSTs
+            #      it here as {"pin_mask": <int 0-1023>, "foul": <bool>}.
+            # If no body is provided, falls back to PIN_MASK_CYCLE rotation.
             # The CYCLE message still gets sent to the Pi so the relay clicks.
             if action == 'trigger-ball':
-                bowl, pin_mask, foul = _process_ball_event(lane)
+                pin_mask_in = None
+                foul_override = False
+                content_length = int(self.headers.get('Content-Length', 0) or 0)
+                if content_length > 0:
+                    try:
+                        body = json.loads(
+                            self.rfile.read(content_length).decode('utf-8'))
+                    except (ValueError, UnicodeDecodeError):
+                        return self._send(400, 'application/json',
+                                          b'{"error":"invalid JSON body"}')
+                    if 'pin_mask' in body and body['pin_mask'] is not None:
+                        try:
+                            pin_mask_in = int(body['pin_mask']) & 0x3FF
+                        except (ValueError, TypeError):
+                            return self._send(400, 'application/json',
+                                              b'{"error":"pin_mask must be int 0-1023"}')
+                    foul_override = bool(body.get('foul', False))
+
+                if foul_override:
+                    with state_lock:
+                        pending_foul[lane] = True
+
+                bowl, pin_mask, foul = _process_ball_event(lane,
+                                                           pin_mask=pin_mask_in)
                 # Send CYCLE to the Pi so its relay clicks like a real bowl
                 cycle_msg = encode(Msg.CYCLE, lane=lane)
                 sent = send_to_all_nodes(cycle_msg)
@@ -390,6 +418,7 @@ class HttpHandler(BaseHTTPRequestHandler):
                     "sent_to": sent,
                     "lane": lane,
                     "pin_mask": pin_mask,
+                    "pin_mask_source": "manual" if pin_mask_in is not None else "cycle",
                     "foul": foul,
                     "display": bowl.display if bowl else None,
                 }
