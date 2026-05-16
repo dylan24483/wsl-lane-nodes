@@ -782,7 +782,7 @@ class LaneScoring:
 
         self.current_bowler_idx = 0
 
-    def to_scoring_response(self) -> Dict[str, Any]:
+    def to_scoring_response(self, view_lane_id: int = None) -> Dict[str, Any]:
         """
         Build the same JSON response as sidecar /lane/N/scoring.
         """
@@ -794,14 +794,226 @@ class LaneScoring:
             for bowl in f.bowls
             if bowl.pin_map == 0x3FF
         )
+        active = [b for b in self.bowlers if not b.game_over]
+        frame_idx = min((b.current_frame_idx for b in active), default=0)
+        current = self.current_bowler
 
         return {
             'ok': True,
-            'lane': self.lane_id,
+            'lane': view_lane_id or self.lane_id,
             'timestamp': datetime.now().isoformat(),
             'open': self.is_active,
             'game': self.game_number,
+            'mode': 'single_lane',
+            'current_frame_idx': frame_idx,
+            'frame': frame_idx + 1,
+            'frames_per_game': 10,
+            'current_bowler': current.name if current else None,
             'players': [b.to_dict() for b in self.bowlers],
+            'stats': {
+                'strikes': total_strikes,
+                'spares': total_spares,
+                'gutters': total_gutters,
+            },
+        }
+
+
+class CrossLaneScoring:
+    """
+    Scoring state for league cross-lane play on a physical lane pair.
+
+    Each bowler has a current physical lane. A ball event is routed by the
+    lane that produced it, then the bowler moves to the opposite lane after
+    their frame is complete. This matches league cross-lane flow while keeping
+    one score object for the whole match.
+    """
+
+    def __init__(self, lane_left: int, lane_right: int):
+        self.lane_id = lane_left
+        self.lane_left = lane_left
+        self.lane_right = lane_right
+        self.lane_ids = [lane_left, lane_right]
+        self.bowlers: List[BowlerGame] = []
+        self.game_number = 1
+        self.is_active = False
+        self.started_at: Optional[str] = None
+        self._lane_queues = {
+            lane_left: [],
+            lane_right: [],
+        }
+
+    def add_bowler(self, name: str, number: int = 0, hdcp: int = 0,
+                   average: float = 0.0, starting_lane: int = None,
+                   team_id=None, team_name: str = None, bowler_id=None) -> BowlerGame:
+        if number == 0:
+            number = len(self.bowlers) + 1
+        lane = starting_lane or self.lane_left
+        if lane not in self._lane_queues:
+            lane = self.lane_left
+
+        bg = BowlerGame(number, name, hdcp, average)
+        bg.game_number = self.game_number
+        bg.starting_physical_lane = lane
+        bg.current_physical_lane = lane
+        bg.team_id = team_id
+        bg.team_name = team_name
+        bg.bowler_id = bowler_id
+        self.bowlers.append(bg)
+        self._lane_queues[lane].append(bg)
+        return bg
+
+    def start(self):
+        self.is_active = True
+        self.started_at = datetime.now().isoformat()
+
+    def other_lane(self, lane_id: int) -> int:
+        return self.lane_right if lane_id == self.lane_left else self.lane_left
+
+    def current_bowler_for_lane(self, lane_id: int) -> Optional[BowlerGame]:
+        queue = self._lane_queues.get(lane_id)
+        if queue is None:
+            return None
+        while queue and queue[0].game_over:
+            queue.pop(0)
+        return queue[0] if queue else None
+
+    @property
+    def current_bowler(self) -> Optional[BowlerGame]:
+        return self.current_bowler_for_lane(self.lane_left)
+
+    def record_ball(self, pin_mask: int, foul: bool = False) -> Optional[Bowl]:
+        """Compatibility path for older callers; routes to the left lane."""
+        return self.record_ball_for_lane(self.lane_left, pin_mask, foul)
+
+    def record_ball_for_lane(self, lane_id: int, pin_mask: int,
+                             foul: bool = False) -> Optional[Bowl]:
+        bowler = self.current_bowler_for_lane(lane_id)
+        if bowler is None:
+            return None
+
+        frame_before = bowler.current_frame_idx
+        bowl = bowler.record_ball(pin_mask, foul)
+        frame_after = bowler.current_frame_idx
+        turn_done = (frame_after != frame_before) or bowler.game_over
+
+        if turn_done:
+            self._advance_bowler_from_lane(lane_id, bowler)
+
+        return bowl
+
+    def correct_frame(self, bowler_idx: int, frame_idx: int, bowls_data):
+        if bowler_idx < 0 or bowler_idx >= len(self.bowlers):
+            return {'ok': False,
+                    'error': f'bowler_idx {bowler_idx} out of range (0-{len(self.bowlers)-1})'}
+        return self.bowlers[bowler_idx].set_frame_bowls(frame_idx, bowls_data)
+
+    def _advance_bowler_from_lane(self, lane_id: int, bowler: BowlerGame):
+        queue = self._lane_queues.get(lane_id, [])
+        if queue and queue[0] is bowler:
+            queue.pop(0)
+        else:
+            try:
+                queue.remove(bowler)
+            except ValueError:
+                pass
+
+        if all(b.game_over for b in self.bowlers):
+            self._start_new_game()
+            return
+
+        if not bowler.game_over:
+            new_lane = self.other_lane(lane_id)
+            bowler.current_physical_lane = new_lane
+            self._lane_queues[new_lane].append(bowler)
+
+    def _start_new_game(self):
+        self.game_number += 1
+        self._lane_queues = {
+            self.lane_left: [],
+            self.lane_right: [],
+        }
+        for b in self.bowlers:
+            b.series_scores.append(b.current_total)
+            old_number = b.number
+            old_name = b.name
+            old_hdcp = b.hdcp
+            old_avg = b.average
+            old_series = b.series_scores
+            old_speeds = (b.speed_ball1, b.speed_ball2)
+            starting_lane = getattr(b, 'starting_physical_lane', self.lane_left)
+            team_id = getattr(b, 'team_id', None)
+            team_name = getattr(b, 'team_name', None)
+            bowler_id = getattr(b, 'bowler_id', None)
+
+            b.__init__(old_number, old_name, old_hdcp, old_avg)
+            b.series_scores = old_series
+            b.game_number = self.game_number
+            b.speed_ball1, b.speed_ball2 = old_speeds
+            b.starting_physical_lane = starting_lane
+            b.current_physical_lane = starting_lane
+            b.team_id = team_id
+            b.team_name = team_name
+            b.bowler_id = bowler_id
+            self._lane_queues[starting_lane].append(b)
+
+    def _player_dict(self, b: BowlerGame, view_lane_id: int = None) -> Dict[str, Any]:
+        d = b.to_dict()
+        cur_lane = getattr(b, 'current_physical_lane', None)
+        d.update({
+            'bowler_id': getattr(b, 'bowler_id', None),
+            'team_id': getattr(b, 'team_id', None),
+            'team_name': getattr(b, 'team_name', None),
+            'starting_physical_lane': getattr(b, 'starting_physical_lane', None),
+            'current_physical_lane': cur_lane,
+            'is_current': (
+                view_lane_id is not None
+                and self.current_bowler_for_lane(view_lane_id) is b
+            ),
+        })
+        return d
+
+    def to_scoring_response(self, view_lane_id: int = None) -> Dict[str, Any]:
+        view_lane = view_lane_id or self.lane_left
+        total_strikes = sum(b.strike_count for b in self.bowlers)
+        total_spares = sum(b.spare_count for b in self.bowlers)
+        total_gutters = sum(
+            1 for b in self.bowlers
+            for f in b.frames
+            for bowl in f.bowls
+            if bowl.pin_map == 0x3FF
+        )
+        active = [b for b in self.bowlers if not b.game_over]
+        frame_idx = min((b.current_frame_idx for b in active), default=0)
+        current_by_lane = {
+            lane: self.current_bowler_for_lane(lane)
+            for lane in self.lane_ids
+        }
+
+        return {
+            'ok': True,
+            'lane': view_lane,
+            'lanes': list(self.lane_ids),
+            'timestamp': datetime.now().isoformat(),
+            'open': self.is_active,
+            'game': self.game_number,
+            'mode': 'cross_lane',
+            'cross_lane': True,
+            'current_frame_idx': frame_idx,
+            'frame': frame_idx + 1,
+            'frames_per_game': 10,
+            'current_bowler': (
+                current_by_lane.get(view_lane).name
+                if current_by_lane.get(view_lane) else None
+            ),
+            'active_bowlers': {
+                str(lane): (b.name if b else None)
+                for lane, b in current_by_lane.items()
+            },
+            'lane_queues': {
+                str(lane): [b.name for b in queue if not b.game_over]
+                for lane, queue in self._lane_queues.items()
+            },
+            'players': [self._player_dict(b, view_lane) for b in self.bowlers],
             'stats': {
                 'strikes': total_strikes,
                 'spares': total_spares,

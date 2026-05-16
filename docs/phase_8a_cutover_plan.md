@@ -39,17 +39,16 @@ This plan is the run-of-show. It assumes the **infrastructure plan** (`docs/phas
 - [x] Sweep reverse works without C-1 jumper mod (picker-table operation handles it)
 - [x] J3 L-COM bus is irrelevant — Phase 8 retires T-VISION + BCU II entirely
 
-### Open questions to resolve before scheduling (DO NOT skip this list)
+### Decisions locked (2026-05-15)
 
-- [ ] **DIELL sensor wiring in Phase 8a.** Bench rig has not yet wired DIELL sensors to AL-ZARD inputs 5-8. Two options:
-  - **Option A (recommended for cutover #1):** ship Phase 8a WITHOUT DIELL ball detection. Use T-Camera + `pin_detect.py` as the sole ball-detect source (frame-to-frame pin-mask delta = ball event). Defers DIELL wiring to a follow-up visit. **Caveat:** T-Camera not yet on bench, `PIN_SPOTS` not calibrated. Cutover #1 may have to ship without any ball detection and use foul + 2nd-ball lamp signals only as scoring triggers. Need to decide: is that good enough for a one-week soak? Probably yes — the lamp signals already drive scoring on most legacy 8270 setups.
-  - **Option B:** wire DIELL sensors as part of the cutover. Adds ~20 min on-site. Requires DIELL +V supply tap (12-24V) — where does that come from? T-VISION today supplies the DIELL Vcc (~17V). If we retire T-VISION, we need an alternate Vcc. Bench supply or a tap off the AEDIKO 24V coil supply? Resolve before site visit.
-- [ ] **QBK-SIx fate during cutover.** Two paths:
-  - **Path 1 (recommended):** leave QBK-SIx physically installed but disconnected from its outputs. Lift the wires from QBK-SIx J1.CYL/J1.PWER + J2.CYL/J2.PWER and re-land them on AEDIKO relay terminals. QBK-SIx is now dead but still in place — can be removed in a future visit. Risk: BCU II/T-VISION may scream about missing QBK-SIx; cut power to BCU II + T-VISION to silence.
-  - **Path 2:** physically remove QBK-SIx during cutover. Cleaner end state but adds disassembly time and risk of mis-wiring elsewhere. Defer to a follow-up "cleanup visit" 1-2 weeks post-soak.
-  - Decision: Path 1 for cutover. QBK-SIx stays in place, powered off (BCU II + T-VISION power cut).
-- [ ] **What drives the scoring display?** Today VDB-99 drives the overhead score monitor. After cutover, the monitor must show scores from `lane_node.py` → WSL-SRV → … → display. Phase 8a includes a browser display at `http://192.168.86.36:8766/` that can be opened on a tablet or the existing overhead monitor's HDMI input. **Verify:** does the lane 21+22 overhead monitor have HDMI input (not just VGA from VDB-99)? If HDMI: route a long HDMI cable from a Pi (could be a second Pi — "display Pi" — in the network closet, OR a Chromecast / Fire TV stick into the HDMI port, OR the lane Pi itself driving HDMI out). For cutover #1, simplest is: small tablet/laptop on the desk showing the browser display.
-- [ ] **Foul-lamp side-effect.** Today, when foul is detected, QBK-SIx illuminates the foul lamp. After cutover, who illuminates the foul lamp? If the foul lamp wiring is upstream of QBK-SIx (i.e., the 8270's foul beam triggers the lamp directly), then Phase 8 sees the lamp via AC interposer and the lamp continues to light itself. If QBK-SIx is what lights the lamp (less likely but possible), we need to handle that. **Verify on-site:** with QBK-SIx fully de-powered, does the foul lamp still light when the beam is broken? If yes → Phase 8 just observes; if no → Phase 8 needs to drive a fifth AEDIKO relay channel to light the lamp.
+- **DIELL ball-detect: INCLUDED.** All 4 sensors (2 per lane) wired to DONGKER opto-input channels 5-8, into Pi GPIO 13/16/19/20. DIELL Vcc supplied by a new 12V 1A wall adapter (replacing T-VISION's internal supply, which goes away when T-VISION retires). 10kΩ external pull-up to +12V on each signal line (replacing T-VISION's internal pull-up).
+- **Scoring mode: `manual`.** Lane Pi runs with `WSL_LANE_SCORING_MODE=manual` until T-Camera is bench-calibrated. DIELL fires `BALL_EVENT` to the server with `pin_mask=null`; server cycles the pinsetter but does NOT auto-score. Desk operator enters pin count via `POST /api/lane/<N>/score` body `{pin_mask, foul?}` on the new score endpoint (NOT `/trigger-ball`, which is bench-only and would double-pulse the pinsetter). T-Camera follow-up visit moves the mode to `camera` once `PIN_SPOTS` is calibrated against real frames.
+- **QBK-SIx fate: full disassembly during cutover.** QBK-SIx + BCU II + T-VISION-98 + VDB-99 all come out during the cutover window. Adds ~30-45 min to the run-of-show but eliminates the cleanup-visit follow-up. Before lifting T-VISION's connections, the new 12V supply must be wired and powered (T-VISION currently supplies DIELL Vcc).
+- **Customer display: HDMI from Beelink thin client → existing overhead monitor.** Beelink runs Chromium in kiosk mode pointed at `http://192.168.86.36:8766/display?lane=21&mode=league`. Display is served by `lane_node_server.py` on port 8766 (NOT `wsl_api.py` on port 5000 — port 5000's scoring is for non-Phase-8 lanes and doesn't see Pi events). The display polls `/api/lane/<N>/scoring` on the same origin, which lane_node_server.py answers with the cross-lane scoring response for that lane.
+
+### Still-open question (resolve during site survey visit #1)
+
+- [ ] **Foul-lamp drive verification.** With QBK-SIx fully de-powered, does the lane 21/22 foul lamp still illuminate when the foul beam is broken? Phase 8a expects "yes" — the lamp is wired upstream of QBK-SIx and the 8270's own foul-beam logic lights it. If the answer is "no" (lamp depends on QBK-SIx to drive it), reserve a 5th NOYITO relay channel during cutover to drive the lamp from the Pi side. Multimeter check during the survey resolves this in ~2 minutes.
 
 ---
 
@@ -64,13 +63,17 @@ This plan is the run-of-show. It assumes the **infrastructure plan** (`docs/phas
 | QBK-SIx J1.3-J1.4 (PWER) | AEDIKO IN4 — Phoenix `R4` | Lane 21 pinsetter power on/off | GPIO 25 | ✓ 05-06 |
 | QBK-SIx J1.5-J1.6 (+FOL) | Phase 8a PCB J5 (24VAC IN CH2) → J9 (DC OUT CH2) → AL-ZARD input 3+/3- | Lane 21 foul lamp signal (AC) | GPIO 5 | ✓ 05-06 (bench DC + 05-11 with AC) |
 | QBK-SIx J1.7-J1.8 (+2ND) | Phase 8a PCB J4 (24VAC IN CH1) → J8 (DC OUT CH1) → AL-ZARD input 4+/4- | Lane 21 2nd-ball lamp signal (AC) | GPIO 6 | ✓ 05-06 |
-| DIELL sensor pair (lane 21) | (deferred per "open question" above) | Ball-detect / pin-clearing | TBD | not yet wired on bench |
+| DIELL L21 LEFT signal | DONGKER input 5+ (via 10kΩ pull-up to +12V), output O5 | Lane 21 ball-detect left beam | GPIO 13 | bench: button simulator |
+| DIELL L21 RIGHT signal | DONGKER input 6+ (via 10kΩ pull-up to +12V), output O6 | Lane 21 ball-detect right beam | GPIO 16 | bench: button simulator |
+| DIELL L21 +V supply | New 12V/1A wall adapter (replaces T-VISION supply) | DIELL Vcc | — | bench |
 | **Lane 22 (right of pair)** | | | | |
 | QBK-SIx J2.1-J2.2 (CYL) | AEDIKO IN1 — Phoenix `R1` | Lane 22 pinsetter cycle command | GPIO 27 | ✓ 05-06 |
 | QBK-SIx J2.3-J2.4 (PWER) | AEDIKO IN2 — Phoenix `R2` | Lane 22 pinsetter power on/off | GPIO 23 | ✓ 05-06 |
 | QBK-SIx J2.5-J2.6 (+FOL) | Phase 8a PCB J6 (24VAC IN CH3) → J10 (DC OUT CH3) → AL-ZARD input 1+/1- | Lane 22 foul lamp signal (AC) | GPIO 17 | ✓ 05-06 |
 | QBK-SIx J2.7-J2.8 (+2ND) | Phase 8a PCB J7 (24VAC IN CH4) → J11 (DC OUT CH4) → AL-ZARD input 2+/2- | Lane 22 2nd-ball lamp signal (AC) | GPIO 22 | ✓ 05-06 |
-| DIELL sensor pair (lane 22) | (deferred per "open question" above) | Ball-detect / pin-clearing | TBD | not yet wired on bench |
+| DIELL L22 LEFT signal | DONGKER input 7+ (via 10kΩ pull-up to +12V), output O7 | Lane 22 ball-detect left beam | GPIO 19 | bench: button simulator |
+| DIELL L22 RIGHT signal | DONGKER input 8+ (via 10kΩ pull-up to +12V), output O8 | Lane 22 ball-detect right beam | GPIO 20 | bench: button simulator |
+| DIELL L22 +V supply | Same 12V/1A adapter as L21 | DIELL Vcc | — | bench |
 
 **Reminder:** these match the bench rig per the `project_phase8_bench_rig_validated` memory. Don't improvise channel assignments on-site — if the wire-label colors don't match the table above, re-trace the wires per the `lane_visit_checklist.md` Phase 1 procedure and update the table before proceeding.
 
@@ -161,20 +164,23 @@ After all 8 wire pairs are moved, **do a final visual pass** comparing each Phas
 
 ### Step 4 — First power-up smoke test (10 min)
 
-1. Verify the Phase 8a enclosure is still powered (Pi green LED + AEDIKO/AL-ZARD power LEDs). Verify D7 (watchdog-healthy) and D8 (power-good) on the Phase 8a PCB are both lit.
-2. **Do NOT plug the QubicaAMF strip back in.** It stays off for the duration of the soak.
-3. From the laptop browser, click **Power On** on lane 22. The 8270 should power up (audible click from the cabinet, motor energy noise).
-4. From the lane 22 approach, **walk over the foul line** to break the foul beam. Watch the browser display — should show "foul" event for lane 22.
-5. Click **Reset Pins** on lane 22. The pinsetter should cycle: lift, sweep, re-spot. Audible sweep motor.
-6. **Roll a bowling ball down lane 22** (full rack standing). Pins fall, lamp lights for 2nd ball, pinsetter waits.
-7. Click **Reset Pins** again. Pinsetter sweeps + re-spots. Score increments. Foul + 2nd-ball events appear in the browser display.
-8. **Repeat all of step 3-7 for lane 21.**
-9. **If anything fails to behave correctly:** see Section 6 — Rollback. Don't troubleshoot live during the window; rollback and debug at home.
+1. Verify the Phase 8a enclosure is still powered (Pi green LED + AEDIKO/DONGKER power LEDs). Verify D7 (watchdog-healthy) and D8 (power-good) on the Phase 8a PCB are both lit.
+2. **Do NOT plug the QubicaAMF strip back in.** (After the locked decision: the entire QubicaAMF stack is being removed during this cutover — strip should already be unplugged and units physically disconnected per Step 3.)
+3. From the laptop browser at `http://192.168.86.36:8766/display?lane=21&mode=league`, the display should show both lanes "Closed" (no scoring state yet).
+4. From the laptop, `curl -X POST http://192.168.86.36:8766/api/lane/22/power-on`. The 8270 should power up (audible click from the cabinet, motor energy noise).
+5. From the lane 22 approach, **walk over the foul line** to break the foul beam. Lane Pi journal should log `GPIO: foul detected on lane 22` and emit FOUL_EVENT to the server.
+6. `curl -X POST http://192.168.86.36:8766/api/lane/22/reset`. The pinsetter should cycle: lift, sweep, re-spot. Audible sweep motor.
+7. **Roll a bowling ball down lane 22** (full rack standing). Two things should happen in order:
+   - DIELL beams break → Pi journal logs `GPIO: ball detected on lane 22, mode=manual (awaiting desk score)` → server cycles the pinsetter (lift, sweep, re-spot)
+   - The display does NOT auto-update (manual mode — awaiting desk score)
+8. `curl -X POST http://192.168.86.36:8766/api/lane/22/score -H "Content-Type: application/json" -d "{\"pin_mask\": 0}"` (0 = strike, all pins down). Display should now show frame 1 with X for the bowler. If the foul was triggered in Step 5 within the prior ~30 seconds, this ball scores as foul.
+9. **Repeat steps 4-8 for lane 21.**
+10. **If anything fails to behave correctly:** see Section 6 — Rollback. Don't troubleshoot live during the window; rollback and debug at home.
 
 ### Step 5 — Soak handoff (10 min)
 
 1. **Power the 8270 back ON** on both lanes (already on if Step 4 worked, but verify).
-2. Brief any night staff: "Lanes 21+22 are on the new Pi system tonight. Use the browser display URL `http://192.168.86.36:8766/` as the desk for these two lanes. If anything looks weird, take a photo and don't try to fix it — leave the lane closed and message Dylan."
+2. Brief any night staff: "Lanes 21+22 are on the new Pi system tonight. The overhead monitor at the pair shows live scoring (driven by the Beelink at `http://192.168.86.36:8766/display?lane=21&mode=league`). For each ball customers throw, the pinsetter will cycle automatically — you'll need to **enter the pin count** at the desk via `POST http://192.168.86.36:8766/api/lane/<lane>/score` body `{\"pin_mask\": <int 0-1023>, \"foul\": <bool>}` (T-Camera not yet calibrated, so manual scoring during soak). If anything looks weird, take a photo and don't try to fix it — leave the lane closed and message Dylan."
 3. Tape a printed "Phase 8a, contact Dylan" note inside the enclosure door so anyone who opens it sees the context.
 4. Pack up. Leave the masking-tape wire labels on the wires for at least the first week of soak — easy reference if rollback is needed.
 5. **Drive home.** Don't sit on-site debugging. The watchdog + WSL-SRV setup will tell you if anything goes sideways.
@@ -217,11 +223,11 @@ If Step 4 smoke test fails and the failure isn't immediately obvious + fixable (
 
 ## 7. Post-cutover follow-ups (separate visits, lower priority)
 
-- **Remove QBK-SIx physically.** After 1-2 weeks soak, schedule a daytime visit to disassemble QBK-SIx, BCU II, T-VISION-98, VDB-99 from the lane 21+22 stack. Strip the L-COM bus daisy-chain wires that fed downstream pairs. Reclaim cabinet space.
-- **Wire DIELL sensors.** Once T-Camera + `pin_detect.py` are bench-validated against real frames, decide whether DIELL is still needed for ball detection. If yes, schedule a wiring visit (Vcc tap, AL-ZARD channels 5-8, GPIO mapping).
-- **Foul lamp drive.** If the on-site observation in Section 1 shows the foul lamp depends on QBK-SIx, wire a 5th AEDIKO channel to drive the lamp directly.
-- **Display integration.** Move from the `http://192.168.86.36:8766/` browser display to either the existing overhead monitor (via HDMI) or a dedicated desk-side surface integrated into `desk.html`.
+- **T-Camera + `pin_detect.py` calibration.** Wire the USB capture dongle into the lane Pi, tap the existing T-Camera composite signal, run a calibration session (bowl known pin states, measure pixel coordinates, set `PIN_SPOTS` and `STANDING_THRESHOLD`). Once auto-pin-detect works clean against real frames, flip `WSL_LANE_SCORING_MODE` from `manual` to `camera` and retire manual pin entry at the desk.
 - **Update operator documentation.** Once Phase 8a is soaked clean, write the staff-facing "operating lanes 21+22 on Phase 8" guide. Likely lives in the wsl-systems repo as user-facing doc.
+- **Phase 8b kickoff.** Replicate to the next pair (lanes 19+20). The infrastructure already exists (Cat6 + PoE+ switch); per-pair install is roughly enclosure mount + wire moves + ~1h.
+
+(QBK-SIx/BCU II/T-VISION/VDB-99 removal is no longer a follow-up — full disassembly happens during the cutover window itself per the locked decision in Section 1.)
 
 ---
 

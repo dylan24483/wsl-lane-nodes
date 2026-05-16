@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Westside Lanes</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #122f5c;
+  --surface: #1a3d72;
+  --surface2: #1f4880;
+  --border: #2a5a9a;
+  --border-light: #3468ae;
+  --muted: #6898cc;
+  --dim: #84b0de;
+  --text: #d8e8f8;
+  --bright: #f0f6ff;
+  --amber: #f5a623;
+  --amber-glow: rgba(245,166,35,0.25);
+  --cyan: #4dd8e8;
+  --red: #ef5555;
+  --green: #3dcc6e;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: linear-gradient(180deg, var(--bg) 0%, #0c2040 100%);
+  color: var(--text); font-family: 'Oswald', sans-serif;
+}
+
+/* ---- STATUS BAR ---- */
+#status-bar {
+  display: flex; align-items: center; padding: 2px 14px;
+  font-size: 10px; height: 22px;
+  font-family: 'JetBrains Mono', monospace; border-bottom: none;
+}
+#status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); margin-right: 8px; }
+#status-dot.live { background: var(--green); }
+#status-text { color: var(--muted); }
+#config-btn { margin-left: auto; cursor: pointer; color: var(--border); font-size: 13px; padding: 0 8px; user-select: none; }
+#config-panel { display: none; padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--border); gap: 10px; align-items: center; font-size: 12px; flex-wrap: wrap; }
+#config-panel.open { display: flex; }
+#config-panel label { color: var(--dim); }
+#config-panel input, #config-panel select { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 3px 8px; border-radius: 4px; font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+#config-panel button { background: var(--amber); color: var(--bg); border: none; padding: 4px 14px; border-radius: 4px; cursor: pointer; font-weight: 700; font-size: 12px; font-family: 'Oswald', sans-serif; }
+
+/* ---- CONTAINER ---- */
+#lanes-container { height: calc(100vh - 22px); display: flex; flex-direction: column; }
+
+/* ---- LANE SECTION ---- */
+.lane-section { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.lane-section + .lane-section { border-top: 2px solid var(--amber); }
+
+.lane-hdr { display: flex; align-items: center; padding: 4px 20px; background: var(--surface); flex-shrink: 0; gap: 12px; }
+.lane-hdr-num { font-weight: 700; color: var(--bright); line-height: 1; }
+.lane-hdr-label { font-weight: 300; color: var(--muted); text-transform: uppercase; letter-spacing: 4px; }
+.lane-hdr-right { margin-left: auto; font-family: 'JetBrains Mono', monospace; color: var(--muted); }
+.lane-empty { flex: 1; display: flex; align-items: center; justify-content: center; text-transform: uppercase; letter-spacing: 6px; font-weight: 300; color: var(--border); }
+
+/* ---- SCORE TABLE ---- */
+.score-table { flex: 1; display: flex; flex-direction: column; min-height: 0; gap: 3px; background: var(--bg); }
+.col-header { display: flex; flex-shrink: 0; background: var(--surface); }
+.col-hdr-name { flex-shrink: 0; padding: 3px 20px; font-family: 'JetBrains Mono', monospace; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
+.col-hdr-frames { flex: 1; display: flex; gap: 3px; padding: 0 4px; }
+.col-hdr-f { flex: 1; text-align: center; font-family: 'JetBrains Mono', monospace; color: var(--muted); padding: 3px 0; }
+.col-hdr-f.tenth { flex: 1.4; }
+.col-hdr-total { flex-shrink: 0; text-align: center; font-family: 'JetBrains Mono', monospace; color: var(--muted); padding: 3px 8px; text-transform: uppercase; letter-spacing: 1px; }
+.col-hdr-stats { flex-shrink: 0; text-align: center; font-family: 'JetBrains Mono', monospace; color: var(--muted); padding: 3px 8px; text-transform: uppercase; letter-spacing: 1px; }
+
+.p-row { flex: 1; display: flex; align-items: stretch; background: var(--bg); min-height: 0; }
+.p-name-col { flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; position: relative; background: var(--surface2); transition: background 0.3s; }
+.p-row.active .p-name-col { background: var(--surface); }
+.p-row.active .p-name-col::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--amber); box-shadow: 0 0 10px var(--amber-glow); }
+.p-name { font-weight: 700; color: var(--bright); text-transform: uppercase; letter-spacing: 2px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.p-meta { font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 10px; }
+.p-hdcp { color: var(--cyan); font-weight: 600; }
+.p-speed { color: var(--dim); }
+
+.p-frames-col { flex: 1; display: flex; gap: 3px; padding: 0 3px; align-items: stretch; min-width: 0; background: var(--bg); }
+.f-cell { flex: 1; background: var(--surface2); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.p-row.active .f-cell { background: var(--surface); }
+.f-cell.tenth { flex: 1.4; }
+.f-balls { flex: 1; display: flex; justify-content: center; align-items: center; gap: 3px; font-weight: 600; }
+.f-score { font-family: 'JetBrains Mono', monospace; font-weight: 700; text-align: center; background: rgba(0,0,0,0.15); }
+.f-score.done { color: var(--bright); }
+.f-score.pending { color: var(--dim); }
+
+.p-total-col { flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 4px; background: var(--surface2); margin-left: 3px; transition: background 0.3s; }
+.p-row.active .p-total-col { background: var(--surface); }
+.p-total { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--bright); line-height: 1; }
+.p-max { font-family: 'JetBrains Mono', monospace; color: var(--muted); }
+
+.p-stats-col { flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; font-family: 'JetBrains Mono', monospace; background: var(--surface2); margin-left: 3px; transition: background 0.3s; }
+.p-row.active .p-stats-col { background: var(--surface); }
+.p-stat-line { display: flex; justify-content: space-between; margin: 1px 0; }
+.p-stat-label { color: var(--muted); }
+.p-stat-val { color: var(--text); font-weight: 600; }
+.p-stat-val.amber { color: var(--bright); }
+
+.team-footer { flex-shrink: 0; display: flex; align-items: center; background: var(--surface); }
+.tf-block { display: flex; flex-direction: column; align-items: center; }
+.tf-label { font-family: 'JetBrains Mono', monospace; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; }
+.tf-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--bright); line-height: 1.2; }
+.tf-value.amber { color: var(--bright); }
+.tf-value.cyan { color: var(--cyan); }
+
+/* ---- BALL DISPLAY ---- */
+.b-x { color: var(--bright); }
+.b-sp { color: var(--bright); }
+.b-miss { color: var(--muted); }
+.b-num { color: var(--bright); }
+.b-split { color: var(--bright); text-decoration: underline; text-underline-offset: 2px; }
+.b-foul { color: var(--red); font-style: italic; }
+.b-empty { color: var(--border); }
+
+@keyframes xflash { 0%{box-shadow:inset 0 0 0 rgba(245,166,35,0)} 12%{box-shadow:inset 0 0 20px rgba(245,166,35,0.25)} 100%{box-shadow:inset 0 0 0 rgba(245,166,35,0)} }
+@keyframes spflash { 0%{box-shadow:inset 0 0 0 rgba(77,216,232,0)} 12%{box-shadow:inset 0 0 20px rgba(77,216,232,0.2)} 100%{box-shadow:inset 0 0 0 rgba(77,216,232,0)} }
+.anim-x { animation: xflash 1.5s ease-out; }
+.anim-sp { animation: spflash 1.5s ease-out; }
+
+/* ======================================
+   MODE: OPEN PLAY (single lane, big)
+   ====================================== */
+.mode-open .lane-hdr { height: 56px; }
+.mode-open .lane-hdr-num { font-size: 44px; }
+.mode-open .lane-hdr-label { font-size: 14px; }
+.mode-open .lane-hdr-right { font-size: 16px; }
+.mode-open .lane-empty { font-size: 24px; }
+.mode-open .col-hdr-name { width: 220px; font-size: 11px; }
+.mode-open .col-hdr-f { font-size: 13px; }
+.mode-open .col-hdr-total { width: 100px; font-size: 11px; }
+.mode-open .col-hdr-stats { width: 130px; font-size: 11px; }
+.mode-open .p-name-col { width: 220px; padding: 6px 24px; }
+.mode-open .p-name { font-size: 36px; }
+.mode-open .p-meta { font-size: 14px; margin-top: 3px; }
+.mode-open .f-balls { font-size: 32px; }
+.mode-open .f-score { font-size: 22px; padding: 3px 0 4px; }
+.mode-open .p-total-col { width: 100px; }
+.mode-open .p-total { font-size: 52px; }
+.mode-open .p-max { font-size: 12px; margin-top: 2px; }
+.mode-open .p-stats-col { width: 130px; padding: 6px 12px; font-size: 14px; }
+.mode-open .p-stat-label { font-size: 11px; }
+.mode-open .team-footer { padding: 12px 24px; }
+.mode-open .tf-block { padding: 0 28px; }
+.mode-open .tf-label { font-size: 11px; }
+.mode-open .tf-value { font-size: 34px; }
+
+/* ======================================
+   MODE: LEAGUE (dual lanes, compact)
+   ====================================== */
+.mode-league .lane-hdr { height: 34px; }
+.mode-league .lane-hdr-num { font-size: 26px; }
+.mode-league .lane-hdr-label { font-size: 10px; }
+.mode-league .lane-hdr-right { font-size: 11px; }
+.mode-league .lane-empty { font-size: 18px; }
+.mode-league .col-hdr-name { width: 150px; font-size: 9px; }
+.mode-league .col-hdr-f { font-size: 10px; }
+.mode-league .col-hdr-total { width: 66px; font-size: 9px; }
+.mode-league .col-hdr-stats { width: 86px; font-size: 9px; }
+.mode-league .p-name-col { width: 150px; padding: 3px 14px; }
+.mode-league .p-name { font-size: 22px; }
+.mode-league .p-meta { font-size: 11px; margin-top: 1px; }
+.mode-league .f-balls { font-size: 20px; gap: 2px; }
+.mode-league .f-score { font-size: 15px; padding: 2px 0 2px; }
+.mode-league .p-total-col { width: 66px; }
+.mode-league .p-total { font-size: 32px; }
+.mode-league .p-max { font-size: 10px; margin-top: 1px; }
+.mode-league .p-stats-col { width: 86px; padding: 3px 6px; font-size: 11px; }
+.mode-league .p-stat-label { font-size: 9px; }
+.mode-league .team-footer { padding: 6px 14px; }
+.mode-league .tf-block { padding: 0 18px; }
+.mode-league .tf-label { font-size: 9px; }
+.mode-league .tf-value { font-size: 22px; }
+</style>
+</head>
+<body>
+<div id="status-bar">
+  <div id="status-dot"></div>
+  <span id="status-text">CONNECTING...</span>
+  <span id="config-btn" onclick="toggleConfig()">&#9881;</span>
+</div>
+<div id="config-panel">
+  <label>Lane:</label>
+  <input id="cfg-lane" value="31" style="width:50px">
+  <label>Mode:</label>
+  <select id="cfg-mode">
+    <option value="open">Open Play</option>
+    <option value="league">League</option>
+  </select>
+  <label>API:</label>
+  <input id="cfg-api" value="http://localhost:5000/api" style="width:200px">
+  <label>Team:</label>
+  <input id="cfg-team" value="" style="width:120px" placeholder="optional">
+  <button onclick="applyConfig()">Apply</button>
+</div>
+<div id="lanes-container"></div>
+<script>
+// ---- CONFIG ----
+// URL params:
+//   ?lane=N        primary lane number (required)
+//   ?mode=open|league   display mode (default: open)
+//   ?api=URL       sidecar base URL
+//   ?team=NAME     team label (optional)
+//   ?lanes=N,M     legacy compat (overrides lane/mode: uses first as primary)
+
+// apiBase defaults to wherever this page was served from + /api. Works for any
+// thin client that loaded this page from WSL-SRV. Override via ?api=... if the
+// scoring API lives elsewhere (e.g., during multi-server testing).
+let config = { lane: 31, mode: 'open', apiBase: window.location.origin + '/api', team: '' };
+let laneData = {}, prevBowlKeys = {}, seriesHistory = {};
+
+const P = new URLSearchParams(window.location.search);
+
+// Legacy compat: ?lanes=31,32
+if (P.get('lanes')) {
+  const ll = P.get('lanes').split(',').map(Number).filter(n => n > 0 && n <= 32);
+  if (ll.length > 0) {
+    config.lane = ll[0];
+    config.mode = ll.length > 1 ? 'league' : 'open';
+  }
+}
+if (P.get('lane')) config.lane = parseInt(P.get('lane')) || 31;
+if (P.get('mode') && ['open','league'].includes(P.get('mode'))) config.mode = P.get('mode');
+if (P.get('api')) config.apiBase = P.get('api');
+if (P.get('team')) config.team = P.get('team');
+
+// Derive lanes to poll based on mode
+function getLanes() {
+  if (config.mode === 'league') {
+    // Show the pair: odd lane and its even partner
+    const base = config.lane % 2 === 0 ? config.lane - 1 : config.lane;
+    return [base, base + 1];
+  }
+  return [config.lane];
+}
+
+document.getElementById('cfg-lane').value = config.lane;
+document.getElementById('cfg-mode').value = config.mode;
+document.getElementById('cfg-api').value = config.apiBase;
+document.getElementById('cfg-team').value = config.team;
+
+function toggleConfig() { document.getElementById('config-panel').classList.toggle('open'); }
+function applyConfig() {
+  const ln = parseInt(document.getElementById('cfg-lane').value) || config.lane;
+  if (ln > 0 && ln <= 32) config.lane = ln;
+  config.mode = document.getElementById('cfg-mode').value;
+  config.apiBase = document.getElementById('cfg-api').value.trim() || config.apiBase;
+  config.team = document.getElementById('cfg-team').value.trim();
+  toggleConfig();
+  render();
+}
+
+// ---- SERIES TRACKING ----
+function updateSeries(ln, data) {
+  if (!data || !data.open || !data.players) return;
+  const g = data.game || 1;
+  if (!seriesHistory[ln]) seriesHistory[ln] = { game: g, players: {}, _last: {} };
+  const sh = seriesHistory[ln];
+  if (g > sh.game) {
+    for (const p of data.players) {
+      const n = p.name || '';
+      if (!sh.players[n]) sh.players[n] = [];
+      if (sh._last[n] !== undefined && sh.players[n].length < g - 1) sh.players[n].push(sh._last[n]);
+    }
+    sh.game = g;
+  }
+  sh._last = {};
+  for (const p of data.players) {
+    sh._last[p.name || ''] = p.prog_scratch || p.current_total || 0;
+    if (!sh.players[p.name || '']) sh.players[p.name || ''] = [];
+  }
+}
+function seriesTotal(ln, name) { const s = seriesHistory[ln]; return s && s.players[name] ? s.players[name].reduce((a, b) => a + b, 0) : 0; }
+function gameNum(ln) { return seriesHistory[ln]?.game || 1; }
+
+// ---- MAX POSSIBLE ----
+function bp(b, prev) { if (!b) return 0; const d = b.display; if (d === 'X') return 10; if (d === '/') return 10 - (prev || 0); if (d === '-') return 0; const n = parseInt(d); return isNaN(n) ? 0 : n; }
+function sfb(balls) { let s = 0, i = 0; for (let f = 0; f < 10; f++) { if (i >= balls.length) break; if (f < 9) { if (balls[i] === 10) { s += 10 + (balls[i+1]||0) + (balls[i+2]||0); i++; } else { const a = balls[i]||0, b = balls[i+1]||0; s += (a+b === 10) ? 10 + (balls[i+2]||0) : a + b; i += 2; } } else { s += (balls[i]||0) + (balls[i+1]||0) + (balls[i+2]||0); i += 3; } } return s; }
+function maxP(frames) {
+  if (!frames || !frames.length) return 300;
+  let balls = []; for (const f of frames) { let pv = 0; for (const b of (f.bowls || [])) { const p = bp(b, pv); balls.push(p); pv = p; } }
+  if (!balls.length) return 300;
+  let fb = [], bi = 0;
+  for (let f = 0; f < 10 && bi < balls.length; f++) { if (f < 9) { if (balls[bi] === 10) { fb.push([10]); bi++; } else if (bi+1 < balls.length) { fb.push([balls[bi], balls[bi+1]]); bi += 2; } else { fb.push([balls[bi]]); bi++; break; } } else { let t = []; while (bi < balls.length && t.length < 3) t.push(balls[bi++]); fb.push(t); } }
+  let mx = [...balls], nf = fb.length;
+  if (nf > 0 && nf <= 10) { let l = fb[nf-1]; if (nf <= 9) { if (l.length === 1 && l[0] < 10) mx.push(10 - l[0]); } else { if (l.length === 1) { mx.push(l[0] === 10 ? 10 : 10 - l[0]); mx.push(10); } else if (l.length === 2 && (l[0] === 10 || l[0]+l[1] === 10)) mx.push(10); } }
+  bi = 0; let dn = 0; for (let f = 0; f < 10 && bi < mx.length; f++) { if (f < 9) bi += (mx[bi] === 10) ? 1 : 2; else bi = mx.length; dn = f + 1; }
+  for (let f = dn; f < 9; f++) mx.push(10); if (dn < 10) mx.push(10, 10, 10);
+  return sfb(mx);
+}
+
+// ---- STATS ----
+function pStats(frames) {
+  let xk = 0, spM = 0, spC = 0;
+  for (const f of (frames || [])) { const bw = f.bowls || []; if (!bw.length) continue;
+    for (const b of bw) { if (b.display === 'X') xk++; if (b.display === '/') spM++; }
+    if (f.frame <= 9 && bw.length > 0 && bw[0].display !== 'X') spC++;
+    if (f.frame === 10) { if (bw[0] && bw[0].display !== 'X') spC++; if (bw.length > 1 && bw[0].display === 'X' && bw[1].display !== 'X') spC++; }
+  }
+  return { xk, spM, spPct: spC > 0 ? Math.round(spM / spC * 100) : 0 };
+}
+
+// ---- RENDER ----
+function bm(b) { if (!b) return ''; const d = b.display; if (d === 'X') return '<span class="b-x">X</span>'; if (d === '/') return '<span class="b-sp">/</span>'; if (d === '-') return '<span class="b-miss">-</span>'; if (b.foul) return '<span class="b-foul">F</span>'; if (b.split) return '<span class="b-split">'+d+'</span>'; return '<span class="b-num">'+d+'</span>'; }
+
+function renderPlayer(p, isAct, ln) {
+  const frames = p.frames || [], fMap = {}; frames.forEach(f => { fMap[f.frame] = f; });
+  const total = p.current_total || 0, scratch = p.prog_scratch || total, max = maxP(frames), st = pStats(frames);
+  const gn = gameNum(ln), ser = seriesTotal(ln, p.name || '');
+  const seriesDisp = gn > 1 ? ser + scratch : scratch;
+  let meta = [];
+  if (p.hdcp > 0) meta.push('<span class="p-hdcp">+'+p.hdcp+'</span>');
+  if (p.speed_ball1 > 0) meta.push('<span class="p-speed">'+(p.speed_ball1/10).toFixed(1)+' mph</span>');
+  let fh = '';
+  for (let fn = 1; fn <= 10; fn++) {
+    const f = fMap[fn], bw = f ? f.bowls || [] : [];
+    const bH = bw.length ? bw.map(bm).join('<span style="color:var(--border);opacity:0.5;font-size:0.55em;margin:0 1px">\u2027</span>') : '';
+    const sc = f ? (f.incomplete ? 'pending' : 'done') : '', sv = f ? f.points : '';
+    const key = ln+'-'+(p.name||'')+'-'+fn; let anim = '';
+    if (f && bw.length) { const nk = bw.map(b => b.display).join(''); if (prevBowlKeys[key] !== undefined && prevBowlKeys[key] !== nk) { const last = bw[bw.length-1].display; if (last === 'X') anim = ' anim-x'; else if (last === '/') anim = ' anim-sp'; } prevBowlKeys[key] = nk; }
+    fh += '<div class="f-cell'+(fn === 10 ? ' tenth' : '')+anim+'"><div class="f-balls">'+bH+'</div><div class="f-score '+sc+'">'+sv+'</div></div>';
+  }
+  const maxH = (frames.length > 0 && max > total && max <= 300) ? 'MAX '+max : (frames.length === 0 ? 'MAX 300' : '');
+  return '<div class="p-row'+(isAct ? ' active' : '')+'"><div class="p-name-col"><div class="p-name">'+(p.name||'---')+'</div>'+(meta.length ? '<div class="p-meta">'+meta.join('')+'</div>' : '')+'</div><div class="p-frames-col">'+fh+'</div><div class="p-total-col"><div class="p-total">'+(total||'')+'</div><div class="p-max">'+maxH+'</div></div><div class="p-stats-col"><div class="p-stat-line"><span class="p-stat-label">SERIES</span><span class="p-stat-val amber">'+seriesDisp+'</span></div><div class="p-stat-line"><span class="p-stat-label">X</span><span class="p-stat-val">'+st.xk+'</span></div><div class="p-stat-line"><span class="p-stat-label">/ CVT</span><span class="p-stat-val">'+st.spPct+'%</span></div></div></div>';
+}
+
+function renderFooter(data, ln, visiblePlayers) {
+  // visiblePlayers is the filtered roster for this lane in cross-lane mode,
+  // or the full roster in single-lane mode. Defaults to data.players for
+  // backward compat with any caller that forgot to pass it.
+  const ps = visiblePlayers || (data && data.players) || [];
+  if (!data || !data.open || !ps.length) return '';
+  const gn = gameNum(ln);
+  const tScr = ps.reduce((s, p) => s + (p.prog_scratch || 0), 0);
+  const tHdcp = ps.reduce((s, p) => s + (p.hdcp || 0), 0);
+  const tTot = tScr + tHdcp;
+  let tSer = tScr; if (gn > 1) for (const p of ps) tSer += seriesTotal(ln, p.name || '');
+  const tMax = ps.reduce((s, p) => s + maxP(p.frames || []), 0);
+  return '<div class="team-footer"><div class="tf-block"><div class="tf-label">Scratch</div><div class="tf-value">'+tScr+'</div></div><div class="tf-block"><div class="tf-label">Handicap</div><div class="tf-value cyan">+'+tHdcp+'</div></div><div class="tf-block"><div class="tf-label">Total</div><div class="tf-value amber">'+tTot+'</div></div><div class="tf-block"><div class="tf-label">Series</div><div class="tf-value">'+tSer+'</div></div><div class="tf-block"><div class="tf-label">Max</div><div class="tf-value">'+tMax+'</div></div></div>';
+}
+
+function renderLane(ln) {
+  const data = laneData[ln]; let inner = '';
+  if (!data) inner = '<div class="lane-empty">Connecting...</div>';
+  else if (!data.open) inner = '<div class="lane-empty">Lane Closed</div>';
+  else {
+    // Phase 7 cross-lane: each pair-lane response contains the FULL match
+    // roster (both teams). For each lane section we only want the bowlers
+    // currently physically on that lane — otherwise both sections render
+    // the same 4 names, twice. Single-lane responses lack
+    // current_physical_lane so the filter is a no-op there.
+    const visiblePlayers = data.cross_lane
+      ? (data.players || []).filter(p => p.current_physical_lane === ln)
+      : (data.players || []);
+    if (!visiblePlayers.length) {
+      inner = '<div class="lane-empty">Waiting for bowlers</div>';
+    } else {
+      // Phase 7: prefer is_current flag (server stamps it on the bowler whose
+      // current_physical_lane matches this view). Fall back to the legacy
+      // incomplete-frame heuristic for single-lane responses without the flag.
+      const aiByCurrent = visiblePlayers.findIndex(p => p.is_current === true);
+      const ai = aiByCurrent !== -1 ? aiByCurrent :
+        visiblePlayers.findIndex(p => p.frames && p.frames.length > 0 && p.frames[p.frames.length-1].incomplete);
+      const ch = '<div class="col-header"><div class="col-hdr-name"></div><div class="col-hdr-frames">'+Array.from({length:10},(_,i)=>'<div class="col-hdr-f'+(i===9?' tenth':'')+'">'+(i+1)+'</div>').join('')+'</div><div class="col-hdr-total">Total</div><div class="col-hdr-stats">Stats</div></div>';
+      const rows = visiblePlayers.map((p, i) => renderPlayer(p, i === ai, ln)).join('');
+      inner = '<div class="score-table">'+ch+rows+'</div>'+renderFooter(data, ln, visiblePlayers);
+    }
+  }
+  const gl = data?.open ? 'GAME '+(data.game||1) : '';
+  const teamLabel = config.team ? '<span style="font-size:inherit;font-weight:600;color:var(--bright);letter-spacing:2px;text-transform:uppercase">'+config.team+'</span>' : '';
+  return '<div class="lane-section"><div class="lane-hdr"><span class="lane-hdr-num">'+ln+'</span><span class="lane-hdr-label">Lane</span>'+teamLabel+'<div class="lane-hdr-right">'+gl+'</div></div>'+inner+'</div>';
+}
+
+function render() {
+  const lanes = getLanes();
+  const c = document.getElementById('lanes-container');
+  c.className = 'mode-' + config.mode;
+  c.innerHTML = lanes.map(l => renderLane(l)).join('');
+}
+
+// ---- POLL ----
+async function poll() {
+  let ok = false;
+  const lanes = getLanes();
+  for (const ln of lanes) {
+    try {
+      const r = await fetch(config.apiBase + '/lane/' + ln + '/scoring');
+      if (!r.ok) throw 0;
+      const d = await r.json();
+      if (d.ok) { laneData[ln] = d; updateSeries(ln, d); ok = true; }
+    } catch(e) {}
+  }
+  const dot = document.getElementById('status-dot'), txt = document.getElementById('status-text');
+  if (ok) { dot.className = 'live'; txt.textContent = 'LIVE \u00b7 ' + new Date().toLocaleTimeString(); }
+  else { dot.className = ''; txt.textContent = 'OFFLINE \u00b7 ' + config.apiBase; }
+  render();
+}
+render(); poll(); setInterval(poll, 2500);
+</script>
+</body>
+</html>

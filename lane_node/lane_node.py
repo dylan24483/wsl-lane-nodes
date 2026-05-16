@@ -39,6 +39,22 @@ SERVER_URL = os.environ.get("WSL_LANE_SERVER_URL", "ws://localhost:8765")
 NODE_ID = os.environ.get("WSL_LANE_NODE_ID", "lane-node-dev-pair-21-22")
 LANES = [21, 22]
 
+# How DIELL ball-detect events flow into scoring:
+#   camera   — DIELL fires BALL_EVENT with pin_mask from detect_current_pins().
+#              Auto-scoring. Use ONLY when T-Camera + pin_detect.PIN_SPOTS is
+#              calibrated against real frames — otherwise you score bogus
+#              synthetic pin masks on real balls.
+#   manual   — DIELL fires BALL_EVENT with pin_mask=None. Server records the
+#              ball happened but does NOT apply a pin count; desk operator
+#              enters pins via POST /api/lane/<N>/score. This is the safe
+#              default for Phase 8a cutover until T-Camera lands.
+#   disabled — DIELL events logged on the Pi but no message sent to server.
+#              For bench-testing without scoring side effects.
+SCORING_MODE = os.environ.get("WSL_LANE_SCORING_MODE", "manual").lower()
+if SCORING_MODE not in ("camera", "manual", "disabled"):
+    log.warning(f"Unknown WSL_LANE_SCORING_MODE={SCORING_MODE!r}; falling back to 'manual'")
+    SCORING_MODE = "manual"
+
 # Bump this whenever a message type's shape changes incompatibly. The
 # server compares against its own PROTOCOL_VERSION on HELLO and logs a
 # warning on mismatch. v1 = single-lane (LANE_ID); v2 = multi-lane (LANES).
@@ -170,14 +186,26 @@ def make_ball_detect_callback(lane_id):
             return  # within lockout window — already emitted for this ball
         _ball_detect_lockout[lane_id] = now + BALL_DETECT_LOCKOUT_S
 
-        pin_mask = detect_current_pins(lane_id)
-        log.info(f"GPIO: ball detected on lane {lane_id}, "
-                 f"pin_mask=0x{pin_mask:03x}")
+        if SCORING_MODE == "disabled":
+            log.info(f"GPIO: ball detected on lane {lane_id} (mode=disabled, no emit)")
+            return
+
+        # camera mode: include pin_mask from pin_detect (real or stub).
+        # manual mode: include NO pin_mask — server treats as "ball happened,
+        # await /api/lane/N/score" instead of recording with bogus stub data.
+        if SCORING_MODE == "camera":
+            pin_mask = detect_current_pins(lane_id)
+            log.info(f"GPIO: ball detected on lane {lane_id}, "
+                     f"mode=camera, pin_mask=0x{pin_mask:03x}")
+            msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=pin_mask)
+        else:  # manual
+            log.info(f"GPIO: ball detected on lane {lane_id}, "
+                     f"mode=manual (awaiting desk score)")
+            msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=None,
+                         awaiting_manual=True)
+
         if main_loop and event_queue:
-            main_loop.call_soon_threadsafe(
-                event_queue.put_nowait,
-                encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=pin_mask)
-            )
+            main_loop.call_soon_threadsafe(event_queue.put_nowait, msg)
     return on_ball_detected
 
 

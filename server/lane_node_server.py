@@ -9,6 +9,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Make wsl_scoring_engine importable from sys.path regardless of OS
 # or where this file is launched from. This used to be a hardcoded
@@ -144,11 +145,24 @@ async def handle_node(websocket):
 
             elif mt == Msg.BALL_EVENT:
                 lane = msg.get("lane")
-                # Pi-provided pin_mask if pin_detect ran; None means
-                # the Pi didn't include it (no camera, no DIELL chain
-                # yet) and we fall back to PIN_MASK_CYCLE simulation.
                 pin_mask = msg.get("pin_mask")
-                _process_ball_event(lane, pin_mask=pin_mask)
+                awaiting_manual = bool(msg.get("awaiting_manual", False))
+
+                # Two paths:
+                #   camera mode  — pin_mask is real; record_ball immediately
+                #                  (auto-scoring), then CYCLE the pinsetter.
+                #   manual mode  — pin_mask is None AND awaiting_manual=True;
+                #                  CYCLE the pinsetter so the lane resets, but
+                #                  DO NOT record_ball — wait for the desk to
+                #                  POST /api/lane/<N>/score with real pins.
+                #                  Otherwise we'd score bogus PIN_MASK_CYCLE
+                #                  values on every real ball.
+                if awaiting_manual or pin_mask is None:
+                    log.info(f"Lane {lane}: BALL detected (manual mode — "
+                             f"awaiting /score POST from desk). Cycling pinsetter.")
+                else:
+                    _process_ball_event(lane, pin_mask=pin_mask)
+
                 await websocket.send(encode(Msg.CYCLE, lane=lane))
 
             elif mt == Msg.FOUL_EVENT:
@@ -322,8 +336,44 @@ window.addEventListener('load', refresh);
 
 class HttpHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Split path from query so /display?lane=21&mode=league matches /display
+        path_only = urlparse(self.path).path
+
         if self.path == '/':
             self._send(200, 'text/html; charset=utf-8', DISPLAY_HTML.encode('utf-8'))
+        elif path_only == '/display':
+            # Customer-facing scoring display. Same HTML as wsl-systems —
+            # kept in sync at the repo root. Page polls /api/lane/<N>/scoring
+            # relative to wherever it's served from, which lands on the
+            # handler below.
+            display_path = _REPO_ROOT / 'wsl_scoring_display.html'
+            try:
+                body = display_path.read_bytes()
+            except FileNotFoundError:
+                return self._send(500, 'text/plain',
+                                  f'display HTML not found at {display_path}'.encode('utf-8'))
+            self._send(200, 'text/html; charset=utf-8', body)
+        elif path_only.startswith('/api/lane/') and path_only.endswith('/scoring'):
+            # /api/lane/<N>/scoring — used by wsl_scoring_display.html to poll
+            # this server's Phase 8 scoring state. Returns the same shape as
+            # wsl-systems' /api/lane/<N>/scoring endpoint via to_scoring_response.
+            parts = path_only.strip('/').split('/')
+            if len(parts) != 4:
+                return self._send(404, 'application/json', b'{"error":"not found"}')
+            try:
+                lane = int(parts[2])
+            except ValueError:
+                return self._send(400, 'application/json', b'{"error":"bad lane"}')
+            with state_lock:
+                ls = lane_scoring.get(lane)
+            if ls is None:
+                # No scoring state for this lane — return a "closed" stub so
+                # the display can render "Lane Closed" cleanly instead of erroring.
+                return self._send(200, 'application/json',
+                                  json.dumps({"ok": True, "lane": lane, "open": False,
+                                              "players": []}).encode('utf-8'))
+            resp = ls.to_scoring_response(view_lane_id=lane)
+            self._send(200, 'application/json', json.dumps(resp).encode('utf-8'))
         elif self.path == '/api/state':
             with state_lock:
                 snap = {str(l): ls.to_scoring_response() for l, ls in lane_scoring.items()}
@@ -368,7 +418,7 @@ class HttpHandler(BaseHTTPRequestHandler):
             self._send(404, 'text/plain', b'Not found')
 
     def do_POST(self):
-        # /api/lane/{N}/{open|close|reset|power-on|power-off|trigger-ball}
+        # /api/lane/{N}/{open|close|reset|power-on|power-off|trigger-ball|score}
         parts = self.path.strip('/').split('/')
         if len(parts) == 4 and parts[0] == 'api' and parts[1] == 'lane':
             try:
@@ -377,15 +427,52 @@ class HttpHandler(BaseHTTPRequestHandler):
             except ValueError:
                 return self._send(400, 'application/json', b'{"error":"bad lane"}')
 
-            # trigger-ball is special: synthesizes a BALL_EVENT in-process
-            # rather than sending a command to the Pi. Two use cases:
-            #   1. Bench-testing without DIELL ball-detect sensors wired
-            #   2. Desk-side manual scoring during Phase 8a soak before
-            #      T-Camera + pin_detect is calibrated. The desk operator
-            #      enters the actual pin count after each ball and POSTs
-            #      it here as {"pin_mask": <int 0-1023>, "foul": <bool>}.
-            # If no body is provided, falls back to PIN_MASK_CYCLE rotation.
-            # The CYCLE message still gets sent to the Pi so the relay clicks.
+            # score: record-only endpoint for live-soak manual scoring.
+            # Used after the DIELL beam already fired and the pinsetter
+            # already cycled — desk operator types the actual pin count
+            # and posts {"pin_mask": <int 0-1023>, "foul": <bool>}.
+            # DOES NOT send CYCLE (the Pi already cycled on the BALL_EVENT
+            # that triggered this manual-score flow). Posting score for a
+            # ball that didn't actually happen physically just updates the
+            # scorecard without touching hardware — safe.
+            if action == 'score':
+                content_length = int(self.headers.get('Content-Length', 0) or 0)
+                if content_length == 0:
+                    return self._send(400, 'application/json',
+                                      b'{"error":"body required: {pin_mask: int, foul?: bool}"}')
+                try:
+                    body = json.loads(self.rfile.read(content_length).decode('utf-8'))
+                except (ValueError, UnicodeDecodeError):
+                    return self._send(400, 'application/json',
+                                      b'{"error":"invalid JSON body"}')
+                if 'pin_mask' not in body or body['pin_mask'] is None:
+                    return self._send(400, 'application/json',
+                                      b'{"error":"pin_mask required (int 0-1023)"}')
+                try:
+                    pin_mask_in = int(body['pin_mask']) & 0x3FF
+                except (ValueError, TypeError):
+                    return self._send(400, 'application/json',
+                                      b'{"error":"pin_mask must be int 0-1023"}')
+                if bool(body.get('foul', False)):
+                    with state_lock:
+                        pending_foul[lane] = True
+
+                bowl, pin_mask, foul = _process_ball_event(lane,
+                                                           pin_mask=pin_mask_in)
+                payload = {
+                    "lane": lane,
+                    "pin_mask": pin_mask,
+                    "foul": foul,
+                    "display": bowl.display if bowl else None,
+                }
+                return self._send(200, 'application/json',
+                                  json.dumps(payload).encode('utf-8'))
+
+            # trigger-ball is a BENCH HELPER: synthesizes a BALL_EVENT AND
+            # sends CYCLE to the Pi. Use only when testing without DIELL
+            # wired. For live soak use /score above instead — calling
+            # trigger-ball after a real ball will pulse the pinsetter a
+            # second time and sweep the customer's just-set rack.
             if action == 'trigger-ball':
                 pin_mask_in = None
                 foul_override = False
