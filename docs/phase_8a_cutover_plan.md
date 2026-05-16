@@ -167,15 +167,26 @@ After all 8 wire pairs are moved, **do a final visual pass** comparing each Phas
 1. Verify the Phase 8a enclosure is still powered (Pi green LED + AEDIKO/DONGKER power LEDs). Verify D7 (watchdog-healthy) and D8 (power-good) on the Phase 8a PCB are both lit.
 2. **Do NOT plug the QubicaAMF strip back in.** (After the locked decision: the entire QubicaAMF stack is being removed during this cutover — strip should already be unplugged and units physically disconnected per Step 3.)
 3. From the laptop browser at `http://192.168.86.36:8766/display?lane=21&mode=league`, the display should show both lanes "Closed" (no scoring state yet).
-4. From the laptop, `curl -X POST http://192.168.86.36:8766/api/lane/22/power-on`. The 8270 should power up (audible click from the cabinet, motor energy noise).
-5. From the lane 22 approach, **walk over the foul line** to break the foul beam. Lane Pi journal should log `GPIO: foul detected on lane 22` and emit FOUL_EVENT to the server.
-6. `curl -X POST http://192.168.86.36:8766/api/lane/22/reset`. The pinsetter should cycle: lift, sweep, re-spot. Audible sweep motor.
-7. **Roll a bowling ball down lane 22** (full rack standing). Two things should happen in order:
+4. **Bootstrap test scoring state** so the display has bowlers to render. Two options depending on whether you want to simulate open bowling or league night:
+   - Open bowling per lane (single-lane scoring):
+     ```
+     curl -X POST http://192.168.86.36:8766/api/lane/22/open -H "Content-Type: application/json" -d "{\"bowlers\": [\"TEST1\", \"TEST2\"]}"
+     curl -X POST http://192.168.86.36:8766/api/lane/21/open -H "Content-Type: application/json" -d "{\"bowlers\": [\"TEST3\", \"TEST4\"]}"
+     ```
+   - Or league night (cross-lane scoring across both lanes):
+     ```
+     curl -X POST http://192.168.86.36:8766/api/pair/21-22/open-league -H "Content-Type: application/json" -d "{\"team1_bowlers\": [\"ALICE\", \"ANDREW\"], \"team2_bowlers\": [\"BARB\", \"BRIAN\"], \"team1_name\": \"HOOKS\", \"team2_name\": \"SPLITS\"}"
+     ```
+   Display should refresh and show the test bowlers within ~2 seconds. The cross-lane variant will mark "ALICE up" on lane 21 and "BARB up" on lane 22.
+5. `curl -X POST http://192.168.86.36:8766/api/lane/22/power-on`. The 8270 should power up (audible click from the cabinet, motor energy noise).
+6. From the lane 22 approach, **walk over the foul line** to break the foul beam. Lane Pi journal should log `GPIO: foul detected on lane 22` and emit FOUL_EVENT to the server.
+7. `curl -X POST http://192.168.86.36:8766/api/lane/22/reset`. The pinsetter should cycle: lift, sweep, re-spot. Audible sweep motor.
+8. **Roll a bowling ball down lane 22** (full rack standing). Two things should happen in order:
    - DIELL beams break → Pi journal logs `GPIO: ball detected on lane 22, mode=manual (awaiting desk score)` → server cycles the pinsetter (lift, sweep, re-spot)
    - The display does NOT auto-update (manual mode — awaiting desk score)
-8. `curl -X POST http://192.168.86.36:8766/api/lane/22/score -H "Content-Type: application/json" -d "{\"pin_mask\": 0}"` (0 = strike, all pins down). Display should now show frame 1 with X for the bowler. If the foul was triggered in Step 5 within the prior ~30 seconds, this ball scores as foul.
-9. **Repeat steps 4-8 for lane 21.**
-10. **If anything fails to behave correctly:** see Section 6 — Rollback. Don't troubleshoot live during the window; rollback and debug at home.
+9. `curl -X POST http://192.168.86.36:8766/api/lane/22/score -H "Content-Type: application/json" -d "{\"pin_mask\": 0}"` (0 = strike, all pins down). Display should now show frame 1 with X for the bowler. **Foul-latch behavior:** if the foul was triggered in Step 6, the flag persists indefinitely until the next `/score` (no time-based expiration) and this ball will score as a foul. To clear a stale foul without applying it, post `{"pin_mask": 0, "foul": false}` — the explicit `foul: false` clears the pending flag before recording.
+10. **Repeat steps 5-9 for lane 21.**
+11. **If anything fails to behave correctly:** see Section 6 — Rollback. Don't troubleshoot live during the window; rollback and debug at home.
 
 ### Step 5 — Soak handoff (10 min)
 

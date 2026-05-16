@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-from wsl_scoring_engine import LaneScoring
+from wsl_scoring_engine import LaneScoring, CrossLaneScoring
 from state_store import save_lanes, load_lanes
 
 from websockets.asyncio.server import serve
@@ -449,13 +449,31 @@ class HttpHandler(BaseHTTPRequestHandler):
                     return self._send(400, 'application/json',
                                       b'{"error":"pin_mask required (int 0-1023)"}')
                 try:
-                    pin_mask_in = int(body['pin_mask']) & 0x3FF
+                    pin_mask_in = int(body['pin_mask'])
                 except (ValueError, TypeError):
                     return self._send(400, 'application/json',
                                       b'{"error":"pin_mask must be int 0-1023"}')
-                if bool(body.get('foul', False)):
+                # Strict range check — DO NOT silently mask out-of-range values.
+                # Earlier `int(...) & 0x3FF` accepted -1 as 1023 and 2048 as 0,
+                # contradicting the error message and producing nonsense scores.
+                if not (0 <= pin_mask_in <= 0x3FF):
+                    return self._send(400, 'application/json',
+                                      b'{"error":"pin_mask out of range (must be 0-1023)"}')
+
+                # Foul tri-state on /score:
+                #   true       — flag this ball as a foul (sets pending_foul[lane])
+                #   false      — clear any stale pending_foul for this lane BEFORE
+                #                recording (so a false-positive foul lamp can be
+                #                undone if the desk operator confirms no foul)
+                #   omitted    — leave pending_foul untouched; _process_ball_event
+                #                consumes the existing flag if any
+                foul_in = body.get('foul')
+                if foul_in is True:
                     with state_lock:
                         pending_foul[lane] = True
+                elif foul_in is False:
+                    with state_lock:
+                        pending_foul.pop(lane, None)
 
                 bowl, pin_mask, foul = _process_ball_event(lane,
                                                            pin_mask=pin_mask_in)
@@ -486,10 +504,13 @@ class HttpHandler(BaseHTTPRequestHandler):
                                           b'{"error":"invalid JSON body"}')
                     if 'pin_mask' in body and body['pin_mask'] is not None:
                         try:
-                            pin_mask_in = int(body['pin_mask']) & 0x3FF
+                            pin_mask_in = int(body['pin_mask'])
                         except (ValueError, TypeError):
                             return self._send(400, 'application/json',
                                               b'{"error":"pin_mask must be int 0-1023"}')
+                        if not (0 <= pin_mask_in <= 0x3FF):
+                            return self._send(400, 'application/json',
+                                              b'{"error":"pin_mask out of range (must be 0-1023)"}')
                     foul_override = bool(body.get('foul', False))
 
                 if foul_override:
@@ -523,20 +544,151 @@ class HttpHandler(BaseHTTPRequestHandler):
             if not msg_type:
                 return self._send(400, 'application/json', b'{"error":"bad action"}')
 
-            # If opening, reset the scoring state
+            # If opening, reset the scoring state. Bowlers can be supplied
+            # in the request body as {"bowlers": ["name", ...] or
+            # [{"name": "...", "hdcp": int, "bowler_id": int}, ...]}.
+            # If no body / no bowlers field, falls back to a single TEST bowler
+            # so bench smoke-tests still work without a payload.
             if msg_type == Msg.OPEN_LANE:
+                bowlers_in = None
+                content_length = int(self.headers.get('Content-Length', 0) or 0)
+                if content_length > 0:
+                    try:
+                        body = json.loads(
+                            self.rfile.read(content_length).decode('utf-8'))
+                    except (ValueError, UnicodeDecodeError):
+                        return self._send(400, 'application/json',
+                                          b'{"error":"invalid JSON body"}')
+                    raw_bowlers = body.get('bowlers')
+                    if isinstance(raw_bowlers, list):
+                        # Normalize: accept either ["name", ...] or
+                        # [{"name": "...", ...}, ...]. We keep just the name
+                        # for now — extended attributes (hdcp, bowler_id)
+                        # could be added when LaneScoring's add_bowler is
+                        # wired to take them through this path. The cross-lane
+                        # /api/pair/<L>-<R>/open-league endpoint below handles
+                        # the richer roster shape.
+                        names = []
+                        for item in raw_bowlers:
+                            if isinstance(item, str) and item.strip():
+                                names.append(item.strip())
+                            elif isinstance(item, dict) and item.get('name'):
+                                names.append(str(item['name']).strip())
+                        if names:
+                            bowlers_in = names
+
                 with state_lock:
                     lane_scoring.pop(lane, None)
                     ball_counters.pop(lane, None)
-                    get_or_create_lane(lane, bowlers=['ALICE', 'BOB'])
+                    get_or_create_lane(lane, bowlers=bowlers_in)
                     save_lanes(lane_scoring, ball_counters)  # persist reset
-                log.info(f"OPEN_LANE: reset scoring for lane {lane} with new bowlers")
+                log.info(f"OPEN_LANE: reset scoring for lane {lane} "
+                         f"with bowlers={bowlers_in or '[TEST]'}")
 
             msg = encode(msg_type, lane=lane)
             sent = send_to_all_nodes(msg)
             log.info(f"→ {action.upper()} lane {lane} sent to {sent} node(s)")
             self._send(200, 'application/json',
                        json.dumps({"sent_to": sent, "msg": json.loads(msg)}).encode('utf-8'))
+        elif len(parts) == 4 and parts[0] == 'api' and parts[1] == 'pair' and parts[3] == 'open-league':
+            # POST /api/pair/<L>-<R>/open-league
+            # Body: { team1_bowlers: [...], team2_bowlers: [...],
+            #         team1_name?: str, team2_name?: str }
+            # Each bowler is either "Name" (string) or
+            # { name, hdcp?, average?, bowler_id?, team_id? } (dict).
+            # Creates a CrossLaneScoring registered under BOTH lane keys.
+            # Replaces any existing scoring on either lane (idempotent re-run
+            # supported for roster corrections).
+            try:
+                l_str, r_str = parts[2].split('-')
+                lane_left = int(l_str)
+                lane_right = int(r_str)
+            except (ValueError, AttributeError):
+                return self._send(400, 'application/json',
+                                  b'{"error":"bad pair format, expected L-R (e.g. 21-22)"}')
+            content_length = int(self.headers.get('Content-Length', 0) or 0)
+            if content_length == 0:
+                return self._send(400, 'application/json',
+                                  b'{"error":"body required: {team1_bowlers, team2_bowlers, team1_name?, team2_name?}"}')
+            try:
+                body = json.loads(self.rfile.read(content_length).decode('utf-8'))
+            except (ValueError, UnicodeDecodeError):
+                return self._send(400, 'application/json',
+                                  b'{"error":"invalid JSON body"}')
+            t1_bowlers = body.get('team1_bowlers') or []
+            t2_bowlers = body.get('team2_bowlers') or []
+            t1_name = body.get('team1_name')
+            t2_name = body.get('team2_name')
+            if not isinstance(t1_bowlers, list) or not isinstance(t2_bowlers, list):
+                return self._send(400, 'application/json',
+                                  b'{"error":"team1_bowlers and team2_bowlers must be lists"}')
+
+            cls = CrossLaneScoring(lane_left, lane_right)
+            number = 1
+            for team_lane, raw_bowlers, team_name in (
+                (lane_left,  t1_bowlers, t1_name),
+                (lane_right, t2_bowlers, t2_name),
+            ):
+                for item in raw_bowlers:
+                    if isinstance(item, str):
+                        name = item.strip()
+                        hdcp, avg, team_id, bowler_id = 0, 0.0, None, None
+                    elif isinstance(item, dict):
+                        name = str(item.get('name') or '').strip()
+                        try:
+                            hdcp = int(item.get('hdcp', 0) or 0)
+                        except (ValueError, TypeError):
+                            hdcp = 0
+                        try:
+                            avg = float(item.get('average',
+                                                 item.get('current_avg', 0.0)) or 0.0)
+                        except (ValueError, TypeError):
+                            avg = 0.0
+                        team_id = item.get('team_id')
+                        bowler_id = item.get('bowler_id') or item.get('id')
+                    else:
+                        continue
+                    if not name:
+                        continue
+                    cls.add_bowler(name, number=number, hdcp=hdcp, average=avg,
+                                   starting_lane=team_lane,
+                                   team_id=team_id, team_name=team_name,
+                                   bowler_id=bowler_id)
+                    number += 1
+            cls.start()
+
+            with state_lock:
+                for lid in (lane_left, lane_right):
+                    lane_scoring.pop(lid, None)
+                    ball_counters.pop(lid, None)
+                lane_scoring[lane_left] = cls
+                lane_scoring[lane_right] = cls
+                save_lanes(lane_scoring, ball_counters)
+
+            t1_names = [b.name for b in cls.bowlers
+                        if b.starting_physical_lane == lane_left]
+            t2_names = [b.name for b in cls.bowlers
+                        if b.starting_physical_lane == lane_right]
+            log.info(f"OPEN_LEAGUE: pair {lane_left}+{lane_right} "
+                     f"team1={t1_names} team2={t2_names}")
+
+            # Pulse OPEN_LANE on both Pis so the relays kick the
+            # "first set" 3-pulse pattern. Pi-side handler is unchanged.
+            for lid in (lane_left, lane_right):
+                send_to_all_nodes(encode(Msg.OPEN_LANE, lane=lid,
+                                         bowlers=[b.name for b in cls.bowlers]))
+
+            return self._send(200, 'application/json',
+                              json.dumps({
+                                  "ok": True,
+                                  "lane_left": lane_left,
+                                  "lane_right": lane_right,
+                                  "team1_name": t1_name,
+                                  "team2_name": t2_name,
+                                  "team1_bowlers": t1_names,
+                                  "team2_bowlers": t2_names,
+                                  "game": cls.game_number,
+                              }).encode('utf-8'))
         else:
             self._send(404, 'application/json', b'{"error":"not found"}')
 
