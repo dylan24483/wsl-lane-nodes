@@ -78,27 +78,47 @@ def _ensure_schema():
         conn.commit()
 
 
+# Sentinel lane_id for the single-snapshot row that holds the whole
+# lane_scoring dict pickled together. This preserves Python object
+# identity across keys — when a CrossLaneScoring is registered under
+# both lane 21 and lane 22, after restart the same object is restored
+# under both keys (not two independent copies). The previous per-row
+# format pickled each lane independently, which broke identity.
+_SNAPSHOT_LANE_ID = 0
+
+
 def save_lanes(lane_scoring: dict, ball_counters: dict) -> None:
     """Persist the current state of every lane.
 
     Called on every BALL_EVENT (write-through) and on graceful
     shutdown. Best-effort — exceptions are logged but don't propagate;
     losing a save shouldn't crash the server.
+
+    Format: a single pickle of {'lane_scoring': dict, 'ball_counters':
+    dict} stored under lane_id=0. This preserves object identity for
+    CrossLaneScoring objects that span multiple lane keys.
     """
     try:
         with _db_lock:
             _ensure_schema()
             with sqlite3.connect(DB_PATH) as conn:
-                now = time.time()
-                for lane_id, ls in lane_scoring.items():
-                    blob = pickle.dumps(ls)
-                    counter = ball_counters.get(lane_id, 0)
-                    conn.execute(
-                        "INSERT OR REPLACE INTO lane_state "
-                        "(lane_id, state_pickle, ball_counter, updated_at) "
-                        "VALUES (?, ?, ?, ?)",
-                        (lane_id, blob, counter, now)
-                    )
+                snapshot = {
+                    'lane_scoring': dict(lane_scoring),
+                    'ball_counters': dict(ball_counters),
+                }
+                blob = pickle.dumps(snapshot)
+                # Replace the snapshot row + remove any legacy per-lane
+                # rows from the prior format. Without the DELETE, closed
+                # lanes would resurrect on next load because the legacy
+                # rows persist independently of the new snapshot.
+                conn.execute("DELETE FROM lane_state WHERE lane_id != ?",
+                             (_SNAPSHOT_LANE_ID,))
+                conn.execute(
+                    "INSERT OR REPLACE INTO lane_state "
+                    "(lane_id, state_pickle, ball_counter, updated_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (_SNAPSHOT_LANE_ID, blob, 0, time.time())
+                )
                 conn.commit()
     except Exception as e:
         log.warning(f"save_lanes failed: {e}")
@@ -108,8 +128,14 @@ def load_lanes() -> tuple[dict, dict]:
     """Restore the most recent saved state.
 
     Returns (lane_scoring, ball_counters). Both are empty dicts if
-    the DB doesn't exist, the schema is missing, or any saved state
-    fails to unpickle (e.g. LaneScoring class changed since the save).
+    the DB doesn't exist, the schema is missing, or the saved state
+    fails to unpickle (e.g. class shape changed since the save).
+
+    Reads the single-snapshot row (lane_id=0). If only legacy per-lane
+    rows exist (from before the snapshot-format change), those are
+    ignored — start fresh and the next save_lanes() will overwrite
+    them. The legacy format silently broke cross-lane object identity
+    on every reload, so it's not worth migrating.
     """
     lane_scoring: dict = {}
     ball_counters: dict = {}
@@ -122,23 +148,49 @@ def load_lanes() -> tuple[dict, dict]:
             _ensure_schema()
             with sqlite3.connect(DB_PATH) as conn:
                 cur = conn.execute(
-                    "SELECT lane_id, state_pickle, ball_counter, updated_at "
-                    "FROM lane_state ORDER BY lane_id"
+                    "SELECT state_pickle, updated_at FROM lane_state "
+                    "WHERE lane_id = ?",
+                    (_SNAPSHOT_LANE_ID,)
                 )
-                for lane_id, blob, counter, updated_at in cur.fetchall():
-                    try:
-                        ls = pickle.loads(blob)
-                        lane_scoring[lane_id] = ls
-                        ball_counters[lane_id] = counter
-                        age_min = (time.time() - updated_at) / 60
-                        log.info(f"Restored lane {lane_id} from saved state "
-                                 f"(updated {age_min:.1f} min ago)")
-                    except Exception as e:
+                row = cur.fetchone()
+                if row is None:
+                    # No snapshot row — either fresh DB or legacy format.
+                    # Either way, start fresh.
+                    legacy_count = conn.execute(
+                        "SELECT COUNT(*) FROM lane_state").fetchone()[0]
+                    if legacy_count:
                         log.warning(
-                            f"Failed to unpickle saved state for lane {lane_id}: {e}. "
-                            f"This is usually a LaneScoring class-shape mismatch. "
-                            f"Skipping — that lane will start fresh."
-                        )
+                            f"DB at {DB_PATH} has {legacy_count} legacy "
+                            f"per-lane row(s) but no snapshot. Ignoring "
+                            f"legacy rows (cross-lane identity unreliable); "
+                            f"starting fresh.")
+                    else:
+                        log.info(f"No saved state in {DB_PATH}; starting fresh.")
+                    return lane_scoring, ball_counters
+
+                blob, updated_at = row
+                try:
+                    snapshot = pickle.loads(blob)
+                except Exception as e:
+                    log.warning(
+                        f"Failed to unpickle snapshot: {e}. Usually a class-"
+                        f"shape mismatch. Starting fresh.")
+                    return lane_scoring, ball_counters
+
+                lane_scoring = snapshot.get('lane_scoring') or {}
+                ball_counters = snapshot.get('ball_counters') or {}
+                age_min = (time.time() - updated_at) / 60
+                log.info(f"Restored {len(lane_scoring)} lane(s) from snapshot "
+                         f"(updated {age_min:.1f} min ago).")
+                # Confirm cross-lane identity preservation in the log so
+                # any future regression is visible at boot.
+                shared = {}
+                for lid, ls in lane_scoring.items():
+                    shared.setdefault(id(ls), []).append(lid)
+                for ls_id, lane_ids in shared.items():
+                    if len(lane_ids) > 1:
+                        log.info(f"  Cross-lane scoring object spans lanes "
+                                 f"{sorted(lane_ids)} (identity preserved)")
     except Exception as e:
         log.warning(f"load_lanes failed: {e}; starting fresh.")
     return lane_scoring, ball_counters

@@ -75,12 +75,22 @@ def _process_ball_event(lane, pin_mask=None):
             pin_mask = PIN_MASK_CYCLE[n % len(PIN_MASK_CYCLE)]
         ball_counters[lane] = n + 1
         foul = pending_foul.pop(lane, False)
-        bowl = ls.record_ball(pin_mask, foul=foul)
+        # Route by physical lane when the scorer is CrossLaneScoring —
+        # otherwise CrossLaneScoring.record_ball() always falls back to
+        # lane_left, which means a score posted to /api/lane/22/score
+        # during a league match records against lane 21's current bowler.
+        # LaneScoring (single-lane) has no record_ball_for_lane method.
+        if hasattr(ls, 'record_ball_for_lane'):
+            bowl = ls.record_ball_for_lane(lane, pin_mask, foul=foul)
+            current_for_log = ls.current_bowler_for_lane(lane)
+        else:
+            bowl = ls.record_ball(pin_mask, foul=foul)
+            current_for_log = ls.current_bowler
         save_lanes(lane_scoring, ball_counters)
     if bowl:
         pd = 10 - bin(pin_mask).count("1")
         foul_marker = " [FOUL]" if foul else ""
-        log.info(f"Lane {lane}: {ls.current_bowler.name if ls.current_bowler else '?'}"
+        log.info(f"Lane {lane}: {current_for_log.name if current_for_log else '?'}"
                  f" → {bowl.display} ({pd} pins, mask={pin_mask:#012b}){foul_marker}")
     return bowl, pin_mask, foul
 
@@ -584,6 +594,26 @@ class HttpHandler(BaseHTTPRequestHandler):
                     save_lanes(lane_scoring, ball_counters)  # persist reset
                 log.info(f"OPEN_LANE: reset scoring for lane {lane} "
                          f"with bowlers={bowlers_in or '[TEST]'}")
+
+            # If closing, clear the scoring state on this lane (and the
+            # paired lane too, if this lane is part of a CrossLaneScoring —
+            # otherwise the overhead display would keep showing the old
+            # match roster after desk close).
+            if msg_type == Msg.CLOSE_LANE:
+                with state_lock:
+                    ls = lane_scoring.get(lane)
+                    cleared = []
+                    if ls is not None and hasattr(ls, 'lane_ids'):
+                        for lid in list(ls.lane_ids):
+                            lane_scoring.pop(lid, None)
+                            ball_counters.pop(lid, None)
+                            cleared.append(lid)
+                    else:
+                        lane_scoring.pop(lane, None)
+                        ball_counters.pop(lane, None)
+                        cleared.append(lane)
+                    save_lanes(lane_scoring, ball_counters)
+                log.info(f"CLOSE_LANE: cleared scoring for lane(s) {cleared}")
 
             msg = encode(msg_type, lane=lane)
             sent = send_to_all_nodes(msg)
