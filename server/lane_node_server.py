@@ -496,6 +496,66 @@ class HttpHandler(BaseHTTPRequestHandler):
                 return self._send(200, 'application/json',
                                   json.dumps(payload).encode('utf-8'))
 
+            # correct: rewrite a frame's bowls for desk corrections. Called
+            # by wsl_api.py's /api/lanes/<id>/scoring/correct proxy when the
+            # lane is on a Phase 8 pair. Body matches wsl_api's contract:
+            # { bowler_idx: int, frame_idx: int (0-9),
+            #   bowls: [{pins_down: 0-10, foul?: bool}, ...] }.
+            # Returns the result dict from correct_frame() with an added
+            # 'scoring' key holding the full updated to_scoring_response,
+            # so the desk can refresh without a second fetch.
+            #
+            # Works for BOTH LaneScoring and CrossLaneScoring — both expose
+            # correct_frame() and to_scoring_response(view_lane_id) with the
+            # same signature. No hardware command is sent (this is purely
+            # bookkeeping; pins on the deck are whatever they are).
+            if action == 'correct':
+                content_length = int(self.headers.get('Content-Length', 0) or 0)
+                if content_length == 0:
+                    return self._send(400, 'application/json',
+                                      b'{"error":"body required: {bowler_idx, frame_idx, bowls}"}')
+                try:
+                    body = json.loads(self.rfile.read(content_length).decode('utf-8'))
+                except (ValueError, UnicodeDecodeError):
+                    return self._send(400, 'application/json',
+                                      b'{"error":"invalid JSON body"}')
+                try:
+                    bowler_idx = int(body.get('bowler_idx', -1))
+                    frame_idx = int(body.get('frame_idx', -1))
+                except (TypeError, ValueError):
+                    return self._send(400, 'application/json',
+                                      b'{"error":"bowler_idx and frame_idx must be integers"}')
+                bowls = body.get('bowls', [])
+                if not isinstance(bowls, list):
+                    return self._send(400, 'application/json',
+                                      b'{"error":"bowls must be an array"}')
+
+                with state_lock:
+                    ls = lane_scoring.get(lane)
+                    if not ls or not ls.is_active:
+                        return self._send(
+                            404, 'application/json',
+                            json.dumps({'ok': False,
+                                        'error': f'Lane {lane} not active'}).encode('utf-8'))
+                    result = ls.correct_frame(bowler_idx, frame_idx, bowls)
+                    if not result.get('ok'):
+                        return self._send(400, 'application/json',
+                                          json.dumps(result).encode('utf-8'))
+                    # Persist immediately so corrections survive a server
+                    # restart — same pattern as _process_ball_event.
+                    save_lanes(lane_scoring, ball_counters)
+                    # Fresh scoring payload so the desk refreshes without
+                    # waiting for the next 5s poll cycle.
+                    try:
+                        result['scoring'] = ls.to_scoring_response(view_lane_id=lane)
+                    except TypeError:
+                        result['scoring'] = ls.to_scoring_response()
+                log.info(f"Lane {lane}: correction by desk — "
+                         f"bowler_idx={bowler_idx} frame_idx={frame_idx} "
+                         f"bowls={bowls}")
+                return self._send(200, 'application/json',
+                                  json.dumps(result).encode('utf-8'))
+
             # trigger-ball is a BENCH HELPER: synthesizes a BALL_EVENT AND
             # sends CYCLE to the Pi. Use only when testing without DIELL
             # wired. For live soak use /score above instead — calling
