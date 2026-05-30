@@ -70,6 +70,14 @@ LANE_GPIO = {
          "diell_left": 19, "diell_right": 20},
 }
 
+# Hardware-watchdog kick pin — board-level (one NE555 per PCB / per pair),
+# NOT per-lane, so it lives outside LANE_GPIO. The NE555 monostable drops
+# the AEDIKO relay-coil return (all relays open) unless it's pulsed at least
+# every ~11s. watchdog_kick_loop() pets it at ~1Hz. relay_cleanup.py must
+# also force this LOW on SIGKILL (see the note there) — a retained-HIGH kick
+# pin would hold the watchdog alive and defeat it.
+WATCHDOG_KICK_PIN = 12
+
 # gpiozero devices instantiated per-lane below. Dicts keyed by lane id.
 # Naming note: BALL_DETECT is the foul-lamp input — kept this name for
 # backward-compat with relay_cleanup.py and prototypes/. The actual ball
@@ -89,6 +97,10 @@ for lane_id in LANES:
     DIELL_RIGHT[lane_id] = Button(pins["diell_right"], pull_up=False, bounce_time=0.02)
     PINSETTER_CYCLE[lane_id] = LED(pins["cycle"])
     PINSETTER_POWER[lane_id] = LED(pins["power"])
+
+# Board-level watchdog kick output (one per PCB, not per-lane). Pulsed by
+# watchdog_kick_loop(); driven LOW + closed in _cleanup_gpio() on shutdown.
+WATCHDOG_KICK = LED(WATCHDOG_KICK_PIN)
 
 class Msg:
     HELLO = "hello"
@@ -219,6 +231,26 @@ async def heartbeat_loop(ws):
         await asyncio.sleep(5)
         await ws.send(encode(Msg.HEARTBEAT, node=NODE_ID))
 
+async def watchdog_kick_loop():
+    """Pet the NE555 hardware watchdog on the interposer PCB at ~1Hz.
+
+    Deliberately runs OUTSIDE the WS-connection scope (contrast
+    heartbeat_loop, which lives inside `async with connect(...)`). The kick
+    must continue as long as THIS PROCESS's event loop is alive, regardless
+    of server connectivity — a server outage must NOT drop the pinsetter.
+    Only daemon death or an event-loop hang stops the kicks, which is exactly
+    when we want the relays to safe-open (~11s after the last kick).
+
+    50ms pulse is comfortably longer than the NE555 trigger needs; the 950ms
+    gap keeps us well inside the ~11s timeout with large margin. Cleanup
+    (drive LOW + close) is centralized in _cleanup_gpio() via main()'s finally.
+    """
+    while True:
+        WATCHDOG_KICK.on()
+        await asyncio.sleep(0.05)
+        WATCHDOG_KICK.off()
+        await asyncio.sleep(0.95)
+
 async def event_sender(ws):
     while True:
         msg = await event_queue.get()
@@ -292,6 +324,9 @@ def _cleanup_gpio():
     daemon is reaped.
     """
     try:
+        # Stop kicking the watchdog first → it trips → relays safe-open.
+        WATCHDOG_KICK.off()
+        WATCHDOG_KICK.close()
         for lane_id in LANES:
             PINSETTER_CYCLE[lane_id].off()
             PINSETTER_POWER[lane_id].off()
@@ -305,6 +340,35 @@ def _cleanup_gpio():
     except Exception as e:
         log.warning(f"GPIO cleanup error: {e}")
 
+async def connection_manager():
+    """Maintain the WS connection to the server, reconnecting on drop.
+
+    All server commands + scoring events flow through here. Kept SEPARATE
+    from watchdog_kick_loop() on purpose: if the server is unreachable or
+    this stalls in reconnect-backoff, the watchdog keeps getting kicked
+    (the daemon is alive), so the pinsetter stays powered. We only drop
+    relays on actual daemon death / event-loop hang — never on a mere
+    server outage.
+    """
+    while True:
+        try:
+            log.info(f"Connecting to {SERVER_URL} ...")
+            async with connect(SERVER_URL) as ws:
+                log.info(f"Connected. Sending hello (lanes={LANES}, "
+                         f"protocol_version={PROTOCOL_VERSION}).")
+                await ws.send(encode(Msg.HELLO, node=NODE_ID, lanes=LANES,
+                                     protocol_version=PROTOCOL_VERSION))
+                await asyncio.gather(
+                    heartbeat_loop(ws),
+                    event_sender(ws),
+                    command_handler(ws),
+                )
+        except asyncio.CancelledError:
+            raise  # let main()'s finally run cleanup
+        except Exception as e:
+            log.warning(f"Connection lost: {e}. Retrying in 5s...")
+            await asyncio.sleep(5)
+
 async def main():
     global event_queue, main_loop
     main_loop = asyncio.get_running_loop()
@@ -317,25 +381,18 @@ async def main():
     main_task = asyncio.current_task()
     main_loop.add_signal_handler(signal.SIGTERM, main_task.cancel)
 
+    log.info(f"Hardware watchdog: kicking GPIO {WATCHDOG_KICK_PIN} @ ~1Hz "
+             f"(runs independent of the server connection).")
+
     try:
-        while True:
-            try:
-                log.info(f"Connecting to {SERVER_URL} ...")
-                async with connect(SERVER_URL) as ws:
-                    log.info(f"Connected. Sending hello (lanes={LANES}, "
-                             f"protocol_version={PROTOCOL_VERSION}).")
-                    await ws.send(encode(Msg.HELLO, node=NODE_ID, lanes=LANES,
-                                         protocol_version=PROTOCOL_VERSION))
-                    await asyncio.gather(
-                        heartbeat_loop(ws),
-                        event_sender(ws),
-                        command_handler(ws),
-                    )
-            except asyncio.CancelledError:
-                raise  # let the outer finally run cleanup
-            except Exception as e:
-                log.warning(f"Connection lost: {e}. Retrying in 5s...")
-                await asyncio.sleep(5)
+        # The watchdog kick and the server connection run concurrently and
+        # independently. SIGTERM cancels main_task → gather cancels both →
+        # finally runs _cleanup_gpio(). If either coroutine raises, gather
+        # propagates and we still clean up (relays safe-open).
+        await asyncio.gather(
+            watchdog_kick_loop(),
+            connection_manager(),
+        )
     finally:
         _cleanup_gpio()
 

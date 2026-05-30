@@ -28,8 +28,17 @@ RELAY_PINS = [
     23,  # PINSETTER_POWER for lane 22
 ]
 
+# The hardware-watchdog kick pin (NE555 pet line). NOT a relay, but it MUST
+# be forced LOW here too. If lane_node.py died mid-kick with GPIO 12 retained
+# HIGH, the BCM2711 keeps driving it HIGH → the NE555 sees a steady kick →
+# the watchdog is held ALIVE → the relay-coil return never opens and the
+# relays never drop. Driving it LOW lets the watchdog time out (~11s) and
+# safe-open the coil return as designed. Keep in sync with lane_node.py's
+# WATCHDOG_KICK_PIN.
+WATCHDOG_KICK_PIN = 12
+
 if __name__ == '__main__':
-    for pin in RELAY_PINS:
+    for pin in RELAY_PINS + [WATCHDOG_KICK_PIN]:
         try:
             led = LED(pin)
             led.off()
