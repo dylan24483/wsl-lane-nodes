@@ -381,9 +381,19 @@ class BowlerGame:
     def _recalc_scores(self):
         """Recalculate all running frame scores with bonus logic."""
         running = 0
+        # Cumulative scores are a running prefix sum: the moment one frame can't
+        # be resolved (strike/spare awaiting bonus balls, or an incomplete open
+        # frame), EVERY later frame's cumulative is unknown too. Cascade None
+        # instead of letting a later frame (notably the 10th) print a total that
+        # silently skips the unresolved frame.
+        blocked = False
         for i, frame in enumerate(self.frames):
             if not frame.bowls:
                 break
+
+            if blocked:
+                frame.score = None
+                continue
 
             if frame.number < 10:
                 base = frame.total_pins_this_frame
@@ -392,17 +402,20 @@ class BowlerGame:
                     bonus = self._get_bonus_balls(i, 2)
                     if bonus is None:
                         frame.score = None
+                        blocked = True
                         continue
                     running += 10 + bonus
                 elif frame.is_spare:
                     bonus = self._get_bonus_balls(i, 1)
                     if bonus is None:
                         frame.score = None
+                        blocked = True
                         continue
                     running += 10 + bonus
                 else:
                     if not frame.is_complete:
                         frame.score = None
+                        blocked = True
                         continue
                     running += base
 
