@@ -277,34 +277,43 @@ class BowlerGame:
         else:
             display = str(knocked)
 
-        # Detect split (only on ball 1, after first delivery)
+        # A foul counts as a delivery but credits ZERO pins (USBC rule). The
+        # physical pin_map is kept for display/audit, but the SCORED pinfall
+        # (Bowl.pins_down, summed by _recalc_scores) and every strike/spare/split
+        # decision use eff=0 on a foul. This is precisely why a fouled 10-count
+        # must NOT register as a strike.
+        eff = 0 if foul else knocked
+
+        # Detect split (only on ball 1, after first delivery; never on a foul)
         split = False
-        if self.ball_in_frame == 1 and knocked > 0 and knocked < 10:
+        if self.ball_in_frame == 1 and eff > 0 and eff < 10:
             split = is_split(mask)
 
         bowl = Bowl(
             num=self.ball_in_frame,
             pin_map=mask,
-            pins_knocked=knocked,
+            pins_knocked=eff,
             display=display,
             foul=foul,
             split=split,
         )
         frame.bowls.append(bowl)
 
-        # --- Frame completion logic ---
+        # --- Frame completion logic --- (eff, not the physical knock count,
+        # drives strike/spare detection so a foul is never scored as a mark)
         if is_tenth:
-            self._handle_tenth_frame(frame, mask, knocked, bowl)
+            self._handle_tenth_frame(frame, mask, eff, bowl, foul)
         else:
-            self._handle_normal_frame(frame, mask, knocked, bowl)
+            self._handle_normal_frame(frame, mask, eff, bowl, foul)
 
         # Recalculate running scores
         self._recalc_scores()
 
         return bowl
 
-    def _handle_normal_frame(self, frame: Frame, mask: int, knocked: int, bowl: Bowl):
-        """Handle frame advancement for frames 1-9."""
+    def _handle_normal_frame(self, frame: Frame, mask: int, knocked: int, bowl: Bowl, foul: bool = False):
+        """Handle frame advancement for frames 1-9. `knocked` is the SCORED
+        pinfall (0 on a foul), so a foul is never a strike or spare."""
         if self.ball_in_frame == 1:
             if knocked == 10:
                 # Strike
@@ -314,19 +323,23 @@ class BowlerGame:
                 self.ball_in_frame = 1
                 self.mask_before_ball = 0x3FF
             else:
-                # Not a strike, go to ball 2
+                # Not a strike, go to ball 2. A ball-1 foul respots the full rack,
+                # so ball 2 faces ten pins again (USBC).
                 self.ball_in_frame = 2
-                self.mask_before_ball = mask
+                self.mask_before_ball = 0x3FF if foul else mask
         elif self.ball_in_frame == 2:
-            if mask == 0:
+            # Spare = the two SCORED deliveries clear all ten (a foul credits 0,
+            # so foul+anything < 10 is an open frame, never a spare).
+            if frame.bowls[0].pins_down + knocked >= 10:
                 frame.is_spare = True
             frame.is_complete = True
             self.current_frame_idx += 1
             self.ball_in_frame = 1
             self.mask_before_ball = 0x3FF
 
-    def _handle_tenth_frame(self, frame: Frame, mask: int, knocked: int, bowl: Bowl):
-        """Handle the 10th frame (up to 3 balls)."""
+    def _handle_tenth_frame(self, frame: Frame, mask: int, knocked: int, bowl: Bowl, foul: bool = False):
+        """Handle the 10th frame (up to 3 balls). `knocked` is the SCORED pinfall
+        (0 on a foul), so a foul is never a strike/spare and respots the rack."""
         bc = frame.ball_count  # After appending bowl
 
         if bc == 1:
@@ -336,7 +349,8 @@ class BowlerGame:
                 self.mask_before_ball = 0x3FF  # Reset pins for ball 2
             else:
                 self.ball_in_frame = 2
-                self.mask_before_ball = mask
+                # A ball-1 foul respots the full rack for ball 2.
+                self.mask_before_ball = 0x3FF if foul else mask
         elif bc == 2:
             if frame.is_strike:
                 # Had strike on ball 1
@@ -346,10 +360,12 @@ class BowlerGame:
                     self.mask_before_ball = 0x3FF
                 else:
                     self.ball_in_frame = 3
-                    self.mask_before_ball = mask
+                    # A foul on this fill ball respots the rack for the 3rd ball.
+                    self.mask_before_ball = 0x3FF if foul else mask
             else:
-                # No strike on ball 1
-                if mask == 0:
+                # No strike on ball 1 — spare if the two SCORED balls clear ten
+                # (a foul credits 0, so it can't complete a spare).
+                if frame.bowls[0].pins_down + knocked >= 10:
                     # Spare
                     frame.is_spare = True
                     self.ball_in_frame = 3
