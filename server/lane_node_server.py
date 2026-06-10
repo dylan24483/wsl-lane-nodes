@@ -147,6 +147,25 @@ class Msg:
 # physical sensors (AL-ZARD foul circuit vs DIELL ball-detect).
 pending_foul: dict = {}
 
+# Duplicate-ball suppression window (seconds). Pin scatter / sensor chatter
+# can re-trigger DIELL for the SAME physical ball; the node suppresses
+# camera-mode duplicates in-flight, and this server-side window covers the
+# residual paths (manual mode at the node's default 0.2s lockout, and a
+# possible redelivery from the node's transactional re-queue after a WS
+# drop). DEFAULT 0 = DISABLED (current behavior, bench-gate rule). At
+# cutover set LANE_BALL_DEDUP_S=8 to mirror the 82-70's own full-cycle
+# ball-detect masking — bench-confirm against the real machine cycle time.
+# A suppressed duplicate is logged and gets NO record_ball and NO second
+# CYCLE pulse (fail-safe direction: fewer relay actuations).
+try:
+    BALL_DEDUP_WINDOW_S = max(0.0, float(os.environ.get("LANE_BALL_DEDUP_S", "0")))
+except ValueError:
+    logging.getLogger("lane_node_server").warning(
+        "Bad LANE_BALL_DEDUP_S=%r — duplicate-ball window disabled",
+        os.environ.get("LANE_BALL_DEDUP_S"))
+    BALL_DEDUP_WINDOW_S = 0.0
+_last_ball_at: dict = {}   # lane-id -> time.monotonic() of last ACCEPTED ball
+
 def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
 def decode(r): return json.loads(r)
 
@@ -246,6 +265,19 @@ async def handle_node(websocket):
                     log.warning(f"Node {node_id!r}: BALL_EVENT for lane {lane} "
                                 f"outside its declared lanes; ignored")
                     continue
+
+                # Duplicate-ball window (see BALL_DEDUP_WINDOW_S above):
+                # suppressed dupes get no record_ball and no second CYCLE.
+                if BALL_DEDUP_WINDOW_S > 0:
+                    nowm = time.monotonic()
+                    last = _last_ball_at.get(lane)
+                    if last is not None and (nowm - last) < BALL_DEDUP_WINDOW_S:
+                        log.warning(
+                            f"Lane {lane}: duplicate BALL_EVENT "
+                            f"{nowm - last:.2f}s after the last accepted ball "
+                            f"(window {BALL_DEDUP_WINDOW_S}s); suppressed")
+                        continue
+                    _last_ball_at[lane] = nowm
 
                 # Two paths:
                 #   camera mode  — pin_mask is real; record_ball immediately
