@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Lane node daemon — Pi side. Reads sensors, drives outputs, talks to WSL-SRV.
 
-Each Pi node controls one PAIR of lanes (e.g., lanes 21 + 22). Per-lane GPIO
+Each Pi node controls one PAIR of lanes (e.g., lanes 21 + 22). The pair is
+selected via WSL_LANES (e.g. WSL_LANES="23,24"; default 21,22). Per-lane GPIO
 assignments live in LANE_GPIO; gpiozero devices and per-lane callbacks are
 instantiated by iterating LANES at startup. Server commands carry a `lane`
 field that routes to the right physical GPIO.
@@ -34,11 +35,35 @@ log = logging.getLogger('lane_node')
 import os
 # SERVER_URL: defaults to localhost for dev (server + node on same Pi),
 # overridable via env var for production where the server runs on
-# WSL-SRV. Example for production:
-#   WSL_LANE_SERVER_URL=ws://192.168.86.36:8765 python3 lane_node.py
+# WSL-SRV. Example for production (the live WSL-SRV IP is tracked in ONE
+# authoritative place: docs/manual_src/20_operations.md § 20.4):
+#   WSL_LANE_SERVER_URL=ws://<WSL-SRV-IP>:8765 python3 lane_node.py
 SERVER_URL = os.environ.get("WSL_LANE_SERVER_URL", "ws://localhost:8765")
 NODE_ID = os.environ.get("WSL_LANE_NODE_ID", "lane-node-dev-pair-21-22")
-LANES = [21, 22]
+
+def _parse_lanes(raw):
+    """Parse WSL_LANES (e.g. "23,24") into a lane-id list.
+
+    Unset/blank → default [21, 22] (the pilot pair) so existing nodes are
+    byte-for-byte unchanged. A MALFORMED value is a hard startup error, NOT
+    a silent fallback: falling back to a default pair on a provisioning typo
+    would actuate the WRONG physical machines' relays. Dead node > wrong
+    machine. (Each lane must also have a LANE_GPIO entry — validated below.)
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return [21, 22]
+    try:
+        lanes = [int(p) for p in raw.split(",") if p.strip()]
+    except ValueError:
+        raise SystemExit(f"WSL_LANES={raw!r}: not a comma-separated list of lane numbers")
+    if not lanes:
+        raise SystemExit(f"WSL_LANES={raw!r}: no lanes parsed")
+    if len(set(lanes)) != len(lanes):
+        raise SystemExit(f"WSL_LANES={raw!r}: duplicate lane ids")
+    return lanes
+
+LANES = _parse_lanes(os.environ.get("WSL_LANES"))
 # Shared auth token, matching the server's LANE_NODE_TOKEN. When the server
 # has LANE_NODE_TOKEN set, it rejects any HELLO without the same value; when
 # unset on both sides, behavior is unchanged (unauthenticated, bench compat).
@@ -75,6 +100,14 @@ LANE_GPIO = {
     22: {"foul": 17, "ball2": 22, "cycle": 27, "power": 23,
          "diell_left": 19, "diell_right": 20},
 }
+
+# Every configured lane must have a GPIO map. Hard error, not a fallback —
+# same rationale as _parse_lanes(): never guess which physical machine to
+# drive. (Provisioning a new pair = add its LANE_GPIO entry + set WSL_LANES.)
+_unmapped_lanes = [l for l in LANES if l not in LANE_GPIO]
+if _unmapped_lanes:
+    raise SystemExit(f"WSL_LANES includes lane(s) with no LANE_GPIO entry: "
+                     f"{_unmapped_lanes} (known: {sorted(LANE_GPIO)})")
 
 # Hardware-watchdog kick pin — board-level (one NE555 per PCB / per pair),
 # NOT per-lane, so it lives outside LANE_GPIO. The NE555 monostable drops
@@ -203,33 +236,58 @@ async def _settle_capture_emit(lane_id):
     decouple "ball happened / cycle now" from "here's the score" then.
     """
     try:
-        await asyncio.sleep(camera.SETTLE_S)
-        pin_mask = await asyncio.to_thread(detect_current_pins, lane_id)
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:
-        log.warning(f"lane {lane_id}: settle/capture error: {e}; -> awaiting_manual")
-        pin_mask = None
+        try:
+            await asyncio.sleep(camera.SETTLE_S)
+            pin_mask = await asyncio.to_thread(detect_current_pins, lane_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.warning(f"lane {lane_id}: settle/capture error: {e}; -> awaiting_manual")
+            pin_mask = None
 
-    if pin_mask is None:
-        log.info(f"lane {lane_id}: camera yielded no mask -> awaiting_manual (desk score)")
-        msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=None, awaiting_manual=True)
-    else:
-        log.info(f"lane {lane_id}: camera pin_mask=0x{pin_mask:03x} "
-                 f"(standing={[p for p in range(1,11) if pin_mask & (1<<(p-1))]})")
-        msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=pin_mask)
+        if pin_mask is None:
+            log.info(f"lane {lane_id}: camera yielded no mask -> awaiting_manual (desk score)")
+            msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=None, awaiting_manual=True)
+        else:
+            log.info(f"lane {lane_id}: camera pin_mask=0x{pin_mask:03x} "
+                     f"(standing={[p for p in range(1,11) if pin_mask & (1<<(p-1))]})")
+            msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=pin_mask)
 
-    if event_queue:
-        await event_queue.put(msg)
+        if event_queue:
+            await event_queue.put(msg)
+    finally:
+        # One emit (or failure) per scheduled capture — re-arm the DIELL
+        # trigger for the next real ball.
+        _capture_in_flight[lane_id] = False
 
 
 # Per-lane ball-detect lockout. The left and right DIELL beams trigger
 # milliseconds apart for one ball passing through; without a lockout we'd
-# emit two BALL_EVENT messages per real ball. 200ms is well above the
-# inter-sensor delay (a 20mph ball traverses the kickback in ~5ms) but
+# emit two BALL_EVENT messages per real ball. The 0.2s default is well above
+# the inter-sensor delay (a 20mph ball traverses the kickback in ~5ms) but
 # well below typical between-balls interval (>1 second).
+#
+# ⚠️ 0.2s only de-dupes the left/right beam PAIR. Pin scatter and table/sweep
+# motion can re-break a beam SECONDS after the real ball — the 82-70 itself
+# masks its ball-detect for the full machine cycle (~8-10s). At cutover set
+# WSL_LANE_BALL_LOCKOUT_S=8 (or similar, bench-confirm against the real cycle
+# time) so scatter retriggers can't record phantom balls. Default stays 0.2
+# = current behavior (bench rigs fire rapid simulated balls). Camera mode is
+# ADDITIONALLY guarded by _capture_in_flight below, regardless of this value.
 _ball_detect_lockout: dict = {lane_id: 0.0 for lane_id in LANES}
-BALL_DETECT_LOCKOUT_S = 0.2
+try:
+    BALL_DETECT_LOCKOUT_S = float(os.environ.get("WSL_LANE_BALL_LOCKOUT_S", "0.2"))
+except ValueError:
+    log.warning(f"Bad WSL_LANE_BALL_LOCKOUT_S="
+                f"{os.environ.get('WSL_LANE_BALL_LOCKOUT_S')!r}; using 0.2")
+    BALL_DETECT_LOCKOUT_S = 0.2
+
+# Camera mode: True while a _settle_capture_emit task is in flight for the
+# lane. DIELL retriggers during the settle/capture window (pin scatter, the
+# existing controller's sweep) are ignored instead of scheduling a SECOND
+# capture that would emit a phantom BALL_EVENT for the same ball. Set in the
+# GPIO callback thread before scheduling; cleared in the task's finally.
+_capture_in_flight: dict = {lane_id: False for lane_id in LANES}
 
 
 def make_ball_detect_callback(lane_id):
@@ -263,10 +321,19 @@ def make_ball_detect_callback(lane_id):
         # capture now. Schedule a settle-then-capture-then-emit coroutine on the
         # event loop (the blocking cv2 capture runs off-loop via to_thread).
         # That coroutine emits awaiting_manual if detection yields no mask.
+        # While one is in flight for this lane, IGNORE retriggers — pin scatter
+        # / sweep motion re-breaking a beam must not schedule a second capture
+        # (= a phantom BALL_EVENT for the same ball). A real second ball can't
+        # arrive inside the settle+capture window.
         if SCORING_MODE == "camera":
+            if _capture_in_flight[lane_id]:
+                log.info(f"GPIO: lane {lane_id} DIELL retrigger while capture "
+                         f"in flight (pin scatter?) — ignored")
+                return
             log.info(f"GPIO: ball detected on lane {lane_id}, mode=camera; "
                      f"settling {camera.SETTLE_S}s before capture")
             if main_loop:
+                _capture_in_flight[lane_id] = True
                 asyncio.run_coroutine_threadsafe(
                     _settle_capture_emit(lane_id), main_loop)
             return
@@ -313,10 +380,23 @@ async def watchdog_kick_loop():
         await asyncio.sleep(0.95)
 
 async def event_sender(ws):
+    """Drain event_queue → ws. Delivery is transactional: if send fails (or
+    we're cancelled mid-send during a reconnect), the in-hand message is
+    re-queued so the NEXT connection delivers it instead of silently
+    dropping a real ball/foul. Re-queue appends, so ordering across a drop
+    can shift if multiple events were queued — acceptable; losing the event
+    outright is the failure that matters. (If the socket died after the
+    frame went out, the server may see a duplicate — its cycle-window
+    dedupe is the guard on that side.)
+    """
     while True:
         msg = await event_queue.get()
         log.info(f"→ {msg}")
-        await ws.send(msg)
+        try:
+            await ws.send(msg)
+        except BaseException:           # incl. CancelledError — requeue, then re-raise
+            event_queue.put_nowait(msg)
+            raise
 
 async def pulse(lane_id, times, on_ms, off_ms):
     """Drive a lane's cycle relay in a pulse pattern. Always release on exit.
@@ -383,25 +463,39 @@ def _cleanup_gpio():
     run on SIGKILL — that path is covered by systemd's ExecStopPost=
     relay_cleanup.py, which is its own process and runs after the main
     daemon is reaped.
+
+    FAIL-SAFE ORDERING: stop the watchdog kick and drive every relay output
+    LOW FIRST, before anything that can block or fail — the camera close can
+    wait on a wedged cv2 capture, and waiting ~11s for the NE555 to trip is
+    the backstop, not the plan. Each step runs in its own try/except so one
+    failure can never skip the de-energize of the rest.
     """
-    try:
-        # Stop kicking the watchdog first → it trips → relays safe-open.
-        WATCHDOG_KICK.off()
-        WATCHDOG_KICK.close()
-        if _PAIR_CAMERA is not None:
-            _PAIR_CAMERA.close()
-        for lane_id in LANES:
-            PINSETTER_CYCLE[lane_id].off()
-            PINSETTER_POWER[lane_id].off()
-            PINSETTER_CYCLE[lane_id].close()
-            PINSETTER_POWER[lane_id].close()
-            BALL_DETECT[lane_id].close()
-            BALL2_DETECT[lane_id].close()
-            DIELL_LEFT[lane_id].close()
-            DIELL_RIGHT[lane_id].close()
-        log.info("GPIO cleanup complete.")
-    except Exception as e:
-        log.warning(f"GPIO cleanup error: {e}")
+    def _try(what, fn):
+        try:
+            fn()
+        except Exception as e:
+            log.warning(f"GPIO cleanup: {what} failed: {e}")
+
+    # 1. Stop kicking the watchdog → even if everything below fails, the
+    #    NE555 trips and the relays safe-open ~11s later.
+    _try("watchdog kick off", WATCHDOG_KICK.off)
+    # 2. Drive every relay output LOW immediately (don't wait for the NE555).
+    for lane_id in LANES:
+        _try(f"L{lane_id} cycle off", PINSETTER_CYCLE[lane_id].off)
+        _try(f"L{lane_id} power off", PINSETTER_POWER[lane_id].off)
+    # 3. Only now release devices and close the camera (the one step that
+    #    can block — relays are already down if it does).
+    _try("watchdog kick close", WATCHDOG_KICK.close)
+    for lane_id in LANES:
+        _try(f"L{lane_id} cycle close", PINSETTER_CYCLE[lane_id].close)
+        _try(f"L{lane_id} power close", PINSETTER_POWER[lane_id].close)
+        _try(f"L{lane_id} foul close", BALL_DETECT[lane_id].close)
+        _try(f"L{lane_id} ball2 close", BALL2_DETECT[lane_id].close)
+        _try(f"L{lane_id} diell-L close", DIELL_LEFT[lane_id].close)
+        _try(f"L{lane_id} diell-R close", DIELL_RIGHT[lane_id].close)
+    if _PAIR_CAMERA is not None:
+        _try("camera close", _PAIR_CAMERA.close)
+    log.info("GPIO cleanup complete.")
 
 async def connection_manager():
     """Maintain the WS connection to the server, reconnecting on drop.
@@ -427,16 +521,46 @@ async def connection_manager():
                     # byte-identical to before in unauthenticated bench mode.
                     hello_fields["token"] = LANE_NODE_TOKEN
                 await ws.send(encode(Msg.HELLO, **hello_fields))
-                await asyncio.gather(
-                    heartbeat_loop(ws),
-                    event_sender(ws),
-                    command_handler(ws),
-                )
+                await _run_connection(ws)
         except asyncio.CancelledError:
             raise  # let main()'s finally run cleanup
         except Exception as e:
             log.warning(f"Connection lost: {e}. Retrying in 5s...")
             await asyncio.sleep(5)
+
+
+async def _run_connection(ws):
+    """Run the three per-connection loops until the FIRST of them stops,
+    then cancel + reap the others before returning to the reconnect loop.
+
+    The old `await asyncio.gather(...)` waited for ALL THREE: when the
+    socket died, command_handler ended but heartbeat_loop/event_sender kept
+    running as orphans into the next connection — every reconnect stacked
+    another event_sender, and an orphan would steal the next queued ball
+    event and burn it on a dead socket. FIRST_COMPLETED + cancel guarantees
+    no task survives past its own connection. (asyncio.wait, not TaskGroup:
+    the Pi fleet may run < Python 3.11.)
+    """
+    tasks = [asyncio.create_task(heartbeat_loop(ws)),
+             asyncio.create_task(event_sender(ws)),
+             asyncio.create_task(command_handler(ws))]
+    try:
+        done, _pending = await asyncio.wait(
+            tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        # Runs on FIRST_COMPLETED *and* on cancellation of this coroutine
+        # (SIGTERM path). Reap everything so no orphan survives and no
+        # "exception was never retrieved" noise hits the journal.
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    for t in done:
+        if not t.cancelled() and t.exception() is not None:
+            raise t.exception()
+    # A loop returned cleanly (command_handler's async-for ended on a
+    # server-side close): surface it as a drop so connection_manager's
+    # existing log + 5s backoff path handles it like any other outage.
+    raise ConnectionError("websocket closed by server")
 
 
 def _init_camera():

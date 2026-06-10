@@ -1,0 +1,71 @@
+[Unit]
+Description=WSL Lane Node - Track-B machine CONTROLLER daemon (AMF 82-70 cycle control)
+Documentation=https://github.com/dylan24483/wsl-lane-nodes
+# !! BENCH-GATED !! Do NOT `systemctl enable` this unit until one board is fully
+# validated on a LOCKED-OUT / off machine per docs/phase8b_pcb_revB_spec.md 12.9
+# and the Track-B cutover runbook. This daemon DRIVES THE PINSETTER.
+After=network-online.target
+Wants=network-online.target
+# MUTUALLY EXCLUSIVE with the Track-A pilot on the same Pi: their GPIO maps collide
+# (GPIO 5,6,12,13,16,20,23,24,25 — lane_node.py LANE_GPIO inputs+outputs vs this
+# controller's i2c-gpio/uart/arm/INT/watchdog pins). systemd will stop lane-node
+# before starting this unit and refuse to run both. Remove ONLY once a unified
+# scoring+control node exists (no GPIO overlap). See docs/phase8_pi_provisioning.md §7.
+Conflicts=lane-node.service
+
+# Crash-loop fail-safe: after StartLimitBurst start attempts within
+# StartLimitIntervalSec, systemd latches the unit 'failed' and STOPS restarting.
+# The lane then stays DOWN AND DISARMED (controller_cleanup.py already drove
+# ARM + kick LOW on the last reap; the NE555 expired during the 15 s RestartSec
+# gap) — fail-safe, NOT infinite fast restarts. With RestartSec=15, four failed
+# attempts span ~45 s, so a persistent fault latches within ~2 minutes.
+# Recovery is a DELIBERATE operator action after reading the journal
+# (journalctl -u lane-node-controller):
+#   sudo systemctl reset-failed lane-node-controller
+#   sudo systemctl start lane-node-controller
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/wsl-lane-nodes
+
+# The controller daemon: RP2040 link (cam/ball events + RP_OK) + MCP23017 relays
+# + the cycle FSM + the per-board arm/watchdog GPIOs. It runs a tight synchronous
+# control loop and kicks the NE555 from INSIDE that loop, so a stalled loop stops
+# kicking -> the watchdog drops the relay-enable rail -> motion stops.
+ExecStart=/home/pi/wsl-lane-nodes/.venv/bin/python3 lane_node/controller_daemon.py
+
+# GPIO-level safe-off after the daemon is reaped for ANY reason: force the ARM and
+# NE555-kick pins LOW so a BCM2711 retained-HIGH pad can't hold the rail permitted.
+# (The daemon's own safe_off() covers the graceful path; this catches SIGKILL/crash.)
+ExecStopPost=/home/pi/wsl-lane-nodes/.venv/bin/python3 lane_node/controller_cleanup.py
+
+# SIGTERM first so the daemon can run its finally/safe_off (arm low + all_off +
+# link close) before escalation. The hardware watchdog drops the rail regardless
+# once the control loop stops kicking.
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# Safe to auto-restart: the power-down rule means the daemon ALWAYS comes up
+# DISARMED (boots into MANUAL_INTERVENTION) and requires a deliberate operator
+# First-Ball-Zero before any motion -- a restart can never auto-move the machine.
+Restart=on-failure
+# RestartSec MUST be longer than the NE555 watchdog expiry so the watchdog
+# genuinely times out and drops the relay-enable rail between crash-restarts.
+# (At the old RestartSec=5 the restarted daemon resumed kicking BEFORE expiry,
+# so a crash loop held the rail permitted and the watchdog could never latch
+# the fault.) Timeout source: NE555 monostable R100=100k x C11=100uF ->
+# t ~= 1.1*R*C ~= 11 s nominal; bench-validated "~10-11 s" (manual_src
+# 10_watchdog-rail.md 10.2.3 + 12_channel-maps.md 12.10 — both carry a VERIFY
+# note: the exact period is bench-measured, not source-declared; do not assume
+# 11 s). 15 s clears 11 s nominal plus electrolytic-cap tolerance (+20% ->
+# ~13.2 s worst case).
+RestartSec=15
+
+[Install]
+# `systemctl enable` only AFTER the 12.9 bench validation passes. Until then,
+# provision the file but leave it DISABLED.
+WantedBy=multi-user.target

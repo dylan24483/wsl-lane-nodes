@@ -11,9 +11,26 @@ commands back so the firmware's motion max-run backstop knows what's running.
 
 Protocol (newline-delimited JSON, 115200 8N1) — see firmware/rp2040/README.md:
   RP2040 -> Pi:  {"ev":"cam","id":"SA","e":"f","t":..}   {"ev":"ball","src":"L",..}
-                 {"ev":"hb","ok":1,"flt":"","up":..}      {"ev":"rp_ok","v":1,..}
-                 {"ev":"boot",..}  {"ev":"flt","code":"motion_timeout","m":"S",..}
+                 {"ev":"hb","ok":1,"flt":"","up":..,"drp":0,"in":0,"run":0}
+                 {"ev":"rp_ok","v":1,..}   {"ev":"boot",..,"maxrun_ms":8000,"dbg":0}
+                 {"ev":"flt","code":"motion_timeout","m":"S",..}
   Pi -> RP2040:  RUN <m> | STOP <m|*> | CLEAR | PING
+
+v0.2.0 firmware additions (consumed here; ALL optional — v0.1.0 lines without
+them keep working unchanged):
+  hb "in"/"run"  — debounced input-level + running-motor bitmasks. The SC/TB
+                   interlock danger flags are RESYNCED from "in" on every hb,
+                   so a single dropped cam line can no longer latch a stale
+                   interlock veto (edge tracking stays for immediacy + v0.1.0).
+  hb "up"        — firmware uptime (ms). A regression means the firmware
+                   rebooted and we missed the boot line: a synthetic
+                   "fw_reboot" fault is latched -> health_ok() False -> the
+                   daemon's existing safety trip (motors off, MANUAL_
+                   INTERVENTION, operator PBZ re-arm).
+  hb "drp"       — TX drop counter; increases are logged as warnings.
+  boot "maxrun_ms" — firmware max-run ceiling; stored, and maxrun_ok() answers
+                   "is the firmware ceiling >= the FSM's MAX_MOTION_S". The
+                   arm-refusal wiring belongs to the daemon/FSM, not here.
 
 Concurrency: the serial reader runs on a background thread and only UPDATES state
 (health, SC/TB) under a lock + QUEUES cam/ball events. The daemon's main loop
@@ -39,6 +56,29 @@ log = logging.getLogger("rp2040_link")
 CAM_DISPATCH = ("SA", "SB", "TA1", "TA2")
 INTERLOCK_CAMS = ("SC", "TB")
 MOTORS = ("S", "T", "SP", "BE", "M", "M1", "M2")
+
+# v0.2.0 heartbeat mask bit orders (firmware/rp2040/README.md "Heartbeat masks").
+# NOTE: the hb "run" bit order is NOT the MOTORS tuple order above.
+HB_IN_BITS = ("SA", "SB", "SC", "TA1", "TA2", "TB", "DIELL_L", "DIELL_R")
+HB_RUN_BITS = ("S", "T", "SP", "M2", "M1", "BE", "M")
+_IN_BIT_SC = 1 << HB_IN_BITS.index("SC")
+_IN_BIT_TB = 1 << HB_IN_BITS.index("TB")
+
+RX_MAX = 4096        # cap on the no-newline receive buffer (babbling UART)
+SENT_MAXLEN = 256    # `sent` is a test/bench record, not an unbounded log
+SEND_FAIL_LIMIT = 3  # consecutive serial-write failures => health_ok() False
+REBOOT_FAULT = "fw_reboot"  # synthetic fault latched on firmware-reboot detection
+
+
+def _fsm_max_motion_s():
+    """The FSM's MAX_MOTION_S (seconds), READ-ONLY, or None if cycle_control_8270
+    isn't importable on this host (bench/test machines). Imported lazily so this
+    module stays standalone."""
+    try:
+        from cycle_control_8270 import MAX_MOTION_S
+        return MAX_MOTION_S
+    except Exception:
+        return None
 
 
 def dispatch_cam(controller, cam_id):
@@ -81,8 +121,9 @@ class RP2040Link:
         # callbacks (optional; daemon may set on_health for logging/alerts)
         self.on_health = None           # (event dict) -> None
 
-        # outbound record (always captured; also written to serial if present)
-        self.sent = []
+        # outbound record (always captured; also written to serial if present).
+        # Bounded: it exists for tests/bench, not as an unbounded production log.
+        self.sent = deque(maxlen=SENT_MAXLEN)
 
         # state guarded by _lock
         self._lock = threading.Lock()
@@ -91,6 +132,13 @@ class RP2040Link:
         self._rp_ok = False
         self._last_hb = 0.0
         self._fault = ""
+        self._send_fails = 0     # consecutive serial-write failures (health gate)
+        # v0.2.0 telemetry (None until a firmware that sends it is heard)
+        self._in_mask = None     # last hb "in" (debounced input levels)
+        self._run_mask = None    # last hb "run" (running-motor mask)
+        self._last_up = None     # last hb "up" (firmware uptime, ms)
+        self._last_drp = None    # last hb "drp" (TX drop counter)
+        self._maxrun_ms = None   # boot "maxrun_ms" (firmware max-run ceiling)
 
         # queued cam/ball events, drained by apply_events()
         self._evlock = threading.Lock()
@@ -105,6 +153,7 @@ class RP2040Link:
         else:
             self._ser = None
         self._rx = b""
+        self._rx_discard = False   # swallowing bytes until the next newline
         self._stop = False
         self._reader = None
 
@@ -118,7 +167,13 @@ class RP2040Link:
             try:
                 self._ser.write((line + "\n").encode())
             except Exception as e:  # never let a comms hiccup crash the caller
-                log.warning("RP2040 send failed (%s): %s", line, e)
+                with self._lock:
+                    self._send_fails += 1
+                    n = self._send_fails
+                log.warning("RP2040 send failed x%d (%s): %s", n, line, e)
+            else:
+                with self._lock:
+                    self._send_fails = 0
 
     def run(self, motor):   self._send(f"RUN {motor}")
     def stop(self, motor):  self._send(f"STOP {motor}")
@@ -147,6 +202,8 @@ class RP2040Link:
             cid = ev.get("id")
             trip = (ev.get("e") == self._trip)
             if cid in INTERLOCK_CAMS:
+                # Edge tracking kept for immediacy + v0.1.0 firmware; on v0.2.0
+                # the hb "in" mask resyncs these every ~250 ms (self-healing).
                 with self._lock:
                     if cid == "SC":
                         self._sc_danger = trip
@@ -159,6 +216,7 @@ class RP2040Link:
             with self._evlock:
                 self._events.append(("ball", ev.get("src")))
         elif kind in ("hb", "boot", "rp_ok", "flt", "ack"):
+            notes = []   # (log_fn, msg, args) — emitted AFTER the lock is released
             with self._lock:
                 self._last_hb = self.now()
                 if kind == "flt":
@@ -176,8 +234,102 @@ class RP2040Link:
                         self._rp_ok = bool(ev["rp_ok"])
                     if "flt" in ev:
                         self._fault = ev.get("flt", "")
+                    if kind == "boot":
+                        self._on_boot(ev, notes)
+                    elif kind == "hb":
+                        self._on_hb(ev, notes)
+            for log_fn, msg, args in notes:
+                log_fn(msg, *args)
             if self.on_health:
                 self.on_health(ev)
+
+    # ---- v0.2.0 telemetry (helpers called with self._lock HELD; they log via
+    # `notes` so no logging handler can ever block under the lock) -------------
+    @staticmethod
+    def _num(ev, key):
+        """ev[key] if it is a real number (bool excluded), else None — additive
+        fields from unknown/fuzzed senders must never throw here."""
+        v = ev.get(key)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return v
+        return None
+
+    def _mask_danger(self, mask, bit):
+        # hb "in" bits are debounced ASSERTED levels. Map level -> danger flag the
+        # same way cam edges do: trip_edge 'f' => asserted == in-window (default,
+        # matches the active-low board); 'r' inverts (bench-confirm knob).
+        lvl = bool(mask & bit)
+        return lvl if self._trip == "f" else not lvl
+
+    def _on_boot(self, ev, notes):
+        rebooted = self._last_up is not None    # we had heartbeats before this boot
+        self._last_up = None                    # fresh uptime/drp baselines
+        self._last_drp = None
+        mr = self._num(ev, "maxrun_ms")
+        if mr is not None:
+            self._maxrun_ms = int(mr)
+            fsm_s = _fsm_max_motion_s()
+            if fsm_s is not None and fsm_s * 1000.0 > self._maxrun_ms:
+                notes.append((log.error,
+                              "RP2040 firmware maxrun_ms=%d < FSM MAX_MOTION_S=%.1fs — "
+                              "constants have desynchronized; maxrun_ok() is False, "
+                              "do not arm until reconciled",
+                              (self._maxrun_ms, fsm_s)))
+        if ev.get("wdt_reset"):
+            notes.append((log.error, "RP2040 hardware-watchdog reset (boot %r)", (ev,)))
+        if rebooted:
+            # Mid-session reboot: latch the synthetic fault so health_ok() goes
+            # False and the daemon's existing safety trip runs (motors off,
+            # MANUAL_INTERVENTION, operator PBZ re-arm). Cleared by the next
+            # clean hb (flt:""), by which time a health_ok() poller faster than
+            # the ~4 Hz hb rate (the daemon ticks at ~50 Hz) has observed it —
+            # the daemon's trip itself latches until PBZ.
+            self._fault = REBOOT_FAULT
+            self._rp_ok = False
+            notes.append((log.error,
+                          "RP2040 firmware REBOOTED mid-session (boot event %r) — "
+                          "safe-state relatch; operator re-arm required", (ev,)))
+
+    def _on_hb(self, ev, notes):
+        m = self._num(ev, "in")
+        if m is not None:
+            m = int(m)
+            self._in_mask = m
+            sc = self._mask_danger(m, _IN_BIT_SC)
+            tb = self._mask_danger(m, _IN_BIT_TB)
+            if sc != self._sc_danger or tb != self._tb_danger:
+                notes.append((log.warning,
+                              "SC/TB interlock echo resynced from hb in-mask 0x%02x: "
+                              "SC %s->%s TB %s->%s (edge history drifted — dropped line?)",
+                              (m, self._sc_danger, sc, self._tb_danger, tb)))
+            self._sc_danger = sc
+            self._tb_danger = tb
+        r = self._num(ev, "run")
+        if r is not None:
+            self._run_mask = int(r)
+        drp = self._num(ev, "drp")
+        if drp is not None:
+            if self._last_drp is not None and drp > self._last_drp:
+                notes.append((log.warning,
+                              "RP2040 dropped %d TX line(s) (drp %d -> %d) — UART "
+                              "congested; cam/ball events may have been lost",
+                              (drp - self._last_drp, self._last_drp, drp)))
+            self._last_drp = drp
+        up = self._num(ev, "up")
+        if up is not None:
+            if self._last_up is not None and up < self._last_up:
+                # Uptime went BACKWARDS => the firmware rebooted and we missed the
+                # boot line. Same safety trip as a boot event. Applied LAST so this
+                # hb's own ok/flt fields can't mask it. NOTE: firmware up is uint32
+                # ms — a wrap at ~49.7 days reads as a regression too; that false
+                # trip is in the SAFE direction (nuisance PBZ) and is accepted.
+                self._fault = REBOOT_FAULT
+                self._rp_ok = False
+                notes.append((log.error,
+                              "RP2040 uptime regressed %s -> %s ms: firmware REBOOTED "
+                              "(boot line missed) — safe-state relatch; operator "
+                              "re-arm required", (self._last_up, up)))
+            self._last_up = up
 
     # ---- FSM bridge --------------------------------------------------------
     def apply_events(self, controller):
@@ -210,15 +362,64 @@ class RP2040Link:
             return bool(self._last_hb) and (self.now() - self._last_hb) <= self._hb_timeout
 
     def health_ok(self):
-        """True only if the RP2040 is heartbeating, reports rail-permit OK, AND has no
-        latched fault. Any flt (even without a paired rp_ok:0) => not healthy."""
+        """True only if the RP2040 is heartbeating, reports rail-permit OK, has no
+        latched fault, AND our serial TX path works. Any flt (even without a paired
+        rp_ok:0) => not healthy; >= SEND_FAIL_LIMIT consecutive write failures (our
+        RUN/STOP may not be reaching the firmware) => not healthy."""
         with self._lock:
             alive = bool(self._last_hb) and (self.now() - self._last_hb) <= self._hb_timeout
-            return alive and self._rp_ok and not self._fault
+            return (alive and self._rp_ok and not self._fault
+                    and self._send_fails < SEND_FAIL_LIMIT)
 
     def fault(self):
         with self._lock:
             return self._fault
+
+    def input_levels(self):
+        """{name: asserted} decoded from the last hb "in" mask (v0.2.0+ firmware),
+        or None if this firmware has never sent one (v0.1.0)."""
+        with self._lock:
+            m = self._in_mask
+        if m is None:
+            return None
+        return {n: bool(m & (1 << i)) for i, n in enumerate(HB_IN_BITS)}
+
+    def running_motors(self):
+        """Tuple of motor names the firmware believes are RUNNING, from the last hb
+        "run" mask (v0.2.0+ firmware), or None if never sent (v0.1.0)."""
+        with self._lock:
+            m = self._run_mask
+        if m is None:
+            return None
+        return tuple(n for i, n in enumerate(HB_RUN_BITS) if m & (1 << i))
+
+    def maxrun_ms(self):
+        """Firmware max-run ceiling advertised in the boot event (v0.2.0+), or None
+        (v0.1.0 firmware, or no boot event heard yet)."""
+        with self._lock:
+            return self._maxrun_ms
+
+    def maxrun_ok(self, max_motion_s=None):
+        """False ONLY on a KNOWN mismatch: the firmware advertised maxrun_ms (v0.2.0
+        boot event) and it is below the FSM's MAX_MOTION_S (or the explicit
+        `max_motion_s` argument) — the two are independently-maintained constants,
+        and a field-tuned FSM limit above the firmware ceiling means the firmware
+        backstop would kill legitimate motions. Unknown (v0.1.0 firmware with no
+        maxrun_ms, or cycle_control_8270 not importable on this host) returns True
+        so v0.1.0 boards keep working unchanged — use maxrun_ms() to distinguish
+        "checked OK" from "couldn't check".
+
+        Wiring this into arm-refusal belongs to the daemon/FSM (call it before
+        arming); this link only answers the question."""
+        with self._lock:
+            mr = self._maxrun_ms
+        if mr is None:
+            return True
+        if max_motion_s is None:
+            max_motion_s = _fsm_max_motion_s()
+            if max_motion_s is None:
+                return True
+        return max_motion_s * 1000.0 <= mr
 
     # ---- reader thread (real serial) --------------------------------------
     def start(self):
@@ -237,10 +438,27 @@ class RP2040Link:
                 continue
             if not data:
                 continue
-            self._rx += data
-            while b"\n" in self._rx:
-                line, self._rx = self._rx.split(b"\n", 1)
-                self.feed_line(line.decode("ascii", errors="replace"))
+            self._ingest(data)
+
+    def _ingest(self, data):
+        """Buffer raw RX bytes and dispatch complete lines. BOUNDED: a babbling
+        UART that never sends a newline cannot grow memory past RX_MAX — the
+        buffer is dropped whole and bytes are discarded until the next newline
+        (mirrors the firmware's v0.2.0 oversized-line whole-discard, so a trimmed
+        tail can never re-parse as a fresh event)."""
+        self._rx += data
+        while b"\n" in self._rx:
+            line, self._rx = self._rx.split(b"\n", 1)
+            if self._rx_discard:        # swallow the tail of an oversized line
+                self._rx_discard = False
+                continue
+            self.feed_line(line.decode("ascii", errors="replace"))
+        if len(self._rx) > RX_MAX:
+            if not self._rx_discard:    # log once per overflow episode
+                log.warning("RP2040 RX overflow: %d bytes with no newline — "
+                            "discarding until the next line break", len(self._rx))
+            self._rx = b""
+            self._rx_discard = True
 
     def close(self):
         self._stop = True
@@ -353,7 +571,7 @@ if __name__ == "__main__":
     print("[E] commands")
     link = RP2040Link(now=fake_now)
     link.clear(); link.ping(); link.stop_all()
-    check(link.sent == ["CLEAR", "PING", "STOP *"], "CLEAR / PING / STOP * formatting")
+    check(list(link.sent) == ["CLEAR", "PING", "STOP *"], "CLEAR / PING / STOP * formatting")
 
     # [F] a bare firmware fault marks unhealthy without a paired rp_ok:0 (P2 fix) ----
     print("[F] fault -> unhealthy")

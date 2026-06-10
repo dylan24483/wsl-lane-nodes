@@ -27,9 +27,14 @@ ExecStopPost=/home/pi/wsl-lane-nodes/.venv/bin/python3 lane_node/relay_cleanup.p
 KillSignal=SIGTERM
 TimeoutStopSec=10
 
-# Auto-restart on failure (segfault, OOM, etc.) but back off so we
-# don't burn CPU if there's a persistent crash bug.
-Restart=on-failure
+# Restart=always: any exit path — clean or not (segfault, OOM, an
+# unexpected sys.exit(0)) — brings the lane node back. on-failure left
+# the lane dead-silent after a clean-but-unintended exit. Intentional
+# `systemctl stop` is unaffected (systemd never restarts after a stop
+# job). RestartSec=5 backs off so a persistent crash bug doesn't burn
+# CPU; relay_cleanup.py (ExecStopPost above) drives the relay + kick
+# GPIOs LOW between attempts, so restarts stay fail-safe.
+Restart=always
 RestartSec=5
 
 [Install]
