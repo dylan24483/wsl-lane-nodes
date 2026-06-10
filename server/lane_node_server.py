@@ -2,8 +2,10 @@
 """WSL-SRV-side WebSocket + HTTP. Now with desk-app-simulator endpoints."""
 
 import asyncio
+import hmac
 import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -19,7 +21,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from wsl_scoring_engine import LaneScoring, CrossLaneScoring
-from state_store import save_lanes, load_lanes
+from state_store import save_lanes, load_lanes, get_save_status
 
 from websockets.asyncio.server import serve
 
@@ -27,14 +29,29 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s')
 log = logging.getLogger('server')
 
+# Shared-token auth for the control surfaces (POST :8766 + WS HELLO :8765).
+# DEFAULT-OFF for compatibility: when LANE_NODE_TOKEN is unset, behavior is
+# identical to before (unauthenticated, with a loud startup warning). When
+# set, every POST must carry the same value in the X-Lane-Token header and
+# every WS HELLO must carry it in a "token" field, or it is rejected.
+# GET endpoints (display HTML, /api/lane/N/scoring, /api/state, /api/health)
+# stay open — the overhead displays poll them and they send no hardware
+# commands. The same env var configures the Pi client (lane_node.py) and
+# must be added to wsl_api.py's mirror/proxy POSTs in the wsl-systems repo.
+AUTH_TOKEN = os.environ.get("LANE_NODE_TOKEN", "").strip()
+
 state_lock = threading.Lock()
 # Restore lane scoring + ball counters from disk so server restarts
 # don't wipe in-progress games. If the load fails (no file, corrupted,
 # class-shape mismatch), we start fresh — see state_store.load_lanes
 # for the failure-handling.
 lane_scoring, ball_counters = load_lanes()
+# clients/client_metadata are mutated by the WS handler (asyncio thread)
+# and read by the HTTP handler thread (health, send_to_*). Guard BOTH
+# sides with clients_lock — never held across an await or a send.
+clients_lock = threading.Lock()
 clients = {}
-client_metadata = {}  # node_id -> {"lanes": [...], "protocol_version": N, "connected_at": float}
+client_metadata = {}  # node_id -> {"lanes": [...], "protocol_version": N, "connected_at": float, "last_heartbeat": float}
 main_loop = None
 SERVER_START_TIME = time.time()
 
@@ -65,11 +82,21 @@ def _process_ball_event(lane, pin_mask=None):
     the previous ball and this one, this bowl gets recorded as a foul
     (display 'F', scored 0 regardless of pins).
 
+    Only records when the lane has been OPENED (a lane_scoring entry
+    exists and is active). Ball events for unopened/closed lanes are
+    ignored with a warning — a stray DIELL trip or rogue POST must not
+    auto-create a phantom 'TEST' game. Only the open / open-league
+    endpoints create lane state.
+
     Returns (bowl, pin_mask, foul) — caller can use these for logging
-    or HTTP response payloads.
+    or HTTP response payloads. bowl is None when the lane isn't open.
     """
     with state_lock:
-        ls = get_or_create_lane(lane)
+        ls = lane_scoring.get(lane)
+        if ls is None or not getattr(ls, 'is_active', False):
+            log.warning(f"Lane {lane}: ball event ignored — lane not open "
+                        f"(no active scoring state)")
+            return None, pin_mask, False
         n = ball_counters.get(lane, 0)
         if pin_mask is None:
             pin_mask = PIN_MASK_CYCLE[n % len(PIN_MASK_CYCLE)]
@@ -123,27 +150,73 @@ pending_foul: dict = {}
 def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
 def decode(r): return json.loads(r)
 
+def _socket_owns_lane(node_id, lane):
+    """Lane-binding check: True when `lane` is among the lanes this node
+    declared at HELLO. Nodes that declared no lanes (legacy v1 with no
+    `lane` field, or bench tools that skip HELLO entirely when auth is
+    off) pass through — enforcement applies only to explicit claims, so
+    existing bench behavior is unchanged."""
+    if node_id is None:
+        return True
+    with clients_lock:
+        meta = client_metadata.get(node_id)
+    declared = (meta or {}).get("lanes") or []
+    return (not declared) or (lane in declared)
+
+
 async def handle_node(websocket):
     addr = websocket.remote_address
     log.info(f"New connection from {addr}")
     node_id = None
+    authed = not AUTH_TOKEN  # auth disabled -> every connection is trusted
     try:
         async for raw in websocket:
             msg = decode(raw)
             mt = msg.get("type")
 
             if mt == Msg.HELLO:
+                if AUTH_TOKEN:
+                    supplied = msg.get("token") or ""
+                    if not (isinstance(supplied, str)
+                            and hmac.compare_digest(supplied, AUTH_TOKEN)):
+                        log.warning(f"Rejecting HELLO from {addr}: bad or "
+                                    f"missing token (node={msg.get('node')!r})")
+                        await websocket.close(code=4401, reason="auth failed")
+                        return
+                authed = True
                 node_id = msg.get("node", "<unknown>")
-                clients[node_id] = websocket
                 node_version = msg.get("protocol_version")
-                node_lanes = msg.get("lanes") or (
+                raw_lanes = msg.get("lanes") or (
                     [msg["lane"]] if "lane" in msg else []
                 )
-                client_metadata[node_id] = {
-                    "lanes": node_lanes,
-                    "protocol_version": node_version,
-                    "connected_at": time.time(),
-                }
+                # Sanitize: lane claims must be a list of ints — anything
+                # else would break the `lane in lanes` ownership checks.
+                node_lanes = ([l for l in raw_lanes if isinstance(l, int)]
+                              if isinstance(raw_lanes, list) else [])
+                if node_lanes != raw_lanes:
+                    log.warning(f"Node {node_id!r}: non-integer lane claims "
+                                f"in HELLO {raw_lanes!r} -> using {node_lanes}")
+                now = time.time()
+                with clients_lock:
+                    # Warn on conflicting lane claims — send_to_lane routes
+                    # to the NEWEST claimant, so a stale zombie connection
+                    # can't keep eating a lane's commands.
+                    for other_id, meta in client_metadata.items():
+                        if other_id == node_id:
+                            continue
+                        overlap = set(node_lanes) & set(meta.get("lanes") or [])
+                        if overlap:
+                            log.warning(
+                                f"Node {node_id!r} claims lanes {sorted(overlap)} "
+                                f"already claimed by {other_id!r}; newest "
+                                f"claimant receives lane commands")
+                    clients[node_id] = websocket
+                    client_metadata[node_id] = {
+                        "lanes": node_lanes,
+                        "protocol_version": node_version,
+                        "connected_at": now,
+                        "last_heartbeat": now,
+                    }
                 if node_version != PROTOCOL_VERSION:
                     log.warning(
                         f"Node {node_id!r} protocol version mismatch: "
@@ -153,10 +226,26 @@ async def handle_node(websocket):
                 log.info(f"Node {node_id!r} registered "
                          f"(lanes={node_lanes}, protocol_version={node_version})")
 
+            elif not authed:
+                # Auth enabled and this connection never sent a valid HELLO —
+                # drop it before any state mutation or hardware effect.
+                log.warning(f"Dropping {mt!r} from unauthenticated connection "
+                            f"{addr}; closing")
+                await websocket.close(code=4401, reason="auth required")
+                return
+
             elif mt == Msg.BALL_EVENT:
                 lane = msg.get("lane")
                 pin_mask = msg.get("pin_mask")
                 awaiting_manual = bool(msg.get("awaiting_manual", False))
+                if not isinstance(lane, int):
+                    log.warning(f"Node {node_id!r}: BALL_EVENT with invalid "
+                                f"lane {lane!r}; ignored")
+                    continue
+                if not _socket_owns_lane(node_id, lane):
+                    log.warning(f"Node {node_id!r}: BALL_EVENT for lane {lane} "
+                                f"outside its declared lanes; ignored")
+                    continue
 
                 # Two paths:
                 #   camera mode  — pin_mask is real; record_ball immediately
@@ -177,6 +266,14 @@ async def handle_node(websocket):
 
             elif mt == Msg.FOUL_EVENT:
                 lane = msg.get("lane")
+                if not isinstance(lane, int):
+                    log.warning(f"Node {node_id!r}: FOUL_EVENT with invalid "
+                                f"lane {lane!r}; ignored")
+                    continue
+                if not _socket_owns_lane(node_id, lane):
+                    log.warning(f"Node {node_id!r}: FOUL_EVENT for lane {lane} "
+                                f"outside its declared lanes; ignored")
+                    continue
                 # Flag the next ball on this lane as a foul. If a ball
                 # event comes within a reasonable window, it'll consume
                 # this flag and score as a foul. If no ball arrives
@@ -184,31 +281,105 @@ async def handle_node(websocket):
                 # the flag stays set until the next ball — which is
                 # arguably wrong but matches AMF/Brunswick foul semantics
                 # where the foul lamp latches until ball-detect fires.
+                # OPEN_LANE / CLOSE_LANE clear stale flags for their lanes.
                 with state_lock:
                     pending_foul[lane] = True
                 log.info(f"Lane {lane}: FOUL flagged (will apply to next ball)")
 
             elif mt == Msg.HEARTBEAT:
-                pass
+                # Track liveness so send_to_* can tell "delivered to a node
+                # that's actually responding" from "buffered to a zombie".
+                hb_node = msg.get("node") or node_id
+                with clients_lock:
+                    meta = client_metadata.get(hb_node)
+                    if meta is not None:
+                        meta["last_heartbeat"] = time.time()
     except Exception as e:
         log.warning(f"Handler error: {e}")
     finally:
-        if node_id and clients.get(node_id) is websocket:
-            del clients[node_id]
-            client_metadata.pop(node_id, None)
-            log.info(f"Node {node_id!r} disconnected")
+        with clients_lock:
+            if node_id and clients.get(node_id) is websocket:
+                del clients[node_id]
+                client_metadata.pop(node_id, None)
+                log.info(f"Node {node_id!r} disconnected")
+
+# A node counts as "reached" only when its last heartbeat (or connect)
+# is at most this old. Heartbeats arrive every 5s; 15s = three missed
+# beats. Without this, ws.send() to a half-dead socket buffers in the
+# kernel and we'd report sent_to=1 for a node that's gone.
+HEARTBEAT_FRESH_S = 15
+
+
+def _last_seen(meta):
+    return max(meta.get("last_heartbeat") or 0, meta.get("connected_at") or 0)
+
 
 def send_to_all_nodes(msg_str):
-    """Schedule a send on the asyncio loop from the HTTP handler thread."""
+    """Schedule a send on the asyncio loop from the HTTP handler thread.
+    Returns the number of nodes that both accepted the send AND have a
+    fresh heartbeat — buffered sends to zombie sockets don't count."""
     sent = 0
-    for node_id, ws in list(clients.items()):
+    now = time.time()
+    with clients_lock:
+        targets = [(nid, ws, dict(client_metadata.get(nid) or {}))
+                   for nid, ws in clients.items()]
+    for node_id, ws, meta in targets:
         try:
             fut = asyncio.run_coroutine_threadsafe(ws.send(msg_str), main_loop)
             fut.result(timeout=2)
-            sent += 1
         except Exception as e:
             log.warning(f"send_to {node_id} failed: {e}")
+            continue
+        if now - _last_seen(meta) <= HEARTBEAT_FRESH_S:
+            sent += 1
+        else:
+            log.warning(f"send_to {node_id}: send buffered but heartbeat is "
+                        f"{now - _last_seen(meta):.1f}s stale — not counting "
+                        f"as delivered")
     return sent
+
+
+def send_to_lane(lane, msg_str):
+    """Deliver a command to the node that OWNS `lane` (declared it in
+    HELLO), instead of broadcasting to every node. The newest claimant
+    wins when two nodes claim the same lane (stale zombie connections
+    lose). Falls back to broadcast when no connected node claims the
+    lane — legacy/bench nodes that didn't declare lanes still work, and
+    lane_node.py ignores commands for lanes it doesn't handle anyway.
+
+    Returns 1 when the owning node accepted the send and has a fresh
+    heartbeat, else 0 (or the broadcast count on fallback)."""
+    now = time.time()
+    owners = []
+    with clients_lock:
+        for nid, meta in client_metadata.items():
+            if lane in (meta.get("lanes") or []):
+                ws = clients.get(nid)
+                if ws is not None:
+                    owners.append((meta.get("connected_at") or 0, nid, ws,
+                                   dict(meta)))
+    if not owners:
+        log.warning(f"send_to_lane: no connected node claims lane {lane}; "
+                    f"falling back to broadcast")
+        return send_to_all_nodes(msg_str)
+    owners.sort(key=lambda t: t[0])
+    if len(owners) > 1:
+        log.warning(f"send_to_lane: lane {lane} claimed by "
+                    f"{[o[1] for o in owners]}; routing to newest "
+                    f"claimant {owners[-1][1]!r}")
+    _, node_id, ws, meta = owners[-1]
+    try:
+        fut = asyncio.run_coroutine_threadsafe(ws.send(msg_str), main_loop)
+        fut.result(timeout=2)
+    except Exception as e:
+        log.warning(f"send_to_lane({lane}) -> {node_id} failed: {e}")
+        return 0
+    if now - _last_seen(meta) > HEARTBEAT_FRESH_S:
+        log.warning(f"send_to_lane({lane}) -> {node_id}: send buffered but "
+                    f"heartbeat is {now - _last_seen(meta):.1f}s stale — not "
+                    f"counting as delivered")
+        return 0
+    return 1
 
 # ============================================================
 # HTML DISPLAY + DESK SIMULATOR
@@ -374,15 +545,22 @@ class HttpHandler(BaseHTTPRequestHandler):
                 lane = int(parts[2])
             except ValueError:
                 return self._send(400, 'application/json', b'{"error":"bad lane"}')
+            # Hold state_lock across to_scoring_response — the cross-lane
+            # serializer walks (and trims game-over entries from) the lane
+            # queues, so serializing outside the lock raced with the WS
+            # handler's record_ball mutations. resp is a fresh dict, so
+            # json.dumps can safely run after the lock is released
+            # (same pattern as /api/state below).
             with state_lock:
                 ls = lane_scoring.get(lane)
-            if ls is None:
+                resp = (ls.to_scoring_response(view_lane_id=lane)
+                        if ls is not None else None)
+            if resp is None:
                 # No scoring state for this lane — return a "closed" stub so
                 # the display can render "Lane Closed" cleanly instead of erroring.
                 return self._send(200, 'application/json',
                                   json.dumps({"ok": True, "lane": lane, "open": False,
                                               "players": []}).encode('utf-8'))
-            resp = ls.to_scoring_response(view_lane_id=lane)
             self._send(200, 'application/json', json.dumps(resp).encode('utf-8'))
         elif self.path == '/api/state':
             with state_lock:
@@ -403,32 +581,61 @@ class HttpHandler(BaseHTTPRequestHandler):
                     for l, ls in lane_scoring.items()
                 }
                 pending_fouls = list(pending_foul.keys())
+            # Snapshot the client dicts under clients_lock — the WS handler
+            # mutates them on (re)connect, and iterating live dicts here
+            # raced that ("dictionary changed size during iteration").
+            with clients_lock:
+                nodes_connected = len(clients)
+                nodes_meta = {nid: dict(meta)
+                              for nid, meta in client_metadata.items()}
             health = {
                 "ok": True,
                 "uptime_sec": round(uptime_sec, 1),
                 "uptime_human": f"{int(uptime_sec // 3600)}h {int((uptime_sec % 3600) // 60)}m {int(uptime_sec % 60)}s",
                 "protocol_version": PROTOCOL_VERSION,
-                "nodes_connected": len(clients),
+                "auth_enabled": bool(AUTH_TOKEN),
+                "nodes_connected": nodes_connected,
                 "nodes": [
                     {
                         "node_id": nid,
-                        "lanes": meta["lanes"],
-                        "protocol_version": meta["protocol_version"],
-                        "connected_for_sec": round(now - meta["connected_at"], 1),
+                        "lanes": meta.get("lanes"),
+                        "protocol_version": meta.get("protocol_version"),
+                        "connected_for_sec": round(now - (meta.get("connected_at") or now), 1),
+                        "heartbeat_age_sec": round(now - _last_seen(meta), 1),
+                        "heartbeat_fresh": (now - _last_seen(meta)) <= HEARTBEAT_FRESH_S,
                     }
-                    for nid, meta in client_metadata.items()
+                    for nid, meta in nodes_meta.items()
                 ],
                 "lanes": lanes_summary,
                 "pending_fouls": pending_fouls,
                 "state_db": str(__import__('state_store').DB_PATH),
+                "state_save": get_save_status(),
             }
             self._send(200, 'application/json',
                        json.dumps(health, indent=2).encode('utf-8'))
         else:
             self._send(404, 'text/plain', b'Not found')
 
+    def _check_auth(self):
+        """Shared-token gate for every POST (all POSTs either fire hardware
+        or mutate scoring state). DEFAULT-OFF: no LANE_NODE_TOKEN env ->
+        always allowed (compatibility). Returns True when the request may
+        proceed; sends the 401 itself otherwise."""
+        if not AUTH_TOKEN:
+            return True
+        supplied = self.headers.get('X-Lane-Token', '') or ''
+        if hmac.compare_digest(supplied, AUTH_TOKEN):
+            return True
+        log.warning(f"POST {self.path} from {self.client_address[0]} rejected: "
+                    f"bad or missing X-Lane-Token")
+        self._send(401, 'application/json',
+                   b'{"error":"unauthorized: X-Lane-Token header required"}')
+        return False
+
     def do_POST(self):
         # /api/lane/{N}/{open|close|reset|power-on|power-off|trigger-ball|score}
+        if not self._check_auth():
+            return
         parts = self.path.strip('/').split('/')
         if len(parts) == 4 and parts[0] == 'api' and parts[1] == 'lane':
             try:
@@ -446,6 +653,16 @@ class HttpHandler(BaseHTTPRequestHandler):
             # ball that didn't actually happen physically just updates the
             # scorecard without touching hardware — safe.
             if action == 'score':
+                # Lane must already be open — scoring a closed/unopened lane
+                # used to auto-create a phantom 'TEST' game. Only the open /
+                # open-league endpoints create lane state now.
+                with state_lock:
+                    ls = lane_scoring.get(lane)
+                    lane_open = ls is not None and getattr(ls, 'is_active', False)
+                if not lane_open:
+                    return self._send(404, 'application/json',
+                                      json.dumps({'ok': False,
+                                                  'error': f'Lane {lane} not open'}).encode('utf-8'))
                 content_length = int(self.headers.get('Content-Length', 0) or 0)
                 if content_length == 0:
                     return self._send(400, 'application/json',
@@ -562,6 +779,16 @@ class HttpHandler(BaseHTTPRequestHandler):
             # trigger-ball after a real ball will pulse the pinsetter a
             # second time and sweep the customer's just-set rack.
             if action == 'trigger-ball':
+                # Same no-phantom-game rule as /score: the lane must have
+                # been opened first (click Open Lane on the bench display).
+                with state_lock:
+                    ls = lane_scoring.get(lane)
+                    lane_open = ls is not None and getattr(ls, 'is_active', False)
+                if not lane_open:
+                    return self._send(404, 'application/json',
+                                      json.dumps({'ok': False,
+                                                  'error': f'Lane {lane} not open '
+                                                           f'(open it before trigger-ball)'}).encode('utf-8'))
                 pin_mask_in = None
                 foul_override = False
                 content_length = int(self.headers.get('Content-Length', 0) or 0)
@@ -589,9 +816,10 @@ class HttpHandler(BaseHTTPRequestHandler):
 
                 bowl, pin_mask, foul = _process_ball_event(lane,
                                                            pin_mask=pin_mask_in)
-                # Send CYCLE to the Pi so its relay clicks like a real bowl
+                # Send CYCLE to the Pi so its relay clicks like a real bowl —
+                # routed to the node that owns this lane, not broadcast.
                 cycle_msg = encode(Msg.CYCLE, lane=lane)
-                sent = send_to_all_nodes(cycle_msg)
+                sent = send_to_lane(lane, cycle_msg)
                 payload = {
                     "sent_to": sent,
                     "lane": lane,
@@ -654,11 +882,23 @@ class HttpHandler(BaseHTTPRequestHandler):
                             bowlers_in = names
 
                 with state_lock:
-                    lane_scoring.pop(lane, None)
-                    ball_counters.pop(lane, None)
+                    # If this lane currently belongs to a CrossLaneScoring
+                    # pair, clear ALL of that object's lane keys — mirroring
+                    # CLOSE_LANE below. Otherwise the partner lane keeps a
+                    # stale reference to the old shared object (split-brain)
+                    # and a later close of the partner would wipe this fresh
+                    # game. Stale pending fouls die with the old game too.
+                    existing = lane_scoring.get(lane)
+                    stale_lanes = set(getattr(existing, 'lane_ids', []) or [])
+                    stale_lanes.add(lane)
+                    for lid in stale_lanes:
+                        lane_scoring.pop(lid, None)
+                        ball_counters.pop(lid, None)
+                        pending_foul.pop(lid, None)
                     get_or_create_lane(lane, bowlers=bowlers_in)
                     save_lanes(lane_scoring, ball_counters)  # persist reset
                 log.info(f"OPEN_LANE: reset scoring for lane {lane} "
+                         f"(cleared {sorted(stale_lanes)}) "
                          f"with bowlers={bowlers_in or '[TEST]'}")
 
             # If closing, clear the scoring state on this lane (and the
@@ -673,17 +913,19 @@ class HttpHandler(BaseHTTPRequestHandler):
                         for lid in list(ls.lane_ids):
                             lane_scoring.pop(lid, None)
                             ball_counters.pop(lid, None)
+                            pending_foul.pop(lid, None)
                             cleared.append(lid)
                     else:
                         lane_scoring.pop(lane, None)
                         ball_counters.pop(lane, None)
+                        pending_foul.pop(lane, None)
                         cleared.append(lane)
                     save_lanes(lane_scoring, ball_counters)
                 log.info(f"CLOSE_LANE: cleared scoring for lane(s) {cleared}")
 
             msg = encode(msg_type, lane=lane)
             if send_hardware_command:
-                sent = send_to_all_nodes(msg)
+                sent = send_to_lane(lane, msg)
                 log.info(f"→ {action.upper()} lane {lane} sent to {sent} node(s)")
             else:
                 sent = 0
@@ -766,9 +1008,19 @@ class HttpHandler(BaseHTTPRequestHandler):
             cls.start()
 
             with state_lock:
+                # Clear every lane key reachable from the existing objects
+                # at BOTH lanes — if either lane was previously part of a
+                # different cross-lane pair, its old partner key must not
+                # keep a stale reference to the replaced object.
+                to_clear = {lane_left, lane_right}
                 for lid in (lane_left, lane_right):
+                    ex = lane_scoring.get(lid)
+                    if ex is not None:
+                        to_clear.update(getattr(ex, 'lane_ids', []) or [])
+                for lid in to_clear:
                     lane_scoring.pop(lid, None)
                     ball_counters.pop(lid, None)
+                    pending_foul.pop(lid, None)
                 lane_scoring[lane_left] = cls
                 lane_scoring[lane_right] = cls
                 save_lanes(lane_scoring, ball_counters)
@@ -787,7 +1039,7 @@ class HttpHandler(BaseHTTPRequestHandler):
             sent_open = 0
             if send_open_command:
                 for lid in (lane_left, lane_right):
-                    sent_open += send_to_all_nodes(encode(
+                    sent_open += send_to_lane(lid, encode(
                         Msg.OPEN_LANE, lane=lid,
                         bowlers=[b.name for b in cls.bowlers]))
 
@@ -823,6 +1075,15 @@ def http_thread():
 async def main():
     global main_loop
     main_loop = asyncio.get_running_loop()
+    if AUTH_TOKEN:
+        log.info("LANE_NODE_TOKEN set — POST control API (:8766) and WS HELLO "
+                 "(:8765) require the shared token.")
+    else:
+        log.warning(
+            "LANE_NODE_TOKEN not set — :8766 control POSTs and :8765 WS are "
+            "UNAUTHENTICATED: any LAN device can cycle/power the pinsetters. "
+            "Set LANE_NODE_TOKEN (same value on this server, every Pi "
+            "lane-node, and wsl_api.py's mirror) to enable auth.")
     threading.Thread(target=http_thread, daemon=True).start()
     log.info("HTTP display + desk simulator: http://0.0.0.0:8766")
     log.info("WebSocket: ws://0.0.0.0:8765")

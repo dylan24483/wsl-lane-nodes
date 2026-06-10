@@ -16,15 +16,16 @@ import time
 from gpiozero import Button, LED
 from websockets.asyncio.client import connect
 
-# pin_detect is the OpenCV pipeline that classifies the 10 pin spots
-# into a 10-bit pin_mask. Until the T-Camera + USB capture dongle is
-# on the bench, we use a stub that returns synthetic masks from a
-# fixed rotation. When the camera is wired, capture_frame() runs
-# and detect_pins() processes a real frame.
+# pin_detect: numpy pin-classification (DualDeckDetector → 10-bit mask per deck).
+# camera: owns the T-Camera capture handle + the calibrated detector + the empty
+# reference, and maps deck→lane. detect_current_pins() below uses it in camera
+# mode; manual mode never touches it. Both import without cv2/gpiozero present
+# (cv2 is lazy in camera.py), so this file still loads on a camera-less bench.
 import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 import pin_detect
+import camera
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s [%(levelname)s] %(message)s')
@@ -38,6 +39,11 @@ import os
 SERVER_URL = os.environ.get("WSL_LANE_SERVER_URL", "ws://localhost:8765")
 NODE_ID = os.environ.get("WSL_LANE_NODE_ID", "lane-node-dev-pair-21-22")
 LANES = [21, 22]
+# Shared auth token, matching the server's LANE_NODE_TOKEN. When the server
+# has LANE_NODE_TOKEN set, it rejects any HELLO without the same value; when
+# unset on both sides, behavior is unchanged (unauthenticated, bench compat).
+# Set it in the systemd unit (Environment=LANE_NODE_TOKEN=...) at provisioning.
+LANE_NODE_TOKEN = os.environ.get("LANE_NODE_TOKEN", "").strip()
 
 # How DIELL ball-detect events flow into scoring:
 #   camera   — DIELL fires BALL_EVENT with pin_mask from detect_current_pins().
@@ -117,30 +123,37 @@ class Msg:
 def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
 def decode(r): return json.loads(r)
 
-# Pin-detect stub state — increments on each call to mimic the rotation
-# the server's PIN_MASK_CYCLE currently does. Replace with real camera
-# capture once the bench has a T-Camera + USB dongle wired.
+# Pin detection (camera-backed). One PairCamera per pair — a single T-Camera
+# sees BOTH decks. Constructed in main() when SCORING_MODE == "camera"; stays
+# None otherwise (manual/disabled never touch the camera).
+_PAIR_CAMERA = None
+
+# Bench fallback: when camera mode is on but no real camera/empty-ref is present,
+# WSL_LANE_CAMERA_STUB=1 rotates synthetic masks (mimics the server's old
+# PIN_MASK_CYCLE) so the bench behaves as before. Default OFF — without it,
+# "camera mode but no camera" yields None → the daemon emits awaiting_manual
+# (safe: a real ball never records bogus auto-scored pins).
+_CAMERA_STUB = os.environ.get("WSL_LANE_CAMERA_STUB", "0") == "1"
 _STUB_PIN_MASKS = [0b0000011111, 0, 0, 0b0001111111, 0b0000001111, 0]
 _stub_counter = {lane_id: 0 for lane_id in LANES}
 
-def detect_current_pins(lane_id: int) -> int:
-    """Return the current pin_mask for the lane.
+def detect_current_pins(lane_id: int):
+    """Real standing-pin mask for the lane (10-bit, 1 = standing), or None.
 
-    With camera wired: cv2.VideoCapture → pin_detect.detect_pins → mask.
-    Without camera (current state): rotates through synthetic masks
-    that mimic the server's old PIN_MASK_CYCLE. This keeps bench
-    behavior identical to the pre-integration state — just with the
-    pin_mask sourced on the Pi side instead of the server side, which
-    is the production architecture.
+    None means "no usable pin data" (camera not ready, or a capture failure) —
+    the caller then emits the ball as awaiting_manual so the desk scores it,
+    rather than recording bogus pins. BLOCKS on cv2 capture, so callers run it
+    via asyncio.to_thread, never directly on the event loop.
     """
-    # TODO: when camera is on bench, replace this stub with:
-    #   frame = pin_detect.capture_frame(camera_handle)
-    #   if frame is None: return 0x3FF  # all pins, safe default
-    #   result = pin_detect.detect_pins(frame)
-    #   return result.pin_mask
-    n = _stub_counter[lane_id]
-    _stub_counter[lane_id] = n + 1
-    return _STUB_PIN_MASKS[n % len(_STUB_PIN_MASKS)]
+    if _PAIR_CAMERA is not None and _PAIR_CAMERA.ready:
+        return _PAIR_CAMERA.detect_lane(lane_id)   # int, or None on capture fail
+    if _CAMERA_STUB:
+        n = _stub_counter[lane_id]
+        _stub_counter[lane_id] = n + 1
+        m = _STUB_PIN_MASKS[n % len(_STUB_PIN_MASKS)]
+        log.info(f"lane {lane_id}: CAMERA STUB pin_mask=0x{m:03x}")
+        return m
+    return None
 
 event_queue = None
 main_loop = None
@@ -164,6 +177,50 @@ def make_foul_callback(lane_id):
 
 for lane_id in LANES:
     BALL_DETECT[lane_id].when_pressed = make_foul_callback(lane_id)
+
+
+async def _settle_capture_emit(lane_id):
+    """camera mode: wait the settle window, grab+detect off-loop, emit BALL_EVENT.
+
+    Scheduled from the DIELL callback (camera mode). The pins are still rocking
+    when DIELL fires, so we sleep camera.SETTLE_S first, THEN capture — at which
+    point the ball has reached the deck and the pins have stopped, but the
+    (existing) pinsetter hasn't swept yet. cv2 capture blocks, so it runs in a
+    worker thread via asyncio.to_thread to keep the event loop (and the watchdog
+    kick) responsive.
+
+    Emits a real pin_mask when detection succeeds; otherwise emits
+    awaiting_manual=True so the desk scores it — a capture/detector failure must
+    never auto-score bogus pins on a real ball.
+
+    ⚠️ TIMING COUPLING (fine for the scoring pilot; revisit at Track B cutover):
+    the server sends the pinsetter CYCLE in reply to BALL_EVENT, so delaying
+    BALL_EVENT by SETTLE_S also delays that CYCLE reply by SETTLE_S. In the
+    Phase-8a scoring pilot this is harmless — the EXISTING controller cycles the
+    machine on its own ball-detect; our CYCLE relay isn't the live machine
+    driver. When the Track-B Pi-controller (cycle_control_8270) drives the
+    machine, the cycle MUST run on cam timing independent of camera capture —
+    decouple "ball happened / cycle now" from "here's the score" then.
+    """
+    try:
+        await asyncio.sleep(camera.SETTLE_S)
+        pin_mask = await asyncio.to_thread(detect_current_pins, lane_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        log.warning(f"lane {lane_id}: settle/capture error: {e}; -> awaiting_manual")
+        pin_mask = None
+
+    if pin_mask is None:
+        log.info(f"lane {lane_id}: camera yielded no mask -> awaiting_manual (desk score)")
+        msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=None, awaiting_manual=True)
+    else:
+        log.info(f"lane {lane_id}: camera pin_mask=0x{pin_mask:03x} "
+                 f"(standing={[p for p in range(1,11) if pin_mask & (1<<(p-1))]})")
+        msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=pin_mask)
+
+    if event_queue:
+        await event_queue.put(msg)
 
 
 # Per-lane ball-detect lockout. The left and right DIELL beams trigger
@@ -202,20 +259,24 @@ def make_ball_detect_callback(lane_id):
             log.info(f"GPIO: ball detected on lane {lane_id} (mode=disabled, no emit)")
             return
 
-        # camera mode: include pin_mask from pin_detect (real or stub).
+        # camera mode: the pins are still rocking when DIELL fires, so DON'T
+        # capture now. Schedule a settle-then-capture-then-emit coroutine on the
+        # event loop (the blocking cv2 capture runs off-loop via to_thread).
+        # That coroutine emits awaiting_manual if detection yields no mask.
+        if SCORING_MODE == "camera":
+            log.info(f"GPIO: ball detected on lane {lane_id}, mode=camera; "
+                     f"settling {camera.SETTLE_S}s before capture")
+            if main_loop:
+                asyncio.run_coroutine_threadsafe(
+                    _settle_capture_emit(lane_id), main_loop)
+            return
+
         # manual mode: include NO pin_mask — server treats as "ball happened,
         # await /api/lane/N/score" instead of recording with bogus stub data.
-        if SCORING_MODE == "camera":
-            pin_mask = detect_current_pins(lane_id)
-            log.info(f"GPIO: ball detected on lane {lane_id}, "
-                     f"mode=camera, pin_mask=0x{pin_mask:03x}")
-            msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=pin_mask)
-        else:  # manual
-            log.info(f"GPIO: ball detected on lane {lane_id}, "
-                     f"mode=manual (awaiting desk score)")
-            msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=None,
-                         awaiting_manual=True)
-
+        log.info(f"GPIO: ball detected on lane {lane_id}, "
+                 f"mode=manual (awaiting desk score)")
+        msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=None,
+                     awaiting_manual=True)
         if main_loop and event_queue:
             main_loop.call_soon_threadsafe(event_queue.put_nowait, msg)
     return on_ball_detected
@@ -327,6 +388,8 @@ def _cleanup_gpio():
         # Stop kicking the watchdog first → it trips → relays safe-open.
         WATCHDOG_KICK.off()
         WATCHDOG_KICK.close()
+        if _PAIR_CAMERA is not None:
+            _PAIR_CAMERA.close()
         for lane_id in LANES:
             PINSETTER_CYCLE[lane_id].off()
             PINSETTER_POWER[lane_id].off()
@@ -355,9 +418,15 @@ async def connection_manager():
             log.info(f"Connecting to {SERVER_URL} ...")
             async with connect(SERVER_URL) as ws:
                 log.info(f"Connected. Sending hello (lanes={LANES}, "
-                         f"protocol_version={PROTOCOL_VERSION}).")
-                await ws.send(encode(Msg.HELLO, node=NODE_ID, lanes=LANES,
-                                     protocol_version=PROTOCOL_VERSION))
+                         f"protocol_version={PROTOCOL_VERSION}, "
+                         f"auth={'token' if LANE_NODE_TOKEN else 'none'}).")
+                hello_fields = dict(node=NODE_ID, lanes=LANES,
+                                    protocol_version=PROTOCOL_VERSION)
+                if LANE_NODE_TOKEN:
+                    # Only include the field when set, so the HELLO shape is
+                    # byte-identical to before in unauthenticated bench mode.
+                    hello_fields["token"] = LANE_NODE_TOKEN
+                await ws.send(encode(Msg.HELLO, **hello_fields))
                 await asyncio.gather(
                     heartbeat_loop(ws),
                     event_sender(ws),
@@ -369,10 +438,35 @@ async def connection_manager():
             log.warning(f"Connection lost: {e}. Retrying in 5s...")
             await asyncio.sleep(5)
 
+
+def _init_camera():
+    """Construct the PairCamera in camera mode. Failure is non-fatal: we log and
+    leave _PAIR_CAMERA None, so detect_current_pins() returns None and every ball
+    falls back to awaiting_manual (desk scoring) — the lane still runs."""
+    global _PAIR_CAMERA
+    if SCORING_MODE != "camera":
+        return
+    try:
+        _PAIR_CAMERA = camera.PairCamera(
+            deck_to_lane={dk: ln for dk, ln in pin_detect.DECK_TO_LANE.items()
+                          if ln in LANES})
+        if _PAIR_CAMERA.ready:
+            log.info(f"Camera ready for lanes {_PAIR_CAMERA.lanes()} "
+                     f"(settle={camera.SETTLE_S}s).")
+        else:
+            log.warning("Camera mode but detector NOT ready (no empty ref / cv2). "
+                        "Balls will fall back to manual desk scoring until fixed. "
+                        "Capture an empty ref: python lane_node/camera.py --capture-empty")
+    except Exception as e:
+        log.warning(f"Camera init failed ({e}); manual fallback for all balls.")
+        _PAIR_CAMERA = None
+
+
 async def main():
     global event_queue, main_loop
     main_loop = asyncio.get_running_loop()
     event_queue = asyncio.Queue()
+    _init_camera()
 
     # SIGTERM is systemd's default stop signal. Without a handler, Python
     # exits without running atexit, and BCM2711 retains the GPIO output

@@ -13,9 +13,15 @@ stuck cycling. This script's only job is to explicitly re-claim each
 relay GPIO, drive it LOW, and release. The kernel then leaves the
 pad in OUTPUT-LOW state — relay open.
 
-Best-effort: any exception is swallowed. If a relay is genuinely
-electrically stuck (welded contacts, etc.), no software can help.
+Best-effort semantics, but failures are VISIBLE: each failed pin is
+reported on stderr (systemd captures it in the journal) and the script
+exits nonzero if ANY pin could not be driven LOW, so `systemctl status
+lane-node` shows the degraded cleanup instead of silent success. If a
+relay is genuinely electrically stuck (welded contacts, etc.), no
+software can help.
 """
+import sys
+
 from gpiozero import LED
 
 # Keep this list in sync with lane_node.py's LANE_GPIO cycle+power
@@ -38,10 +44,17 @@ RELAY_PINS = [
 WATCHDOG_KICK_PIN = 12
 
 if __name__ == '__main__':
+    failed = 0
     for pin in RELAY_PINS + [WATCHDOG_KICK_PIN]:
         try:
             led = LED(pin)
             led.off()
             led.close()
-        except Exception:
-            pass  # best effort
+        except Exception as e:
+            # best effort continues to the next pin, but NEVER silently:
+            failed += 1
+            print(f"relay_cleanup: GPIO {pin} drive-LOW FAILED: {e!r}", file=sys.stderr)
+    if failed:
+        print(f"relay_cleanup: {failed} pin(s) NOT confirmed LOW — relays may still be "
+              f"energized; check the machine", file=sys.stderr)
+        sys.exit(1)

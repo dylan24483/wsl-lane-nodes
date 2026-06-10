@@ -1,0 +1,9 @@
+# build artifacts
+/build/
+test/*.exe
+*.uf2
+*.elf
+*.bin
+*.hex
+*.map
+*.o
