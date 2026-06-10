@@ -613,7 +613,46 @@ class BowlerGame:
         # that un-completes the 10th un-ends the game.
         self.game_over = bool(self.frames[9].is_complete
                               and self.frames[9].score is not None)
+
+        # Resync the live cursor if we just rewrote the IN-PROGRESS frame.
+        # Correcting a PAST frame intentionally leaves the cursor alone (a fix to
+        # frame 3 keeps the bowler on frame 7 — see docstring), but rewriting the
+        # frame the bowler is currently on must rebuild ball_in_frame /
+        # mask_before_ball / current_frame_idx. Otherwise the next real ball lands
+        # in the wrong slot (e.g. a 3rd bowl in a 2-ball frame) and corrupts the
+        # game.
+        if frame_idx == self.current_frame_idx:
+            self._resync_cursor_to_frame(frame_idx)
         return {'ok': True, 'frame': frame.to_dict()}
+
+    def _resync_cursor_to_frame(self, frame_idx: int):
+        """Rebuild the live cursor after set_frame_bowls rewrote the current
+        frame, so the next record_ball continues from the corrected state."""
+        frame = self.frames[frame_idx]
+        is_tenth = frame.number == 10
+        last = frame.bowls[-1] if frame.bowls else None
+
+        if frame.is_complete:
+            if is_tenth:
+                # 10th complete -> game_over already set; just park ball_in_frame
+                # past the last ball thrown.
+                self.ball_in_frame = len(frame.bowls) + 1
+            else:
+                # Advance to the next frame on a fresh rack.
+                self.current_frame_idx = min(frame_idx + 1, 9)
+                self.ball_in_frame = 1
+                self.mask_before_ball = 0x3FF
+            return
+
+        # Frame still in progress — stay on it, point at the next ball.
+        self.current_frame_idx = frame_idx
+        self.ball_in_frame = len(frame.bowls) + 1
+        # mask_before_ball = what stands before the NEXT ball: a strike / spare /
+        # foul respots the full rack, otherwise it's the last ball's remaining pins.
+        if last is None or last.foul or last.display in ('X', '/'):
+            self.mask_before_ball = 0x3FF
+        else:
+            self.mask_before_ball = last.pin_map
 
 
 # ============================================================
