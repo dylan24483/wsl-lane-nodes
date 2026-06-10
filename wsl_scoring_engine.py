@@ -749,10 +749,11 @@ class LaneScoring:
             self.current_bowler_idx = (self.current_bowler_idx + 1) % len(self.bowlers)
             if not self.bowlers[self.current_bowler_idx].game_over:
                 return
-        # All done
+        # All done (every bowler game-over): restore the cursor and return. The
+        # previous `return bowl` referenced an undefined name and raised
+        # NameError, bricking the lane whenever a correction ended all games.
         self.current_bowler_idx = start
-
-        return bowl
+        return
 
     def _advance_bowler(self):
         """Move to the next bowler, or start new game if all done."""
