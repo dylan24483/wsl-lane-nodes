@@ -17,7 +17,7 @@
 #ifndef WSL_PHASE8B_RP2040_CONFIG_H
 #define WSL_PHASE8B_RP2040_CONFIG_H
 
-#define FW_VERSION "phase8b-rp2040 v0.2.0"
+#define FW_VERSION "phase8b-rp2040 v1.1.0"
 
 /* ---- UART (uart0) link to the Pi -------------------------------------------------------- */
 #define UART_BAUD     115200
@@ -63,6 +63,95 @@
 /* Pi over UART) for longer than this latches a fault and drops RP_OK. BE (continuous) and M  */
 /* (master/power) are NOT guarded.                                                            */
 #define MAX_MOTION_MS       8000u
+
+/* ======================================================================================== */
+/*  v1.1 SAFETY SUPERVISION — cam-stop overrun, SC/TB interlock echo, motion-without-RUN     */
+/* ======================================================================================== */
+/*  ⚠️ BENCH-CONFIRM BEFORE ENABLING ANY OF THESE. ⚠️                                         */
+/*                                                                                            */
+/*  Every flag here DEFAULTS to the v0.2.0 behavior (no new enforcement). They add the        */
+/*  cutover G3-gate cam-stop rail-drop and uncommanded-motion backstops the firmware was      */
+/*  built to carry (spec §4.2; cutover runbook §6 Stage-6b / G3), but their correctness        */
+/*  depends on the per-cam edge->angle polarity that is a DEFERRED FIELD CAPTURE               */
+/*  (phase8_trackB_controller_cutover_runbook.md §3.2). Until that capture is done and the     */
+/*  matching CAM_*_TRIP edge is confirmed on the bench (§12.9 with one hand-rotated cam),      */
+/*  enabling these risks a wrong-polarity check that either (a) latches a fail-safe fault on   */
+/*  every NORMAL stop (nuisance lane-down — SAFE direction) or (b) in the SC/TB-echo case      */
+/*  fails to latch when it should (the hardware J_SAFETY NC loop is still primary, so this is  */
+/*  a backstop of a backstop, never the sole device). The DEFAULT-OFF posture keeps unconfirmed*/
+/*  polarity from ever weakening or nuisance-tripping the rail.                                */
+/*                                                                                            */
+/*  Bench/cutover sequence to ARM these (runbook §3.2 -> §6 Stage 7, per board):               */
+/*    1. Hand-rotate each stop cam; record which edge ('f' = asserted/fall, 'r' = released/    */
+/*       rise) is the angular ZERO-STOP trip. Cams are normally-closed dry contacts that the   */
+/*       opto inverts, so the un-bench-confirmed DEFAULT below assumes 'f' = the trip edge     */
+/*       (consistent with rp2040_link.RP2040Link(trip_edge="f")). VERIFY, do not assume.       */
+/*    2. Set the matching CAM_*_TRIP to that edge, flip the relevant *_ENABLED to 1, rebuild.  */
+/*    3. Re-run the Stage-6b cam-stop rail-drop sub-test (G3): command S/T, let the stop-cam   */
+/*       trip WITHOUT a STOP, confirm {"ev":"flt","code":"cam_overrun"} + RP_OK -> LOW.         */
+/*                                                                                            */
+/*  These checks ONLY ever latch_fault() (fail-safe: drop RP_OK). They never permit motion,    */
+/*  never bypass a fault, and never feed the watchdog — a disabled flag is exactly v0.2.0.     */
+
+/* ---- (1) Cam-stop OVERRUN enforcement -------------------------------------------------- */
+/* Per stop cam: when its TRIP edge fires while the GUARDED motor is marked RUNNING, the Pi    */
+/* has STOP_GRACE_MS to send STOP <motor>. If it doesn't, the firmware latches "cam_overrun"   */
+/* and drops RP_OK — a Pi-independent, per-edge stop (the runbook §0 "cam-stops are SOLELY     */
+/* the RP2040's job" case). Two zero-stop cams exist (SYSTEM_REFERENCE §2 cam map):            */
+/*   SA  270°/360° -> stops sweep motor S      TA1 355° -> stops table motor T                 */
+/* Edge tokens: 'f' = asserted/fall, 'r' = released/rise. UNCONFIRMED sentinel '?' = a value   */
+/* that can never equal a real 'f'/'r' edge, so a descriptor left at '?' can NEVER trip even   */
+/* if its _ENABLED is set by mistake (belt + suspenders with the per-cam enable).              */
+#define CAM_TRIP_UNCONFIRMED  '?'
+
+/* Each flag is `#ifndef`-guarded (like DEBUG_USB) so a build can override it with -D without a
+ * source edit — used by the host test's "enabled" variant (test/test_v11.c) to exercise
+ * the new fault paths, and available to a per-board cutover build once §3.2 polarity is locked.
+ * The DEFAULT (no -D) is always the v0.2.0 no-enforcement behavior. */
+
+/* SA -> sweep (S). DEFAULT: disabled + UNCONFIRMED trip (no enforcement until §3.2 capture).  */
+#ifndef CAM_SA_STOP_ENABLED
+#define CAM_SA_STOP_ENABLED   0
+#endif
+#ifndef CAM_SA_TRIP
+#define CAM_SA_TRIP           CAM_TRIP_UNCONFIRMED   /* set to 'f' or 'r' once bench-confirmed */
+#endif
+#ifndef CAM_SA_GRACE_MS
+#define CAM_SA_GRACE_MS       150u                   /* STOP must arrive within this of trip   */
+#endif
+
+/* TA1 -> table (T). DEFAULT: disabled + UNCONFIRMED trip.                                      */
+#ifndef CAM_TA1_STOP_ENABLED
+#define CAM_TA1_STOP_ENABLED  0
+#endif
+#ifndef CAM_TA1_TRIP
+#define CAM_TA1_TRIP          CAM_TRIP_UNCONFIRMED   /* set to 'f' or 'r' once bench-confirmed */
+#endif
+#ifndef CAM_TA1_GRACE_MS
+#define CAM_TA1_GRACE_MS      150u
+#endif
+
+/* ---- (2) SC/TB collision-interlock echo gating RP_OK ----------------------------------- */
+/* The hardware J_SAFETY NC loop is PRIMARY (SC ∧ TB both in their danger window = sweep and   */
+/* table about to collide). This firmware echo is a software backstop of that loop: when both  */
+/* SC and TB read asserted at once AND a motion motor is running, latch "interlock_collision"  */
+/* and drop RP_OK. DEFAULT disabled until the SC/TB danger windows are bench-confirmed; the     */
+/* hb "in" mask already REPORTS SC/TB levels to the Pi regardless of this flag.                 */
+#ifndef INTERLOCK_ECHO_ENABLED
+#define INTERLOCK_ECHO_ENABLED 0
+#endif
+
+/* ---- (3) Motion-without-RUN (uncommanded-motion) detection ----------------------------- */
+/* If a stop-cam TRIP edge streams in while NO motion motor (S/T/SP/M2/M1) is marked RUNNING,   */
+/* the machine is turning without the Pi having commanded it (Pi wedged / external start /      */
+/* relay welded). Latch "motion_no_run" and drop RP_OK. This is the one supervision check that  */
+/* works even if the Pi is fully wedged. Uses the SAME per-cam CAM_*_TRIP edges, so it is also   */
+/* gated on the §3.2 polarity capture. DEFAULT disabled.                                         */
+#ifndef MOTION_NO_RUN_ENABLED
+#define MOTION_NO_RUN_ENABLED  0
+#endif
+/* A trip edge whose motor IS the cam's own guarded motor while THAT motor is running is a       */
+/* normal stop, never "uncommanded". Only a trip with no motion motor running at all counts.     */
 
 /* ---- Debug ----------------------------------------------------------------------------- */
 /* When 1, event lines are mirrored to USB-CDC stdio for bench debugging (the protocol still */

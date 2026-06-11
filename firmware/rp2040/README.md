@@ -1,7 +1,10 @@
 # WSL Phase 8b — RP2040 lane-controller firmware
 
-**v0.2.0 — DRAFT, bench-bring-up gated. Not for a live machine until validated per `docs/phase8b_pcb_revB_spec.md` §12.9.**
+**v1.1.0 — DRAFT, bench-bring-up gated. Not for a live machine until validated per `docs/phase8b_pcb_revB_spec.md` §12.9.**
+*(v1.1.0, 2026-06-10: the deferred v1.1 SAFETY supervision — (1) cam-stop OVERRUN, (2) SC/TB collision-interlock echo, (3) motion-without-RUN. **All three default OFF** behind `#ifndef`-overridable config flags + per-cam UNCONFIRMED trip edges, so a stock build is byte-for-byte the same enforcement as v0.2.0; they only ever `latch_fault()`/drop RP_OK, never permit motion, never feed the watchdog. They arm per-cam as the §3.2 cam-polarity field capture is confirmed. Pin map, pin assignments, command grammar, and watchdog-feed placement UNCHANGED.)*
 *(v0.2.0, 2026-06-10 audit hardening: RX overrun whole-line discard, duplicate-RUN timer guard, boot-settle latch across the uint32 ms wrap, per-input chatter fault, TX headroom for critical lines, oversized-emit whole-line drop, hb `in`/`run` masks, boot `maxrun_ms`/`dbg`. Pin map, pin assignments, and command grammar UNCHANGED.)*
+
+> ⛔ **BENCH-CONFIRM BEFORE ENABLING the v1.1 flags.** `config.h` ships every v1.1 enforcement flag OFF and every per-cam trip edge as `'?'` (UNCONFIRMED). Confirm the per-cam edge→angle polarity on the spare cabinet (`docs/phase8_trackB_controller_cutover_runbook.md` §3.2) FIRST, then set `CAM_*_TRIP` + flip the matching `*_ENABLED` cam-by-cam and re-flash. Enabling with wrong polarity nuisance-trips the rail (safe direction) or, for the SC/TB echo, fails to add its backstop (the hardware J_SAFETY NC loop is still primary). Never enable blind.
 
 One RP2040 (a stock Raspberry Pi Pico module) sits on each rev-B controller board and is the **fast + safety half** of the lane controller. The Raspberry Pi runs the cycle FSM (`lane_node/cycle_control_8270.py`) and commands relays over I²C/MCP23017; this firmware owns the latency-critical inputs and the hardware rail-permission line.
 
@@ -16,9 +19,13 @@ One RP2040 (a stock Raspberry Pi Pico module) sits on each rev-B controller boar
    - **Motion max-run ("cam timeout", spec §4.2)** — if the Pi marks a guarded motor `RUN` and never `STOP`s it within `MAX_MOTION_MS` (8 s, matches the FSM), the firmware **latches a fault and drops RP_OK**.
 4. **Heartbeats to the Pi** so a dead/`!ok` RP2040 is detected (the Pi then drops its ARM GPIO → rail drops).
 
-### Deferred to v1.1 (intentionally NOT in this firmware)
-- **Cam-stop OVERRUN enforcement** (a stop-cam fires while a motor is RUNNING and the Pi fails to `STOP` within a grace window → drop RP_OK). It needs the **per-cam edge→angle polarity**, which is a deliberately-deferred cutover field item (`docs/phase8_trackB_controller_cutover_runbook.md` §3.2). We do not bake in unconfirmed cam polarity. Hook is marked `// v1.1` in `main.c`.
-- **SC/TB collision echo gating RP_OK** — the hardware J_SAFETY loop is primary; the firmware echo is enabled once the SC/TB windows are bench-confirmed.
+### v1.1 SAFETY supervision (implemented, default OFF — arm per-cam after the §3.2 capture)
+
+These are the cutover **G3 cam-stop rail-drop** backstops. The *code* is present + host-tested; the *enforcement* is gated OFF in `config.h` until the per-cam edge→angle polarity is bench-confirmed (`docs/phase8_trackB_controller_cutover_runbook.md` §3.2). Each only ever `latch_fault()`s (fail-safe: RP_OK → LOW).
+
+1. **Cam-stop OVERRUN** — a stop cam's TRIP edge fires while its guarded motor is marked RUNNING and the Pi fails to `STOP` it within the per-cam grace window → latch `cam_overrun`. Per-cam: `CAM_SA_STOP_ENABLED`/`CAM_SA_TRIP`/`CAM_SA_GRACE_MS` (SA→sweep S), `CAM_TA1_*` (TA1→table T). **The Pi-independent, per-edge stop the post-cutover machine relies on** (runbook §0: cam-stops are SOLELY the RP2040's job once the Omniboard is unplugged).
+2. **SC/TB collision-interlock echo** — both SC and TB asserted at once while a motion motor runs → latch `interlock_collision`. `INTERLOCK_ECHO_ENABLED`. The hardware J_SAFETY NC loop stays **primary**; this is a firmware backstop of it (the hb `in` mask already *reports* SC/TB regardless of the flag).
+3. **Motion-without-RUN** — a stop-cam TRIP edge while NO motion motor is marked RUNNING = the machine turning uncommanded (Pi wedged / external start / welded relay) → latch `motion_no_run`. `MOTION_NO_RUN_ENABLED`. The one check that works even if the Pi is fully wedged.
 
 ## Authoritative pin map
 
@@ -60,11 +67,21 @@ The pure logic (TX ring, debounce/edges, ball lockout, UART protocol, the RP_OK 
 
 ```bash
 # from firmware/rp2040/  (gcc or a MinGW clang; plain clang on Windows needs the Windows SDK for libc headers)
+
+# (a) default build — v1.1 enforcement flags OFF (what ships); also pins the off-by-default inertness
 gcc -std=c11 -Wall -Wextra -I test -I test/stubs test/test_main.c -o test/test_main.exe
 ./test/test_main.exe        # exit 0 = all checks pass
+
+# (b) v1.1 SAFETY paths — SAME firmware, enforcement flags forced ON with test polarities ('f')
+gcc -std=c11 -Wall -Wextra -I test -I test/stubs \
+  -DCAM_SA_STOP_ENABLED=1 -DCAM_SA_TRIP="'f'" -DCAM_SA_GRACE_MS=150u \
+  -DCAM_TA1_STOP_ENABLED=1 -DCAM_TA1_TRIP="'f'" -DCAM_TA1_GRACE_MS=150u \
+  -DINTERLOCK_ECHO_ENABLED=1 -DMOTION_NO_RUN_ENABLED=1 \
+  test/test_v11.c -o test/test_v11.exe
+./test/test_v11.exe         # exit 0 = all checks pass
 ```
 
-Last run: **55/55 checks passed** (2026-06-10, gcc 16.1.0), clean under `-Wall -Wextra` + the `printf`-format attribute (so the event format strings are compiler-verified too). Sections F–I (added 2026-06-10) pin the hardened semantics: UART fuzz/overrun-discard, duplicate-RUN, the uint32 ms-wrap boot-settle latch, the chatter guard + TX headroom, and the hb `in`/`run` masks.
+Last run: **61/61** (`test_main`) + **28/28** (`test_v11`) checks passed (2026-06-10, gcc 16.1.0), both clean under `-Wall -Wextra -Werror` + the `printf`-format attribute (so the event format strings are compiler-verified too). The two binaries share `test/mock_impl.h` (one mock-SDK implementation) so they can never drift. Sections F–I pin the v0.2.0 hardened semantics (UART fuzz/overrun-discard, duplicate-RUN, uint32 ms-wrap boot-settle latch, chatter guard + TX headroom, hb `in`/`run` masks); Section J pins that the v1.1 checks are **inert when the flags are OFF** (a default build = v0.2.0 enforcement); `test_v11.c` pins that each v1.1 fault path fires fail-safe when enabled (overrun latch + timely-STOP-cancels + per-motor disarm, SC∧TB echo, motion-without-RUN, and the non-trip-edge-is-inert guard).
 
 > ⚠️ **Bench-only gates (the host test CANNOT prove these):** watchdog timing (the 250 ms WDT vs real loop latency — the mock watchdog is a no-op), boot ordering (GP2 LOW before init), GPIO drive polarity/levels on real silicon, UART electricals/baud, and the DEBUG_USB stdio path. These are §12.9 bench bring-up items — a green host test is necessary, not sufficient.
 
@@ -77,15 +94,20 @@ Last run: **55/55 checks passed** (2026-06-10, gcc 16.1.0), clean under `-Wall -
 
 ### RP2040 → Pi (events)
 ```
-{"ev":"boot","fw":"phase8b-rp2040 v0.2.0","wdt_reset":0,"rp_ok":0,"maxrun_ms":8000,"dbg":0}
+{"ev":"boot","fw":"phase8b-rp2040 v1.1.0","wdt_reset":0,"rp_ok":0,"maxrun_ms":8000,"dbg":0}
 {"ev":"cam","id":"SA","e":"f","t":12345}        # e: f=asserted(fall), r=released(rise)
 {"ev":"ball","src":"L","t":12350}               # one event per ball (lockout-deduped)
 {"ev":"rp_ok","v":1,"t":12360}                  # rail permission changed
 {"ev":"flt","code":"motion_timeout","m":"S","t":20000}
 {"ev":"flt","code":"chatter","m":"SA","t":20000}   # input over the per-window edge budget
+{"ev":"flt","code":"cam_overrun","m":"SA","t":20000}          # v1.1, when enabled: stop cam tripped, motor not STOPped in grace
+{"ev":"flt","code":"interlock_collision","m":"SCTB","t":20000} # v1.1, when enabled: SC+TB both asserted while a motor runs
+{"ev":"flt","code":"motion_no_run","m":"SA","t":20000}        # v1.1, when enabled: stop-cam trip with no motor commanded
 {"ev":"hb","ok":1,"flt":"","up":12500,"drp":0,"in":0,"run":0}  # ~4 Hz; ok=rp_ok, drp=dropped TX lines
 {"ev":"ack","cmd":"CLEAR","t":21000}
 ```
+
+v1.1 fault codes (`cam_overrun`/`interlock_collision`/`motion_no_run`) appear ONLY on a build with the matching `config.h` flag enabled; a stock (default) firmware never emits them. They are ordinary `flt` events — the Pi side already treats any `flt` as not-healthy (`rp2040_link._handle`), so **no Pi-side change is required to react to them**. A `CLEAR` (issued from a known-safe state) clears them like any other latched fault.
 
 Boot fields (v0.2.0): `maxrun_ms` = the firmware's compile-time max-run backstop — **the Pi should refuse to arm if its `MAX_MOTION_S` exceeds it** (the two are independently-maintained constants); `dbg` = 1 marks a DEBUG_USB build so a debug image at the lane is visible.
 
@@ -133,15 +155,20 @@ PING         # → immediate heartbeat
 2. **Inputs:** hand-actuate each cam / break each DIELL beam → confirm the matching `cam`/`ball` event (correct `id`). This also captures the per-cam edge polarity for the v1.1 hook + the cutover field sheet.
 3. **Watchdog drop:** pause the loop (or pull power to just the Pico) → GP2 → LOW → rail drops. Confirm a `boot` with `wdt_reset:1` if you force a hang.
 4. **Motion timeout:** send `RUN S`, wait >8 s without `STOP S` → expect `{"ev":"flt","code":"motion_timeout","m":"S"}` and GP2 → LOW. `CLEAR` → GP2 back HIGH.
-5. **Then** integrate with the rail/relay section per spec §12.9 (each relay with a dummy load, arm drop, interlock drop) before any machine harness.
+5. **v1.1 cam-stop arming (per cam, AFTER step 2 captured polarity):** for each stop cam, set `CAM_<cam>_TRIP` to the confirmed trip edge + `CAM_<cam>_STOP_ENABLED=1` in `config.h`, rebuild + re-flash, then the **G3 cam-stop sub-test:** send `RUN S`, hand-rotate so SA trips, do NOT send `STOP S` → within `CAM_SA_GRACE_MS` expect `{"ev":"flt","code":"cam_overrun","m":"SA"}` + GP2 → LOW (repeat for `TA1`/`T`). Then re-run step 4-style with a *timely* `STOP S` inside the grace window and confirm NO fault (the normal stop). Optionally enable `INTERLOCK_ECHO_ENABLED` once the SC/TB windows are confirmed (`SC`+`TB` asserted while a motor runs → `interlock_collision`) and `MOTION_NO_RUN_ENABLED` (trip a stop cam with nothing commanded → `motion_no_run`). **Do not enable any v1.1 flag before its polarity is confirmed in step 2.**
+6. **Then** integrate with the rail/relay section per spec §12.9 (each relay with a dummy load, arm drop, interlock drop) before any machine harness.
 
 ## Files
-- `config.h` — pin map (authoritative, cites the netlist), timing, protocol tokens.
-- `main.c` — inputs/debounce, UART protocol + TX ring, safety supervisor, main loop.
+- `config.h` — pin map (authoritative, cites the netlist), timing, protocol tokens, **v1.1 per-cam stop descriptors + enforcement flags (all default OFF/UNCONFIRMED)**.
+- `main.c` — inputs/debounce, UART protocol + TX ring, safety supervisor (incl. the v1.1 cam-stop / SC-TB-echo / motion-without-RUN paths), main loop.
+- `test/mock_pico.h` / `test/mock_impl.h` — host-test mock SDK surface (declarations / one shared implementation).
+- `test/test_main.c` — default host test (flags OFF) + Section J off-by-default inertness.
+- `test/test_v11.c` — v1.1 host test (flags forced ON via `-D`): each new fault path fires fail-safe.
 - `CMakeLists.txt`, `pico_sdk_import.cmake` — Pico SDK build.
 
 ## Status / next
 - v1 written + **verified 2026-06-03**; **clean-room rebuild re-verified 2026-06-04** (full from-scratch ARM cross-build 88/88 + host test 24/24, both **0-warning** under `-Wall -Wextra`; `.uf2` = 40 KB, 24 KB flash / 2.6 KB RAM): host logic test 24/24 + clean ARM cross-build → `.uf2`; Pi-side reader/daemon done and Codex-audited (fixes applied).
 - **v0.2.0 audit hardening 2026-06-10** (fable-audit P3 items): host test **55/55** + clean ARM cross-build re-verified (`.uf2` = 41.5 KB), both 0-warning. **NOT yet flashed/bench-run** — needs: re-flash, hb `in`/`run` masks observed on the wire, chatter fault provoked with a function generator or relay buzzer, and the Pi-side resync/maxrun-check TODOs in `rp2040_link.py` (see Pi-side integration above).
-- ⚠️ **NOT cutover-ready.** "Done" = host-logic + build + happy-path only. The cutover runbook's **G3 cam-stop rail-drop gate** needs **v1.1 cam-stop overrun**, which is bench-gated on the per-cam edge→angle polarity (runbook §3.2). v1 provides health + the motion **max-run backstop**, NOT per-cam-edge enforcement. **Pending: v1.1 cam-stop + on-hardware bench bring-up (spec §12.9).**
-- Next: build/flash, bench bring-up (above), then wire the Pi-side reader (contract above), then the v1.1 cam-stop overrun once cam polarity is bench-confirmed.
+- **v1.1.0 SAFETY supervision written 2026-06-10** (fable-audit novel idea #13): cam-stop OVERRUN + SC/TB collision echo + motion-without-RUN, all default OFF behind per-cam config flags. Host tests **61/61** (`test_main`, incl. off-by-default inertness) + **28/28** (`test_v11`, flags forced on), both 0-warning under `-Wall -Wextra -Werror`; clean ARM cross-build re-verified (`.uf2` = 43.5 KB). **NOT yet flashed/bench-run; all v1.1 flags ship OFF** — so on-the-wire behavior is still exactly v0.2.0 until a board is armed cam-by-cam.
+- ⚠️ **NOT cutover-ready.** "Done" = host-logic + build only. The cutover runbook's **G3 cam-stop rail-drop gate** now has its firmware *logic*, but the **enforcement is gated OFF** pending the per-cam edge→angle polarity field capture (runbook §3.2). A stock build still provides only health + the motion **max-run backstop**.
+- Next: build/flash, bench bring-up steps 1–4 (above), wire the Pi-side reader (contract above), then **bench step 5**: capture cam polarity (§3.2), set `CAM_*_TRIP` + flip `*_ENABLED` cam-by-cam, re-flash, and run the G3 cam-stop drop sub-test per cam.

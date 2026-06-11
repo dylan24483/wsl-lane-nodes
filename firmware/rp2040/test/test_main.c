@@ -10,57 +10,9 @@
  * (gcc works too; on Linux drop the .exe suffix.)
  */
 #include "mock_pico.h"
+#include "mock_impl.h"      /* shared mock state + bodies + harness helpers */
 #include <stdio.h>
 #include <string.h>
-
-/* ---- mock state ---------------------------------------------------------- */
-uint64_t mock_us = 0;
-int      mock_gpio_in[40];
-int      mock_gpio_out[40];
-bool     mock_uart_writable = true;
-char     mock_rx[1024];
-int      mock_rx_head = 0, mock_rx_tail = 0;
-char     mock_tx[8192];
-int      mock_tx_len = 0;
-
-/* ---- mock bodies --------------------------------------------------------- */
-void gpio_init(uint pin)                 { (void)pin; }
-void gpio_set_dir(uint pin, bool out)    { (void)pin; (void)out; }
-void gpio_pull_up(uint pin)              { (void)pin; }
-bool gpio_get(uint pin)                  { return mock_gpio_in[pin] != 0; }
-void gpio_put(uint pin, bool v)          { mock_gpio_out[pin] = v ? 1 : 0; }
-void gpio_set_function(uint pin, int fn) { (void)pin; (void)fn; }
-
-uint uart_init(uart_inst_t *u, uint b)                                  { (void)u; return b; }
-void uart_set_hw_flow(uart_inst_t *u, bool c, bool r)                   { (void)u; (void)c; (void)r; }
-void uart_set_format(uart_inst_t *u, uint d, uint s, uart_parity_t p)   { (void)u; (void)d; (void)s; (void)p; }
-void uart_set_fifo_enabled(uart_inst_t *u, bool e)                      { (void)u; (void)e; }
-bool uart_is_writable(uart_inst_t *u)                                   { (void)u; return mock_uart_writable; }
-bool uart_is_readable(uart_inst_t *u)                                   { (void)u; return mock_rx_head != mock_rx_tail; }
-char uart_getc(uart_inst_t *u) {
-    (void)u;
-    char c = mock_rx[mock_rx_tail];
-    mock_rx_tail = (mock_rx_tail + 1) % (int)sizeof(mock_rx);
-    return c;
-}
-void uart_putc_raw(uart_inst_t *u, char c) {
-    (void)u;
-    if (mock_tx_len < (int)sizeof(mock_tx) - 1) mock_tx[mock_tx_len++] = c;
-}
-void watchdog_enable(uint32_t ms, bool p) { (void)ms; (void)p; }
-void watchdog_update(void)                {}
-bool watchdog_caused_reboot(void)         { return false; }
-bool stdio_init_all(void)                 { return true; }
-
-/* ---- harness helpers (mock-state only) ----------------------------------- */
-static void rx_feed(const char *s) {
-    for (; *s; s++) { mock_rx[mock_rx_head] = *s; mock_rx_head = (mock_rx_head + 1) % (int)sizeof(mock_rx); }
-}
-static void tx_reset(void) { mock_tx_len = 0; mock_tx[0] = 0; }
-static int  tx_has(const char *sub) { mock_tx[mock_tx_len] = 0; return strstr(mock_tx, sub) != NULL; }
-static void advance_us(uint64_t d) { mock_us += d; }
-static void advance_ms(uint32_t d) { mock_us += (uint64_t)d * 1000u; }
-static void all_idle(void) { for (int i = 0; i < 40; i++) mock_gpio_in[i] = 1; }
 
 /* ---- pull in the firmware under test (rename its main) -------------------- */
 #define main fw_main
@@ -313,6 +265,41 @@ int main(void) {
     emit_hb(); pump();
     CHECK(tx_has("\"in\":4"), "hb carries the input level mask (SC = bit 2)");
     CHECK(tx_has("\"run\":2"), "hb carries the running-motor mask (T = bit 1)");
+
+    /* ---- J: v1.1 supervision DISABLED-by-default is inert (no new enforcement) ----------- */
+    /* The cam-stop overrun / SC-TB echo / motion-without-RUN checks all default OFF (config.h
+     * flags 0, trips UNCONFIRMED). This pins that a DEFAULT build behaves EXACTLY like v0.2.0:
+     * NONE of them ever latches a fault. The ENABLED behavior is proven in test_v11.c, built
+     * with the flags -D'd on. */
+    printf("[J] v1.1 supervision off-by-default is inert\n");
+    CHECK(FW_VERSION[0] != 0 && strstr(FW_VERSION, "v1.1") != NULL, "FW_VERSION bumped to v1.1");
+    CHECK(CAM_SA_STOP_ENABLED == 0 && CAM_TA1_STOP_ENABLED == 0
+          && INTERLOCK_ECHO_ENABLED == 0 && MOTION_NO_RUN_ENABLED == 0,
+          "all v1.1 enforcement flags default OFF");
+    CHECK(CAM_SA_TRIP == CAM_TRIP_UNCONFIRMED && CAM_TA1_TRIP == CAM_TRIP_UNCONFIRMED,
+          "cam trip edges default UNCONFIRMED");
+    all_idle(); mock_us += 1000000ull; init_inputs(); init_camstops();
+    motors_all_stop(); fault_latched = false; fault_code[0] = 0;
+    rx_discard = false; llen = 0;
+    /* (a) cam-stop overrun: RUN S, trip SA, never STOP, wait well past any grace -> NO fault */
+    rx_feed("RUN S\n"); poll_uart();
+    mock_gpio_in[PIN_SA] = 0; scan_inputs(); advance_us(DEBOUNCE_CAM_US + 1); scan_inputs();
+    advance_ms(2000); supervise();
+    CHECK(!fault_latched, "default: cam trip + un-STOPped motor does NOT latch (overrun off)");
+    /* (b) motion-without-RUN: stop all, trip SA with nothing running -> NO fault */
+    rx_feed("STOP *\n"); poll_uart(); fault_latched = false; fault_code[0] = 0;
+    mock_gpio_in[PIN_SA] = 1; scan_inputs(); advance_us(DEBOUNCE_CAM_US + 1); scan_inputs();
+    mock_gpio_in[PIN_SA] = 0; scan_inputs(); advance_us(DEBOUNCE_CAM_US + 1); scan_inputs();
+    supervise();
+    CHECK(!fault_latched, "default: cam trip with no motor running does NOT latch (no-run off)");
+    /* (c) SC/TB echo: assert SC AND TB with a motor running -> NO fault (echo off) */
+    fault_latched = false; fault_code[0] = 0;
+    rx_feed("RUN T\n"); poll_uart();
+    mock_gpio_in[PIN_SC] = 0; mock_gpio_in[PIN_TB] = 0;
+    scan_inputs(); advance_us(DEBOUNCE_CAM_US + 1); scan_inputs();
+    supervise();
+    CHECK(!fault_latched, "default: SC AND TB both asserted does NOT latch (echo off)");
+    rx_feed("STOP *\n"); poll_uart();
 
     printf("\n%d/%d checks passed%s\n", checks - fails, checks, fails ? "  <<< FAILURES" : "");
     return fails ? 1 : 0;

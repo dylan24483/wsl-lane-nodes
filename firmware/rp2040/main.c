@@ -151,6 +151,7 @@ static input_t inputs[] = {
 static uint32_t last_ball_ms = 0;
 
 static void latch_fault(const char *code, const char *motor);   /* defined below */
+static void camstop_on_cam_edge(const char *cam_id, char edge); /* v1.1, defined below */
 
 static void init_inputs(void) {
     uint64_t t = time_us_64();
@@ -166,6 +167,14 @@ static void init_inputs(void) {
         in->win_start_ms    = now_ms();
         in->win_edges       = 0;
     }
+}
+
+/* Debounced asserted level of an input by id (false if the id is unknown). Used by the v1.1
+ * SC/TB interlock echo in supervise() — level-based, robust vs a single dropped cam edge. */
+static bool input_asserted(const char *id) {
+    for (size_t i = 0; i < N_INPUTS; i++)
+        if (strcmp(inputs[i].id, id) == 0) return inputs[i].stable_asserted;
+    return false;
 }
 
 static void scan_inputs(void) {
@@ -210,8 +219,13 @@ static void scan_inputs(void) {
                 /* Forward the cam edge; direction f=asserted(fall), r=released(rise).
                  * Which edge is the angular "trip" is bench-confirmed per cam — the
                  * Pi/daemon maps cam+state -> FSM method (see firmware README). */
+                char e = asserted ? 'f' : 'r';
                 emit_evt("{\"ev\":\"cam\",\"id\":\"%s\",\"e\":\"%c\",\"t\":%lu}\n",
-                         in->id, asserted ? 'f' : 'r', (unsigned long)now_ms());
+                         in->id, e, (unsigned long)now_ms());
+                /* v1.1: arm the cam-stop grace timer / motion-without-RUN check for this
+                 * edge (no-op on a default/unconfirmed build). Runs even if the cam event
+                 * line was dropped for telemetry headroom — safety must not depend on TX. */
+                camstop_on_cam_edge(in->id, e);
             }
         }
     }
@@ -246,6 +260,86 @@ static motor_t *find_motor(const char *name) {
 
 static void motors_all_stop(void) {
     for (size_t i = 0; i < N_MOTORS; i++) motors[i].running = false;
+}
+
+/* Any GUARDED (motion) motor currently marked running? Used by the v1.1 SC/TB echo and
+ * motion-without-RUN checks: BE (continuous back-end) and M (master/power) are not motion
+ * and never count as "the machine is moving under command". */
+static bool any_motion_running(void) {
+    for (size_t i = 0; i < N_MOTORS; i++)
+        if (motors[i].guarded && motors[i].running) return true;
+    return false;
+}
+
+/* ====================================================================== */
+/*  v1.1 cam-stop overrun: per-stop-cam descriptors + armed grace timers   */
+/* ====================================================================== */
+/* A stop cam, its trip edge, the motor it stops, and the grace window the Pi has to send
+ * STOP after the trip. enabled + trip default to OFF/UNCONFIRMED (config.h) so a board with
+ * no §3.2 polarity capture behaves EXACTLY like v0.2.0 (no enforcement). 'motor' is resolved
+ * once at init. The armed/armed_ms runtime fields hold an in-flight grace window. */
+typedef struct {
+    const char *cam;          /* input id this descriptor watches                 */
+    char        trip_edge;    /* 'f'/'r' = the angular zero-stop trip; '?' = never */
+    const char *motor_name;
+    uint32_t    grace_ms;
+    bool        enabled;
+    /* runtime */
+    motor_t    *motor;        /* resolved from motor_name at init                 */
+    bool        armed;        /* a trip happened, waiting out the grace window     */
+    uint32_t    armed_ms;
+} camstop_t;
+
+static camstop_t camstops[] = {
+    { "SA",  CAM_SA_TRIP,  "S", CAM_SA_GRACE_MS,  (bool)CAM_SA_STOP_ENABLED,  NULL, false, 0 },
+    { "TA1", CAM_TA1_TRIP, "T", CAM_TA1_GRACE_MS, (bool)CAM_TA1_STOP_ENABLED, NULL, false, 0 },
+};
+#define N_CAMSTOPS (sizeof(camstops) / sizeof(camstops[0]))
+
+static void init_camstops(void) {
+    for (size_t i = 0; i < N_CAMSTOPS; i++) {
+        camstops[i].motor = find_motor(camstops[i].motor_name);
+        camstops[i].armed = false;
+        camstops[i].armed_ms = 0;
+    }
+}
+
+/* A cam input fired a DEBOUNCED edge ('f' asserted / 'r' released). Evaluate the two
+ * EDGE-DRIVEN v1.1 checks for it (the grace-timeout half runs in supervise()). All paths are
+ * gated on the per-descriptor enable + a CONFIRMED (non-'?') trip edge, so a default/unconfirmed
+ * build does nothing here. Only ever arms a timer or latch_fault()s — never permits motion. */
+static void camstop_on_cam_edge(const char *cam_id, char edge) {
+    for (size_t i = 0; i < N_CAMSTOPS; i++) {
+        camstop_t *cs = &camstops[i];
+        if (strcmp(cs->cam, cam_id) != 0) continue;
+        if (cs->trip_edge == CAM_TRIP_UNCONFIRMED) continue;   /* never trips while unconfirmed */
+        bool is_trip = (edge == cs->trip_edge);
+        if (!is_trip) continue;
+
+        /* (3) motion-without-RUN: a stop-cam trip with NO motion motor running at all means the
+         * machine is turning uncommanded (Pi wedged / external start / welded relay). */
+        if (MOTION_NO_RUN_ENABLED && !any_motion_running()) {
+            latch_fault("motion_no_run", cs->cam);
+            return;
+        }
+
+        /* (1) cam-stop overrun: trip while THIS cam's guarded motor is running -> the Pi must
+         * STOP it within grace_ms or supervise() latches. Re-trips just refresh the window. */
+        if (cs->enabled && cs->motor && cs->motor->running) {
+            cs->armed = true;
+            cs->armed_ms = now_ms();
+        }
+    }
+}
+
+/* A STOP for `mt` disarms any cam-stop grace window guarding it (the Pi obeyed in time). */
+static void camstop_motor_stopped(const motor_t *mt) {
+    for (size_t i = 0; i < N_CAMSTOPS; i++)
+        if (camstops[i].motor == mt) camstops[i].armed = false;
+}
+
+static void camstop_all_disarm(void) {
+    for (size_t i = 0; i < N_CAMSTOPS; i++) camstops[i].armed = false;
 }
 
 /* ====================================================================== */
@@ -288,8 +382,30 @@ static void supervise(void) {
         }
     }
 
-    /* v1.1 hook: cam-stop overrun + SC/TB collision echo would latch_fault() here,
-     * once the per-cam edge->angle polarity is bench-confirmed. */
+    /* v1.1 (1) cam-stop OVERRUN: an armed grace window whose guarded motor is STILL running
+     * past grace_ms -> the Pi failed to stop on the cam edge -> latch (Pi-independent stop).
+     * A motor that already stopped disarmed the window in handle_line(); guard on running too
+     * in case of any race. No-op unless a descriptor is enabled with a confirmed trip edge. */
+    if (!fault_latched) {
+        for (size_t i = 0; i < N_CAMSTOPS; i++) {
+            camstop_t *cs = &camstops[i];
+            if (!cs->armed) continue;
+            if (!cs->enabled || !cs->motor || !cs->motor->running) { cs->armed = false; continue; }
+            if ((uint32_t)(m - cs->armed_ms) > cs->grace_ms) {
+                latch_fault("cam_overrun", cs->cam);
+                break;
+            }
+        }
+    }
+
+    /* v1.1 (2) SC/TB collision-interlock echo: both interlock cams asserted at once while a
+     * motion motor runs = the sweep+table collision course the hardware J_SAFETY loop guards.
+     * Echo it in firmware (backstop of a backstop). Uses DEBOUNCED levels (robust vs a single
+     * dropped edge, and matches the hb "in" mask the Pi resyncs from). No-op unless enabled. */
+    if (INTERLOCK_ECHO_ENABLED && !fault_latched) {
+        if (input_asserted("SC") && input_asserted("TB") && any_motion_running())
+            latch_fault("interlock_collision", "SCTB");
+    }
 
     /* Boot settle is LATCHED: the un-latched comparison re-enters the settle
      * window every 2^32 ms (~49.7 days of uptime) and would un-assert RP_OK
@@ -312,11 +428,18 @@ static void handle_line(char *s) {
          * re-asserts RUN must not keep resetting the max-run backstop timer. */
         if (mt && !mt->running) { mt->running = true; mt->t_start_ms = now_ms(); }
     } else if (strncmp(s, "STOP ", 5) == 0) {
-        if (s[5] == '*') motors_all_stop();
-        else { motor_t *mt = find_motor(s + 5); if (mt) mt->running = false; }
+        if (s[5] == '*') { motors_all_stop(); camstop_all_disarm(); }
+        else {
+            motor_t *mt = find_motor(s + 5);
+            /* v1.1: a STOP for a guarded motor disarms its cam-stop grace window (the Pi
+             * obeyed the cam edge in time) — before clearing `running`, while mt still points
+             * at the motor the camstop descriptors were resolved against. */
+            if (mt) { camstop_motor_stopped(mt); mt->running = false; }
+        }
     } else if (strcmp(s, "CLEAR") == 0) {
         /* The Pi issues CLEAR only from a known-safe (zero/ready) state. */
         motors_all_stop();
+        camstop_all_disarm();
         fault_latched = false;
         fault_code[0] = '\0';
         emit("{\"ev\":\"ack\",\"cmd\":\"CLEAR\",\"t\":%lu}\n", (unsigned long)now_ms());
@@ -403,6 +526,7 @@ int main(void) {
     uart_set_fifo_enabled(UART_ID, true);
 
     init_inputs();
+    init_camstops();        /* v1.1: resolve cam-stop descriptor motor pointers + disarm */
     boot_ms = now_ms();
 
     bool wdt_reboot = watchdog_caused_reboot();
