@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "name": "first_ball_respot",
+    "derived_from": "cycle_control_8270 FSM (self-consistent)"
+  },
+  "events": [
+    {
+      "t": 0.0,
+      "kind": "call",
+      "name": "power_restore"
+    },
+    {
+      "t": 0.0,
+      "kind": "call",
+      "name": "first_ball_zero"
+    },
+    {
+      "t": 0.0,
+      "kind": "input",
+      "name": "grippers",
+      "value": 5
+    },
+    {
+      "t": 0.0,
+      "kind": "call",
+      "name": "on_ball"
+    },
+    {
+      "t": 0.6,
+      "kind": "call",
+      "name": "cam_SB_guard"
+    },
+    {
+      "t": 3.8,
+      "kind": "poll"
+    },
+    {
+      "t": 5.0,
+      "kind": "call",
+      "name": "cam_TA2_runthrough"
+    },
+    {
+      "t": 5.9,
+      "kind": "call",
+      "name": "cam_SA_runthrough"
+    },
+    {
+      "t": 6.6,
+      "kind": "call",
+      "name": "cam_TA1_delayreset"
+    },
+    {
+      "t": 7.3,
+      "kind": "call",
+      "name": "cam_TA1_zero"
+    },
+    {
+      "t": 7.35,
+      "kind": "poll"
+    }
+  ],
+  "golden": {
+    "final_state": "ready",
+    "final_ball": "SECOND",
+    "outputs": [
+      [
+        "sweep",
+        false
+      ],
+      [
+        "table",
+        false
+      ],
+      [
+        "spot",
+        false
+      ],
+      [
+        "light",
+        "first_ball",
+        true
+      ],
+      [
+        "sweep",
+        true
+      ],
+      [
+        "sweep",
+        false
+      ],
+      [
+        "table",
+        true
+      ],
+      [
+        "pin_lamps",
+        5
+      ],
+      [
+        "sweep",
+        true
+      ],
+      [
+        "sweep",
+        false
+      ],
+      [
+        "table",
+        false
+      ],
+      [
+        "light",
+        "first_ball",
+        false
+      ],
+      [
+        "light",
+        "second_ball",
+        true
+      ],
+      [
+        "light",
+        "strike",
+        false
+      ],
+      [
+        "light",
+        "foul",
+        false
+      ]
+    ]
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "meta": {
+    "name": "strike",
+    "derived_from": "cycle_control_8270 FSM (self-consistent)"
+  },
+  "events": [
+    {
+      "t": 0.0,
+      "kind": "call",
+      "name": "power_restore"
+    },
+    {
+      "t": 0.0,
+      "kind": "call",
+      "name": "first_ball_zero"
+    },
+    {
+      "t": 0.0,
+      "kind": "input",
+      "name": "grippers",
+      "value": 0
+    },
+    {
+      "t": 0.0,
+      "kind": "call",
+      "name": "on_ball"
+    },
+    {
+      "t": 0.6,
+      "kind": "call",
+      "name": "cam_SB_guard"
+    },
+    {
+      "t": 3.8,
+      "kind": "poll"
+    },
+    {
+      "t": 5.0,
+      "kind": "call",
+      "name": "cam_TA2_runthrough"
+    },
+    {
+      "t": 5.9,
+      "kind": "call",
+      "name": "cam_SA_runthrough"
+    },
+    {
+      "t": 6.2,
+      "kind": "input",
+      "name": "bs",
+      "value": true
+    },
+    {
+      "t": 6.2,
+      "kind": "call",
+      "name": "bin_full"
+    },
+    {
+      "t": 6.9,
+      "kind": "call",
+      "name": "cam_TA1_delayreset"
+    },
+    {
+      "t": 7.6,
+      "kind": "call",
+      "name": "cam_TA1_zero"
+    },
+    {
+      "t": 7.65,
+      "kind": "poll"
+    }
+  ],
+  "golden": {
+    "final_state": "ready",
+    "final_ball": "FIRST",
+    "outputs": [
+      [
+        "sweep",
+        false
+      ],
+      [
+        "table",
+        false
+      ],
+      [
+        "spot",
+        false
+      ],
+      [
+        "light",
+        "first_ball",
+        true
+      ],
+      [
+        "sweep",
+        true
+      ],
+      [
+        "sweep",
+        false
+      ],
+      [
+        "table",
+        true
+      ],
+      [
+        "pin_lamps",
+        0
+      ],
+      [
+        "light",
+        "strike",
+        true
+      ],
+      [
+        "light",
+        "first_ball",
+        false
+      ],
+      [
+        "sweep",
+        true
+      ],
+      [
+        "sweep",
+        false
+      ],
+      [
+        "spot",
+        true
+      ],
+      [
+        "table",
+        true
+      ],
+      [
+        "spot",
+        false
+      ],
+      [
+        "table",
+        false
+      ],
+      [
+        "light",
+        "first_ball",
+        true
+      ],
+      [
+        "light",
+        "second_ball",
+        false
+      ],
+      [
+        "light",
+        "strike",
+        false
+      ],
+      [
+        "light",
+        "foul",
+        false
+      ]
+    ]
+  }
+}
