@@ -417,6 +417,55 @@ async def pulse(lane_id, times, on_ms, off_ms):
     finally:
         relay.off()
 
+# Per-lane command concurrency. The default (False) preserves the original
+# single-loop behavior EXACTLY: one command runs to completion before the next,
+# so a 1s CLOSE pulse on lane A delays a command for lane B. With it True, each
+# lane gets its own worker so lanes run concurrently while a single lane's
+# pulses stay strictly ordered (never overlapping — two pulses on one pinsetter
+# at once is a hardware hazard). Bench-gated: this changes the timing of real
+# relay actuation, so flip to True only after a bench pass on the pair rig.
+CONCURRENT_LANE_COMMANDS = os.environ.get("WSL_CONCURRENT_LANE_CMDS", "0").lower() in ("1", "true", "yes")
+_lane_cmd_queues = {}   # lane -> asyncio.Queue, created lazily when concurrency is on
+
+
+async def _execute_command(cmd_type, lane, msg):
+    """Run one pinsetter command. Pulses are awaited (slow); POWER on/off are
+    instant latched relays."""
+    if cmd_type == Msg.CYCLE:
+        log.info(f"  Pinsetter cycle, lane {lane}")
+        await pulse(lane, 1, 150, 0)
+    elif cmd_type == Msg.OPEN_LANE:
+        log.info(f"  OPEN LANE {lane} with bowlers: {msg.get('bowlers', [])}")
+        await pulse(lane, 3, 300, 100)  # 3 medium pulses = "first set" sequence
+    elif cmd_type == Msg.CLOSE_LANE:
+        log.info(f"  CLOSE LANE {lane}")
+        await pulse(lane, 1, 1000, 0)   # 1 long pulse = pinsetter to rest
+    elif cmd_type == Msg.RESET:
+        log.info(f"  RESET pin deck on lane {lane}")
+        await pulse(lane, 4, 60, 60)    # 4 rapid blinks = re-rack
+    elif cmd_type == Msg.POWER_ON:
+        log.info(f"  POWER ON lane {lane}")
+        PINSETTER_POWER[lane].on()      # latched — relay holds closed
+    elif cmd_type == Msg.POWER_OFF:
+        log.info(f"  POWER OFF lane {lane}")
+        PINSETTER_POWER[lane].off()     # latched — relay holds open
+    else:
+        log.warning(f"Unknown command type: {cmd_type}")
+
+
+async def _lane_worker(lane, queue):
+    """Serially drain one lane's command queue — keeps same-lane ordering while
+    other lanes' workers run concurrently."""
+    while True:
+        cmd_type, lane_id, msg = await queue.get()
+        try:
+            await _execute_command(cmd_type, lane_id, msg)
+        except Exception as e:
+            log.error(f"command {cmd_type} on lane {lane_id} failed: {e}")
+        finally:
+            queue.task_done()
+
+
 async def command_handler(ws):
     async for raw in ws:
         msg = decode(raw)
@@ -428,33 +477,22 @@ async def command_handler(ws):
             log.warning(f"Command for unknown lane {lane}; this node handles {LANES}")
             continue
 
-        if cmd_type == Msg.CYCLE:
-            log.info(f"  Pinsetter cycle, lane {lane}")
-            await pulse(lane, 1, 150, 0)
+        # POWER on/off is an instant, safety-relevant latched relay — it must
+        # NEVER wait behind another lane's (or its own) in-flight pulse, in
+        # either mode. Execute immediately.
+        if cmd_type in (Msg.POWER_ON, Msg.POWER_OFF):
+            await _execute_command(cmd_type, lane, msg)
+            continue
 
-        elif cmd_type == Msg.OPEN_LANE:
-            bowlers = msg.get("bowlers", [])
-            log.info(f"  OPEN LANE {lane} with bowlers: {bowlers}")
-            await pulse(lane, 3, 300, 100)  # 3 medium pulses = "first set" sequence
-
-        elif cmd_type == Msg.CLOSE_LANE:
-            log.info(f"  CLOSE LANE {lane}")
-            await pulse(lane, 1, 1000, 0)   # 1 long pulse = pinsetter to rest
-
-        elif cmd_type == Msg.RESET:
-            log.info(f"  RESET pin deck on lane {lane}")
-            await pulse(lane, 4, 60, 60)    # 4 rapid blinks = re-rack
-
-        elif cmd_type == Msg.POWER_ON:
-            log.info(f"  POWER ON lane {lane}")
-            PINSETTER_POWER[lane].on()      # latched — relay holds closed
-
-        elif cmd_type == Msg.POWER_OFF:
-            log.info(f"  POWER OFF lane {lane}")
-            PINSETTER_POWER[lane].off()     # latched — relay holds open
-
+        if CONCURRENT_LANE_COMMANDS:
+            q = _lane_cmd_queues.get(lane)
+            if q is None:
+                q = asyncio.Queue()
+                _lane_cmd_queues[lane] = q
+                asyncio.ensure_future(_lane_worker(lane, q))
+            q.put_nowait((cmd_type, lane, msg))   # non-blocking — lanes run concurrently
         else:
-            log.warning(f"Unknown command type: {cmd_type}")
+            await _execute_command(cmd_type, lane, msg)   # original serial behavior
 
 def _cleanup_gpio():
     """Drive outputs LOW and release gpiozero devices for every lane.
