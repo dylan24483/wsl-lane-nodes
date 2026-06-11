@@ -92,6 +92,20 @@ EMPTY_REF_PATH = os.environ.get(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "empty_ref.png"),
 )
 
+# --- empty-reference auto-recalibration (idea #14, DEFAULT OFF) ----------------
+# The slowest-failing mode of camera scoring is the stored empty reference
+# DRIFTING (lighting change, camera shift) so every read degrades. self_check_empty()
+# detects this on a KNOWN-EMPTY-DECK moment and always FLAGS it (observe-only).
+# If WSL_CAM_AUTO_RECAL=1 it ALSO refreshes the reference from that confirmed-empty
+# frame — OFF by default because a bad auto-update corrupts ALL future scoring, so
+# it must be a deliberate operator opt-in. Even when on, it only ever fires on a
+# deck that read fully empty with high confidence AND whose drift exceeds the
+# pin_detect threshold but stays under AUTO_RECAL_MAX (a divergence past that is
+# too large to be benign drift — it WARNs and refuses, leaving the ref for a human).
+AUTO_RECAL = os.environ.get("WSL_CAM_AUTO_RECAL", "0") == "1"
+AUTO_RECAL_MAX = float(os.environ.get("WSL_CAM_AUTO_RECAL_MAX",
+                                      str(pin_detect.CONF_BAND)))
+
 
 def _load_gray_png(path):
     """Load a PNG as a float32 grayscale ndarray (no cv2 dependency)."""
@@ -388,6 +402,128 @@ class PairCamera:
                 out[ln] = masks[dk]
         return out
 
+    # -- health + empty-reference self-check (idea #14) — OBSERVE-ONLY -------
+    # Neither method touches a relay or the scored detect path. frame_health is
+    # pure observation. self_check_empty FLAGS a drifted reference by default and
+    # only refreshes it when WSL_CAM_AUTO_RECAL is explicitly set (a bad refresh
+    # would corrupt all scoring). The daemon may call frame_health on its existing
+    # heartbeat and self_check_empty after a clean cycle / full respot.
+    def frame_health(self, frame=None):
+        """Exposure/focus health of one frame, for daemon/telemetry. OBSERVE-ONLY.
+
+        Returns pin_detect.frame_health(...)'s dict (mean/variance/focus/ok/reasons)
+        plus 'grabbed' (False if capture failed). Never raises: a capture failure
+        yields ok=False with a reason, so the caller can surface a dead camera the
+        same way it surfaces a bad exposure. Does NOT need a loaded empty reference
+        (health is about the live frame, not the calibration)."""
+        if frame is None:
+            frame = self.grab_frame()
+            if frame is None:
+                return {'mean': 0.0, 'variance': 0.0, 'focus': 0.0, 'ok': False,
+                        'grabbed': False,
+                        'reasons': ['capture failed (no cv2/PyAV frame)']}
+        h = pin_detect.frame_health(frame)
+        h['grabbed'] = True
+        return h
+
+    def self_check_empty(self, frame=None, auto_recal=None):
+        """Self-check the stored empty reference at a KNOWN-EMPTY-DECK moment.
+
+        The CALLER asserts the deck is empty right now (the pinsetter just did a
+        full respot, or pin_detect read all-pins-down with high confidence after a
+        cycle). This compares the live empty frame's cap ROIs to the stored
+        reference (drift-corrected) and FLAGS divergence beyond the pin_detect
+        threshold. OBSERVE-ONLY unless auto-recal is enabled.
+
+        Returns the pin_detect verdict dict (empty_confirmed / divergence /
+        max_divergence / flagged / reason) plus:
+          grabbed        bool — a frame was available
+          recalibrated   bool — the reference was refreshed (auto-recal only)
+        On 'detector not ready' or capture failure returns a dict with
+        empty_confirmed=False, flagged=False, grabbed=<bool>. Never raises.
+
+        AUTO-RECAL (WSL_CAM_AUTO_RECAL, default OFF): when on AND the deck is
+        confirmed empty AND the drift is flagged but still under AUTO_RECAL_MAX,
+        the live frame is persisted as the new empty reference (backup kept) and
+        the detector is rebuilt. A divergence past AUTO_RECAL_MAX is too large to
+        be benign drift — it is logged and REFUSED, leaving the reference for a
+        human to re-capture. Default OFF means the production behavior is
+        flag-only; nothing auto-updates without the operator opting in."""
+        recal = AUTO_RECAL if auto_recal is None else bool(auto_recal)
+        if not self.ready:
+            return {'empty_confirmed': False, 'divergence': {}, 'max_divergence': 0.0,
+                    'flagged': False, 'grabbed': False, 'recalibrated': False,
+                    'reason': 'detector not ready (no empty reference) -- self-check skipped'}
+        if frame is None:
+            frame = self.grab_frame()
+            if frame is None:
+                return {'empty_confirmed': False, 'divergence': {},
+                        'max_divergence': 0.0, 'flagged': False, 'grabbed': False,
+                        'recalibrated': False,
+                        'reason': 'capture failed -- self-check skipped'}
+        with self._lock:
+            detector = self._detector
+        try:
+            verdict = detector.check_empty_reference(frame)
+        except pin_detect.FrameError as e:
+            return {'empty_confirmed': False, 'divergence': {}, 'max_divergence': 0.0,
+                    'flagged': False, 'grabbed': True, 'recalibrated': False,
+                    'reason': f'frame unusable for self-check ({e})'}
+        except Exception as e:
+            log.warning(f"camera: self_check_empty error: {e}")
+            return {'empty_confirmed': False, 'divergence': {}, 'max_divergence': 0.0,
+                    'flagged': False, 'grabbed': True, 'recalibrated': False,
+                    'reason': f'self-check error ({e})'}
+        verdict = dict(verdict)
+        verdict.pop('detail', None)   # drop the heavy nested dict for telemetry
+        verdict['grabbed'] = True
+        verdict['recalibrated'] = False
+        if verdict['flagged']:
+            if not recal:
+                log.warning("camera: empty-reference drift FLAGGED (auto-recal OFF): %s",
+                            verdict['reason'])
+            elif verdict['max_divergence'] > AUTO_RECAL_MAX:
+                log.error("camera: empty-reference drift %.2f exceeds AUTO_RECAL_MAX "
+                          "%.2f -- REFUSING auto-recal, re-capture manually: %s",
+                          verdict['max_divergence'], AUTO_RECAL_MAX, verdict['reason'])
+            else:
+                verdict['recalibrated'] = self._auto_recalibrate(frame, verdict)
+        return verdict
+
+    def _auto_recalibrate(self, frame, verdict):
+        """Persist `frame` as the new empty reference + rebuild the detector.
+        Called ONLY from self_check_empty after every empty/confidence/bounds
+        guard has passed and auto-recal is enabled. Failure is non-fatal: the old
+        reference stays in place (reload_empty_reference keeps the prior detector
+        on error). Returns True iff the reference was refreshed."""
+        gray = pin_detect._to_gray(frame)
+        path = self.empty_ref_path
+        if not path:
+            log.warning("camera: auto-recal requested but no empty_ref_path; skipped")
+            return False
+        try:
+            from PIL import Image
+            if os.path.exists(path):
+                try:
+                    import shutil
+                    shutil.copy2(path, path + ".bak")
+                except Exception as e:
+                    log.warning(f"camera: auto-recal backup failed ({e}); overwriting")
+            tmp = path + ".tmp"
+            # explicit PNG format: the .tmp extension can't be auto-detected.
+            Image.fromarray(np.clip(gray, 0, 255).astype(np.uint8)).save(tmp, format="PNG")
+            os.replace(tmp, path)            # atomic swap into place
+        except Exception as e:
+            log.warning(f"camera: auto-recal could not save reference ({e}); "
+                        f"keeping the previous reference")
+            return False
+        ok = self.reload_empty_reference(path)
+        if ok:
+            log.warning("camera: AUTO-RECALIBRATED empty reference from a "
+                        "confirmed-empty deck (divergence %.2f). %s",
+                        verdict['max_divergence'], verdict['reason'])
+        return bool(ok)
+
 
 # ---------------------------------------------------------------------------
 # install-time helper: capture an empty-reference frame
@@ -467,6 +603,105 @@ def capture_empty_reference(out_path=EMPTY_REF_PATH, device=CAMERA_DEVICE, warmu
         cam.close()
 
 
+def _selftest():
+    """Synthetic, device-free self-test of the health + empty-ref self-check
+    paths (idea #14). Uses the _grabber injection seam, so it runs on any machine
+    (no cv2/PyAV/device). Returns 0 on success; raises AssertionError on failure."""
+    import tempfile
+    from PIL import Image
+
+    rng = np.random.default_rng(14)
+    # textured empty deck (clears the focus floor); save as a real PNG so the
+    # PairCamera loads a detector exactly like production.
+    empty = rng.integers(60, 110, size=(576, 720)).astype(np.uint8)
+    tmpdir = tempfile.mkdtemp(prefix="wsl_cam_selftest_")
+    ref_path = os.path.join(tmpdir, "empty_ref.png")
+    Image.fromarray(empty).save(ref_path)
+
+    # injected grabber returns whatever frame we stage next.
+    staged = {'frame': empty.astype(np.float32)}
+    cam = PairCamera(empty_ref_path=ref_path, deck_to_lane={'L': 21, 'R': 22},
+                     _grabber=lambda: staged['frame'])
+    assert cam.ready, "detector should be ready from the saved empty ref"
+
+    # frame_health: textured empty frame is healthy; a black frame is not.
+    h = cam.frame_health()
+    assert h['ok'] and h['grabbed'], h
+    staged['frame'] = np.zeros((576, 720), dtype=np.float32)
+    hb = cam.frame_health()
+    assert (not hb['ok']) and hb['grabbed'], hb
+    # capture-failure health verdict (grabber returns None)
+    cam_none = PairCamera(empty_ref_path=ref_path, _grabber=lambda: None)
+    hn = cam_none.frame_health()
+    assert (not hn['ok']) and (hn['grabbed'] is False), hn
+
+    # self_check_empty on a true empty frame: confirmed, not flagged.
+    staged['frame'] = empty.astype(np.float32)
+    v_ok = cam.self_check_empty()
+    assert v_ok['empty_confirmed'] and not v_ok['flagged'], v_ok
+    assert 'detail' not in v_ok, "telemetry verdict should drop the heavy detail dict"
+
+    # drifted empty (cap ROIs locally brighter, drift band untouched): flagged,
+    # but with auto-recal OFF the reference is NOT rewritten.
+    drift = empty.astype(np.float32).copy()
+    for dk in ('L', 'R'):
+        for p, (x, y) in pin_detect.PIN_SPOTS_PX[dk].items():
+            cx = int(round(x)); cy = int(round(y + pin_detect.CAP_DY))
+            hx, hy = pin_detect.CAP_HALF
+            drift[cy-hy:cy+hy, cx-hx:cx+hx] = np.clip(
+                drift[cy-hy:cy+hy, cx-hx:cx+hx] + 9.0, 0, 255)
+    staged['frame'] = drift
+    v_flag = cam.self_check_empty(auto_recal=False)
+    assert v_flag['empty_confirmed'] and v_flag['flagged'], v_flag
+    assert not v_flag['recalibrated'], v_flag
+    before = _load_gray_png(ref_path)
+
+    # auto-recal ON, divergence OVER AUTO_RECAL_MAX → REFUSE (reference kept).
+    global AUTO_RECAL_MAX
+    saved_max = AUTO_RECAL_MAX
+    AUTO_RECAL_MAX = 1.0          # force the divergence (~9) above the cap
+    try:
+        v_refuse = cam.self_check_empty(auto_recal=True)
+    finally:
+        AUTO_RECAL_MAX = saved_max
+    assert v_refuse['flagged'] and not v_refuse['recalibrated'], v_refuse
+    assert np.array_equal(before, _load_gray_png(ref_path)), \
+        "refused auto-recal must NOT rewrite the reference"
+    assert not os.path.exists(ref_path + ".bak"), "refused auto-recal must not back up"
+
+    # auto-recal ON, divergence UNDER AUTO_RECAL_MAX → recalibrate (ref rewritten).
+    v_recal = cam.self_check_empty(auto_recal=True)   # same drift, default cap
+    assert v_recal['recalibrated'], v_recal
+    after = _load_gray_png(ref_path)
+    assert after is not None and not np.array_equal(before, after), \
+        "auto-recal should have rewritten the reference file"
+    assert os.path.exists(ref_path + ".bak"), "auto-recal should back up the old ref"
+    # after recal, the same drift frame should no longer diverge (ref == frame).
+    staged['frame'] = drift
+    v_post = cam.self_check_empty(auto_recal=False)
+    assert v_post['empty_confirmed'] and not v_post['flagged'], v_post
+
+    # a non-empty deck (a real standing pin) is NEVER flagged or recalibrated.
+    pinf = empty.astype(np.float32).copy()
+    xp, yp = pin_detect.PIN_SPOTS_PX['L'][1]
+    pinf[int(yp)-12:int(yp)+2, int(xp)-5:int(xp)+5] = 240
+    staged['frame'] = pinf
+    v_pin = cam.self_check_empty(auto_recal=True)
+    assert (not v_pin['empty_confirmed']) and (not v_pin['flagged']), v_pin
+    assert not v_pin['recalibrated'], v_pin
+
+    # not-ready detector: self_check_empty returns a safe skipped verdict.
+    cam_nr = PairCamera(empty_ref_path=None, _grabber=lambda: empty.astype(np.float32))
+    assert not cam_nr.ready
+    v_nr = cam_nr.self_check_empty()
+    assert (not v_nr['empty_confirmed']) and (not v_nr['flagged']), v_nr
+
+    import shutil as _sh
+    _sh.rmtree(tmpdir, ignore_errors=True)
+    print("camera self-check + health + auto-recal self-test OK")
+    return 0
+
+
 if __name__ == "__main__":
     import argparse
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -479,11 +714,30 @@ if __name__ == "__main__":
     ap.add_argument("--out", default=EMPTY_REF_PATH, help="empty-ref output path")
     ap.add_argument("--device", default=CAMERA_DEVICE, help="cv2 device index or path")
     ap.add_argument("--test", action="store_true", help="detect once and print masks")
+    ap.add_argument("--health", action="store_true",
+                    help="grab one frame and print the exposure/focus health verdict")
+    ap.add_argument("--check-empty", action="store_true",
+                    help="run the empty-reference self-check on the current (assert-empty) "
+                         "deck; honors WSL_CAM_AUTO_RECAL")
+    ap.add_argument("--selftest", action="store_true",
+                    help="device-free synthetic self-test of the health + self-check paths")
     args = ap.parse_args()
 
+    if args.selftest:
+        raise SystemExit(_selftest())
     if args.capture_empty:
         p = capture_empty_reference(args.out, args.device, force=args.force)
         raise SystemExit(0 if p else 1)
+    if args.health:
+        cam = PairCamera(empty_ref_path=None, device=args.device)
+        print("health:", cam.frame_health()); cam.close()
+        raise SystemExit(0)
+    if args.check_empty:
+        cam = PairCamera(device=args.device)
+        if not cam.ready:
+            print("camera not ready (no empty ref)"); raise SystemExit(1)
+        print("self-check:", cam.self_check_empty()); cam.close()
+        raise SystemExit(0)
     if args.test:
         cam = PairCamera(device=args.device)
         if not cam.ready:

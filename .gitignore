@@ -16,3 +16,7 @@ __pycache__/
 
 # Logs
 *.log
+
+# Phase 8 lane-node per-install runtime artifacts (each Pi captures its own)
+lane_node/empty_ref.png
+lane_node/_*.txt
