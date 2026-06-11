@@ -63,6 +63,11 @@ The controller **reads machine switches/cams** (via the **C2A** plug + the **TAC
 
 ## Connector pinouts (from the wire tables — chassis side)
 - **C1 = motor/relay + power side** (p46, 9800 MP): C1-21D→S-31, 22J→S-14, 23N→S-21, 24T→S-32 (sweep); 31A→T-44, 32E→T-32, 33K→T-21, 34P→T-31, 42H→T-43 (table); 17DD→M2-8, 18J→M2-9, 26BB→M2-11, 27FF→M2-1 (sweep-rev); 35U→SP-5, 36Y→SP-7 (spot); 45W→BE-7, 47EE→BE-3 (back end); 13L→T2, 19NN→GND.
+  - ✅ **BENCH CORRECTIONS (2026-06-01, measured on the spare — supersede the predicted codes above):**
+    - **S (Siemens) contacts → C1 cavities C, D, N, T.** Predicted set was D,**J**,N,T → measured **C** in place of J (J↔C; the `22J→S-14` net reads at cavity **C** on our unit).
+    - **T (contactor) contacts → C1 cavities A, K, H, E (+ L).** Predicted set A,E,K,P,H → measured **L** in place of P (the `34P→T-31` net reads at cavity **L**).
+    - M2,SP,M → **C2A** (not C1); BE straddles (C1: KK,C,L + coil FF@66Ω). See `phase8_bench_session1_FINDINGS.md`. The predicted M2/SP/BE C1 codes above are the 9800-MP wire table; OUR retrofit routes these low-power loads via C2A.
+    - **Net:** measured wins for board layout; predicted codes retained for manual-p46 cross-ref + traceability.
 - **C2A = switch/manual-control side** (p42, 47 wires + p34): carries S/T/SWBE/PBC/CB/A&MC/TS/**TAC (grippers)**/PZ. (Full per-pin table on manual p42 — high-DPI crop if a specific pin is unclear.)
 - **Mask plug (PM):** pin lamps (D1-10) + status lamps (E24-27) + neon.
 - **Table plug / A&MC** (curtain wall): gripper/respot + misc.

@@ -1,5 +1,7 @@
 # Phase 8a Cutover Plan — Lanes 21+22
 
+> ⚠️ **SERVER IP (updated 2026-06-10):** WSL-SRV moved to **`192.168.4.103`** in the 2026-06-03 eero router swap (the old `192.168.86.36` is **DEAD**). URLs below have been updated, but the DHCP reservation is still TODO — **confirm the live IP before any lane visit.**
+
 **Status:** draft 2026-05-15 (boards in fab). Will be refined after unit #1 bench validation (~2026-05-25 to 05-26).
 **Goal:** replace the QubicaAMF retrofit stack (BCU II + QBK-SIx + T-VISION + VDB-99) at lanes 21+22 with a single Raspberry Pi node running `lane_node.py`. After cutover, scoring + pinsetter control + foul detection at the pair come from the Pi, not from the QubicaAMF chain.
 **Window:** off-hours, ~60-90 minutes for the first pair (~30 min for each pair after the procedure is debugged on #1). Plan for a weekday close-night.
@@ -26,9 +28,9 @@ This plan is the run-of-show. It assumes the **infrastructure plan** (`docs/phas
 
 - [ ] WSL-SRV running `server/lane_node_server.py` 24/7 (per `docs/deploy_server_to_wsl_srv.md`). Auto-restart via Task Scheduler or NSSM (no longer manual launch).
 - [ ] WSL-SRV firewall allows inbound 8765 (WS) + 8766 (HTTP) from the lane subnet
-- [ ] `lane_node.py` on the cutover Pi pointed at `ws://192.168.86.36:8765` via `WSL_LANE_SERVER_URL` env var in systemd unit
+- [ ] `lane_node.py` on the cutover Pi pointed at `ws://192.168.4.103:8765` via `WSL_LANE_SERVER_URL` env var in systemd unit
 - [ ] `lane_state.db` on WSL-SRV is clean (no stale state from bench testing — `python server/state_store.py clear` before cutover)
-- [ ] Desk staff trained: opening/closing lanes 21+22 will now use whatever desk surface controls Phase 8 (TBD — for cutover #1, the desk simulator at `http://192.168.86.36:8766/` is the operator interface; long-term, integrate into `desk.html`)
+- [ ] Desk staff trained: opening/closing lanes 21+22 will now use whatever desk surface controls Phase 8 (TBD — for cutover #1, the desk simulator at `http://192.168.4.103:8766/` is the operator interface; long-term, integrate into `desk.html`)
 
 ### Lane 22 + 21 site state confirmed (from `docs/lane_visit_checklist.md` findings, 2026-05-06)
 
@@ -44,7 +46,7 @@ This plan is the run-of-show. It assumes the **infrastructure plan** (`docs/phas
 - **DIELL ball-detect: INCLUDED.** All 4 sensors (2 per lane) wired to DONGKER opto-input channels 5-8, into Pi GPIO 13/16/19/20. DIELL Vcc supplied by a new 12V 1A wall adapter (replacing T-VISION's internal supply, which goes away when T-VISION retires). 10kΩ external pull-up to +12V on each signal line (replacing T-VISION's internal pull-up).
 - **Scoring mode: `manual`.** Lane Pi runs with `WSL_LANE_SCORING_MODE=manual` until T-Camera is bench-calibrated. DIELL fires `BALL_EVENT` to the server with `pin_mask=null`; server cycles the pinsetter but does NOT auto-score. Desk operator enters pin count via `POST /api/lane/<N>/score` body `{pin_mask, foul?}` on the new score endpoint (NOT `/trigger-ball`, which is bench-only and would double-pulse the pinsetter). T-Camera follow-up visit moves the mode to `camera` once `PIN_SPOTS` is calibrated against real frames.
 - **QBK-SIx fate: full disassembly during cutover.** QBK-SIx + BCU II + T-VISION-98 + VDB-99 all come out during the cutover window. Adds ~30-45 min to the run-of-show but eliminates the cleanup-visit follow-up. Before lifting T-VISION's connections, the new 12V supply must be wired and powered (T-VISION currently supplies DIELL Vcc).
-- **Customer display: HDMI from Beelink thin client → existing overhead monitor.** Beelink runs Chromium in kiosk mode pointed at `http://192.168.86.36:8766/display?lane=21&mode=league`. Display is served by `lane_node_server.py` on port 8766 (NOT `wsl_api.py` on port 5000 — port 5000's scoring is for non-Phase-8 lanes and doesn't see Pi events). The display polls `/api/lane/<N>/scoring` on the same origin, which lane_node_server.py answers with the cross-lane scoring response for that lane.
+- **Customer display: HDMI from Beelink thin client → existing overhead monitor.** Beelink runs Chromium in kiosk mode pointed at `http://192.168.4.103:8766/display?lane=21&mode=league`. Display is served by `lane_node_server.py` on port 8766 (NOT `wsl_api.py` on port 5000 — port 5000's scoring is for non-Phase-8 lanes and doesn't see Pi events). The display polls `/api/lane/<N>/scoring` on the same origin, which lane_node_server.py answers with the cross-lane scoring response for that lane.
 
 ### Still-open question (resolve during site survey visit #1)
 
@@ -99,7 +101,7 @@ This plan is the run-of-show. It assumes the **infrastructure plan** (`docs/phas
    - [ ] Phone for on-site photos + AnyDesk-to-WSL-SRV
    - [ ] Laptop with this document, a charged battery, and an offline copy of the bench validation log
 5. **WSL-SRV pre-checks** (via AnyDesk, day of):
-   - `lane_node_server.py` running and healthy: `curl http://192.168.86.36:8766/api/health` returns OK
+   - `lane_node_server.py` running and healthy: `curl http://192.168.4.103:8766/api/health` returns OK
    - `lane_state.db` cleared: `python server\state_store.py clear`
    - Firewall confirmed open on 8765/8766
    - WSL-SRV doesn't have any pending Windows updates that might reboot mid-cutover (`Get-WindowsUpdate -IsPending` if PSWindowsUpdate installed)
@@ -123,7 +125,7 @@ This plan is the run-of-show. It assumes the **infrastructure plan** (`docs/phas
 3. Connect 5V supply input to enclosure (if not PoE-powered).
 4. From the laptop: `ping lane-node-21-22.local` (or whatever hostname). Expect <2ms response.
 5. From AnyDesk → WSL-SRV: tail `server/lane_node_server.py` log. Should show `Node 'lane-node-21-22' registered (lanes=[21, 22], protocol_version=2)`.
-6. Open `http://192.168.86.36:8766/` in browser. Click **Power On** on lane 22. Watch for the Phoenix terminal labeled `R2` on the enclosure — its indicator LED should light briefly. **At this stage, R2 is NOT wired to the 8270 yet, so nothing physical happens — this just confirms the relay closes on command.**
+6. Open `http://192.168.4.103:8766/` in browser. Click **Power On** on lane 22. Watch for the Phoenix terminal labeled `R2` on the enclosure — its indicator LED should light briefly. **At this stage, R2 is NOT wired to the 8270 yet, so nothing physical happens — this just confirms the relay closes on command.**
 7. Repeat for Power Off, then for each of R1, R3, R4. Each relay's indicator should light when commanded.
 8. Click **Reset Pins** on each lane. The corresponding `R1` (lane 22 cycle) or `R3` (lane 21 cycle) relay should click 3 times in quick succession.
 9. If any relay fails to click → **STOP. Do not proceed to wiring. Swap to unit #2 spare, or abort and reschedule.**
@@ -166,32 +168,32 @@ After all 8 wire pairs are moved, **do a final visual pass** comparing each Phas
 
 1. Verify the Phase 8a enclosure is still powered (Pi green LED + AEDIKO/DONGKER power LEDs). Verify D7 (watchdog-healthy) and D8 (power-good) on the Phase 8a PCB are both lit.
 2. **Do NOT plug the QubicaAMF strip back in.** (After the locked decision: the entire QubicaAMF stack is being removed during this cutover — strip should already be unplugged and units physically disconnected per Step 3.)
-3. From the laptop browser at `http://192.168.86.36:8766/display?lane=21&mode=league`, the display should show both lanes "Closed" (no scoring state yet).
+3. From the laptop browser at `http://192.168.4.103:8766/display?lane=21&mode=league`, the display should show both lanes "Closed" (no scoring state yet).
 4. **Bootstrap test scoring state** so the display has bowlers to render. Two options depending on whether you want to simulate open bowling or league night:
    - Open bowling per lane (single-lane scoring):
      ```
-     curl -X POST http://192.168.86.36:8766/api/lane/22/open -H "Content-Type: application/json" -d "{\"bowlers\": [\"TEST1\", \"TEST2\"]}"
-     curl -X POST http://192.168.86.36:8766/api/lane/21/open -H "Content-Type: application/json" -d "{\"bowlers\": [\"TEST3\", \"TEST4\"]}"
+     curl -X POST http://192.168.4.103:8766/api/lane/22/open -H "Content-Type: application/json" -d "{\"bowlers\": [\"TEST1\", \"TEST2\"]}"
+     curl -X POST http://192.168.4.103:8766/api/lane/21/open -H "Content-Type: application/json" -d "{\"bowlers\": [\"TEST3\", \"TEST4\"]}"
      ```
    - Or league night (cross-lane scoring across both lanes):
      ```
-     curl -X POST http://192.168.86.36:8766/api/pair/21-22/open-league -H "Content-Type: application/json" -d "{\"team1_bowlers\": [\"ALICE\", \"ANDREW\"], \"team2_bowlers\": [\"BARB\", \"BRIAN\"], \"team1_name\": \"HOOKS\", \"team2_name\": \"SPLITS\"}"
+     curl -X POST http://192.168.4.103:8766/api/pair/21-22/open-league -H "Content-Type: application/json" -d "{\"team1_bowlers\": [\"ALICE\", \"ANDREW\"], \"team2_bowlers\": [\"BARB\", \"BRIAN\"], \"team1_name\": \"HOOKS\", \"team2_name\": \"SPLITS\"}"
      ```
    Display should refresh and show the test bowlers within ~2 seconds. The cross-lane variant will mark "ALICE up" on lane 21 and "BARB up" on lane 22.
-5. `curl -X POST http://192.168.86.36:8766/api/lane/22/power-on`. The 8270 should power up (audible click from the cabinet, motor energy noise).
+5. `curl -X POST http://192.168.4.103:8766/api/lane/22/power-on`. The 8270 should power up (audible click from the cabinet, motor energy noise).
 6. From the lane 22 approach, **walk over the foul line** to break the foul beam. Lane Pi journal should log `GPIO: foul detected on lane 22` and emit FOUL_EVENT to the server.
-7. `curl -X POST http://192.168.86.36:8766/api/lane/22/reset`. The pinsetter should cycle: lift, sweep, re-spot. Audible sweep motor.
+7. `curl -X POST http://192.168.4.103:8766/api/lane/22/reset`. The pinsetter should cycle: lift, sweep, re-spot. Audible sweep motor.
 8. **Roll a bowling ball down lane 22** (full rack standing). Two things should happen in order:
    - DIELL beams break → Pi journal logs `GPIO: ball detected on lane 22, mode=manual (awaiting desk score)` → server cycles the pinsetter (lift, sweep, re-spot)
    - The display does NOT auto-update (manual mode — awaiting desk score)
-9. `curl -X POST http://192.168.86.36:8766/api/lane/22/score -H "Content-Type: application/json" -d "{\"pin_mask\": 0}"` (0 = strike, all pins down). Display should now show frame 1 with X for the bowler. **Foul-latch behavior:** if the foul was triggered in Step 6, the flag persists indefinitely until the next `/score` (no time-based expiration) and this ball will score as a foul. To clear a stale foul without applying it, post `{"pin_mask": 0, "foul": false}` — the explicit `foul: false` clears the pending flag before recording.
+9. `curl -X POST http://192.168.4.103:8766/api/lane/22/score -H "Content-Type: application/json" -d "{\"pin_mask\": 0}"` (0 = strike, all pins down). Display should now show frame 1 with X for the bowler. **Foul-latch behavior:** if the foul was triggered in Step 6, the flag persists indefinitely until the next `/score` (no time-based expiration) and this ball will score as a foul. To clear a stale foul without applying it, post `{"pin_mask": 0, "foul": false}` — the explicit `foul: false` clears the pending flag before recording.
 10. **Repeat steps 5-9 for lane 21.**
 11. **If anything fails to behave correctly:** see Section 6 — Rollback. Don't troubleshoot live during the window; rollback and debug at home.
 
 ### Step 5 — Soak handoff (10 min)
 
 1. **Power the 8270 back ON** on both lanes (already on if Step 4 worked, but verify).
-2. Brief any night staff: "Lanes 21+22 are on the new Pi system tonight. The overhead monitor at the pair shows live scoring (driven by the Beelink at `http://192.168.86.36:8766/display?lane=21&mode=league`). For each ball customers throw, the pinsetter will cycle automatically — you'll need to **enter the pin count** at the desk via `POST http://192.168.86.36:8766/api/lane/<lane>/score` body `{\"pin_mask\": <int 0-1023>, \"foul\": <bool>}` (T-Camera not yet calibrated, so manual scoring during soak). If anything looks weird, take a photo and don't try to fix it — leave the lane closed and message Dylan."
+2. Brief any night staff: "Lanes 21+22 are on the new Pi system tonight. The overhead monitor at the pair shows live scoring (driven by the Beelink at `http://192.168.4.103:8766/display?lane=21&mode=league`). For each ball customers throw, the pinsetter will cycle automatically — you'll need to **enter the pin count** at the desk via `POST http://192.168.4.103:8766/api/lane/<lane>/score` body `{\"pin_mask\": <int 0-1023>, \"foul\": <bool>}` (T-Camera not yet calibrated, so manual scoring during soak). If anything looks weird, take a photo and don't try to fix it — leave the lane closed and message Dylan."
 3. Tape a printed "Phase 8a, contact Dylan" note inside the enclosure door so anyone who opens it sees the context.
 4. Pack up. Leave the masking-tape wire labels on the wires for at least the first week of soak — easy reference if rollback is needed.
 5. **Drive home.** Don't sit on-site debugging. The watchdog + WSL-SRV setup will tell you if anything goes sideways.
@@ -202,7 +204,7 @@ After all 8 wire pairs are moved, **do a final visual pass** comparing each Phas
 
 For the 7-10 days after cutover, check daily:
 
-- **`curl http://192.168.86.36:8766/api/health`** — Pi connected, no recent disconnects, no excessive event counts
+- **`curl http://192.168.4.103:8766/api/health`** — Pi connected, no recent disconnects, no excessive event counts
 - **WSL-SRV journal / log** — any error lines from `lane_node_server.py`? Any `protocol mismatch` warnings? Any unusual disconnects?
 - **Walk to lanes 21+22 once per day** during open hours. Watch a frame or two bowled by customers. Spot-check that scoring, foul, and reset all look right.
 - **Pin detection state** — if T-Camera was wired during cutover, watch for false-negative strikes or stuck pin states.

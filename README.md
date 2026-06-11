@@ -58,7 +58,9 @@ Browser at `http://lane-node-dev.local:8766/` — Open Lane / Close Lane / Reset
 ```bash
 # On WSL-SRV (Windows): see docs/deploy_server_to_wsl_srv.md
 # On the Pi:
-WSL_LANE_SERVER_URL=ws://192.168.86.36:8765 python3 lane_node/lane_node.py
+WSL_LANE_SERVER_URL=ws://192.168.4.103:8765 python3 lane_node/lane_node.py
+# (192.168.4.103 = WSL-SRV since the 2026-06-03 eero re-IP; confirm the live IP —
+#  the DHCP reservation is still TODO. The old 192.168.86.36 is dead.)
 ```
 
 ## Health check

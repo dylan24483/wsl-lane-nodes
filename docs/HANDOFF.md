@@ -1,12 +1,19 @@
 # WSL Phase 8 — Session Handoff (2026-05-31)
 
-> **NEXT SESSION: READ THIS FIRST.** This captures the live, in-flight state of the Phase 8 work as of end-of-session 2026-05-31. The exhaustive technical detail lives in the referenced docs; this ties it together + records the state that only existed in the conversation. **Phase 8 (pinsetter controller replacement + camera scoring) is the CURRENT active work** — *not* the April unified-checkout (that's prior/paused).
+> **⚡ NEXT SESSION: READ `phase8_session_close_2026-06-03.md` FIRST** — current walk-in (rev-B routed, class-aware DRC clean + field session complete, as of 2026-06-03). Then `phase8_session_close_2026-06-01.md` for the prior day. THIS handoff is the deeper background; the close docs supersede §2–§3 for live state.
+>
+> This captures the live, in-flight state of the Phase 8 work. The exhaustive technical detail lives in the referenced docs; this ties it together + records the state that only existed in the conversation. **Phase 8 (pinsetter controller replacement + camera scoring) is the CURRENT active work** — *not* the April unified-checkout (that's prior/paused).
+
+> **⚠️ ADDENDUM 2026-06-10 — read before acting on anything below (history left intact):**
+> - **Network:** WSL-SRV was re-IP'd in the **2026-06-03 eero router swap** — the old static **`192.168.86.36` is DEAD; the live server is `192.168.4.103`** (eero subnet `192.168.4.0/22`, gw `.4.1`; the DHCP reservation is still TODO, so re-confirm before relying on it). Any `.86.x` address below is historical.
+> - **Current work state:** the **2026-06-09 Fable-5 audit-fix campaign** post-dates this handoff's "next actions". For what's actually current, read **`C:\Users\Dylan DeYoung\WSL Systems\IMPLEMENTATION_PLAN.md`** (the audit-fix tracker) **+ the `fable-audit-fixes` branch** — alongside the session-close docs above.
+> - **Scoring display URL:** the display is served at **`http://<srv>:8766/display?lane=N`** — the bare `/?lane=N` form used in older sections returns 404 (`/` with no query serves the desk simulator).
 
 ---
 
 ## 0. Cold-start orientation
 - **Project:** Westside Lanes (Olympia WA), 32 lanes / 16 pairs of **AMF 82-70** pinsetters. Phase 8 = replace the aging QubicaAMF scoring (VDB/ETHost/T-VISION) and eventually the pinsetter controllers with **one Raspberry Pi per lane-pair**.
-- **Deployment model:** Claude Code runs on Dylan's **laptop** (Windows). Production = **WSL-SRV** (192.168.86.36). Dylan deploys via AnyDesk; Claude has no remote access. The Phase 8 code lives in a **separate repo: `C:\Users\Dylan DeYoung\wsl-lane-nodes\`** (GitHub: dylan24483/wsl-lane-nodes). The main WSL app is in `C:\Users\Dylan DeYoung\WSL Systems\`.
+- **Deployment model:** Claude Code runs on Dylan's **laptop** (Windows). Production = **WSL-SRV** (now **192.168.4.103** — the `192.168.86.36` this doc originally cited died in the 2026-06-03 eero swap; see the addendum above). Dylan deploys via AnyDesk; Claude has no remote access. The Phase 8 code lives in a **separate repo: `C:\Users\Dylan DeYoung\wsl-lane-nodes\`** (GitHub: dylan24483/wsl-lane-nodes). The main WSL app is in `C:\Users\Dylan DeYoung\WSL Systems\`.
 - **Two ACTIVE PARALLEL tracks** (decided 2026-05-31): **Track A = camera scoring** (near-term, low-risk), **Track B = controller replacement** (months, safety-critical, bench-developed). They converge later into one Pi node per pair doing both.
 - **Collaboration:** Dylan is the hands (fieldwork, soldering, captures); Claude does research/docs/code. Dylan is **new to electronics** — give beginner-level, concrete, photo-driven guidance. He's direct/technical, catches scope creep, prefers copy-paste-ready steps.
 
@@ -57,9 +64,14 @@ The 82-70 *machine* (mechanism, motors, cams, grippers, mask lamps) is **identic
 - `wsl_scoring_engine.py`, the **Phase 8b proxy** (in `wsl_api.py`), and `wsl_scoring_display.html` already exist (downstream of detection).
 - ⚠️ **`cv2` (OpenCV) is NOT in `requirements.txt`.** Either `pip install opencv-python` on the Pi OR use the already-installed **`av` (PyAV)** for capture. The detection math is pure **numpy**.
 
-### TRACK A — IMMEDIATE NEXT ACTION
-1. **Dylan:** capture 3–4 labeled leave-state frames (whatever's standing + what it is) → save to Downloads → send.
-2. **Claude:** from full + empty + labeled leaves → compute diffs → place + label all 20 `PIN_SPOTS` (both decks) in 720×576 → write the **dual-deck difference `pin_detect.py`** → validate against the known states → wire to `wsl_scoring_engine` → Phase 8b proxy → display. Scoring live on 21/22 (manual-entry fallback exists if needed).
+### TRACK A — ✅ CALIBRATION + DETECTOR DONE (2026-05-31 session 3)
+- Dylan sent 4 labeled leave-frames (`corners`=1,7,10 · `123` · `456` · `78910`, all 720×576, both decks). **All 20 `PIN_SPOTS` calibrated** (homography fit, sub-3px residual, pins 2/3 predicted) and **`lane_node/pin_detect.py` REWRITTEN** as a dual-deck **drift-corrected ("M4")** detector → ONE camera → TWO 10-bit masks. **Validated 0-error: 12/12 deck-checks across all 6 frames** (`_verify_module_verdict.txt`, ALL_OK=True).
+- **Key finding:** naive `frame−empty` FAILS (analog exposure drift → 15/120 errors, gap −27). Fix = subtract global drift (pin-free lane band) + tight cap-ROI. 8-method bake-off → M4 wins (gap +35, 0 errors). Full detail: **`phase8_trackA_calibration_progress.md`** + Downloads scripts `_calib3.py` / `_exp.py` / `_verify_module.py`.
+
+### TRACK A — NEXT ACTIONS
+1. ✅ **All 3 Dylan confirmations RESOLVED (2026-05-31):** (a) deck→lane **left=21, right=22** → `DECK_TO_LANE` set. (b) **mirror CONFIRMED** — real pin-7-both-decks (`two 7 pins.png`) reads 7 under `MIRROR=True` (10 under False) → MIRROR=True correct, already the default, no code change (`_mirror_check.py`). (c) prod capture **720×576 PAL full-frame** (keep). **Track A has no remaining design unknowns.**
+2. ✅ **GO-LIVE RUNBOOK written (session 5)** → `docs/phase8_trackA_golive_runbook.md`. Numbered on-Pi steps to take camera scoring LIVE on 21/22: pre-flight (git pull, deps) → verify dongle (`/dev/video0`) → **capture per-lane empty (`camera.py --capture-empty`)** → dry-run detector (`camera.py --test`, the real go/no-go) → measure settle → start `lane-node` service with `WSL_LANE_SCORING_MODE=camera` → watch it score on `http://192.168.4.103:8766/display?lane=21` (live IP + URL per the 2026-06-10 addendum) → soak/tune. Read-only w.r.t. machine (existing controller still cycles); auto-falls-back to manual on any failure; instant abort to manual. Env-var + endpoint + failure-mode tables included. **This is the path to Track A live — Dylan runs it at the lanes.**
+3. ✅ **DONE — capture-timing hook + scoring wiring shipped:** `lane_node.py` rewired (session 4) with the camera path (DIELL → settle → capture → BALL_EVENT, manual fallback) and verified in the 2026-06-03 pre-check (`phase8_session_close_2026-06-03.md`). Remaining from this item = the install-day steps in the go-live runbook (per-lane empty capture + soak on 21/22).
 
 ---
 
@@ -76,10 +88,19 @@ Both AMF manuals were **mined in full** → the entire controller is now a **doc
 ### FSM (written this session)
 - **`lane_node/cycle_control_8270.py`** — DRAFT R1, **supersedes the void `cycle_control.py` (SS-pulse model)**. Event-driven FSM derived from the documented Sequence of Operation. States: POWER_OFF / MANUAL_INTERVENTION / READY / SWEEP_TO_GUARD / GUARD_DELAY / TABLE_DETECT / RUNTHROUGH / TABLE_FINISH / FAULT. Handles 1st/2nd/strike/foul cycles + safety hooks. **Bench sim runs clean.** Refine points marked `# CONFIRM` (run-through/respot timing, BS gating, exact cam windows — verify vs p288 schematic + bench).
 
-### TRACK B — IMMEDIATE NEXT ACTIONS (Claude, parallel to Dylan's camera work)
-1. **High-DPI crop Service manual p288** (and p287) for the **exact C1/C2A machine-side pinout**.
-2. **Spec the ~45-channel I/O board** (see §4 I/O budget) — MCP23017 expanders + opto-in banks + relay/SSR-out banks; the existing **NE555 watchdog + AEDIKO relay boards slot in here**.
-3. Refine the FSM against the schematic; then: build reads+lamps (no motors) on the spare → FSM-in-sim → motor control in isolation **+ the full hardware safety chain** → off-live validation on a locked-out machine → cutover. (Plan: `docs/phase8_PLAN_A_full_replacement.md`.)
+### TRACK B — PROGRESS 2026-05-31 (session 2)
+- ✅ **p288 crop DONE** → `phase8_C1_C2A_pinout_p288.md`. p288 = **PDF page 287** (offset: printed − 1); foldout native **4944×3947 px ≈ 225 DPI** (legibility ceiling — pin codes are at-scan-resolution, best-effort, bench-verify). Crops saved: `Downloads\p288_C1C2A_band.png`, `p288_C1.png`, `p288_C2A_top.png`, `p288_C2A_bot.png`. **Structural win (high-conf):** C2A = input connector — **TAC-1…10 strip = grippers GS1–GS10**, **A&MC plug = cams SA/SB/SC/TA1/TA2/TB + GP/OS/BS**, + PBC/PBZ/SWS/SWBE/CB/T-S. C1 = motor/relay/power (all `T.S-xx` terminal-strip wiring). Tooling: `Downloads\_pdfx.py` (clip/render via fitz), `_pdftext.py` (text-layer — foldouts have NO text layer, raster only).
+- ✅ **~45-ch I/O board spec DONE** → `phase8_io_board_spec.md` (rev B integrated). Key decisions: **two-tier inputs** (FAST cams+SS on direct GPIO+RP2040 cam-stop co-proc; SLOW switches on 4× MCP23017 @0x20–0x23 w/ INT); isolated outputs (opto→ULN→AEDIKO relays, opto→MOSFET/SSR lamps); **relay-enable rail gated by NE555 watchdog AND arm-GPIO AND hardware TB/SC interlock AND master breaker**; recommend **two single-lane boards per Pi** (Option B); camera pin-data can omit the 10 pin-lamp outputs.
+
+### TRACK B — NEXT ACTIONS
+1. ✅ **p289 functional map DONE 2026-05-31** → `phase8_C1_C2A_pinout_p288.md` §4. Cam→C2A pairings read (SA→C2A-31N, SB→31H, TA1→34N, TA2→21A/30N, B'S→112cc, GP-SW→412DD/TAC-SW, PBC/PBZ→21EE); gripper DETAIL K confirms **GS-n → TAP tap → TAC strip → C2A** (10-gripper bank lands on TAC, as the I/O spec assumed). Pin codes 225-DPI best-effort → bench-verify; functional clusters now pinned. Crops in Downloads `_svc_p289_crop_*.png`.
+2. ✅ **FSM refined (session 4)** — added SPOTTING state + `_needs_fresh_rack()` (2nd-ball/strike wait for BS→SP spotting rev; 1st-ball respots held pins). Sim is now assert-based, exit-0. `# CONFIRM`s remaining: foul respot semantics, exact SP pulse-vs-continuous + de-energize timing (bench).
+3. ✅ **Channel allocation map DONE (session 5)** → `phase8_channel_allocation.md`. Per-lane per-pin map (FSM io surface → MCP23017/RP2040 ports → C1/C2A → device), grounded in the FSM's actual `io.*` usage. **Gates rev-B PCB (#21).** **3 architecture refinements (doc §6) ADOPTED (Dylan 2026-05-31):** (#1) RP2040 owns fast inputs + forwards events; (#2) per-board I²C bus (each board repeats 0x20–0x23); (#3) one RP2040 per board → **self-contained identical single-lane boards** (develop one, clone). Locked into `phase8_io_board_spec.md` too.
+4. ✅ **io-wrapper firmware DONE (session 5)** → `lane_node/controller_io.py`. `MachineIO` (3× MCP23017 via per-board I²C, OUT_A_MAP/IN_A_MAP bit assignments, GS1–10 mask read, watchdog kick + arm-relay injection) + `RecordingIO` (no-hw fake). Smoke test drives the **real FSM through a full strike cycle off-Pi** (exit 0). Hardware path needs `smbus2` on the Pi; RP2040 link (fast cam/ball + cam-stop) injected, `# CONFIRM`. **The FSM is now runnable on hardware once the board exists.**
+4. ✅ **RP2040↔Pi link DECIDED = UART** (session 5; RP2040 pushes events, no bus contention, cam-STOP stays hardware-local → dead link = fail-safe FAULT, not unsafe motion). ✅ **AEDIKO specs FOUND in `pcb_design_spec.md`** (5V module ~70mA/coil, onboard optos+flyback → NO external ULN needed; switches contactor COILS not motors → existing contactors handle inrush; watchdog gating bench-proven). Both recorded in `phase8_channel_allocation.md` §6–7.
+5. **Bench (Dylan + Claude, photo-first):** ✅ **Session-1 photos IN + analyzed** → `docs/phase8_bench_session1_FINDINGS.md` (6 photos `Downloads/Cabinet images/20260601_09*.jpg`, crops in `_small/`). Confirmed vs Fig-1: chassis rail stamps **T1·OLL·T2·S·T**; relays (Siemens control relay w/ 22E/21NC/31NC/32NC/44NO/43NO aux block + a **P&B JRM-10110 12 VDC** relay = first hard coil-V); **C1/C2A FOUND** = the two AMP **67209/67211** edge-card connectors right of the Omega-Tek board; board edge legend reads T,S,X,2B,1B + PIN LAMPS 2,F,4,6,8,10,1. ✅ **Follow-up photos IN (091852/04/07) → C1/C2A ASSIGNED:** connectors shot OUT on the bench, both AMP M-series. **LEFT = C1 (34-pin)** — 3 cols, double-letter rows EE/FF/GG/HH/JJ/KK/LL/MM/NN + 2 power pins + "01" pin-1 mark (matches pinout-doc C1 pins like 17-DD/19-NN). **RIGHT = C2A (50-pin)** — 4 cols ×~13. "01"+AMP logo = pin-1 datum. **Siemens contactor = 3TH40, 22E** (2NO+2NC). ⚠️ STILL OPEN (small, non-blocking): coil voltages (3TH40 + power contactor + confirm P&B=12VDC — read side stickers / meter A1-A2). 3TH40 side label (092859) = contact-load table NOT coil-V (`-0A`≠voltage code; coil V via A1-A2 Ω or front "___V" line). (`20260506_181247.jpg` = QubicaAMF SCORING board, NOT this chassis.)
+6. ✅ **SESSION-2 PROBE LIST WRITTEN** → `docs/phase8_bench_session2_probe_list.md` — ordered, safety-first, anchored to C1=left(34)/C2A=right(50)+"01" datum. §A safety chain (Stop/CIS in series w/ motor coils?) → §B **cam-stops hardwired vs logic** ⭐ (THE architecture Q) → §C C1 motor/relay pin map (vs predicted 21D/31A/17DD/35U/45W) → §D coil voltages (label or A1-A2 Ω; folds in the open 3TH40/contactor/P&B reads). §A+§B are the design-changing parts; §C/§D are mapping. **Dylan runs it → readings close the last bench-gated unknowns → PCB rev-B to layout.**
+7. Then: fieldsheet complete → build reads+lamps (no motors) on the spare → FSM-in-sim → motor control in isolation **+ the full hardware safety chain** → off-live validation on a locked-out machine → cutover. (Plan: `docs/phase8_PLAN_A_full_replacement.md`.)
 - **Honest scope:** Track B is months + safety-critical (drives AC motors near people). Understanding is now solved; the BUILD + VALIDATION are the remaining mountain. Track A (scoring) will go live long before Track B.
 
 ---
@@ -123,16 +144,21 @@ Both AMF manuals were **mined in full** → the entire controller is now a **doc
 - `phase8_status_2026-05-30.md` — overall status + to-do (two tracks).
 - `phase8_controller_interface_MAP.md` — Pi-controller I/O contract.
 - `phase8_controller_interface_fieldsheet.md` — bench field sheet (C1/C2A mapping).
+- `phase8_io_board_spec.md` — **NEW 2026-05-31** ⭐ ~45-ch I/O board spec (rev B integrated; two-tier inputs + isolated outputs + watchdog/interlock gating). Gates PCB rev B (#21).
+- `phase8_C1_C2A_pinout_p288.md` — **NEW 2026-05-31** C1/C2A connector extraction from p288 (structure high-conf; pin codes best-effort; p289 = functional next).
 - `phase8_tcamera_pin_detect_plan.md` — Track A plan.
+- `phase8_trackA_calibration_progress.md` — **NEW 2026-05-31** ✅ Track A calibration DONE: 20 PIN_SPOTS + M4 drift-corrected dual-deck detector, 0-error validated. Has the 3 Dylan-confirmations + wire-up next steps.
 - `phase8_camera_frame_capture_guide.md` — how to capture frames.
 - `phase8_bench_mule_characterization.md` — spare-chassis characterization protocol.
 - `phase8_PLAN_A_full_replacement.md`, `phase8_PLAN_B_scoring_first.md` — the two strategy docs.
 - `phase8_r1_field_checklist.md` — early field checklist.
 
 ### Code (`...\wsl-lane-nodes\lane_node\` + repo root)
-- `cycle_control_8270.py` — FSM DRAFT R1 (Track B). Supersedes `cycle_control.py` (void).
-- `pin_detect.py` — detection skeleton (Track A; needs dual-deck difference rework).
-- `lane_node.py` — the Pi daemon (GPIO reads, WS, scoring, watchdog kick).
+- `cycle_control_8270.py` — FSM (Track B). Refined session 4 (SPOTTING/SP, assert sim). Supersedes `cycle_control.py` (void).
+- `controller_io.py` — **NEW session 5** — concrete FSM `io` object: `MachineIO` (MCP23017 hw) + `RecordingIO` (fake). Smoke test = FSM strike cycle off-Pi.
+- `camera.py` — **NEW session 4** — `PairCamera`: T-Camera capture (cv2/PyAV) + dual-deck detect for Track A scoring.
+- `pin_detect.py` — **REWRITTEN session 3** — dual-deck drift-corrected ("M4") detector; 20 PIN_SPOTS calibrated; 0-error validated.
+- `lane_node.py` — the Pi daemon. Rewired session 4: camera-backed scoring (DIELL→settle→capture→BALL_EVENT) w/ manual fallback.
 - `relay_cleanup.py`, `wsl_scoring_engine.py`, `wsl_scoring_display.html`.
 - Phase 8b proxy lives in the main app `wsl_api.py` (`C:\Users\Dylan DeYoung\WSL Systems\`).
 
@@ -172,6 +198,6 @@ Both AMF manuals were **mined in full** → the entire controller is now a **doc
 
 ## 8. RESUME-HERE CHECKLIST (next session)
 1. Read this doc + `phase8_8270_SYSTEM_REFERENCE.md`.
-2. **Track A:** did Dylan send labeled leave-frames? If yes → calibrate the 20 `PIN_SPOTS` + write the dual-deck difference `pin_detect.py`. If no → that's the ask.
-3. **Track B:** high-DPI crop Service p288 for C1/C2A pins; spec the ~45-ch I/O board; refine `cycle_control_8270.py`.
+2. **Track A — DONE 2026-05-31** (calibrated + dual-deck `pin_detect.py` written + 0-error validated → `phase8_trackA_calibration_progress.md`). The 3 confirmations, bindings, capture-timing hook, and scoring-engine wiring are all ✅ resolved (see §2) — next = **run `docs/phase8_trackA_golive_runbook.md`** (install-day: empty-ref capture → detector dry-run → camera mode → soak).
+3. **Track B (p288 crop + I/O-board spec DONE 2026-05-31 → `phase8_io_board_spec.md`, `phase8_C1_C2A_pinout_p288.md`):** next = crop **p289 (PDF 288)** for the functional pin map (TAC-n→GS-n, A&MC→cam), refine `cycle_control_8270.py` `# CONFIRM`s vs schematic, then bench fieldsheet.
 4. Both tracks are parallel; Track A is closer to a live win. Keep the safety model (§4) front-and-center for Track B.

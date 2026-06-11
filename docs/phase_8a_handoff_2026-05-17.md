@@ -1,5 +1,7 @@
 # Phase 8a Handoff — 2026-05-17 evening
 
+> ⚠️ **2026-06-10 note (historical snapshot — body left as written):** every `192.168.86.36` below is **DEAD** — WSL-SRV moved to **`192.168.4.103`** in the 2026-06-03 eero router swap (subnet now `192.168.4.0/22`; DHCP reservation still TODO). Do not copy-paste IPs/URLs from this doc; substitute the live WSL-SRV address.
+
 **For:** next session (Mon 5/18 onward) — fresh Claude session or Dylan after a break.
 **Context:** All prep work for cutover at lanes 21+22 is in flight. Boards arrive ~Fri 5/22 to Sun 5/24. This doc captures everything to pick up tomorrow.
 

@@ -1,5 +1,7 @@
 # Deploying lane_node_server to WSL-SRV
 
+> ⚠️ **SERVER IP (updated 2026-06-10):** WSL-SRV moved to **`192.168.4.103`** in the 2026-06-03 eero router swap (the old `192.168.86.36` is **DEAD**). URLs below have been updated, but the DHCP reservation is still TODO — **confirm the live IP before deploying** and set `WSL_LANE_SERVER_URL` to match.
+
 **Scope:** moves the Phase 8 server from the dev Pi (where it currently runs alongside lane_node.py for development convenience) to WSL-SRV (Windows 11, the production server). Phase 8 then matches its eventual production architecture: one server on WSL-SRV, N Pi nodes in the lanes.
 
 **This does NOT replace any production Phase 4 service.** lane_node_server runs on different ports (8765 WS + 8766 HTTP) than wsl_api.py (5000) or wsl_analytics_server.py (5002). It coexists.
@@ -10,7 +12,7 @@
 
 ## Prerequisites
 
-- WSL-SRV is reachable via AnyDesk (LAN at `192.168.86.36`)
+- WSL-SRV is reachable via AnyDesk (LAN at `192.168.4.103`)
 - Python 3 on WSL-SRV (already there for wsl_api.py)
 - Phase 4 production code working — DON'T break it during this deployment
 - Network: dev Pi must be able to reach WSL-SRV at port 8765 (LAN, no firewall in the way)
@@ -73,9 +75,9 @@ Expected output:
 [INFO] No saved state found at ...; starting fresh.
 ```
 
-Open `http://192.168.86.36:8766/` in any browser on the LAN. The desk simulator UI should load. No Pi nodes connected yet, so clicks on Open Lane / etc. send to 0 nodes.
+Open `http://192.168.4.103:8766/` in any browser on the LAN. The desk simulator UI should load. No Pi nodes connected yet, so clicks on Open Lane / etc. send to 0 nodes.
 
-If the browser can't reach `192.168.86.36:8766`, check Windows Defender Firewall — add an inbound rule for ports 8765-8766 if needed.
+If the browser can't reach `192.168.4.103:8766`, check Windows Defender Firewall — add an inbound rule for ports 8765-8766 if needed.
 
 Stop the server (Ctrl+C in PowerShell) before continuing.
 
@@ -93,14 +95,14 @@ sudo pkill -f python3
 Override the SERVER_URL via env var. Either inline:
 
 ```bash
-WSL_LANE_SERVER_URL=ws://192.168.86.36:8765 python3 lane_node/lane_node.py
+WSL_LANE_SERVER_URL=ws://192.168.4.103:8765 python3 lane_node/lane_node.py
 ```
 
 Or as a permanent change in the systemd unit at `/etc/systemd/system/lane-node.service`:
 
 ```
 [Service]
-Environment="WSL_LANE_SERVER_URL=ws://192.168.86.36:8765"
+Environment="WSL_LANE_SERVER_URL=ws://192.168.4.103:8765"
 ```
 
 After editing the unit, `sudo systemctl daemon-reload` then `sudo systemctl start lane-node.service`.
@@ -113,15 +115,15 @@ With the WSL-SRV server running and the Pi node pointed at it:
 
 1. Pi terminal should show:
    ```
-   [INFO] Connecting to ws://192.168.86.36:8765 ...
+   [INFO] Connecting to ws://192.168.4.103:8765 ...
    [INFO] Connected. Sending hello (lanes=[21, 22], protocol_version=2).
    ```
 2. WSL-SRV terminal should show:
    ```
-   [INFO] New connection from ('192.168.86.XXX', YYYY)
+   [INFO] New connection from ('192.168.4.XXX', YYYY)
    [INFO] Node 'lane-node-dev-pair-21-22' registered (lanes=[21, 22], protocol_version=2)
    ```
-3. Browser at `http://192.168.86.36:8766/` — click Open Lane on lane 22. Relay 1 on the Pi's bench rig clicks 3 times. Confirms the full chain across the network boundary.
+3. Browser at `http://192.168.4.103:8766/` — click Open Lane on lane 22. Relay 1 on the Pi's bench rig clicks 3 times. Confirms the full chain across the network boundary.
 
 ---
 

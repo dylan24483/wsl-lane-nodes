@@ -585,10 +585,15 @@ class BowlerGame:
             elif is_tenth and i == 1 and frame.is_strike:
                 display = 'X' if pins == 10 else ('-' if pins == 0 else str(pins))
             elif is_tenth and i == 2:
-                # Ball 3 — fresh rack if ball 2 was strike/spare, else continues
-                if frame.bowls[-1].display in ('X', '/') and pins == 10:
+                # Ball 3 — mirror record_ball's 10th-frame display rules:
+                # all ten on this ball is X (fresh rack after a strike/spare,
+                # or clearing a full deck left by a gutter/fouled ball 2);
+                # completing ball 2's remainder to 10 is /; otherwise the
+                # digit. Never emit a literal '10'.
+                if pins == 10:
                     display = 'X'
-                elif fresh_rack and pins > 0 and mask == 0:
+                elif (not fresh_rack and pins > 0
+                      and frame.bowls[-1].pins_down + pins == 10):
                     display = '/'
                 else:
                     display = '-' if pins == 0 else str(pins)
@@ -672,25 +677,58 @@ class BowlerGame:
 # MAX POSSIBLE SCORE CALCULATOR
 # ============================================================
 def _max_possible(frames: List[Frame], current_idx: int) -> int:
-    """Calculate the maximum possible score from current game state."""
-    # Simulate: fill remaining balls with strikes
-    sim_balls = []
-    for f in frames:
-        for b in f.bowls:
-            sim_balls.append(b.pins_down)
+    """Calculate the maximum possible score from current game state.
 
-    # How many more balls can be thrown?
-    total_balls_possible = 12  # max in a perfect game
-    # Count balls already thrown
-    thrown = len(sim_balls)
-    remaining = total_balls_possible - thrown
+    Replays the balls actually thrown, then fills every REMAINING delivery
+    with its best case (finish the in-progress frame, then strikes through
+    the 10th). The remaining deliveries are derived from the actual
+    frame/ball position — a fixed 12-ball budget is only correct for a
+    perfect game (any non-strike frame consumes 2 balls), so the old
+    12-minus-thrown math starved the simulation of future strikes and
+    under/over-counted for any game with a non-strike frame.
+    """
+    sim_balls = [b.pins_down for f in frames for b in f.bowls]
 
-    # Quick check: if all strikes possible
-    future_balls = [10] * remaining
-    all_balls = sim_balls + future_balls
+    idx = max(0, min(current_idx, len(frames) - 1))
+    cur = frames[idx]
+    future: List[int] = []
+    next_fresh = idx  # first untouched frame to fill with simulated strikes
 
-    # Score the full sequence
-    return _score_ball_sequence(all_balls)
+    if cur.is_complete:
+        # Only a finished 10th parks the cursor on a complete frame
+        # (frames 1-9 advance past complete frames) — game over.
+        next_fresh = len(frames)
+    elif cur.bowls:
+        # Finish the in-progress frame best-case first.
+        if cur.number < 10:
+            # Best ball 2 clears the deck -> spare. A ball-1 foul scores 0
+            # and respots the full rack, so 10 - pins_down holds there too.
+            future.append(10 - cur.bowls[0].pins_down)
+        elif cur.ball_count == 1:
+            if cur.is_strike:
+                future.extend([10, 10])
+            else:
+                future.extend([10 - cur.bowls[0].pins_down, 10])
+        else:
+            # 2 balls thrown, 10th not complete -> strike or spare so far.
+            if cur.is_spare:
+                future.append(10)  # fill ball on a fresh rack
+            else:
+                # Ball 1 was a strike. Ball 3 continues from ball 2's rack
+                # unless ball 2 was a strike (fresh rack) or a foul (respot).
+                b2 = cur.bowls[1]
+                future.append(10 if (b2.pins_down == 10 or b2.foul)
+                              else 10 - b2.pins_down)
+        next_fresh = idx + 1
+    # else: current frame untouched — simulate it as a strike below.
+
+    for f_idx in range(next_fresh, len(frames)):
+        if f_idx < 9:
+            future.append(10)
+        else:
+            future.extend([10, 10, 10])
+
+    return _score_ball_sequence(sim_balls + future)
 
 
 def _score_ball_sequence(balls: List[int]) -> int:

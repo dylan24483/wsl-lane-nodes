@@ -1,5 +1,7 @@
 # Phase 8a Infrastructure Plan — Network, Power, Mounting
 
+> ⚠️ **NETWORK CHANGED (2026-06-10 note):** this plan was drafted on the pre-eero `192.168.86.0/24` LAN. The **2026-06-03 eero router swap** moved the site to **`192.168.4.0/22`** (gw `192.168.4.1`); WSL-SRV is now **`192.168.4.103`** (DHCP — reservation still TODO) and **every `192.168.86.x` address is dead**. WSL-SRV references below have been updated; the *planned* device addresses (switch mgmt `.86.10`, Pi nodes `.86.21+`) were never assigned and must be **re-derived on the live `192.168.4.0/22` subnet** (eero reservations) at install time.
+
 **Status:** draft 2026-05-15. Pre-cutover infrastructure work for Phase 8a at lanes 21+22, sized for eventual 16-pair full rollout.
 **Goal:** procurement BOM + physical install procedure to bring lanes 21+22 (and eventually all 16 pairs) onto the Phase 8 network with PoE+ powered Pi nodes.
 **Greenfield assumption:** per the 2026-05-06 lane visit, there's no existing Cat6, no PoE switch, and no DC rail at the lane equipment areas. Everything below assumes from-scratch install.
@@ -11,7 +13,7 @@ This document is the input to procurement and to the actual install visit(s). Th
 ## 1. Topology
 
 ```
-   [WSL-SRV @ 192.168.86.36]
+   [WSL-SRV @ 192.168.4.103]
               │
               │ Gigabit copper, existing
               ▼
@@ -59,7 +61,7 @@ This document is the input to procurement and to the actual install visit(s). Th
    the Phase 8a AC interposer instead of QBK-SIx +FOL/+2ND inputs)
 ```
 
-Network architecture is intentionally simple: one switch, one subnet (`192.168.86.x`, the WSL-SRV LAN), one VLAN (default). No NAT, no per-pair routing. The Pi nodes are first-class citizens on the main LAN — they can `ping 192.168.86.36` (WSL-SRV) directly.
+Network architecture is intentionally simple: one switch, one subnet (`192.168.86.x`, the WSL-SRV LAN), one VLAN (default). No NAT, no per-pair routing. The Pi nodes are first-class citizens on the main LAN — they can `ping 192.168.4.103` (WSL-SRV) directly.
 
 ---
 
@@ -101,7 +103,7 @@ Power budget sanity check:
 | … | … | … |
 | Pi node, lane pair 21-22 | **192.168.86.31** (or 192.168.86.111 — TBD; .31 was BACKOFFICE1 historically) | `lane-node-21-22.local` |
 | … | … | … |
-| Pi node, lane pair 31-32 | 192.168.86.36 — **wait, that's WSL-SRV; pick different** | adjust block |
+| Pi node, lane pair 31-32 | 192.168.4.103 — **wait, that's WSL-SRV; pick different** | adjust block |
 
 **TODO:** carve out an IP block for Pi nodes. Suggest `.86.100-115` to avoid conflict with `.86.31` (BACKOFFICE1, soon-retired) and `.86.36` (WSL-SRV). DHCP reservation on the existing router based on each Pi's MAC, OR static IPs configured per-Pi in `/etc/dhcpcd.conf`. DHCP is easier — pin the MACs at the router level.
 
@@ -354,7 +356,7 @@ This is the visit that lays the cabling + mounts the switch + the lane 21+22 enc
 ### Closet work (~1 hour)
 
 1. **Mount the TP-Link switch** in the closet. Power it via existing AC outlet. Configure management IP `192.168.86.10`, set admin password, enable PoE+ on ports 1-16.
-2. **Run uplink** from switch port 24 (or SFP) to the existing LAN switch. Test: laptop on the new switch can ping `192.168.86.36` (WSL-SRV).
+2. **Run uplink** from switch port 24 (or SFP) to the existing LAN switch. Test: laptop on the new switch can ping `192.168.4.103` (WSL-SRV).
 3. **Mount the patch panel** (if using one) above the switch in the rack. Don't punch down anything yet — keystone jacks get added as cables arrive.
 4. **Label the switch ports 1-16** with their intended pair: `L1-2, L3-4, L5-6, ..., L31-32`. Use a Brother label maker or printed labels.
 
@@ -372,13 +374,13 @@ This is the visit that lays the cabling + mounts the switch + the lane 21+22 enc
 11. **Route the Cat6 through its gland**, terminate the lane end with a crimped RJ45 (or keystone jack into a Pi-side patch cable — keystones are tidier).
 12. **Snap the Pi/HAT/PCB assembly onto the DIN rail.** All modules wired internally per the pre-bench assembly.
 13. **Plug the Cat6 into the Pi's PoE+ HAT.** Pi boots (~30 sec). LED activity on the HAT confirms PoE+ negotiated.
-14. **Verify from a laptop:** SSH to `lane-node-21-22.local`, run `journalctl -u lane-node -n 50` — see "Connected to ws://192.168.86.36:8765" or similar.
+14. **Verify from a laptop:** SSH to `lane-node-21-22.local`, run `journalctl -u lane-node -n 50` — see "Connected to ws://192.168.4.103:8765" or similar.
 
 ### Verify end-to-end (~1 hour, lots of slack here for first-time gotchas)
 
 15. **On WSL-SRV (AnyDesk):** confirm `lane_node_server.py` shows the new Pi connected: `Node 'lane-node-21-22' registered`.
-16. **Open `http://192.168.86.36:8766/`** on the laptop. Click Power On for lane 22. The AEDIKO R1 indicator should light. (Same dry-run as cutover plan Step 1 — but with all wires still NOT connected to the 8270 cabinet, so nothing physical happens at the lane.)
-17. **Leave everything powered up** to soak overnight. Next day, verify Pi has been continuously connected via `curl http://192.168.86.36:8766/api/health`.
+16. **Open `http://192.168.4.103:8766/`** on the laptop. Click Power On for lane 22. The AEDIKO R1 indicator should light. (Same dry-run as cutover plan Step 1 — but with all wires still NOT connected to the 8270 cabinet, so nothing physical happens at the lane.)
+17. **Leave everything powered up** to soak overnight. Next day, verify Pi has been continuously connected via `curl http://192.168.4.103:8766/api/health`.
 
 If 24h soak is clean → ready to schedule the cutover visit.
 If anything is flapping → debug network / power / config before scheduling.
