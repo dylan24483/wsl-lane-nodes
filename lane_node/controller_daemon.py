@@ -38,6 +38,7 @@ Run for real (on the Pi):         python controller_daemon.py        # needs gpi
 from __future__ import annotations
 import argparse
 import logging
+import os
 import signal
 import sys
 import time
@@ -46,10 +47,37 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cycle_control_8270 import CycleController, State
-from controller_io import MachineIO, RecordingIO
+from controller_io import MachineIO, RecordingIO, ShadowIO
 from rp2040_link import RP2040Link
+from flight_recorder import FlightRecorder
+from cam_telemetry import CamTelemetry
 
 log = logging.getLogger("controller_daemon")
+
+# Shadow/canary soak (idea #11). When WSL_CONTROLLER_SHADOW is truthy the FSM runs
+# on the REAL inputs but every output is routed to a record-only shim (ShadowIO) and
+# the relay-enable ARM is hard-held LOW — no relay is ever energized. DEFAULT OFF:
+# it must be impossible to accidentally run live. See ShadowIO in controller_io.py.
+SHADOW_ENV = "WSL_CONTROLLER_SHADOW"
+_FALSEY = ("0", "false", "no", "off", "")
+
+
+def _shadow_enabled():
+    return os.environ.get(SHADOW_ENV, "0").strip().lower() not in _FALSEY
+
+
+# Map an FSM state TRANSITION to the discrete mechanical event it represents, for the
+# cam-timing telemetry (idea #15). Observe-only: derived from the state the daemon
+# already holds, so no new event source and no touch to rp2040_link/the FSM. Keyed by
+# (prev_state, new_state) -> telemetry event name. The READY arrival closes the cycle.
+_STATE_EVENTS = {
+    (State.READY,           State.SWEEP_TO_GUARD): "ball",         # SS / ball thrown
+    (State.SWEEP_TO_GUARD,  State.GUARD_DELAY):    "cam:SB",       # sweep@66 guard
+    (State.GUARD_DELAY,     State.TABLE_DETECT):   "table_start",  # settle done, table down
+    (State.TABLE_DETECT,    State.RUNTHROUGH):     "cam:TA2",      # table@260, runthrough
+    (State.RUNTHROUGH,      State.TABLE_FINISH):   "cam:SA",       # sweep@270 stop
+    (State.TABLE_FINISH,    State.SPOTTING):       "bs",           # bin full -> spot
+}
 
 # States in which the relay-enable ARM must stay de-asserted (power-down rule §5).
 DISARMED_STATES = (State.POWER_OFF, State.MANUAL_INTERVENTION, State.FAULT)
@@ -136,15 +164,21 @@ class BoardController:
     control logic. `sim=True` uses RecordingIO + a no-serial link so the assembly
     runs + self-tests off-Pi."""
 
-    def __init__(self, cfg: BoardConfig, *, sim: bool = False):
+    def __init__(self, cfg: BoardConfig, *, sim: bool = False, shadow=None,
+                 cam_sink=None):
         self.cfg = cfg
         self.sim = sim
         self._wdog = None
         self._arm_led = None
+        self.shadow = _shadow_enabled() if shadow is None else bool(shadow)
+
+        # Flight recorder (idea #10): observe-only, bounded, default ON. Injected into
+        # the io so every output change + arm is captured; dumped on a safety trip.
+        self.recorder = FlightRecorder(cfg.lane)
 
         if sim:
             self.link = RP2040Link()                       # no serial; feed via feed_line()
-            self.io = RecordingIO(rp2040=self.link)
+            self.io = RecordingIO(rp2040=self.link, recorder=self.recorder)
         else:
             from gpiozero import LED                       # lazy: Pi-only
             self._arm_led = LED(cfg.arm_pin)               # de-asserted by default
@@ -154,11 +188,26 @@ class BoardController:
                 cfg.lane, cfg.i2c_bus, rp2040=self.link,
                 watchdog_kick=self._kick_wdog,             # poll() calls this
                 arm_relays=self._set_arm,
+                recorder=self.recorder,
             )
             self.link.start()                              # background serial reader
 
+        # SHADOW/CANARY SOAK (idea #11): wrap the real io so the FSM drives NOTHING.
+        # The wrapper records every command the FSM WOULD have issued and hard-holds
+        # the real ARM LOW. Default OFF (env gate) — impossible to run live by accident.
+        if self.shadow:
+            self.io = ShadowIO(self.io, recorder=self.recorder)
+            log.warning("L%s: SHADOW MODE active (%s set) — FSM runs on real inputs but "
+                        "drives NOTHING; ARM hard-held LOW", cfg.lane, SHADOW_ENV)
+
+        # Cam-timing telemetry (idea #15): observe-only, bounded. Fed from FSM state
+        # transitions (which the daemon already holds) -> per-cycle intervals + drift
+        # alarm. Shares the flight recorder so timing rows + drift land in dumps too.
+        self.telemetry = CamTelemetry(cfg.lane, recorder=self.recorder, sink=cam_sink)
+
         self.fsm = CycleController(cfg.lane, self.io)
         self.fsm.power_restore()                           # power-down rule: come up disarmed
+        self._prev_state = self.fsm.state                  # for telemetry transition edges
         self._actions = _slow_actions(self.fsm, self.link)
         self._prev_slow = {name: False for name in self._actions}
         self._was_healthy = True
@@ -200,10 +249,12 @@ class BoardController:
                             f"(fault={self.link.fault()!r} alive={self.link.is_alive()} "
                             f"rp_ok={self.link.rp_ok()}) -> SAFETY TRIP: motors off, require First-Ball-Zero")
                 self.fsm.power_restore()      # _all_motors_off() (clears latches) + MANUAL_INTERVENTION
+                self._on_safety_trip("rp2040_link_lost")   # flight-recorder dump (observe-only)
             self._was_healthy = False
             self.io.arm(False)
             self.link.apply_events(self.fsm)  # drain the queue; FSM ignores events when not READY
             self.fsm.poll()                   # keep kicking the NE555 (the Pi itself is alive)
+            self._observe()                   # instrumentation (idea #10/#15): never affects control
             return
 
         if not self._was_healthy:
@@ -214,6 +265,50 @@ class BoardController:
         self._slow_edges()                    # PBZ/BS/Foul -> FSM
         self.fsm.poll()                       # advance FSM + kick NE555 via io
         self.io.arm(self.fsm.state not in DISARMED_STATES)
+        self._observe()                       # instrumentation (idea #10/#15): never affects control
+
+    # ---- instrumentation (OBSERVE-ONLY; idea #10 flight recorder + #15 cam timing) --
+    def _observe(self):
+        """Post-tick observation: record FSM state transitions, feed cam-timing
+        telemetry off those transitions, finalize a cycle on READY arrival, and dump
+        the flight recorder on a FAULT entry. Drives NOTHING and never raises into the
+        control loop — a bug here cannot affect machine control or fail-safety."""
+        try:
+            new = self.fsm.state
+            prev = self._prev_state
+            if new is prev:
+                return
+            self._prev_state = new
+            now = self.io.now()
+            # 1) record the transition in the flight recorder (forensics timeline)
+            self.recorder.record("state", new.value, prev.value)
+            # 2) cam-timing telemetry: map the transition to a discrete event
+            ev = _STATE_EVENTS.get((prev, new))
+            if ev is not None:
+                self.telemetry.on_event(ev, now)
+            # 3) cycle boundary: arriving back at READY finalizes the cycle's intervals
+            if new is State.READY and prev not in (State.MANUAL_INTERVENTION, State.POWER_OFF):
+                self.telemetry.end_cycle()
+            # 4) FAULT entry: dump the black box (best-effort)
+            if new is State.FAULT and prev is not State.FAULT:
+                self._on_safety_trip("fsm_fault")
+        except Exception:
+            log.debug("L%s observe() swallowed", self.cfg.lane, exc_info=True)
+
+    def _on_safety_trip(self, reason):
+        """Flush the flight recorder on a safety trip / fault. Best-effort, bounded,
+        never raises. Captures FSM state + the firmware fault for the dump context."""
+        try:
+            self.recorder.dump(reason=reason, extra={
+                "fsm_state": getattr(self.fsm.state, "value", "?"),
+                "fsm_cycle": getattr(getattr(self.fsm, "cycle", None), "value", None),
+                "fsm_ball": getattr(getattr(self.fsm, "ball", None), "name", None),
+                "fw_fault": self.link.fault(),
+                "rp_ok": self.link.rp_ok(),
+                "shadow": self.shadow,
+            })
+        except Exception:
+            log.debug("L%s _on_safety_trip swallowed", self.cfg.lane, exc_info=True)
 
     # ---- shutdown ----------------------------------------------------------
     def safe_off(self):
@@ -253,14 +348,20 @@ def run(boards, hz: float = 50.0):
                 try:
                     b.tick()
                     b.tick_errors = 0
-                except Exception:
+                except Exception as e:
                     b.tick_errors += 1
                     log.exception("L%s tick raised (%d/%d consecutive)",
                                   b.cfg.lane, b.tick_errors, TICK_ERROR_BUDGET)
+                    # flight recorder: capture the exception in the timeline (observe-only)
+                    try:
+                        b.recorder.record("tick_error", type(e).__name__, str(e)[:120])
+                    except Exception:
+                        pass
                     if b.tick_errors >= TICK_ERROR_BUDGET:
                         log.error("L%s tick error budget exhausted -> SAFETY TRIP "
                                   "this board (outputs off, ARM dropped, kick stops); "
                                   "other board continues", b.cfg.lane)
+                        b._on_safety_trip("tick_error_budget")   # dump black box
                         b.failed = True
                         b.safe_off()
             if all(b.failed for b in boards):

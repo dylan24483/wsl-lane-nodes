@@ -30,6 +30,16 @@ from __future__ import annotations
 import time
 import logging
 
+try:
+    from flight_recorder import NULL_RECORDER
+except Exception:  # pragma: no cover - flight_recorder is optional, never fatal
+    class _NR:                       # inert fallback so the io stays usable standalone
+        enabled = False
+        def record(self, *a, **k): pass
+        def dump(self, *a, **k): return None
+        def snapshot(self): return []
+    NULL_RECORDER = _NR()
+
 log = logging.getLogger("controller_io")
 
 # ---------------------------------------------------------------------------
@@ -136,7 +146,7 @@ class MachineIO:
     """
 
     def __init__(self, lane_id, bus_id, *, watchdog_kick=None, arm_relays=None,
-                 now=None, enable_pin_lamps=False, rp2040=None):
+                 now=None, enable_pin_lamps=False, rp2040=None, recorder=None):
         self.lane = lane_id
         self._kick = watchdog_kick or (lambda: None)
         self._arm = arm_relays or (lambda on: None)
@@ -145,6 +155,9 @@ class MachineIO:
         self._rp2040 = rp2040    # RP2040Link (or None): SC/TB interlock echo + RUN/STOP
         self._out_state = {}     # last commanded value per output (change-logging + dup suppress)
         self._armed = None       # last arm() value (change-logging)
+        # Flight recorder (idea #10): observe-only. NULL_RECORDER = inert no-op when
+        # none is injected, so the instrumentation tap is branch-free + zero-cost.
+        self.recorder = recorder or NULL_RECORDER
 
         try:
             import smbus2 as smbus
@@ -175,6 +188,9 @@ class MachineIO:
             self._out_state[name] = on
             # Timestamped (via logging) output history — post-incident forensics.
             log.info("L%s OUT %s -> %s", self.lane, name, "ON" if on else "off")
+            # Flight recorder tap: record every OUTPUT CHANGE (idea #10). Recorder
+            # is fail-safe + bounded; this never raises into the control path.
+            self.recorder.record("out", name, on)
         port, bit = OUT_A_MAP[name]
         self.out_a.write_bit(port, bit, on)     # OLAT write is idempotent; always refresh
         if changed and self._rp2040 is not None and name in MOTION_RELAYS:
@@ -244,6 +260,7 @@ class MachineIO:
         if self._armed is not on:
             self._armed = on
             log.info("L%s ARM -> %s", self.lane, "ASSERTED" if on else "deasserted")
+            self.recorder.record("arm", "arm", on)   # flight recorder tap (idea #10)
         self._arm(on)
 
     def now(self):
@@ -286,10 +303,11 @@ class RecordingIO:
     Set .grippers / .gp / .bs / .interlock to script a cycle; read .events for
     the ordered (name, value) output log."""
 
-    def __init__(self, now=None, rp2040=None):
+    def __init__(self, now=None, rp2040=None, recorder=None):
         self._t = 0.0
         self._now = now
         self._rp2040 = rp2040
+        self.recorder = recorder or NULL_RECORDER   # flight recorder (idea #10), observe-only
         self.events = []          # ordered (kind, *args) of every output call
         self.outputs = {}         # latest value per output name
         self.lamps = {}
@@ -313,11 +331,11 @@ class RecordingIO:
         if self._rp2040 is not None:
             (self._rp2040.run if on else self._rp2040.stop)(motor)
 
-    def set_sweep(self, on): self.outputs["sweep"] = bool(on); self.events.append(("sweep", bool(on))); self._link_motor("S", bool(on))
-    def set_table(self, on): self.outputs["table"] = bool(on); self.events.append(("table", bool(on))); self._link_motor("T", bool(on))
-    def set_spot(self, on):  self.outputs["spot"] = bool(on); self.events.append(("spot", bool(on))); self._link_motor("SP", bool(on))
-    def set_pin_lamps(self, mask): self.pin_lamps = mask; self.events.append(("pin_lamps", mask))
-    def set_light(self, name, on): self.lamps[name] = bool(on); self.events.append(("light", name, bool(on)))
+    def set_sweep(self, on): self.outputs["sweep"] = bool(on); self.events.append(("sweep", bool(on))); self.recorder.record("out", "S", bool(on)); self._link_motor("S", bool(on))
+    def set_table(self, on): self.outputs["table"] = bool(on); self.events.append(("table", bool(on))); self.recorder.record("out", "T", bool(on)); self._link_motor("T", bool(on))
+    def set_spot(self, on):  self.outputs["spot"] = bool(on); self.events.append(("spot", bool(on))); self.recorder.record("out", "SP", bool(on)); self._link_motor("SP", bool(on))
+    def set_pin_lamps(self, mask): self.pin_lamps = mask; self.events.append(("pin_lamps", mask)); self.recorder.record("out", "pin_lamps", mask)
+    def set_light(self, name, on): self.lamps[name] = bool(on); self.events.append(("light", name, bool(on))); self.recorder.record("out", name, bool(on))
 
     # inputs
     def read_grippers(self): return self.grippers
@@ -328,8 +346,104 @@ class RecordingIO:
 
     # housekeeping
     def watchdog_kick(self): self.kicks += 1
-    def arm(self, on): self.armed = bool(on); self.events.append(("arm", bool(on)))
+    def arm(self, on): self.armed = bool(on); self.events.append(("arm", bool(on))); self.recorder.record("arm", "arm", bool(on))
     def log(self, msg): self.events.append(("log", msg))
+
+
+# ===========================================================================
+# ShadowIO — SHADOW/CANARY SOAK wrapper (idea #11)
+# ===========================================================================
+class ShadowIO:
+    """Wrap a real io so the FSM runs on REAL inputs but drives NOTHING.
+
+    Every OUTPUT method (set_sweep/set_table/set_spot/set_light/set_pin_lamps and
+    arm) is intercepted and RECORDED instead of being passed to the wrapped io —
+    no relay is ever energized and the relay-enable ARM is hard-held LOW. Every
+    INPUT / housekeeping method (read_grippers, gp_closed, bs_closed, read_input,
+    interlock_ok, watchdog_kick, now, log) delegates to the wrapped real io so the
+    FSM sees genuine cam/gripper/SS/interlock state and the NE555 still gets kicked
+    (the Pi is alive — we just aren't moving the machine).
+
+    This converts cutover night from 'first live run of motion code' into a logged
+    dry-run alongside the OEM controller: the FSM issues the commands it WOULD have,
+    ShadowIO records each, and a comparator can later align those commanded windows
+    against the observed cam timeline to prove zero divergence over thousands of
+    real cycles.
+
+    SAFETY — it must be IMPOSSIBLE to accidentally run live through this wrapper:
+      * No output method ever calls the wrapped io's output methods. There is no
+        code path from a ShadowIO set_* to a real relay write.
+      * On construction it asserts the real ARM is de-asserted, and every arm()
+        call (whatever the FSM commands) re-forces the real ARM LOW. So even if the
+        wrapped io is a live MachineIO with the rail enabled, ShadowIO keeps it
+        disarmed for as long as it is in front of the FSM.
+      * It is only ever constructed when the env flag WSL_CONTROLLER_SHADOW is set
+        (the daemon's choice); default behavior (no flag) never builds one.
+
+    `would_drive` is the recorded command stream {name: last_value}; `commands` is
+    the ordered list of (t, name, value) the FSM issued — the raw material for the
+    divergence comparator.
+    """
+
+    def __init__(self, real_io, *, recorder=None):
+        self._io = real_io
+        # Reuse the real io's recorder if it has one, else the injected/NULL one, so
+        # shadow commands land in the same flight-recorder stream as everything else.
+        self.recorder = recorder or getattr(real_io, "recorder", None) or NULL_RECORDER
+        self.would_drive = {}     # name -> last commanded value (motors + lamps + arm)
+        self.commands = []        # ordered (t, name, value) — bounded by the caller's cycle scope
+        self.armed = None         # last ARM the FSM COMMANDED (not what hardware did — that stays OFF)
+        self._force_disarm()      # belt-and-suspenders: real hardware starts + stays disarmed
+
+    # ---- shadow output sink (records, drives nothing) ---------------------
+    def _shadow(self, name, value):
+        try:
+            self.would_drive[name] = value
+            self.commands.append((self.now(), name, value))
+            # tag as a SHADOW command in the flight recorder so it's never mistaken
+            # for a real relay change in a post-incident dump.
+            self.recorder.record("shadow_out", name, value)
+        except Exception:
+            log.debug("ShadowIO L%s: shadow record swallowed", self._lane(), exc_info=True)
+
+    def _force_disarm(self):
+        # Drive the REAL arm LOW, bypassing our own intercept, every time.
+        try:
+            self._io.arm(False)
+        except Exception as e:
+            log.warning("ShadowIO: could not force real ARM low: %s", e)
+
+    def _lane(self):
+        return getattr(self._io, "lane", "?")
+
+    # ---- intercepted OUTPUTS (record only; NEVER reach the real io) --------
+    def set_sweep(self, on): self._shadow("S", bool(on))
+    def set_table(self, on): self._shadow("T", bool(on))
+    def set_spot(self, on):  self._shadow("SP", bool(on))
+    def set_light(self, name, on): self._shadow(name, bool(on))
+    def set_pin_lamps(self, mask): self._shadow("pin_lamps", mask)
+
+    def arm(self, on):
+        # Record what the FSM WANTED, but the machine stays hard-disarmed in shadow.
+        self.armed = bool(on)
+        self._shadow("arm_cmd", bool(on))
+        self._force_disarm()
+
+    # ---- delegated INPUTS + housekeeping (the FSM sees the REAL machine) ----
+    def read_grippers(self): return self._io.read_grippers()
+    def gp_closed(self): return self._io.gp_closed()
+    def bs_closed(self): return self._io.bs_closed()
+    def read_input(self, name): return self._io.read_input(name)
+    def interlock_ok(self): return self._io.interlock_ok()
+    def watchdog_kick(self): return self._io.watchdog_kick()
+    def now(self):
+        f = getattr(self._io, "now", None)
+        return f() if f else time.monotonic()
+    def log(self, msg):
+        try:
+            self._io.log(msg)
+        except Exception:
+            log.info(msg)
 
 
 if __name__ == "__main__":
