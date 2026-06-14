@@ -1,7 +1,7 @@
 """
 WSL Scoring Engine — Pure Python Bowling Scorer
 =================================================
-Westside Lanes · Chehalis, WA
+Westside Lanes · Olympia, WA
 
 Replaces ConquerorServer's Score.dll with a standalone Python implementation.
 Accepts 10-bit pin masks per ball (from BPP_LANE via vdb.py), tracks frame
@@ -782,6 +782,10 @@ class LaneScoring:
         self.game_number = 1
         self.is_active = False
         self.started_at: Optional[str] = None
+        # H27: finished games are archived here before _start_new_game wipes the
+        # BowlerGame frames, so a completed scoresheet is never lost in the
+        # 0-second window between the last ball and the synchronous rollover.
+        self.completed_games: List[Dict[str, Any]] = []
 
     def add_bowler(self, name: str, number: int = 0, hdcp: int = 0,
                    average: float = 0.0) -> BowlerGame:
@@ -871,6 +875,17 @@ class LaneScoring:
 
     def _start_new_game(self):
         """All bowlers finished — start a new game in the series."""
+        # H27: archive the just-finished game (frames included) BEFORE the
+        # __init__ reset below wipes every BowlerGame — otherwise the only
+        # surviving record is the scalar total in series_scores, and the desk's
+        # ~5s poll has a 0-second window to read the completed scoresheet.
+        self.completed_games.append({
+            'game_number': self.game_number,
+            'completed_at': datetime.now().isoformat(),
+            'players': [b.to_dict() for b in self.bowlers],
+        })
+        if len(self.completed_games) > 24:
+            self.completed_games = self.completed_games[-24:]
         self.game_number += 1
         for b in self.bowlers:
             b.series_scores.append(b.current_total)
@@ -911,6 +926,7 @@ class LaneScoring:
             'timestamp': datetime.now().isoformat(),
             'open': self.is_active,
             'game': self.game_number,
+            'completed_games': self.completed_games,
             'mode': 'single_lane',
             'current_frame_idx': frame_idx,
             'frame': frame_idx + 1,
@@ -944,6 +960,8 @@ class CrossLaneScoring:
         self.game_number = 1
         self.is_active = False
         self.started_at: Optional[str] = None
+        # H27: see LaneScoring — archive finished games before rollover wipes them.
+        self.completed_games: List[Dict[str, Any]] = []
         self._lane_queues = {
             lane_left: [],
             lane_right: [],
@@ -1034,6 +1052,15 @@ class CrossLaneScoring:
             self._lane_queues[new_lane].append(bowler)
 
     def _start_new_game(self):
+        # H27: archive the finished game (frames included) before the __init__
+        # reset below wipes every BowlerGame (see LaneScoring._start_new_game).
+        self.completed_games.append({
+            'game_number': self.game_number,
+            'completed_at': datetime.now().isoformat(),
+            'players': [self._player_dict(b) for b in self.bowlers],
+        })
+        if len(self.completed_games) > 24:
+            self.completed_games = self.completed_games[-24:]
         self.game_number += 1
         self._lane_queues = {
             self.lane_left: [],
@@ -1103,6 +1130,7 @@ class CrossLaneScoring:
             'timestamp': datetime.now().isoformat(),
             'open': self.is_active,
             'game': self.game_number,
+            'completed_games': self.completed_games,
             'mode': 'cross_lane',
             'cross_lane': True,
             'current_frame_idx': frame_idx,
