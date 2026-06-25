@@ -1,0 +1,12 @@
+Item,Description,Manufacturer,MFR_Part_Number,Source,Qty,Unit,Per,Notes
+B1,DIN-rail 2x10 IDC to screw-terminal breakout (board side),Winford Engineering,BRK2x10-DIN,Winford direct (fast); Sysly/Molence IDC20 = Amazon alt (long lead),32,ea,board,"Labeled screw terminals; J1 lands here via ribbon."
+B2,F/F 20-pos 2.54mm IDC ribbon (socket-to-socket),Assmann WSW / 3M / CNC Tech,SELECT-20POS-F-F-IN-STOCK,DigiKey or Mouser,32,ea,board,"J1 -> DIN breakout."
+B3,Pi GPIO screw-terminal breakout (optional),Generic,PI-GPIO-TERMINAL-HAT,various,16,ea,Pi,"Pi side, 1 per Pi (each Pi drives 2 boards). Skip if wiring Dupont straight to GPIO."
+B1-alt,J1 mating IDC ribbon socket (if skipping DIN breakout),CNC Tech,3030-20-0102-00,DigiKey or Mouser,32,ea,board,"Candidate per docs - VERIFY KEYING/pin-1 before ordering qty."
+J3-plug,Phoenix MC 1,5/10-ST-3,5 (FAST A field plug),Phoenix Contact,1840447,DigiKey or Mouser,32,ea,board,"Field wiring lands here, then plugs onto J3."
+J4-plug,Phoenix MC 1,5/14-ST-3,5 (SLOW A field plug),Phoenix Contact,1840489,DigiKey or Mouser,32,ea,board,"Plugs onto J4."
+J5-plug,Phoenix MC 1,5/12-ST-3,5 (SLOW B field plug),Phoenix Contact,1840463,DigiKey or Mouser,32,ea,board,"Plugs onto J5."
+J13-plug,Phoenix MC 1,5/6-ST-3,5 (LED lamps plug),Phoenix Contact,1840405,DigiKey or Mouser,32,ea,board,"Plugs onto J13."
+J14-plug,Phoenix MC 1,5/4-ST-3,5 (SAFETY loop plug),Phoenix Contact,1840382,DigiKey or Mouser,32,ea,board,"Plugs onto J14. Interlock loop wiring."
+J2-wiring,J2 5V IN - wire-direct (no plug),-,WIRE+FERRULE,have ferrule kit,32,ea,board,"Fixed MKDS screw block; land 5V supply wires directly. Ferrules only."
+J6-J11-wiring,J6-J11 motion outputs - wire-direct (no plug),-,WIRE+FERRULE,have ferrule kit,32,ea,board,"Fixed MKDS screw blocks; land machine relay-output wires directly. Ferrules only."

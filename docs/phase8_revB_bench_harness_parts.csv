@@ -1,0 +1,6 @@
+Item,Description,Manufacturer,MFR_Part_Number,Source,Qty,Unit,Notes
+A1,F/F 20-pos 2.54mm IDC ribbon (socket-to-socket),Assmann WSW / 3M / CNC Tech,SELECT-20POS-F-F-IN-STOCK,DigiKey or Mouser,1,ea,"THE ONE REQUIRED BUY. Pick any 20-position socket-to-socket IDC cable in stock; overnight. Cut in half, strip conductors 2/3/4 = GND/SDA/SCL."
+A1-alt,20-pin IDC socket FC-20 2.54mm (crimp-on),CNC Tech,3030-20-0103-00,DigiKey or Mouser,2,ea,"Only if you prefer to crimp onto your own 1.27mm 20-way ribbon instead of buying pre-made."
+A2,F-F Dupont jumper wires,Generic,ON-HAND,have,10,ea,"Land ribbon conductors on Pi GPIO. You likely already have these."
+A3,Hookup wire (safety-loop close),Generic,ON-HAND,have,1,set,"Bench: jumper J14 pin1<->pin2 and pin3<->pin4 to enable the relay rail (Step 3). No plug needed for bench."
+A4,Hookup wire (input simulation),Generic,ON-HAND,have,1,set,"Bench: tap a field input pin to FIELD_GND to fire its opto (Step 4)."

@@ -1,0 +1,30 @@
+# WSL Phase 8 lane-node -- minimal runtime deps for a fresh Raspberry Pi provision.
+#
+# Pinned to the versions on the known-good Pi image. The repo-root requirements.txt
+# is the FULL OS pip-freeze (300+ pkgs incl. system packages); THIS file is the
+# focused set the lane-node actually imports, for a clean venv install:
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements-lane-node.txt
+#
+# NOTE: gpiozero needs a GPIO backend. On Pi 5 / recent Pi OS that's lgpio, with
+# the rpi-lgpio shim providing the legacy RPi.GPIO API. Both are pinned below.
+# No OpenCV: Track-A capture uses PyAV (av) + numpy, deliberately (HANDOFF).
+# No Flask: the Pi node is a WebSocket CLIENT; the dashboard/server runs on WSL-SRV.
+
+# --- GPIO / hardware backend (both tracks) ---
+gpiozero==2.0.1
+lgpio==0.2.2.0
+rpi-lgpio==0.6
+
+# --- Track B controller: 3x MCP23017 over I2C + the RP2040 over UART ---
+smbus2==0.4.3
+pyserial==3.5
+
+# --- Track A camera scoring: USB capture dongle (PyAV/UVC) + detection math ---
+av==14.2.0
+numpy==2.2.4
+pillow==11.1.0
+
+# --- server link: Pi node -> WSL-SRV lane_node_server (WS client) ---
+websockets==16.0
