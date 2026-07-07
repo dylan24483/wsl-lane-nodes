@@ -195,8 +195,11 @@ class MachineIO:
         port, bit = OUT_A_MAP[name]
         self.out_a.write_bit(port, bit, on)     # OLAT write is idempotent; always refresh
         if changed and self._rp2040 is not None and name in MOTION_RELAYS:
-            # Send RUN/STOP only on a real change: a duplicate RUN would restart
-            # the firmware's max-run backstop timer (defeating the 8 s bound).
+            # Send RUN/STOP only on a real change (wire economy). NOTE: this is
+            # NOT load-bearing for the max-run backstop — the firmware stamps
+            # its timer only on a false->true transition (main.c handle_line),
+            # so re-assertion is safe; rp2040_link's hb run-mask reconciliation
+            # relies on exactly that to re-send lost RUN/STOP lines.
             (self._rp2040.run if on else self._rp2040.stop)(name)
 
     def set_sweep(self, on): self._set_out("S", on)

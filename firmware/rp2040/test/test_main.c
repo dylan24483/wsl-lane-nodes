@@ -233,6 +233,19 @@ int main(void) {
     pump();
     CHECK(!fault_latched, "sane edge rate does not trip the chatter guard");
     CHECK(tx_has("\"id\":\"TB\""), "sane-rate edges still emitted");
+    /* SLIDING window (v1.1.1): ~12 ms-spaced edges = ~8.3 per any 100 ms span. The old
+     * tumbling window never collected > 8 in one aligned window, so this rate never
+     * latched; the sliding ring latches at the 9th edge (8 x 12 ms = 96 ms < 100 ms). */
+    for (int i = 1; i <= 12 && !fault_latched; i++) {
+        mock_gpio_in[PIN_SB] = (i & 1) ? 0 : 1;
+        scan_inputs();
+        advance_us(DEBOUNCE_CAM_US + 10); scan_inputs();   /* debounced edge lands */
+        advance_ms(10);                                    /* ~12 ms total spacing */
+    }
+    CHECK(fault_latched && strcmp(fault_code, "chatter") == 0,
+          "boundary-straddling burst latches (sliding window, old tumbling missed it)");
+    rx_feed("CLEAR\n"); poll_uart();
+    CHECK(!fault_latched, "CLEAR recovers after the straddle test");
     /* ring headroom: an event flood cannot starve hb/flt */
     txr_head = txr_tail = 0; txr_drops = 0; tx_reset(); mock_uart_writable = false;
     for (int i = 0; i < 50; i++) emit_evt("{\"ev\":\"cam\",\"id\":\"SA\",\"e\":\"f\",\"t\":1}\n");
@@ -278,6 +291,13 @@ int main(void) {
           "all v1.1 enforcement flags default OFF");
     CHECK(CAM_SA_TRIP == CAM_TRIP_UNCONFIRMED && CAM_TA1_TRIP == CAM_TRIP_UNCONFIRMED,
           "cam trip edges default UNCONFIRMED");
+    {   /* boot "v11" posture: a default/stock build must advertise everything OFF */
+        char sa_p[4], ta1_p[4];
+        camstop_posture_str(sa_p,  (bool)CAM_SA_STOP_ENABLED,  CAM_SA_TRIP);
+        camstop_posture_str(ta1_p, (bool)CAM_TA1_STOP_ENABLED, CAM_TA1_TRIP);
+        CHECK(strcmp(sa_p, "off") == 0 && strcmp(ta1_p, "off") == 0,
+              "default build advertises sa/ta1 = \"off\" in the boot v11 posture");
+    }
     all_idle(); mock_us += 1000000ull; init_inputs(); init_camstops();
     motors_all_stop(); fault_latched = false; fault_code[0] = 0;
     rx_discard = false; llen = 0;

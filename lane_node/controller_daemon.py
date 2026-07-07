@@ -241,7 +241,27 @@ class BoardController:
         self.fsm.power_restore()                           # power-down rule: come up disarmed
         self._prev_state = self.fsm.state                  # for telemetry transition edges
         self._actions = _slow_actions(self.fsm, self.link)
-        self._prev_slow = {name: False for name in self._actions}
+        # Baseline the slow-input edge detector from the ACTUAL input levels at
+        # startup (review #28): an input already asserted when the daemon comes
+        # up (stuck/shorted/miswired PBZ, inverted polarity) must NEVER be
+        # synthesized into a rising edge on tick 1 — a phantom PBZ would walk
+        # MANUAL_INTERVENTION -> READY and auto-arm the lane on every restart,
+        # defeating the power-down rule the systemd auto-restart policy relies
+        # on. Only a transition OBSERVED while running counts as an edge; an
+        # initially-asserted input is logged LOUDLY and must deassert then
+        # re-assert to act. A read failure here propagates -> _build_boards
+        # skips the board (never ticked, NE555 never kicked = fail-safe).
+        # Sim rigs (RecordingIO.slow starts empty) baseline all-False as before.
+        self._prev_slow = {}
+        for name in self._actions:
+            cur = bool(self.io.read_input(name))
+            if cur:
+                log.error("L%s: slow input %r ALREADY ASSERTED at daemon start "
+                          "(stuck button / miswire / inverted polarity?) — NO edge "
+                          "synthesized; it must deassert then re-assert to act",
+                          cfg.lane, name)
+            self._prev_slow[name] = cur
+        self._maxrun_refused = False   # review #30: one-time log latch for the arm refusal
         self._was_healthy = True
         self.failed = False        # set by run() when TICK_ERROR_BUDGET is exhausted
         self.tick_errors = 0       # consecutive tick() exceptions (reset on success)
@@ -296,7 +316,25 @@ class BoardController:
         self.link.apply_events(self.fsm)      # cam/ball -> FSM (single-threaded here)
         self._slow_edges()                    # PBZ/BS/Foul -> FSM
         self.fsm.poll()                       # advance FSM + kick NE555 via io
-        self.io.arm(self.fsm.state not in DISARMED_STATES)
+        # Arm gate (review #30): a KNOWN firmware/FSM max-run desync (firmware
+        # maxrun_ms below the FSM's MAX_MOTION_S) means the firmware backstop
+        # would kill legitimate motions mid-cycle — REFUSE to arm until the
+        # constants are reconciled, exactly as maxrun_ok()'s contract specifies.
+        # Unknown (v0.1.0 firmware / sim) returns True, so behavior is unchanged
+        # unless a desync is positively known. Safe direction = refuse.
+        want_arm = self.fsm.state not in DISARMED_STATES
+        if want_arm:
+            mr_ok = self.link.maxrun_ok()
+            if not mr_ok and not self._maxrun_refused:
+                log.error("L%s: REFUSING to arm — firmware maxrun_ms=%s is below the "
+                          "FSM's MAX_MOTION_S (constants desynchronized; reconcile + "
+                          "reflash before arming)", self.cfg.lane, self.link.maxrun_ms())
+            elif mr_ok and self._maxrun_refused:
+                log.info("L%s: max-run ceiling reconciled — arm no longer refused",
+                         self.cfg.lane)
+            self._maxrun_refused = not mr_ok
+            want_arm = mr_ok
+        self.io.arm(want_arm)
         self._observe()                       # instrumentation (idea #10/#15): never affects control
 
     # ---- instrumentation (OBSERVE-ONLY; idea #10 flight recorder + #15 cam timing) --
@@ -321,6 +359,13 @@ class BoardController:
             # 3) cycle boundary: arriving back at READY finalizes the cycle's intervals
             if new is State.READY and prev not in (State.MANUAL_INTERVENTION, State.POWER_OFF):
                 self.telemetry.end_cycle()
+            # 3b) aborted cycle: a FAULT / safety trip / power-off abandons the
+            # cycle mid-flight, and its recovery path (MANUAL_INTERVENTION ->
+            # READY) is excluded from end_cycle above — discard the open
+            # intervals WITHOUT folding, so a stale 'ball' timestamp can't fold
+            # a minutes-long garbage sample into the drift baselines (observe-only).
+            elif new in (State.FAULT, State.MANUAL_INTERVENTION, State.POWER_OFF):
+                self.telemetry.abort_cycle()
             # 4) FAULT entry: dump the black box (best-effort)
             if new is State.FAULT and prev is not State.FAULT:
                 self._on_safety_trip("fsm_fault")
@@ -329,9 +374,13 @@ class BoardController:
 
     def _on_safety_trip(self, reason):
         """Flush the flight recorder on a safety trip / fault. Best-effort, bounded,
-        never raises. Captures FSM state + the firmware fault for the dump context."""
+        never raises. Captures FSM state + the firmware fault for the dump context.
+        dump_async (review #21/#54): the snapshot copy happens here (microseconds);
+        the disk write runs on a writer thread — an SD-card stall during one
+        board's dump must not freeze the shared tick loop (the OTHER lane's cam
+        dispatch, fsm.poll() backstops and NE555 kick)."""
         try:
-            self.recorder.dump(reason=reason, extra={
+            self.recorder.dump_async(reason=reason, extra={
                 "fsm_state": getattr(self.fsm.state, "value", "?"),
                 "fsm_cycle": getattr(getattr(self.fsm, "cycle", None), "value", None),
                 "fsm_ball": getattr(getattr(self.fsm, "ball", None), "name", None),
@@ -344,7 +393,14 @@ class BoardController:
 
     # ---- shutdown ----------------------------------------------------------
     def safe_off(self):
+        # FIRST: force the NE555 kick pin LOW (review #26). _kick_wdog is
+        # on() -> sleep -> off(); if the exception that tripped this board fired
+        # between on() and off() (the same GPIO-write fault class that exhausts
+        # the error budget), the pad latches HIGH and level-holds the NE555
+        # alive forever — a tripped board inside a still-running daemon never
+        # reaches controller_cleanup.py, so this is the only place to drop it.
         for step in (
+            lambda: self._wdog.off() if self._wdog is not None else None,
             lambda: self.io.arm(False),
             lambda: self.io.all_off() if hasattr(self.io, "all_off") else None,
             self.link.stop_all,
@@ -357,8 +413,13 @@ class BoardController:
 
 
 def run(boards, hz: float = 50.0):
+    """Tick loop. Returns the process exit code: 0 on an operator stop
+    (SIGTERM/SIGINT), 1 when ALL boards safety-tripped — the unit is
+    Restart=on-failure, so only a NONZERO exit gets the promised systemd
+    restart (review #27; matches the D3 zero-boards return 1)."""
     period = 1.0 / hz
     stop = {"flag": False}
+    rc = 0
 
     def _sig(_signum, _frame):
         stop["flag"] = True
@@ -397,7 +458,9 @@ def run(boards, hz: float = 50.0):
                         b.failed = True
                         b.safe_off()
             if all(b.failed for b in boards):
-                log.error("ALL boards safety-tripped -> exiting (systemd restarts)")
+                log.error("ALL boards safety-tripped -> exiting 1 "
+                          "(Restart=on-failure restarts only on nonzero)")
+                rc = 1
                 break
             dt = time.monotonic() - t0
             if dt < period:
@@ -407,6 +470,14 @@ def run(boards, hz: float = 50.0):
         log.info("controller_daemon shutting down -> safe-off all boards")
         for b in boards:
             b.safe_off()
+        # After safe-off: give any in-flight async black-box writers a moment to
+        # land before the process (and its daemon threads) dies. Observe-only.
+        for b in boards:
+            try:
+                b.recorder.flush(timeout=2.0)
+            except Exception:
+                pass
+    return rc
 
 
 def _build_boards(configs):
@@ -449,8 +520,7 @@ def main(argv=None):
         log.error("ZERO boards came up (requested lanes=%s) -> exiting 1",
                   [c.lane for c in configs])
         return 1
-    run(boards, hz=args.hz)
-    return 0
+    return run(boards, hz=args.hz)   # nonzero on all-boards-tripped (review #27)
 
 
 # --------------------------------------------------------------------------
@@ -539,6 +609,16 @@ def _selftest():
     bc.link.feed_line('{"ev":"hb","ok":1}'); bc.tick()              # PBZ released (edge re-arms)
     bc.io.slow["PBZ"] = True; bc.tick(); bc.io.slow["PBZ"] = False
     chk(bc.fsm.state is State.READY and bc.io.armed is True, "second PBZ -> READY + armed")
+
+    # --- review #30: a KNOWN firmware/FSM max-run desync must REFUSE to arm ---
+    bc2 = BoardController(BoardConfig(21, 1, "sim", 0, 0), sim=True)
+    bc2.link.feed_line('{"ev":"boot","fw":"test","maxrun_ms":1000}')   # << MAX_MOTION_S
+    bc2.link.feed_line('{"ev":"hb","ok":1}')
+    bc2.io.slow["PBZ"] = True; bc2.tick(); bc2.io.slow["PBZ"] = False
+    chk(bc2.fsm.state is State.READY, "(setup) maxrun-desync rig reaches READY")
+    bc2.link.feed_line('{"ev":"hb","ok":1}'); bc2.tick()
+    chk(bc2.io.armed is False,
+        "maxrun desync (fw 1000ms < FSM MAX_MOTION_S) REFUSES to arm despite READY")
 
     print(f"\n{n['c'] - n['f']}/{n['c']} checks passed" + ("  <<< FAILURES" if n["f"] else ""))
     return 1 if n["f"] else 0

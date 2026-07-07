@@ -312,11 +312,26 @@ def replay_fixture(name, lane_id=21):
 # ── selftest ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     regen = "--write" in sys.argv or os.environ.get("TRACE_REPLAY_WRITE")
-    if regen or not (FIXTURES / "trace_strike.json").exists():
+    if regen:
         paths = write_fixtures()
         print(f"wrote {len(paths)} golden fixtures:")
         for p in paths:
             print(f"  {p}")
+
+    # A missing golden is a hard FAILURE, never an auto-regen: regenerating from
+    # the live FSM and then "verifying" the FSM against the just-written fixture
+    # is a guaranteed self-blessing pass — a checkout/packaging problem (or an
+    # FSM regression plus a deleted fixture) would silently defeat the tripwire.
+    missing = [n for n in _BUILDERS if not (FIXTURES / f"trace_{n}.json").exists()]
+    if missing:
+        print("FAIL missing golden fixture(s): "
+              + ", ".join(f"trace_{n}.json" for n in missing))
+        print(f"     expected in: {FIXTURES}")
+        print("     Goldens are checked in and must come from the repo — this")
+        print("     selftest will NOT regenerate them. If you deliberately intend")
+        print("     to re-freeze current FSM behavior as the new golden, run:")
+        print("         py -3 lane_node/trace_replay.py --write")
+        sys.exit(1)
 
     fails = []
     for name in _BUILDERS:

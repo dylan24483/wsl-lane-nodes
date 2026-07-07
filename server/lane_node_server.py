@@ -147,14 +147,31 @@ class Msg:
 # physical sensors (AL-ZARD foul circuit vs DIELL ball-detect).
 pending_foul: dict = {}
 
-# Duplicate-ball suppression window (seconds). Pin scatter / sensor chatter
-# can re-trigger DIELL for the SAME physical ball; the node suppresses
-# camera-mode duplicates in-flight, and this server-side window covers the
-# residual paths (manual mode at the node's default 0.2s lockout, and a
-# possible redelivery from the node's transactional re-queue after a WS
-# drop). DEFAULT 0 = DISABLED (current behavior, bench-gate rule). At
-# cutover set LANE_BALL_DEDUP_S=8 to mirror the 82-70's own full-cycle
-# ball-detect masking — bench-confirm against the real machine cycle time.
+# Duplicate-ball suppression window (seconds).
+#
+# ============================ BALL-DEDUP STORY ============================
+# (one comment block, repeated in each layer — review 2026-06-27 finding 39:
+# three uncoordinated knobs is a cutover hazard. Same block lives in
+# lane_node/lane_node.py and firmware/rp2040/config.h.)
+#
+#   WSL_LANE_BALL_LOCKOUT_S (lane_node.py, default 0.2 s) is the
+#   AUTHORITATIVE Track-A ball-dedup window — phantom-ball masking (scatter/
+#   sweep re-breaking a beam) belongs THERE, at the sensor. ⚠️ AT CUTOVER SET
+#   WSL_LANE_BALL_LOCKOUT_S=8 on every node.
+#
+#   LANE_BALL_DEDUP_S (THIS knob, default 0 = DISABLED) is a delivery-dedup
+#   BACKSTOP, not the primary mask: it covers what the node lockout cannot
+#   see — a redelivery from the node's transactional re-queue after a WS
+#   drop, and manual mode running at the node's bench-default 0.2 s. Set it
+#   to 8 at cutover as well (bench-confirm against the real cycle time),
+#   but do NOT treat it as a substitute for the node knob.
+#
+#   BALL_LOCKOUT_MS (RP2040 firmware, 300 ms) is Track-B only (L/R pair
+#   coalesce feeding the cycle FSM); it never touches this path.
+#
+# The effective windows are logged at startup on both node and server —
+# check those two lines at cutover instead of trusting env-var memory.
+# ==========================================================================
 # A suppressed duplicate is logged and gets NO record_ball and NO second
 # CYCLE pulse (fail-safe direction: fewer relay actuations).
 try:
@@ -1116,6 +1133,17 @@ async def main():
             "UNAUTHENTICATED: any LAN device can cycle/power the pinsetters. "
             "Set LANE_NODE_TOKEN (same value on this server, every Pi "
             "lane-node, and wsl_api.py's mirror) to enable auth.")
+    # Cutover checklist line (finding 39): the server-side delivery-dedup
+    # BACKSTOP. The AUTHORITATIVE phantom-ball mask is WSL_LANE_BALL_LOCKOUT_S
+    # on the nodes — see the BALL-DEDUP STORY block above BALL_DEDUP_WINDOW_S.
+    if BALL_DEDUP_WINDOW_S <= 0:
+        log.warning("Ball-dedup: LANE_BALL_DEDUP_S disabled (bench default — "
+                    "no server-side duplicate-ball backstop; set 8 at cutover, "
+                    "and WSL_LANE_BALL_LOCKOUT_S=8 on every node)")
+    else:
+        log.info(f"Ball-dedup: LANE_BALL_DEDUP_S={BALL_DEDUP_WINDOW_S}s "
+                 f"(delivery-dedup backstop; the authoritative window is "
+                 f"WSL_LANE_BALL_LOCKOUT_S on the nodes)")
     threading.Thread(target=http_thread, daemon=True).start()
     log.info("HTTP display + desk simulator: http://0.0.0.0:8766")
     log.info("WebSocket: ws://0.0.0.0:8765")

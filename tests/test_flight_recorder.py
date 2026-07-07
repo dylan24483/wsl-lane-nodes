@@ -395,6 +395,7 @@ from cycle_control_8270 import MAX_MOTION_S
 bc.io.advance(MAX_MOTION_S + 1.0)
 bc.link.feed_line('{"ev":"hb","ok":1}'); bc.tick()       # poll backstop -> FAULT -> observe() dumps
 check(bc.fsm.state.value == "fault", "stuck motion faults (setup)")
+bc.recorder.flush()   # daemon dumps via dump_async (review #21/#54) — join the writer first
 dumps = [n for n in os.listdir(bc.recorder._dump_dir) if "fsm_fault" in n]
 check(len(dumps) >= 1, "FSM FAULT triggered a flight-recorder dump file")
 with open(os.path.join(bc.recorder._dump_dir, dumps[0]), encoding="utf-8") as f:

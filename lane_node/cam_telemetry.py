@@ -63,6 +63,12 @@ MIN_SAMPLES_FOR_ALARM = 30
 MIN_ABS_DRIFT_S = 0.15
 # Recent-sample window per interval (bounded; for p-stats / a trend endpoint).
 RECENT_WINDOW = 200
+# Hard sanity bound on a single interval sample (seconds). A stale open-interval
+# start (e.g. a cycle aborted by a FAULT/safety trip that end_cycle never
+# finalized) can measure a minutes-long "interval"; ONE such garbage sample
+# inflates the cumulative Welford variance enough to blind the sigma drift alarm
+# for hundreds of cycles. No real 82-70 interval approaches this bound.
+MAX_SAMPLE_S = float(os.environ.get("WSL_CAM_TELEMETRY_MAX_SAMPLE_S", "60.0"))
 
 # The interval set: (name, start_event, end_event). Each is measured from the FIRST
 # occurrence of start_event after a cycle reset to the FIRST occurrence of end_event.
@@ -188,8 +194,14 @@ class CamTelemetry:
                 start_ev = self._interval_start(name)
                 if name not in self._durations and start_ev in self._open:
                     dt = t - self._open[start_ev]
-                    if dt >= 0:                      # ignore inverted/duplicate edges
+                    if 0 <= dt <= MAX_SAMPLE_S:      # ignore inverted/duplicate edges
                         self._durations[name] = dt
+                    elif dt > MAX_SAMPLE_S:
+                        # stale start (aborted cycle leftovers) — never fold
+                        # garbage into the baseline (see MAX_SAMPLE_S above)
+                        log.debug("CamTelemetry L%s: %s=%.1fs > %.0fs sanity bound "
+                                  "-- sample dropped (stale start?)",
+                                  self.lane, name, dt, MAX_SAMPLE_S)
             # open intervals that START on this event (first occurrence wins)
             if event in self._starts_on and event not in self._open:
                 self._open[event] = t
@@ -233,6 +245,23 @@ class CamTelemetry:
             except Exception:
                 pass
             return {}
+
+    def abort_cycle(self):
+        """Abandon the current cycle WITHOUT folding anything into the baselines.
+
+        Call on any transition into FAULT / MANUAL_INTERVENTION / POWER_OFF: the
+        cycle's open-interval start timestamps go stale the moment the machine
+        stops mid-cycle, and the next real ball would otherwise measure e.g.
+        ss_to_guard from the PRE-FAULT ball ('first occurrence wins' in on_event)
+        — a minutes-long garbage sample that permanently blinds the sigma drift
+        alarm. Observe-only, bounded, never raises."""
+        if not self.enabled:
+            return
+        try:
+            self._reset_cycle()
+        except Exception:
+            log.debug("CamTelemetry L%s: abort_cycle swallowed", self.lane,
+                      exc_info=True)
 
     def _check_drift(self, name, dt, base):
         if not self.alarm_enabled or base.n < MIN_SAMPLES_FOR_ALARM:
@@ -306,5 +335,27 @@ if __name__ == "__main__":
     bl = tel.baselines()
     assert bl["ss_to_guard"]["n"] == 60, bl
     assert abs(bl["ss_to_guard"]["mean"] - 0.60) < 1e-3, bl
+
+    # abort_cycle: a FAULT mid-cycle discards the open intervals — the next real
+    # cycle measures from ITS OWN ball, not the stale pre-fault one.
+    tel.on_event("ball", t)                     # cycle starts...
+    tel.abort_cycle()                           # ...FAULT/safety trip -> abandoned
+    t += 300.0                                  # dead time in MANUAL_INTERVENTION
+    tel.on_event("ball", t)
+    tel.on_event("cam:SB", t + 0.60)
+    d = tel.end_cycle()
+    assert abs(d["ss_to_guard"] - 0.60) < 1e-6, d
+    bl = tel.baselines()
+    assert bl["ss_to_guard"]["max"] < 1.0, bl   # the stale 300s start never folded
+
+    # MAX_SAMPLE_S backstop: a garbage-long sample is rejected even without abort.
+    t += 20.0
+    tel.on_event("ball", t)
+    tel.on_event("cam:SB", t + 400.0)           # > MAX_SAMPLE_S sanity bound
+    d = tel.end_cycle()
+    assert "ss_to_guard" not in d, d
+    bl = tel.baselines()
+    assert bl["ss_to_guard"]["max"] < 1.0, bl
+
     print("cam_telemetry smoke OK; baselines:", {k: v["mean"] for k, v in bl.items()})
     sys.exit(0)

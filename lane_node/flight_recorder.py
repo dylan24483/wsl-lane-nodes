@@ -68,9 +68,14 @@ class FlightRecorder:
     Args:
       lane:      lane id (stamped into every dump filename + payload).
       capacity:  ring size (entries). Bounded; default DEFAULT_CAPACITY.
-      dump_dir:  directory for dump files. Created lazily on first dump. Default
-                 platform log dir (/var/log/lane-node on the Pi) with a temp-dir
-                 fallback so a missing/again-unwritable path never raises.
+      dump_dir:  directory for dump files. Created lazily on first dump. When
+                 omitted, the default (/var/log/lane-node on the Pi) may FALL
+                 BACK at dump time to a per-user writable dir (~/.local/state/
+                 lane-node, then <tmp>/lane-node) with a loud one-time warning —
+                 the default dir is root-owned on a stock Pi while the daemon
+                 runs as User=pi, and silently dropping every black-box dump
+                 defeats the recorder's purpose. An EXPLICIT dump_dir is honored
+                 strictly (unwritable -> dump dropped with an error log).
       enabled:   None -> read the env kill-switch (default ON); True/False forces.
       now:       monotonic clock (injectable for tests).
       max_dumps: retain at most this many dump files (oldest pruned). Bounded disk.
@@ -83,7 +88,9 @@ class FlightRecorder:
         self.enabled = _enabled_from_env() if enabled is None else bool(enabled)
         self._now = now or time.monotonic
         self.max_dumps = int(max_dumps) if max_dumps and int(max_dumps) > 0 else DEFAULT_MAX_DUMPS
+        self._explicit_dir = dump_dir is not None   # explicit dir = no fallback
         self._dump_dir = dump_dir or self._default_dump_dir()
+        self._writers = []        # live dump_async writer threads (joined by flush())
 
         # The ring. deque(maxlen=cap) gives O(1) append + automatic eviction of the
         # oldest entry — no manual bookkeeping, no unbounded growth.
@@ -149,19 +156,105 @@ class FlightRecorder:
     # ---- dump-on-trigger --------------------------------------------------
     def dump(self, reason="fault", extra=None):
         """Flush the ring to a timestamped JSON file. Best-effort: returns the
-        written path on success, or None on any failure (and NEVER raises). Safe to
-        call from a FAULT transition, the daemon's safe-off/disarm path, or an
-        exception handler.
+        written path on success, or None on any failure (and NEVER raises).
+
+        SYNCHRONOUS — the disk write runs on the CALLER's thread. Fine for
+        CLIs, tests and shutdown paths; the daemon's control loop must use
+        dump_async() instead (an SD-card write stall here would freeze the
+        shared 50 Hz tick loop — review #21/#54).
 
         reason: short trigger tag, baked into the filename + payload.
         extra:  optional small JSON-able dict of context (fsm_state, fw fault, etc.)
         """
         if not self.enabled:
             return None
+        return self._write_dump(self.snapshot(), reason, extra)
+
+    def dump_async(self, reason="fault", extra=None):
+        """Control-loop-safe dump (review #21/#54): copy the ring NOW (an O(cap)
+        list copy under the lock — microseconds), then serialize + write + prune
+        on a short-lived daemon writer thread. The calling thread never touches
+        the disk, so an SD-card write stall cannot delay the tick loop (which
+        would starve the OTHER board's cam dispatch, fsm.poll() backstops and
+        NE555 kick). Returns True if a writer was started, False otherwise;
+        NEVER raises. Use flush() to join outstanding writers (tests/shutdown)."""
+        if not self.enabled:
+            return False
         try:
             rows = self.snapshot()
+            t = threading.Thread(target=self._write_dump, args=(rows, reason, extra),
+                                 name=f"fr-dump-L{self.lane}", daemon=True)
+            # Track live writers (bounded: pruned on every call; dumps only fire
+            # on faults). Plain list ops — atomic enough under the GIL.
+            self._writers = [w for w in self._writers if w.is_alive()] + [t]
+            t.start()
+            return True
+        except Exception:
+            log.warning("FlightRecorder L%s: dump_async() failed (swallowed)",
+                        self.lane, exc_info=True)
+            return False
+
+    def flush(self, timeout=5.0):
+        """Join any in-flight dump_async writer threads (best-effort, bounded by
+        `timeout` total, never raises). For tests + orderly shutdown."""
+        try:
+            deadline = time.monotonic() + float(timeout)
+            for w in list(self._writers):
+                w.join(max(0.0, deadline - time.monotonic()))
+            self._writers = [w for w in self._writers if w.is_alive()]
+        except Exception:
+            pass
+
+    def _ensure_dump_dir(self):
+        """Return a usable (created + write-probed) dump dir, or None.
+
+        An EXPLICIT dump_dir is honored strictly: unwritable -> None (the
+        caller pointed at exactly one place; writing elsewhere would be a lie).
+        The DEFAULT dir (/var/log/lane-node) is root-owned on a stock Pi while
+        the daemon runs as User=pi — instead of silently dropping every
+        black-box dump (review #48), fall back to a per-user writable dir with
+        a LOUD one-time warning. The fallback sticks (self._dump_dir updates),
+        so later dumps go straight there without re-warning."""
+        primary = self._dump_dir
+        candidates = [primary]
+        if not self._explicit_dir:
+            candidates.append(os.path.join(os.path.expanduser("~"),
+                                           ".local", "state", "lane-node"))
+            import tempfile
+            candidates.append(os.path.join(tempfile.gettempdir(), "lane-node"))
+        for d in candidates:
+            try:
+                os.makedirs(d, exist_ok=True)
+                # makedirs succeeding is not enough: the dir may pre-exist
+                # root-owned. Probe with a real write.
+                probe = os.path.join(d, f".writable-{os.getpid()}.probe")
+                with open(probe, "w") as f:
+                    f.write("")
+                os.remove(probe)
+            except Exception:
+                continue
+            if d != primary:
+                log.error("FlightRecorder L%s: dump dir %s is UNWRITABLE -> falling "
+                          "back to %s (provision the primary: sudo mkdir -p %s && "
+                          "sudo chown pi:pi %s)",
+                          self.lane, primary, d, primary, primary)
+                self._dump_dir = d
+            return d
+        log.error("FlightRecorder L%s: NO writable dump dir (tried %s) — dump DROPPED",
+                  self.lane, ", ".join(candidates))
+        return None
+
+    def _write_dump(self, rows, reason, extra):
+        """Serialize + write one dump — the disk-touching half of dump() /
+        dump_async(). Runs on the caller's thread for dump() and on a writer
+        thread for dump_async(). NEVER raises; returns the path or None."""
+        try:
             wall = time.time()
-            stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(wall))
+            # Millisecond suffix: two dumps with the same reason in the same
+            # second (e.g. concurrent writer threads) must not os.replace each
+            # other away.
+            stamp = (time.strftime("%Y%m%d_%H%M%S", time.localtime(wall))
+                     + f"_{int((wall % 1.0) * 1000):03d}")
             safe_reason = "".join(c if (c.isalnum() or c in "-_") else "_"
                                   for c in str(reason))[:40] or "fault"
             fname = f"blackbox-L{self.lane}-{stamp}-{safe_reason}.json"
@@ -185,14 +278,11 @@ class FlightRecorder:
                 except Exception:
                     payload["context_error"] = "unserializable extra"
 
-            try:
-                os.makedirs(self._dump_dir, exist_ok=True)
-            except Exception:
-                log.warning("FlightRecorder L%s: dump dir %s unwritable; dump skipped",
-                            self.lane, self._dump_dir)
-                return None
+            d = self._ensure_dump_dir()
+            if d is None:
+                return None    # already logged LOUDLY by _ensure_dump_dir
 
-            path = os.path.join(self._dump_dir, fname)
+            path = os.path.join(d, fname)
             tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(payload, f, separators=(",", ":"))
@@ -203,7 +293,7 @@ class FlightRecorder:
                      self.lane, len(rows), path, reason)
             return path
         except Exception:
-            log.warning("FlightRecorder L%s: dump() failed (swallowed)", self.lane,
+            log.warning("FlightRecorder L%s: dump write failed (swallowed)", self.lane,
                         exc_info=True)
             return None
 
@@ -259,6 +349,8 @@ class _NullRecorder:
     enabled = False
     def record(self, *a, **k): pass
     def dump(self, *a, **k): return None
+    def dump_async(self, *a, **k): return False
+    def flush(self, *a, **k): pass
     def snapshot(self): return []
 
 

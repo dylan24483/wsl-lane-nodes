@@ -34,6 +34,7 @@ data" → falls back to the manual desk-score path (the safe Phase-8a default),
 never a bogus auto-score.
 """
 from __future__ import annotations
+import hashlib
 import os
 import time
 import threading
@@ -136,6 +137,13 @@ class PairCamera:
         self._cap = None          # lazy cv2.VideoCapture
         self._grabber = _grabber  # test seam: callable() -> gray ndarray | None
         self._detector = None
+        # Frozen-pipeline tracker for the OBSERVE-ONLY health/self-check grabs
+        # (SEPARATE from the scoring path's pin_detect stale gate, which the
+        # self-check deliberately bypasses): a hung camera / stale driver buffer
+        # re-serves one old frame forever, and analog capture noise makes a true
+        # byte-identical repeat impossible — so a repeat = frozen capture chain.
+        self._health_sig = None
+        self._health_repeats = 0
 
         empty = _load_gray_png(empty_ref_path) if empty_ref_path else None
         if empty is not None:
@@ -364,19 +372,30 @@ class PairCamera:
             if frame is None:
                 return None
         try:
-            mask = self._detector.detect_lane(frame, lane_id)
+            # Serialize the whole detect pass under the capture lock:
+            # detect_detail mutates shared detector state (_last_sig stale
+            # tracking, last_detail), so two concurrent detect_lane() calls
+            # (both lanes throwing within the settle window) must not
+            # interleave. The gate below reads THIS pass's returned detail —
+            # never detector.last_detail, which the other lane's pass could
+            # overwrite between our detect and the read (a low-confidence mask
+            # would then be trusted and auto-scored).
+            with self._lock:
+                detail = self._detector.detect_detail(frame)
         except Exception as e:
             log.warning(f"camera: detect_lane({lane_id}) error: {e}")
             return None
         # low-confidence gate: margins too close to DET_THR or drift out of
         # bounds → don't trust a best-guess mask; None → awaiting_manual.
-        detail = getattr(self._detector, "last_detail", None)
-        if detail and detail.get('low_confidence'):
+        if detail.get('low_confidence'):
             log.warning(f"camera: lane {lane_id} detection LOW CONFIDENCE -> "
                         f"None (awaiting_manual): "
                         + "; ".join(detail.get('reasons', [])))
             return None
-        return mask
+        for dk, ln in self.deck_to_lane.items():
+            if ln == lane_id:
+                return detail['masks'][dk]
+        return None   # unreachable: lane membership checked above
 
     def detect_both(self, frame=None):
         """Return {lane_id: mask} for both decks from one frame, or None.
@@ -392,7 +411,9 @@ class PairCamera:
             if frame is None:
                 return None
         try:
-            masks = self._detector.detect(frame)  # {'L':.., 'R':..}
+            # serialized like detect_lane: the detect pass mutates shared state
+            with self._lock:
+                masks = self._detector.detect(frame)  # {'L':.., 'R':..}
         except Exception as e:
             log.warning(f"camera: detect_both error: {e} -> None")
             return None
@@ -408,22 +429,60 @@ class PairCamera:
     # only refreshes it when WSL_CAM_AUTO_RECAL is explicitly set (a bad refresh
     # would corrupt all scoring). The daemon may call frame_health on its existing
     # heartbeat and self_check_empty after a clean cycle / full respot.
+    def _grab_health_frame(self):
+        """grab_frame() + frozen-pipeline tracking for the health/self-check paths.
+
+        Returns (frame, repeats): repeats > 0 means this grab is byte-identical
+        to the previous health/self-check grab — a frozen capture pipeline
+        (camera hang / stale driver buffer re-serving one old frame), the exact
+        failure StaleFrameError catches on the scoring path. Analog capture
+        noise makes a true repeat impossible, so even one repeat is decisive.
+        Tracked separately from the scoring _last_sig so health checks never
+        perturb scoring state."""
+        frame = self.grab_frame()
+        if frame is None:
+            return None, 0
+        sig = hashlib.sha1(frame.tobytes()).digest()
+        with self._lock:
+            if sig == self._health_sig:
+                self._health_repeats += 1
+            else:
+                self._health_sig = sig
+                self._health_repeats = 0
+            reps = self._health_repeats
+        return frame, reps
+
     def frame_health(self, frame=None):
         """Exposure/focus health of one frame, for daemon/telemetry. OBSERVE-ONLY.
 
         Returns pin_detect.frame_health(...)'s dict (mean/variance/focus/ok/reasons)
-        plus 'grabbed' (False if capture failed). Never raises: a capture failure
-        yields ok=False with a reason, so the caller can surface a dead camera the
-        same way it surfaces a bad exposure. Does NOT need a loaded empty reference
-        (health is about the live frame, not the calibration)."""
+        plus 'grabbed' (False if capture failed) and 'stale' (True if the grabbed
+        frame is byte-identical to the previous health/self-check grab — a FROZEN
+        capture pipeline re-serving one old healthy scene must not read as a
+        healthy camera, so stale also forces ok=False). Never raises: a capture
+        failure yields ok=False with a reason, so the caller can surface a dead
+        camera the same way it surfaces a bad exposure.
+
+        MONITORING NOTE: alert on grabbed=False and stale=True, not just the
+        content metrics — a dead/frozen camera shows up in those two fields.
+        Staleness is only tracked for frames grabbed HERE (frame=None); an
+        explicitly passed frame is not a capture. Does NOT need a loaded empty
+        reference (health is about the live frame, not the calibration)."""
+        stale_reps = 0
         if frame is None:
-            frame = self.grab_frame()
+            frame, stale_reps = self._grab_health_frame()
             if frame is None:
                 return {'mean': 0.0, 'variance': 0.0, 'focus': 0.0, 'ok': False,
-                        'grabbed': False,
+                        'grabbed': False, 'stale': False,
                         'reasons': ['capture failed (no cv2/PyAV frame)']}
         h = pin_detect.frame_health(frame)
         h['grabbed'] = True
+        h['stale'] = stale_reps > 0
+        if stale_reps > 0:
+            h['ok'] = False
+            h['reasons'] = list(h['reasons']) + [
+                f"frame byte-identical to the previous health/self-check grab "
+                f"(repeat #{stale_reps}) -- frozen capture pipeline?"]
         return h
 
     def self_check_empty(self, frame=None, auto_recal=None):
@@ -436,49 +495,85 @@ class PairCamera:
         threshold. OBSERVE-ONLY unless auto-recal is enabled.
 
         Returns the pin_detect verdict dict (empty_confirmed / divergence /
-        max_divergence / flagged / reason) plus:
+        max_divergence / max_spot_divergence / flagged / reason) plus:
           grabbed        bool — a frame was available
+          stale          bool — grabbed frame was byte-identical to the previous
+                                health/self-check grab (frozen capture pipeline;
+                                the check is SKIPPED — a frozen old empty frame
+                                must not confirm a dead camera as healthy)
           recalibrated   bool — the reference was refreshed (auto-recal only)
         On 'detector not ready' or capture failure returns a dict with
         empty_confirmed=False, flagged=False, grabbed=<bool>. Never raises.
+        MONITORING NOTE: alert on grabbed=False and stale=True, not just
+        flagged=True — a dead/frozen camera reports flagged=False here.
 
         AUTO-RECAL (WSL_CAM_AUTO_RECAL, default OFF): when on AND the deck is
-        confirmed empty AND the drift is flagged but still under AUTO_RECAL_MAX,
-        the live frame is persisted as the new empty reference (backup kept) and
-        the detector is rebuilt. A divergence past AUTO_RECAL_MAX is too large to
-        be benign drift — it is logged and REFUSED, leaving the reference for a
-        human to re-capture. Default OFF means the production behavior is
-        flag-only; nothing auto-updates without the operator opting in."""
+        confirmed empty AND the drift is flagged but still under AUTO_RECAL_MAX
+        — BOTH the per-deck mean AND every single spot's |divergence| (a single
+        corrupted cap ROI dilutes 10x into the mean but would poison the
+        reference with a permanent phantom pin) — AND a SECOND independent grab
+        re-confirms all of the above, the confirmed frame is persisted as the
+        new empty reference (backups rotated) and the detector is rebuilt.
+        A divergence past AUTO_RECAL_MAX is too large to be benign drift — it is
+        logged and REFUSED, leaving the reference for a human to re-capture.
+        Default OFF means the production behavior is flag-only; nothing
+        auto-updates without the operator opting in.
+
+        KNOWN LIMIT (documented, not fully fixable here): emptiness is judged
+        through the SAME stored reference being checked, so a misaligned/bumped
+        camera whose standing pins sample off-cap can still read 'empty'. When
+        the daemon wiring lands, callers must add a non-self-referential
+        machine-state gate (only call this in the FSM's post-sweep/full-respot
+        known-empty window).  # CONFIRM daemon wiring"""
         recal = AUTO_RECAL if auto_recal is None else bool(auto_recal)
         if not self.ready:
             return {'empty_confirmed': False, 'divergence': {}, 'max_divergence': 0.0,
-                    'flagged': False, 'grabbed': False, 'recalibrated': False,
+                    'flagged': False, 'grabbed': False, 'stale': False,
+                    'recalibrated': False,
                     'reason': 'detector not ready (no empty reference) -- self-check skipped'}
         if frame is None:
-            frame = self.grab_frame()
+            frame, stale_reps = self._grab_health_frame()
             if frame is None:
                 return {'empty_confirmed': False, 'divergence': {},
                         'max_divergence': 0.0, 'flagged': False, 'grabbed': False,
-                        'recalibrated': False,
+                        'stale': False, 'recalibrated': False,
                         'reason': 'capture failed -- self-check skipped'}
-        with self._lock:
-            detector = self._detector
+            if stale_reps > 0:
+                # Frozen capture pipeline: an old empty frame re-served forever
+                # would read 'empty reference healthy' — the exact slow failure
+                # this check exists to catch. Skip; never confirm or recal.
+                log.warning("camera: self_check_empty frame byte-identical to the "
+                            "previous health/self-check grab (repeat #%d) -- "
+                            "frozen capture pipeline? Self-check skipped.", stale_reps)
+                return {'empty_confirmed': False, 'divergence': {},
+                        'max_divergence': 0.0, 'flagged': False, 'grabbed': True,
+                        'stale': True, 'recalibrated': False,
+                        'reason': 'frame byte-identical to the previous grab '
+                                  '(frozen capture pipeline?) -- self-check skipped'}
         try:
-            verdict = detector.check_empty_reference(frame)
+            # Serialize the detection pass: check_empty_reference mutates shared
+            # detector state (last_detail save/restore), and a concurrent scored
+            # detect_lane() pass must not interleave with it (see detect_lane).
+            with self._lock:
+                verdict = self._detector.check_empty_reference(frame)
         except pin_detect.FrameError as e:
             return {'empty_confirmed': False, 'divergence': {}, 'max_divergence': 0.0,
-                    'flagged': False, 'grabbed': True, 'recalibrated': False,
+                    'flagged': False, 'grabbed': True, 'stale': False,
+                    'recalibrated': False,
                     'reason': f'frame unusable for self-check ({e})'}
         except Exception as e:
             log.warning(f"camera: self_check_empty error: {e}")
             return {'empty_confirmed': False, 'divergence': {}, 'max_divergence': 0.0,
-                    'flagged': False, 'grabbed': True, 'recalibrated': False,
+                    'flagged': False, 'grabbed': True, 'stale': False,
+                    'recalibrated': False,
                     'reason': f'self-check error ({e})'}
         verdict = dict(verdict)
         verdict.pop('detail', None)   # drop the heavy nested dict for telemetry
         verdict['grabbed'] = True
+        verdict['stale'] = False
         verdict['recalibrated'] = False
         if verdict['flagged']:
+            spot_max = verdict.get('max_spot_divergence')
             if not recal:
                 log.warning("camera: empty-reference drift FLAGGED (auto-recal OFF): %s",
                             verdict['reason'])
@@ -486,9 +581,69 @@ class PairCamera:
                 log.error("camera: empty-reference drift %.2f exceeds AUTO_RECAL_MAX "
                           "%.2f -- REFUSING auto-recal, re-capture manually: %s",
                           verdict['max_divergence'], AUTO_RECAL_MAX, verdict['reason'])
+            elif spot_max is None or spot_max > AUTO_RECAL_MAX:
+                # PER-SPOT cap: max_divergence is a per-deck MEAN over 10 pins,
+                # so a single corrupted cap ROI (~65-99 gray: shadow, grease,
+                # sweep-board edge) dilutes to a mean under the cap yet would
+                # bake a permanent phantom pin into the reference. EVERY spot
+                # must be under the cap; an unknown per-spot value refuses
+                # (fail toward safe: reference kept for a human).
+                log.error("camera: empty-reference drift has a single-spot "
+                          "divergence %s exceeding AUTO_RECAL_MAX %.2f -- REFUSING "
+                          "auto-recal (localized corruption, not benign drift); "
+                          "re-capture manually: %s",
+                          "?" if spot_max is None else f"{spot_max:.2f}",
+                          AUTO_RECAL_MAX, verdict['reason'])
             else:
-                verdict['recalibrated'] = self._auto_recalibrate(frame, verdict)
+                confirm, why = self._confirm_empty_for_recal(frame)
+                if confirm is None:
+                    log.error("camera: auto-recal REFUSED (confirmation grab): %s "
+                              "-- keeping the current reference", why)
+                else:
+                    verdict['recalibrated'] = self._auto_recalibrate(confirm, verdict)
         return verdict
+
+    def _confirm_empty_for_recal(self, first_frame):
+        """Second, independent confirmation grab before an auto-recal persists.
+
+        The empty gate in check_empty_reference is SELF-REFERENTIAL (it re-reads
+        the same possibly-drifted reference) and no machine-state signal is wired
+        yet, so before rewriting the reference we require a SECOND live grab that
+        (a) is not byte-identical to the first (frozen-pipeline guard), (b)
+        independently re-confirms empty + the drift flag, and (c) stays under
+        both the per-deck and per-spot AUTO_RECAL_MAX caps. Returns (frame2, '')
+        on success or (None, reason) — any doubt refuses the recal, keeping the
+        current reference (the safe direction). Note: a caller that passed an
+        explicit frame with no live capture backend will always refuse here —
+        auto-recal requires a live camera by design.
+
+        WHAT THIS STILL CANNOT GUARANTEE: both grabs judge emptiness through the
+        SAME stored reference, so a misaligned/bumped camera whose standing pins
+        sample off-cap can still read 'empty'. A non-self-referential gate (FSM
+        post-sweep known-empty window / operator attestation) must come from the
+        daemon wiring when it lands.  # CONFIRM daemon wiring
+        """
+        frame2 = self.grab_frame()
+        if frame2 is None:
+            return None, "no confirmation frame (capture failed)"
+        first_gray = pin_detect._to_gray(first_frame)
+        if first_gray.shape == frame2.shape and np.array_equal(first_gray, frame2):
+            return None, ("confirmation frame byte-identical to the first "
+                          "(frozen capture pipeline?)")
+        try:
+            with self._lock:
+                v2 = self._detector.check_empty_reference(frame2)
+        except Exception as e:
+            return None, f"confirmation self-check failed ({e})"
+        if not v2.get('empty_confirmed'):
+            return None, "confirmation grab did not re-confirm an empty deck"
+        if not v2.get('flagged'):
+            return None, "confirmation grab did not reproduce the drift flag"
+        spot_max2 = v2.get('max_spot_divergence')
+        if (v2.get('max_divergence', float('inf')) > AUTO_RECAL_MAX
+                or spot_max2 is None or spot_max2 > AUTO_RECAL_MAX):
+            return None, "confirmation grab exceeded an AUTO_RECAL_MAX cap"
+        return frame2, ""
 
     def _auto_recalibrate(self, frame, verdict):
         """Persist `frame` as the new empty reference + rebuild the detector.
@@ -506,6 +661,11 @@ class PairCamera:
             if os.path.exists(path):
                 try:
                     import shutil
+                    if os.path.exists(path + ".bak"):
+                        # rotate one extra generation: a repeated auto-recal must
+                        # not destroy the last-known-good backup by overwriting
+                        # .bak with a newer (possibly already-poisoned) reference.
+                        shutil.copy2(path + ".bak", path + ".bak2")
                     shutil.copy2(path, path + ".bak")
                 except Exception as e:
                     log.warning(f"camera: auto-recal backup failed ({e}); overwriting")
@@ -618,10 +778,18 @@ def _selftest():
     ref_path = os.path.join(tmpdir, "empty_ref.png")
     Image.fromarray(empty).save(ref_path)
 
-    # injected grabber returns whatever frame we stage next.
+    # injected grabber returns whatever frame we stage next, plus fresh per-grab
+    # noise: real analog capture never repeats byte-identically, and the noise
+    # keeps the frozen-pipeline guard quiet on this production-faithful path
+    # (the guard itself is tested with a constant grabber further down).
     staged = {'frame': empty.astype(np.float32)}
+
+    def _noisy_grab():
+        f = staged['frame']
+        return f + rng.normal(0.0, 0.3, f.shape).astype(np.float32)
+
     cam = PairCamera(empty_ref_path=ref_path, deck_to_lane={'L': 21, 'R': 22},
-                     _grabber=lambda: staged['frame'])
+                     _grabber=_noisy_grab)
     assert cam.ready, "detector should be ready from the saved empty ref"
 
     # frame_health: textured empty frame is healthy; a black frame is not.
@@ -640,6 +808,8 @@ def _selftest():
     v_ok = cam.self_check_empty()
     assert v_ok['empty_confirmed'] and not v_ok['flagged'], v_ok
     assert 'detail' not in v_ok, "telemetry verdict should drop the heavy detail dict"
+    assert v_ok.get('max_spot_divergence') is not None, v_ok
+    assert v_ok['stale'] is False, v_ok
 
     # drifted empty (cap ROIs locally brighter, drift band untouched): flagged,
     # but with auto-recal OFF the reference is NOT rewritten.
@@ -669,7 +839,29 @@ def _selftest():
         "refused auto-recal must NOT rewrite the reference"
     assert not os.path.exists(ref_path + ".bak"), "refused auto-recal must not back up"
 
-    # auto-recal ON, divergence UNDER AUTO_RECAL_MAX → recalibrate (ref rewritten).
+    # PER-SPOT cap: ONE cap darkened ~-80 dilutes the per-deck MEAN to ~8 (under
+    # AUTO_RECAL_MAX=10) while that spot still reads confidently 'down' — the old
+    # mean-only cap would recalibrate and bake a permanent phantom pin into the
+    # reference. The per-spot cap must REFUSE.
+    corrupt = empty.astype(np.float32).copy()
+    xs, ys = pin_detect.PIN_SPOTS_PX['L'][5]
+    ccx = int(round(xs)); ccy = int(round(ys + pin_detect.CAP_DY))
+    chx, chy = pin_detect.CAP_HALF
+    corrupt[ccy-chy:ccy+chy, ccx-chx:ccx+chx] = np.clip(
+        corrupt[ccy-chy:ccy+chy, ccx-chx:ccx+chx] - 80.0, 0, 255)
+    staged['frame'] = corrupt
+    v_spot = cam.self_check_empty(auto_recal=True)
+    assert v_spot['empty_confirmed'] and v_spot['flagged'], v_spot
+    assert v_spot['max_divergence'] <= AUTO_RECAL_MAX, v_spot      # the mean dilutes...
+    assert v_spot['max_spot_divergence'] > AUTO_RECAL_MAX, v_spot  # ...the spot does not
+    assert not v_spot['recalibrated'], v_spot
+    assert np.array_equal(before, _load_gray_png(ref_path)), \
+        "per-spot-capped auto-recal must NOT rewrite the reference"
+    assert not os.path.exists(ref_path + ".bak"), "refused auto-recal must not back up"
+
+    # auto-recal ON, divergence UNDER AUTO_RECAL_MAX → recalibrate (ref rewritten
+    # only after a second, non-identical confirmation grab re-confirms it).
+    staged['frame'] = drift
     v_recal = cam.self_check_empty(auto_recal=True)   # same drift, default cap
     assert v_recal['recalibrated'], v_recal
     after = _load_gray_png(ref_path)
@@ -695,6 +887,37 @@ def _selftest():
     assert not cam_nr.ready
     v_nr = cam_nr.self_check_empty()
     assert (not v_nr['empty_confirmed']) and (not v_nr['flagged']), v_nr
+
+    # FROZEN-PIPELINE detection: a constant grabber re-serves byte-identical
+    # frames (impossible on real analog capture ⇒ frozen capture chain). The
+    # health check must go ok=False/stale, the self-check must SKIP (never
+    # 'empty reference healthy'), and a frozen CONFIRMATION grab must refuse
+    # an otherwise-valid auto-recal.
+    ref2 = os.path.join(tmpdir, "empty_ref_frozen.png")
+    Image.fromarray(empty).save(ref2)
+    frozen = {'frame': empty.astype(np.float32)}
+    camf = PairCamera(empty_ref_path=ref2, deck_to_lane={'L': 21, 'R': 22},
+                      _grabber=lambda: frozen['frame'].copy())
+    h1 = camf.frame_health()
+    assert h1['ok'] and not h1['stale'], h1
+    h2 = camf.frame_health()                    # identical bytes -> stale, not ok
+    assert (not h2['ok']) and h2['stale'] and h2['grabbed'], h2
+    assert any('frozen' in r for r in h2['reasons']), h2
+    v_frozen = camf.self_check_empty(auto_recal=True)   # still identical -> skip
+    assert v_frozen['stale'] and v_frozen['grabbed'], v_frozen
+    assert (not v_frozen['empty_confirmed']) and (not v_frozen['flagged']) \
+        and (not v_frozen['recalibrated']), v_frozen
+    frozen['frame'] = empty.astype(np.float32) + 0.5    # fresh bytes clear the tracker
+    h3 = camf.frame_health()
+    assert h3['ok'] and not h3['stale'], h3
+    # frozen CONFIRMATION grab: first self-check grab of the drift frame passes
+    # every gate, but the confirmation grab re-serves the same bytes -> REFUSE.
+    frozen['frame'] = drift.astype(np.float32)
+    v_conf = camf.self_check_empty(auto_recal=True)
+    assert v_conf['flagged'] and not v_conf['stale'], v_conf
+    assert not v_conf['recalibrated'], v_conf
+    assert np.array_equal(empty.astype(np.float32), _load_gray_png(ref2)), \
+        "frozen confirmation grab must NOT rewrite the reference"
 
     import shutil as _sh
     _sh.rmtree(tmpdir, ignore_errors=True)

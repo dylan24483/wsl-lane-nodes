@@ -267,13 +267,33 @@ async def _settle_capture_emit(lane_id):
 # the inter-sensor delay (a 20mph ball traverses the kickback in ~5ms) but
 # well below typical between-balls interval (>1 second).
 #
-# ⚠️ 0.2s only de-dupes the left/right beam PAIR. Pin scatter and table/sweep
-# motion can re-break a beam SECONDS after the real ball — the 82-70 itself
-# masks its ball-detect for the full machine cycle (~8-10s). At cutover set
-# WSL_LANE_BALL_LOCKOUT_S=8 (or similar, bench-confirm against the real cycle
-# time) so scatter retriggers can't record phantom balls. Default stays 0.2
-# = current behavior (bench rigs fire rapid simulated balls). Camera mode is
-# ADDITIONALLY guarded by _capture_in_flight below, regardless of this value.
+# ============================ BALL-DEDUP STORY ============================
+# (one comment block, repeated in each layer — review 2026-06-27 finding 39:
+# three uncoordinated knobs is a cutover hazard. Same block lives in
+# server/lane_node_server.py and firmware/rp2040/config.h.)
+#
+#   WSL_LANE_BALL_LOCKOUT_S (THIS knob, default 0.2 s) is the AUTHORITATIVE
+#   Track-A ball-dedup window — the ONLY knob that masks phantom balls
+#   (scatter/sweep re-breaking a beam seconds after the real ball; the 82-70
+#   itself masks ball-detect for its full ~8-10 s cycle). ⚠️ AT CUTOVER SET
+#   WSL_LANE_BALL_LOCKOUT_S=8 (bench-confirm against the real cycle time).
+#   Default stays 0.2 (= L/R pair coalesce only) so bench rigs can fire
+#   rapid simulated balls. Camera mode is ADDITIONALLY guarded by
+#   _capture_in_flight below, regardless of this value.
+#
+#   LANE_BALL_DEDUP_S (server, default 0 = off) is NOT a substitute: it is a
+#   delivery-dedup BACKSTOP for paths this lockout cannot see (the node's
+#   transactional re-queue redelivering an already-emitted event after a WS
+#   drop). Set it too at cutover, but the cycle mask lives HERE.
+#
+#   BALL_LOCKOUT_MS (RP2040 firmware, 300 ms) is Track-B only: it coalesces
+#   the L/R beam pair feeding the cycle FSM and has no effect on this path.
+#   At Track-B/scoring unification the FSM's ball-accept decision must
+#   become the single source of truth (finding 39 fix).
+#
+# The effective windows are logged at startup on both node and server —
+# check those two lines at cutover instead of trusting env-var memory.
+# ==========================================================================
 _ball_detect_lockout: dict = {lane_id: 0.0 for lane_id in LANES}
 try:
     BALL_DETECT_LOCKOUT_S = float(os.environ.get("WSL_LANE_BALL_LOCKOUT_S", "0.2"))
@@ -417,15 +437,33 @@ async def pulse(lane_id, times, on_ms, off_ms):
     finally:
         relay.off()
 
-# Per-lane command concurrency. The default (False) preserves the original
-# single-loop behavior EXACTLY: one command runs to completion before the next,
-# so a 1s CLOSE pulse on lane A delays a command for lane B. With it True, each
-# lane gets its own worker so lanes run concurrently while a single lane's
-# pulses stay strictly ordered (never overlapping — two pulses on one pinsetter
-# at once is a hardware hazard). Bench-gated: this changes the timing of real
-# relay actuation, so flip to True only after a bench pass on the pair rig.
+# Per-lane command concurrency. The default (False) keeps the original serial
+# ORDERING: pulse commands run strictly in arrival order through ONE shared
+# queue+worker, so a 1s CLOSE pulse on lane A still delays a CYCLE for lane B.
+# With it True, each lane gets its own queue+worker so lanes run concurrently
+# while a single lane's pulses stay strictly ordered (never overlapping — two
+# pulses on one pinsetter at once is a hardware hazard). Bench-gated: True
+# changes the timing of real relay actuation, so flip it only after a bench
+# pass on the pair rig.
+#
+# In BOTH modes the websocket recv loop only ever ENQUEUES pulses — it never
+# awaits one inline — so a POWER_ON/POWER_OFF frame is read and executed the
+# moment it arrives. (Review #7: the old serial mode awaited the pulse inside
+# the `async for`, so a buffered POWER_OFF wasn't even READ until the pulse —
+# and any backlog — finished; the "POWER never waits" fast-path was inert.)
 CONCURRENT_LANE_COMMANDS = os.environ.get("WSL_CONCURRENT_LANE_CMDS", "0").lower() in ("1", "true", "yes")
-_lane_cmd_queues = {}   # lane -> asyncio.Queue, created lazily when concurrency is on
+
+# Bounded command queues (review #31). A runaway/buggy sender must not be able
+# to bank minutes of future relay actuation: when a queue is full the NEW
+# command is REJECTED with a loud log. Reject-new (vs drop-oldest) because it
+# is atomic on asyncio.Queue and never reorders already-accepted commands —
+# and a full queue means >= CMD_QUEUE_MAX pulses are already backlogged, a
+# fault condition in which executing MORE motion is the wrong direction.
+# POWER_ON/POWER_OFF never queue (executed inline in command_handler), so the
+# safety path can never be rejected. 8 pulses ≈ 10s worst-case backlog/worker.
+CMD_QUEUE_MAX = 8
+_lane_cmd_queues = {}    # queue key -> asyncio.Queue; key = lane id (concurrent) or None (shared serial)
+_lane_cmd_workers = {}   # queue key -> worker Task; cancelled + queues flushed on connection drop
 
 
 async def _execute_command(cmd_type, lane, msg):
@@ -453,9 +491,11 @@ async def _execute_command(cmd_type, lane, msg):
         log.warning(f"Unknown command type: {cmd_type}")
 
 
-async def _lane_worker(lane, queue):
-    """Serially drain one lane's command queue — keeps same-lane ordering while
-    other lanes' workers run concurrently."""
+async def _lane_worker(key, queue):
+    """Serially drain one command queue — keeps ordering within the queue
+    (per-lane in concurrent mode; global in serial mode) while the recv loop
+    stays free to read new frames (POWER preemption). Cancelled + respawned
+    lazily across connection drops (see _flush_lane_cmd_queues)."""
     while True:
         cmd_type, lane_id, msg = await queue.get()
         try:
@@ -466,33 +506,80 @@ async def _lane_worker(lane, queue):
             queue.task_done()
 
 
+async def _flush_lane_cmd_queues(reason):
+    """Cancel command workers + drop queued pulse commands (review #31).
+
+    Called when the server connection drops: a dead socket's backlog must not
+    keep actuating relays for minutes afterward. Cancelling the worker also
+    cancels an in-flight pulse mid-pattern — pulse()'s finally drives the relay
+    LOW, matching the pre-queue serial behavior where cancelling
+    command_handler cancelled the awaited pulse. Queues are kept (reused next
+    connection); workers are respawned lazily on the next command."""
+    workers = [w for w in _lane_cmd_workers.values() if not w.done()]
+    _lane_cmd_workers.clear()
+    for w in workers:
+        w.cancel()
+    if workers:
+        await asyncio.gather(*workers, return_exceptions=True)
+    dropped = 0
+    for q in _lane_cmd_queues.values():
+        while True:
+            try:
+                cmd_type, lane_id, _msg = q.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            q.task_done()
+            dropped += 1
+            log.warning(f"  dropped queued {cmd_type} for lane {lane_id} ({reason})")
+    if dropped:
+        log.warning(f"{dropped} queued command(s) dropped: {reason}")
+
+
 async def command_handler(ws):
     async for raw in ws:
-        msg = decode(raw)
+        # One malformed frame (invalid JSON / valid-JSON non-dict) must not
+        # tear down the whole command+scoring connection for the 5s backoff
+        # (review #50) — tolerate it and keep reading, mirroring how
+        # rp2040_link.feed_line tolerates unparseable serial lines.
+        try:
+            msg = decode(raw)
+            cmd_type = msg.get("type")
+            lane = msg.get("lane")
+        except Exception as e:
+            log.warning(f"malformed server frame ignored ({e!r}): {raw[:200]!r}")
+            continue
         log.info(f"← {raw}")
-        cmd_type = msg.get("type")
-        lane = msg.get("lane")
 
         if lane not in LANES:
             log.warning(f"Command for unknown lane {lane}; this node handles {LANES}")
             continue
 
-        # POWER on/off is an instant, safety-relevant latched relay — it must
-        # NEVER wait behind another lane's (or its own) in-flight pulse, in
-        # either mode. Execute immediately.
+        # POWER on/off is an instant, safety-relevant latched relay — it is
+        # NEVER queued: executed the moment the frame is read. And because the
+        # recv loop below only enqueues pulses (never awaits one), the frame
+        # IS read immediately even mid-pulse — review #7.
         if cmd_type in (Msg.POWER_ON, Msg.POWER_OFF):
             await _execute_command(cmd_type, lane, msg)
             continue
 
-        if CONCURRENT_LANE_COMMANDS:
-            q = _lane_cmd_queues.get(lane)
-            if q is None:
-                q = asyncio.Queue()
-                _lane_cmd_queues[lane] = q
-                asyncio.ensure_future(_lane_worker(lane, q))
-            q.put_nowait((cmd_type, lane, msg))   # non-blocking — lanes run concurrently
-        else:
-            await _execute_command(cmd_type, lane, msg)   # original serial behavior
+        # Pulse commands go through a bounded queue + worker so this loop
+        # keeps READING frames while a pulse runs. Serial (default): one
+        # shared queue/worker = original global pulse ordering. Concurrent:
+        # one queue/worker per lane.
+        key = lane if CONCURRENT_LANE_COMMANDS else None
+        q = _lane_cmd_queues.get(key)
+        if q is None:
+            q = asyncio.Queue(maxsize=CMD_QUEUE_MAX)
+            _lane_cmd_queues[key] = q
+        w = _lane_cmd_workers.get(key)
+        if w is None or w.done():
+            _lane_cmd_workers[key] = asyncio.ensure_future(_lane_worker(key, q))
+        try:
+            q.put_nowait((cmd_type, lane, msg))
+        except asyncio.QueueFull:
+            log.error(f"command queue full ({CMD_QUEUE_MAX} pending) — REJECTING "
+                      f"{cmd_type} for lane {lane} (runaway sender? a backlog "
+                      f"must not bank relay motion)")
 
 def _cleanup_gpio():
     """Drive outputs LOW and release gpiozero devices for every lane.
@@ -592,6 +679,10 @@ async def _run_connection(ws):
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        # A dead connection's command backlog must not keep actuating relays
+        # (review #31): cancel workers (an in-flight pulse's finally drives
+        # the relay LOW) and drop anything still queued.
+        await _flush_lane_cmd_queues("connection dropped")
     for t in done:
         if not t.cancelled() and t.exception() is not None:
             raise t.exception()
@@ -639,6 +730,18 @@ async def main():
 
     log.info(f"Hardware watchdog: kicking GPIO {WATCHDOG_KICK_PIN} @ ~1Hz "
              f"(runs independent of the server connection).")
+
+    # Cutover checklist line (finding 39): the AUTHORITATIVE ball-dedup window.
+    # 0.2 s = bench default (L/R pair coalesce only — phantom-ball masking OFF);
+    # production cutover wants WSL_LANE_BALL_LOCKOUT_S=8. See the BALL-DEDUP
+    # STORY block above _ball_detect_lockout.
+    if BALL_DETECT_LOCKOUT_S < 1.0:
+        log.warning(f"Ball-dedup: WSL_LANE_BALL_LOCKOUT_S={BALL_DETECT_LOCKOUT_S}s "
+                    f"(bench default — masks the L/R pair only, NOT scatter "
+                    f"phantom balls; set 8 at cutover)")
+    else:
+        log.info(f"Ball-dedup: WSL_LANE_BALL_LOCKOUT_S={BALL_DETECT_LOCKOUT_S}s "
+                 f"(authoritative Track-A window)")
 
     try:
         # The watchdog kick and the server connection run concurrently and

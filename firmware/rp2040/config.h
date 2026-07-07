@@ -17,7 +17,10 @@
 #ifndef WSL_PHASE8B_RP2040_CONFIG_H
 #define WSL_PHASE8B_RP2040_CONFIG_H
 
-#define FW_VERSION "phase8b-rp2040 v1.1.0"
+/* v1.1.1 (2026-07-06 review fixes, NOT yet flashed): boot event gains "v11" posture,
+ * cam-stop grace arms on FIRST trip only, chatter guard is a true sliding window.
+ * All v1.1 enforcement flags still DEFAULT OFF — a default build adds no enforcement. */
+#define FW_VERSION "phase8b-rp2040 v1.1.1"
 
 /* ---- UART (uart0) link to the Pi -------------------------------------------------------- */
 #define UART_BAUD     115200
@@ -40,7 +43,18 @@
 /* ---- Debounce + timing ----------------------------------------------------------------- */
 #define DEBOUNCE_CAM_US     2000u   /* cams: mechanical microswitches, 12 RPM machine -> 2ms ample */
 #define DEBOUNCE_DIELL_US    500u   /* ball beam-break: faster, but still de-glitched              */
-#define BALL_LOCKOUT_MS       300u  /* one thrown ball -> one ball event (re-trigger lockout)      */
+/* BALL_LOCKOUT_MS coalesces the L/R DIELL PAIR (one ball breaks both beams ms apart)
+ * into one "ball" event on the TRACK-B (RP2040 -> FSM) path ONLY. It is NOT the
+ * phantom-ball / machine-cycle mask. BALL-DEDUP STORY (one knob per path, see the
+ * matching blocks in lane_node/lane_node.py + server/lane_node_server.py):
+ *   Track A (Pi-GPIO DIELL -> scoring server): AUTHORITATIVE knob =
+ *     WSL_LANE_BALL_LOCKOUT_S (lane_node.py, default 0.2 s; set ~8 s at cutover).
+ *     LANE_BALL_DEDUP_S (server, default 0 = off) is only a delivery-dedup backstop.
+ *   Track B (this firmware -> cycle FSM): this 300 ms pair-coalesce + the FSM's own
+ *     state gating (a ball is only accepted in READY). At Track-B/scoring
+ *     unification the FSM's accept decision must become the single source of truth
+ *     (review 2026-06-27 finding 39).                                              */
+#define BALL_LOCKOUT_MS       300u  /* L/R pair coalesce -> one ball event (see story above)       */
 #define HB_INTERVAL_MS        250u  /* heartbeat cadence to the Pi                                 */
 #define BOOT_SETTLE_MS        200u  /* RP_OK held LOW at least this long after boot before permit  */
 #define WDT_TIMEOUT_MS        250u  /* RP2040 hardware watchdog: loop hang -> chip reset -> rail drop */
@@ -50,10 +64,13 @@
 /* is only enqueued while at least this much stays free, so an input flood can never starve the */
 /* heartbeat or a fault report.                                                                  */
 #define TXR_HEADROOM        128u
-/* Chatter guard: more than chatter_max DEBOUNCED edges from one input inside this window       */
-/* latches a "chatter" fault naming the input (fail-safe: drops RP_OK). Cams at 12 RPM produce  */
-/* a few edges/s (8 per 100 ms is electrically impossible from a healthy cam); DIELL gets a     */
-/* looser budget because violent pin scatter can legitimately chop the beam repeatedly.         */
+/* Chatter guard: more than chatter_max DEBOUNCED edges from one input inside ANY window of     */
+/* this length latches a "chatter" fault naming the input (fail-safe: drops RP_OK). v1.1.1:     */
+/* implemented as a TRUE SLIDING window (per-input edge-timestamp ring in main.c) — the old     */
+/* tumbling window reset its count at each 100 ms boundary, so a burst straddling the boundary  */
+/* needed up to 2x the budget to latch. Cams at 12 RPM produce a few edges/s (8 per 100 ms is   */
+/* electrically impossible from a healthy cam); DIELL gets a looser budget because violent pin  */
+/* scatter can legitimately chop the beam repeatedly.                                           */
 #define CHATTER_WINDOW_MS   100u
 #define CHATTER_MAX_CAM       8u
 #define CHATTER_MAX_DIELL    30u

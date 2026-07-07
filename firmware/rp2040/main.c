@@ -126,6 +126,13 @@ static void emit_evt(const char *fmt, ...) {
 /* ====================================================================== */
 /*  Fast inputs: time-based debounce + edge detection                     */
 /* ====================================================================== */
+/* Ring capacity for the SLIDING chatter window: must cover the largest per-
+ * input budget. 8 inputs x 32 x 4 B = 1 KB static — trivial on the RP2040. */
+#define CHATTER_RING_MAX 32u
+#if CHATTER_MAX_CAM > CHATTER_RING_MAX || CHATTER_MAX_DIELL > CHATTER_RING_MAX
+#error "CHATTER_RING_MAX must cover the largest CHATTER_MAX_* budget"
+#endif
+
 typedef struct {
     const char *id;
     uint        gpio;
@@ -136,19 +143,21 @@ typedef struct {
     bool        stable_asserted;
     bool        cand_asserted;
     uint64_t    cand_since_us;
-    uint32_t    win_start_ms;   /* chatter-rate window start */
-    uint8_t     win_edges;      /* debounced edges seen in the current window */
+    /* sliding chatter window: timestamps of the last chatter_max debounced edges */
+    uint32_t    edge_ring[CHATTER_RING_MAX];
+    uint8_t     ring_n;         /* edges recorded so far (saturates at chatter_max) */
+    uint8_t     ring_i;         /* next write slot = the OLDEST recorded edge once full */
 } input_t;
 
 static input_t inputs[] = {
-    { "SA",      PIN_SA,      DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, 0, 0 },
-    { "SB",      PIN_SB,      DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, 0, 0 },
-    { "SC",      PIN_SC,      DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, 0, 0 },
-    { "TA1",     PIN_TA1,     DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, 0, 0 },
-    { "TA2",     PIN_TA2,     DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, 0, 0 },
-    { "TB",      PIN_TB,      DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, 0, 0 },
-    { "DIELL_L", PIN_DIELL_L, DEBOUNCE_DIELL_US, true,  CHATTER_MAX_DIELL, false, false, 0, 0, 0 },
-    { "DIELL_R", PIN_DIELL_R, DEBOUNCE_DIELL_US, true,  CHATTER_MAX_DIELL, false, false, 0, 0, 0 },
+    { "SA",      PIN_SA,      DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, {0}, 0, 0 },
+    { "SB",      PIN_SB,      DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, {0}, 0, 0 },
+    { "SC",      PIN_SC,      DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, {0}, 0, 0 },
+    { "TA1",     PIN_TA1,     DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, {0}, 0, 0 },
+    { "TA2",     PIN_TA2,     DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, {0}, 0, 0 },
+    { "TB",      PIN_TB,      DEBOUNCE_CAM_US,   false, CHATTER_MAX_CAM,   false, false, 0, {0}, 0, 0 },
+    { "DIELL_L", PIN_DIELL_L, DEBOUNCE_DIELL_US, true,  CHATTER_MAX_DIELL, false, false, 0, {0}, 0, 0 },
+    { "DIELL_R", PIN_DIELL_R, DEBOUNCE_DIELL_US, true,  CHATTER_MAX_DIELL, false, false, 0, {0}, 0, 0 },
 };
 #define N_INPUTS (sizeof(inputs) / sizeof(inputs[0]))
 
@@ -168,8 +177,8 @@ static void init_inputs(void) {
         in->stable_asserted = asserted;
         in->cand_asserted   = asserted;
         in->cand_since_us   = t;
-        in->win_start_ms    = now_ms();
-        in->win_edges       = 0;
+        in->ring_n          = 0;
+        in->ring_i          = 0;
     }
 }
 
@@ -198,14 +207,23 @@ static void scan_inputs(void) {
              * sustained rate is an electrical fault. Latch (fail-safe: drops
              * RP_OK via supervise) and suppress the event flood so hb/flt
              * lines keep flowing on the UART. State tracking above still runs
-             * so the hb "in" mask stays truthful. */
+             * so the hb "in" mask stays truthful.
+             *
+             * SLIDING window (v1.1.1): the ring holds the last chatter_max
+             * debounced edge times; if the edge chatter_max-edges-ago is still
+             * inside CHATTER_WINDOW_MS, THIS edge is edge chatter_max+1 within
+             * one window -> fault. (The old tumbling window reset its count at
+             * each boundary, so a burst straddling it needed up to 2x the
+             * budget to latch.) The edge is recorded even when latching, so
+             * the flood suppression tracks the true rate for as long as the
+             * input actually chatters. */
             uint32_t em = now_ms();
-            if ((uint32_t)(em - in->win_start_ms) >= CHATTER_WINDOW_MS) {
-                in->win_start_ms = em;
-                in->win_edges = 0;
-            }
-            if (in->win_edges < 255u) in->win_edges++;
-            if (in->win_edges > in->chatter_max) {
+            bool burst = (in->ring_n >= in->chatter_max &&
+                          (uint32_t)(em - in->edge_ring[in->ring_i]) < CHATTER_WINDOW_MS);
+            in->edge_ring[in->ring_i] = em;
+            if (++in->ring_i >= in->chatter_max) in->ring_i = 0;
+            if (in->ring_n < in->chatter_max) in->ring_n++;
+            if (burst) {
                 latch_fault("chatter", in->id);
                 continue;
             }
@@ -328,8 +346,11 @@ static void camstop_on_cam_edge(const char *cam_id, char edge) {
         }
 
         /* (1) cam-stop overrun: trip while THIS cam's guarded motor is running -> the Pi must
-         * STOP it within grace_ms or supervise() latches. Re-trips just refresh the window. */
-        if (cs->enabled && cs->motor && cs->motor->running) {
+         * STOP it within grace_ms or supervise() latches. Armed on the FIRST trip only: a
+         * contact bouncing below the chatter threshold must NOT keep refreshing the window
+         * (each refresh would extend the Pi's STOP deadline toward the 8 s max-run). The
+         * window disarms only via STOP <m> / STOP * / CLEAR (camstop_motor_stopped/all_disarm). */
+        if (cs->enabled && cs->motor && cs->motor->running && !cs->armed) {
             cs->armed = true;
             cs->armed_ms = now_ms();
         }
@@ -508,6 +529,14 @@ static void emit_hb(void) {
          input_mask(), run_mask());
 }
 
+/* v1.1 posture string for the boot event: "off" when the per-cam enable is 0, else
+ * the configured trip edge ("f"/"r", or "?" = enabled-but-unconfirmed, which can
+ * never trip). dst must hold >= 4 bytes. */
+static void camstop_posture_str(char *dst, bool enabled, char trip) {
+    if (!enabled) { dst[0] = 'o'; dst[1] = 'f'; dst[2] = 'f'; dst[3] = '\0'; }
+    else          { dst[0] = trip; dst[1] = '\0'; }
+}
+
 /* ====================================================================== */
 /*  main                                                                  */
 /* ====================================================================== */
@@ -536,9 +565,19 @@ int main(void) {
     bool wdt_reboot = watchdog_caused_reboot();
     /* maxrun_ms: the Pi must verify its MAX_MOTION_S does not exceed this at
      * link-up (the firmware backstop is an independent compile-time copy).
-     * dbg: 1 = DEBUG_USB build, so a debug image at the lane is visible. */
-    emit("{\"ev\":\"boot\",\"fw\":\"%s\",\"wdt_reset\":%d,\"rp_ok\":0,\"maxrun_ms\":%lu,\"dbg\":%d}\n",
-         FW_VERSION, wdt_reboot ? 1 : 0, (unsigned long)MAX_MOTION_MS, DEBUG_USB ? 1 : 0);
+     * dbg: 1 = DEBUG_USB build, so a debug image at the lane is visible.
+     * v11 (v1.1.1): the v1.1 enforcement posture — an ARMED build must be
+     * on-the-wire distinguishable from a stock build (FW_VERSION is identical
+     * for both). sa/ta1 = "off" | the trip edge ("f"/"r"/"?"); echo/nrun =
+     * INTERLOCK_ECHO_ENABLED / MOTION_NO_RUN_ENABLED. Additive field: older
+     * Pi-side parsers ignore unknown keys. */
+    char sa_p[4], ta1_p[4];
+    camstop_posture_str(sa_p,  (bool)CAM_SA_STOP_ENABLED,  CAM_SA_TRIP);
+    camstop_posture_str(ta1_p, (bool)CAM_TA1_STOP_ENABLED, CAM_TA1_TRIP);
+    emit("{\"ev\":\"boot\",\"fw\":\"%s\",\"wdt_reset\":%d,\"rp_ok\":0,\"maxrun_ms\":%lu,\"dbg\":%d,"
+         "\"v11\":{\"sa\":\"%s\",\"ta1\":\"%s\",\"echo\":%d,\"nrun\":%d}}\n",
+         FW_VERSION, wdt_reboot ? 1 : 0, (unsigned long)MAX_MOTION_MS, DEBUG_USB ? 1 : 0,
+         sa_p, ta1_p, INTERLOCK_ECHO_ENABLED ? 1 : 0, MOTION_NO_RUN_ENABLED ? 1 : 0);
 
     /* RP2040 hardware watchdog: if the loop ever hangs, the chip resets -> GP2 goes
      * Hi-Z -> external 100k pulldown holds the rail DEAD -> motion stops. */

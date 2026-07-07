@@ -67,6 +67,11 @@ int main(void) {
           && INTERLOCK_ECHO_ENABLED == 1 && MOTION_NO_RUN_ENABLED == 1,
           "v1.1 enforcement flags forced ON in this build");
     CHECK(CAM_SA_TRIP == 'f' && CAM_TA1_TRIP == 'f', "test trip edges = 'f'");
+    {   /* boot "v11" posture: an armed build must advertise its trip edge (finding 37) */
+        char p[4];
+        camstop_posture_str(p, (bool)CAM_SA_STOP_ENABLED, CAM_SA_TRIP);
+        CHECK(strcmp(p, "f") == 0, "armed build advertises sa=\"f\" in the boot v11 posture");
+    }
 
     /* ---- 1: cam-stop OVERRUN -------------------------------------------- */
     printf("[1] cam-stop overrun\n");
@@ -108,6 +113,25 @@ int main(void) {
     CHECK(!camstops[0].armed, "SA trip with S stopped does not arm the SA overrun window");
     advance_ms(CAM_SA_GRACE_MS * 2); supervise();
     CHECK(!fault_latched, "no overrun fault when the cam's own motor was already stopped");
+
+    /* a RE-TRIP inside the window must NOT refresh the deadline (finding 56: contact
+     * bounce below the chatter threshold could otherwise extend the grace forever) */
+    printf("[1e] re-trip does not extend the grace window\n");
+    reset_clean();
+    rx_feed("RUN S\n"); poll_uart();
+    cam_edge(PIN_SA, 0);                        /* first trip fixes the deadline */
+    CHECK(camstops[0].armed, "setup: armed by the first SA trip");
+    {
+        uint32_t armed0 = camstops[0].armed_ms;
+        advance_ms(CAM_SA_GRACE_MS / 2);
+        cam_edge(PIN_SA, 1);                    /* bounce: release ... */
+        cam_edge(PIN_SA, 0);                    /* ... and re-trip inside the window */
+        CHECK(camstops[0].armed && camstops[0].armed_ms == armed0,
+              "re-trip inside the window does not move armed_ms");
+    }
+    advance_ms(CAM_SA_GRACE_MS); supervise();   /* > grace since the FIRST trip */
+    CHECK(fault_latched && strcmp(fault_code, "cam_overrun") == 0,
+          "overrun latches on the FIRST trip's deadline despite the re-trip");
 
     /* TA1 -> table (T) path, independent of the SA descriptor */
     printf("[1d] TA1/table overrun is independent\n");

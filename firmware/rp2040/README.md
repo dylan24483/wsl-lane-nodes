@@ -1,6 +1,7 @@
 # WSL Phase 8b — RP2040 lane-controller firmware
 
-**v1.1.0 — DRAFT, bench-bring-up gated. Not for a live machine until validated per `docs/phase8b_pcb_revB_spec.md` §12.9.**
+**v1.1.1 — DRAFT, bench-bring-up gated. Not for a live machine until validated per `docs/phase8b_pcb_revB_spec.md` §12.9.**
+*(v1.1.1, 2026-07-06 review fixes (findings 37/56/58) — **NOT yet flashed; owner review pending**: boot event gains the `v11` enforcement-posture field (armed vs stock now wire-distinguishable); cam-stop grace window arms on the FIRST trip only (bounce can no longer extend the STOP deadline); chatter guard is a true sliding window (a boundary-straddling burst latches at 1× the budget, not 2×). **All v1.1 enforcement flags still default OFF** — a default build adds no enforcement. Pin map, pin assignments, and command grammar UNCHANGED; the boot `v11` field is additive.)*
 *(v1.1.0, 2026-06-10: the deferred v1.1 SAFETY supervision — (1) cam-stop OVERRUN, (2) SC/TB collision-interlock echo, (3) motion-without-RUN. **All three default OFF** behind `#ifndef`-overridable config flags + per-cam UNCONFIRMED trip edges, so a stock build is byte-for-byte the same enforcement as v0.2.0; they only ever `latch_fault()`/drop RP_OK, never permit motion, never feed the watchdog. They arm per-cam as the §3.2 cam-polarity field capture is confirmed. Pin map, pin assignments, command grammar, and watchdog-feed placement UNCHANGED.)*
 *(v0.2.0, 2026-06-10 audit hardening: RX overrun whole-line discard, duplicate-RUN timer guard, boot-settle latch across the uint32 ms wrap, per-input chatter fault, TX headroom for critical lines, oversized-emit whole-line drop, hb `in`/`run` masks, boot `maxrun_ms`/`dbg`. Pin map, pin assignments, and command grammar UNCHANGED.)*
 
@@ -94,7 +95,7 @@ Last run: **61/61** (`test_main`) + **28/28** (`test_v11`) checks passed (2026-0
 
 ### RP2040 → Pi (events)
 ```
-{"ev":"boot","fw":"phase8b-rp2040 v1.1.0","wdt_reset":0,"rp_ok":0,"maxrun_ms":8000,"dbg":0}
+{"ev":"boot","fw":"phase8b-rp2040 v1.1.1","wdt_reset":0,"rp_ok":0,"maxrun_ms":8000,"dbg":0,"v11":{"sa":"off","ta1":"off","echo":0,"nrun":0}}
 {"ev":"cam","id":"SA","e":"f","t":12345}        # e: f=asserted(fall), r=released(rise)
 {"ev":"ball","src":"L","t":12350}               # one event per ball (lockout-deduped)
 {"ev":"rp_ok","v":1,"t":12360}                  # rail permission changed
@@ -111,9 +112,13 @@ v1.1 fault codes (`cam_overrun`/`interlock_collision`/`motion_no_run`) appear ON
 
 Boot fields (v0.2.0): `maxrun_ms` = the firmware's compile-time max-run backstop — **the Pi should refuse to arm if its `MAX_MOTION_S` exceeds it** (the two are independently-maintained constants); `dbg` = 1 marks a DEBUG_USB build so a debug image at the lane is visible.
 
+Boot fields (v1.1.1): `v11` = the v1.1 enforcement posture, because `fw` is the SAME string for an armed and a stock build (review finding 37). `sa`/`ta1` = `"off"` (per-cam enable 0) or the configured trip edge (`"f"`/`"r"`, `"?"` = enabled-but-unconfirmed, which can never trip); `echo`/`nrun` = `INTERLOCK_ECHO_ENABLED`/`MOTION_NO_RUN_ENABLED`. `rp2040_link` logs the posture at every boot (WARNING when armed) and exposes it via `v11_posture()` — **verify the expected posture at cutover before crediting the G3 cam-stop backstop.** Additive field: older Pi-side parsers ignore it.
+
 Heartbeat masks (v0.2.0): `in` = debounced input levels, bit *i* = `inputs[i]` asserted (SA,SB,SC,TA1,TA2,TB,DIELL_L,DIELL_R = bits 0–7); `run` = motors marked running, bit *i* = `motors[i]` (S,T,SP,M2,M1,BE,M = bits 0–6). The Pi should **resync its SC/TB interlock echo from `in` on every hb** instead of trusting edge history (a single dropped `cam` line otherwise latches a danger flag forever), and treat an `up` regression as an RP2040 reboot.
 
-UART robustness (v0.2.0): an RX line longer than 63 chars is discarded **whole** (tail swallowed to the next newline — garbled noise can never re-parse as `STOP`/`CLEAR`); a duplicate `RUN <m>` does **not** reset the max-run timer; cam/ball TX lines only enqueue while `TXR_HEADROOM` (128 B) stays free so a flood can't starve `hb`/`flt`; an input exceeding its per-100 ms debounced-edge budget (`CHATTER_MAX_CAM`=8, `CHATTER_MAX_DIELL`=30) latches a fail-safe `chatter` fault naming the input.
+UART robustness (v0.2.0): an RX line longer than 63 chars is discarded **whole** (tail swallowed to the next newline — garbled noise can never re-parse as `STOP`/`CLEAR`); a duplicate `RUN <m>` does **not** reset the max-run timer; cam/ball TX lines only enqueue while `TXR_HEADROOM` (128 B) stays free so a flood can't starve `hb`/`flt`; an input exceeding its debounced-edge budget (`CHATTER_MAX_CAM`=8, `CHATTER_MAX_DIELL`=30) inside **any** 100 ms span latches a fail-safe `chatter` fault naming the input (v1.1.1: true sliding window — the old tumbling window needed up to 2× the budget for a burst straddling a window boundary, review finding 58).
+
+Run-state reconciliation (v1.1.1, Pi-side): `RUN`/`STOP` still have no ACK/CRC, but `rp2040_link` now compares the hb `run` mask against the state it last commanded every heartbeat and re-sends the command on mismatch (bounded, 3/episode; safe because duplicate `RUN` doesn't reset the timer). A desync from one corrupted line therefore heals within ~250 ms instead of guaranteeing a spurious `motion_timeout` rail-drop (lost `STOP`) or a silently absent max-run backstop (lost `RUN`) — review finding 38. A persisting mismatch stays visible via `run_mismatch()`.
 
 ### Pi → RP2040 (commands)
 ```
@@ -170,5 +175,6 @@ PING         # → immediate heartbeat
 - v1 written + **verified 2026-06-03**; **clean-room rebuild re-verified 2026-06-04** (full from-scratch ARM cross-build 88/88 + host test 24/24, both **0-warning** under `-Wall -Wextra`; `.uf2` = 40 KB, 24 KB flash / 2.6 KB RAM): host logic test 24/24 + clean ARM cross-build → `.uf2`; Pi-side reader/daemon done and Codex-audited (fixes applied).
 - **v0.2.0 audit hardening 2026-06-10** (fable-audit P3 items): host test **55/55** + clean ARM cross-build re-verified (`.uf2` = 41.5 KB), both 0-warning. **NOT yet flashed/bench-run** — needs: re-flash, hb `in`/`run` masks observed on the wire, chatter fault provoked with a function generator or relay buzzer, and the Pi-side resync/maxrun-check TODOs in `rp2040_link.py` (see Pi-side integration above).
 - **v1.1.0 SAFETY supervision written 2026-06-10** (fable-audit novel idea #13): cam-stop OVERRUN + SC/TB collision echo + motion-without-RUN, all default OFF behind per-cam config flags. Host tests **61/61** (`test_main`, incl. off-by-default inertness) + **28/28** (`test_v11`, flags forced on), both 0-warning under `-Wall -Wextra -Werror`; clean ARM cross-build re-verified (`.uf2` = 43.5 KB). **NOT yet flashed/bench-run; all v1.1 flags ship OFF** — so on-the-wire behavior is still exactly v0.2.0 until a board is armed cam-by-cam.
+- **v1.1.1 review fixes 2026-07-06** (phase8 fable review findings 37/56/58 + Pi-side 38): boot `v11` posture field, arm-once cam-stop grace, sliding chatter window; `rp2040_link.py` gains hb `run`-mask reconciliation (bounded re-sends + `run_mismatch()`) and `v11_posture()`. Host tests **64/64** (`test_main`) + **32/32** (`test_v11`), Pi-side self-tests green. **NOT yet flashed — owner review + re-flash pending; all v1.1 flags still ship OFF.**
 - ⚠️ **NOT cutover-ready.** "Done" = host-logic + build only. The cutover runbook's **G3 cam-stop rail-drop gate** now has its firmware *logic*, but the **enforcement is gated OFF** pending the per-cam edge→angle polarity field capture (runbook §3.2). A stock build still provides only health + the motion **max-run backstop**.
 - Next: build/flash, bench bring-up steps 1–4 (above), wire the Pi-side reader (contract above), then **bench step 5**: capture cam polarity (§3.2), set `CAM_*_TRIP` + flip `*_ENABLED` cam-by-cam, re-flash, and run the G3 cam-stop drop sub-test per cam.

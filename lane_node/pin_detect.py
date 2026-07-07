@@ -560,7 +560,10 @@ class DualDeckDetector:
         Returns a verdict dict (also useful as telemetry):
           empty_confirmed bool   — both decks read clear with high confidence
           divergence      {'L': mean_abs, 'R': mean_abs}
-          max_divergence  float
+          max_divergence  float  — worst per-deck MEAN
+          max_spot_divergence float — worst SINGLE spot |diff| across both decks
+                                 (the means dilute a single corrupted cap 10x;
+                                 camera.py's auto-recal cap must see the raw spot)
           flagged         bool   — empty_confirmed and max_divergence > threshold
           reason          str    — human-readable summary
           detail          the underlying detect_detail() dict
@@ -581,6 +584,14 @@ class DualDeckDetector:
         div = self.reference_divergence(frame)
         per_deck = {dk: round(div[dk][0], 2) for dk in ('L', 'R')}
         max_div = max(per_deck.values()) if per_deck else 0.0
+        # worst SINGLE-spot |diff|: the per-deck numbers are MEANS over 10 pins,
+        # so one corrupted cap ROI (shadow/grease/sweep edge) dilutes 10x — keep
+        # the raw per-spot worst so the auto-recal cap can refuse what the mean hides.
+        spot_max = 0.0
+        for dk in ('L', 'R'):
+            diffs = div[dk][1]
+            if diffs:
+                spot_max = max(spot_max, max(abs(v) for v in diffs.values()))
         flagged = bool(empty_confirmed and max_div > divergence_max)
         if not empty_confirmed:
             reason = ("deck not confirmed empty (pins standing / low confidence) "
@@ -596,6 +607,7 @@ class DualDeckDetector:
             'empty_confirmed': empty_confirmed,
             'divergence': per_deck,
             'max_divergence': max_div,
+            'max_spot_divergence': round(spot_max, 2),
             'flagged': flagged,
             'reason': reason,
             'detail': detail,
@@ -805,6 +817,22 @@ if __name__ == "__main__":
     assert drift_chk['empty_confirmed'], drift_chk          # still no pins standing
     assert drift_chk['flagged'], drift_chk                  # but the ref has drifted
     assert drift_chk['max_divergence'] > EMPTY_DIVERGENCE_MAX, drift_chk
+    assert drift_chk['max_spot_divergence'] >= drift_chk['max_divergence'], drift_chk
+
+    # single-spot dilution: ONE cap darkened -40 -> per-deck MEAN 4 (under the
+    # flag threshold, so flag semantics are unchanged) but max_spot_divergence
+    # reports the raw ~40 so camera.py's per-spot auto-recal cap can refuse
+    # what the mean hides.
+    f_spot = empty6.copy()
+    xs, ys = PIN_SPOTS_PX['L'][5]
+    scx = int(round(xs)); scy = int(round(ys + CAP_DY))
+    shx, shy = CAP_HALF
+    f_spot[scy-shy:scy+shy, scx-shx:scx+shx] -= 40.0
+    spot_chk = det6.check_empty_reference(f_spot)
+    assert spot_chk['empty_confirmed'], spot_chk            # -40 is confidently 'down'
+    assert spot_chk['max_divergence'] < EMPTY_DIVERGENCE_MAX, spot_chk
+    assert not spot_chk['flagged'], spot_chk
+    assert spot_chk['max_spot_divergence'] > 30.0, spot_chk
 
     # reference_divergence shape-mismatch guard
     try:
