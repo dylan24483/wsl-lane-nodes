@@ -33,10 +33,18 @@ BOOTSEL) flashing trivial, so a dedicated SWD header isn't needed. SWD would onl
 debugging / USB-enumeration-failure recovery — not required for this firmware. Revisit only if
 hardware debugging is later wanted.
 
-### 3. USB connector clearance ✅ (the flash-path fix)
+### 3. USB connector clearance — ❌ NOT DONE in the rev-C layout (status corrected 2026-07-06)
 Give the Pico micro-USB physical clearance from J1 so a normal cable seats. This rev had the USB
 jammed against J1 and was flashed via a hand-shaved right-angle micro-B cable; clearing it
 restores ordinary USB flashing and makes #2 unnecessary.
+- **⚠️ The layout was never changed:** `scripts/place_components_revB.py` still hardcodes
+  `J_PI=(126,10,90)` / `RP_PICO=(124,55,0)`, and A1/J1 placements are byte-identical between the
+  pre-bug and corrected (Jun-26) boards — the Jun-26 fab package **re-ships the jam**. Since #2
+  (SWD header) was dropped on the strength of this item, a board from that package has **neither
+  SWD nor USB clearance**.
+- **Workarounds until a spin fixes it:** **flash the Pico BEFORE soldering it down** (BOOTSEL
+  drag-drop with the module loose), or use the hand-shaved right-angle micro-B cable.
+- Carry as an open layout item for the next spin (move A1/J1 → re-route → re-export).
 
 ### 4. J1 mating socket + field plugs onto the assembly BOM
 The 2×10 IDC ribbon socket for J1 (CNC Tech 3030-20-0102-00 *candidate*) was never on the BOM,
@@ -44,9 +52,17 @@ and the field Phoenix plugs (J3/J4/J5/J13/J14 = 1840447 / 1840489 / 1840463 / 18
 were a BOM gap. Fold all mating parts into the harness/assembly BOM. (Captured in
 `phase8_revB_harness_parts.md` + the harness CSVs.)
 
-### 5. FIELD_WET_V bleed / min-load resistor
+### 5. FIELD_WET_V bleed / min-load resistor — ❌ NOT IMPLEMENTED (status corrected 2026-07-06)
 The unregulated **TMA-0505S (U37)** rises to ~14 V no-load (expected, but undesirable). Add a
 bleed / minimum-load resistor so `FIELD_WET_V` sits near its 5 V nominal unloaded.
+- **⚠️ Not in the generator, netlist, or Jun-26 fab package:** `block_supplies()` in
+  `generate_kicad_netlist_revB.py` has no bleed — `FIELD_WET_V` carries only the 32 opto Rin
+  resistors + U37. Boards from the current package still show ~14 V no-load at TP4 (expected —
+  don't chase it at bring-up).
+- **Interim option (no spin needed):** an **external bleed / min-load resistor** — 1 k–2.2 kΩ,
+  ≥¼ W, across `FIELD_WET_V`→`FIELD_GND` (TP4→TP5, or soldered at any WET access point, returned
+  to a J3/J4/J5 field-ground pin) so the rail sits near 5 V unloaded.
+- Carry as an open item for the next spin (add to `block_supplies()` + regenerate).
 
 ## VERIFY BEFORE COMMITTING THE SPIN (may or may not change layout)
 

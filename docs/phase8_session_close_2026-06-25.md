@@ -1,5 +1,7 @@
 # WSL Phase 8 — rev-B Board #1 Bring-Up Handoff (2026-06-25)
 
+> **⛔ OUTCOME (run 2026-06-25; annotated 2026-07-06): CLOSED — DO NOT RE-RUN.** Steps 2–3 **PASSED** (0x20/0x21/0x22 enumerated; `RELAY_ENABLE_RAIL` up + fail-safe drop verified). **Step 4 FAILED: all six relays DEAD** — root-caused to the **rev-B relay footprint bug** (netlist assumed G5LE-**1** pad functions; the placed G5LE-**14** coil is pads 2/5 → the coil never sees voltage). NOT a solder/board fault; **no rev-B relay can ever click.** Generator remapped → **rev-C ordered** (pre-order gates G1–G5 passed). See `phase8_revC_change_list.md` #1 + `phase8_revC_readiness_checklist.md`. The "live state" pointer below is superseded — current state lives in `HANDOFF.md`'s 2026-06-27 addendum.
+
 > **⚡ NEXT SESSION: this is the live state. The ribbon has arrived — the task is to wire J1↔Pi and finish the bench bring-up (Steps 2→3→4).** Companion memory: `project_phase8_revB_board1_bringup`. Full maps/test list: `docs/phase8_revB_board1_BENCH_TEST_PACKET.pdf`. Authoritative connector pinouts: `docs/manual_src/11_connector-pinouts.md` §11.
 
 ---
@@ -102,6 +104,8 @@ With the rail enabled, assert each channel via its MCP output (per-channel comma
 
 ✅ **All six click + make/break = board #1 bench bring-up COMPLETE.** Next milestone after that is field-input testing (wet J3/J4/J5 inputs) and then the lane-pair cutover plan — separate effort.
 
+> **OUTCOME 2026-06-25:** this test was RUN — **all six relays were DEAD** (no click, no COM↔NO make). Root cause = the rev-B relay footprint pad mismatch (`phase8_revC_change_list.md` #1: G5LE-14 coil is pads 2/5; rev-B drove pads 1/2). Everything upstream (MCP → driver transistor → rail) validated. The click test moves to the **rev-C first article** (`phase8_revC_readiness_checklist.md` §4 — on a rev-B board this gate WILL fail, by design).
+
 ---
 
 ## 4. Quick reference
@@ -135,7 +139,7 @@ Full probe-location map + connector pin-number map + the tick-box test list: **`
 - **`requirements-lane-node.txt` not on the Pi** (deps already in `.venv`, selftest passed). Land for completeness: `scp requirements-lane-node.txt pi@lane-node-dev.local:wsl-lane-nodes/`.
 - **`/var/log/lane-node` unwritable** → `sudo mkdir -p /var/log/lane-node && sudo chown pi:pi /var/log/lane-node` (flight-recorder dumps).
 - **GIT PUSH BLOCKED:** laptop `fable-audit-fixes` can't push — a **160 MB `docs/8270-service-parts-manual.pdf` in history exceeds GitHub's 100 MB limit**. Purge from history (git-filter-repo / BFG) + `.gitignore` the manuals; then the Pi can `git pull` instead of the scp workaround. Local commit **`e6e3653`** holds requirements + rev-B docs, waiting to push.
-- **rev-C board fixes:** break **SWD to a 3-pin header** (Pico USB is the ONLY flash path and it's jammed against J1 — this time flashed via a hand-shaved right-angle micro-B cable); give the USB end clearance; add the **J1 mating socket** to the assembly BOM; consider a **min-load/bleed resistor on `FIELD_WET_V`**.
+- **rev-C board fixes:** break **SWD to a 3-pin header** (Pico USB is the ONLY flash path and it's jammed against J1 — this time flashed via a hand-shaved right-angle micro-B cable); give the USB end clearance; add the **J1 mating socket** to the assembly BOM; consider a **min-load/bleed resistor on `FIELD_WET_V`**. *(Superseded by `phase8_revC_change_list.md`: SWD header **DROPPED** (Dylan 2026-06-25, item #2); USB clearance (#3) did **NOT** make the rev-C layout — flash before soldering / shaved cable; J1 mate captured (#4); bleed resistor (#5) still NOT implemented.)*
 
 ## 6. Hard safety rules (recap)
 1. **Never wire J1 pin 1 (`VCC_5V`) or pin 11 (`VCC_3V3`) to the Pi.**

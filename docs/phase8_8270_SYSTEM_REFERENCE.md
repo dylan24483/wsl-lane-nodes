@@ -36,7 +36,7 @@ Relays **M** (master), **BE**, **S** (sweep), **T** (table), **SP** (spot), **M1
 
 ## 5. Safety model — PRESERVE in hardware
 - **Stop switch + C.I.S.** (parallel) → cut the **rear-panel master circuit breaker** → all control dead.
-- **Table-sweep INTERLOCK:** **TB + SC in PARALLEL** in the 24 V relay-control path → both motor relays drop on a collision course. The MP's manual Sweep/Table override buttons bypass *all* logic **except BE + this interlock** — so it's the irreducible hardware safety. **Keep it.**
+- **Table-sweep INTERLOCK:** ~~TB + SC in PARALLEL~~ **MEASURED 2026-06-27: SC + TB in SERIES** at one node (C2A-U/TSG-1) in the live 24 V relay-control path → both motor relays drop on a collision course. The MP's manual Sweep/Table override buttons bypass *all* logic **except BE + this interlock** — so it's the irreducible hardware safety. **Keep it.** (Series ⇒ no isolatable dry NC pair for the board's J_SAFETY loop — redesign OPEN, `phase8_interlock_redesign.md`.)
 - **Motor braking:** regenerative, in the relay N.C. contacts + caps — hardware.
 - **MP "Power-Down" feature:** after *any* 115 VAC loss while in "Bowl," **no machine motion on power restore** until a deliberate **"First Ball Zero"** (Manual Intervention). **Our Pi MUST replicate this** — fail-safe-off on restore, require operator zero. (This is the controller-level sibling of our NE555 watchdog.)
 - **Cam-position stops are controller LOGIC** (read cam → drop relay), *not* a hardwired motor latch → the **Pi times them**; TB/SC interlock + relay braking are the hardware backstops.

@@ -4,7 +4,7 @@ This section is the complete catalog of every electrical signal that crosses bet
 
 **Scope reminder (see §2 System Architecture):** the controller does *not* replace the machine's mechanism, motors, cams, grippers, contactors, or mask housings. It replaces only the *control brain* (the old solid-state / Omega-Tek board), reading the same machine inputs and driving the same machine control circuits the OEM board did. Everything in this section is a signal on the machine side of that boundary.
 
-> **Chassis caveat — READ THIS.** Lanes 21/22 (the pilot pair) are an **AMF SS (solid-state) chassis retrofitted with an Omega-Tek Omniboard**; lanes 11/12 are an **AMF MP chassis (Active Technology Ultra 98)**. The *machine side* (cams, motors, grippers, DIELL, mask) is common across the fleet, which is why one controller board design serves all lanes. But the **C1/C2A connector cavity numbers and some harness landings differ per chassis** — the Omega-Tek retrofit re-routed several landings vs. the OEM factory wire tables (e.g. sweep-reverse M2 lands on C2A on our 21/22 bench, but C1 in the OEM 9800-MP tables). For that reason the controller board uses **function-named connectors** and a **per-chassis adapter harness** that is resolved at cutover, not baked into copper. Cavity codes quoted below are 225-DPI schematic best-effort guesses or single-pair bench measurements; treat them as "look here first," not gospel. The authoritative per-lane cavity map is produced at cutover (see §0/PART C of the at-machine field sheet).
+> **Chassis caveat — READ THIS.** Lanes 21/22 (the pilot pair) are an **AMF SS (solid-state) chassis retrofitted with an Omega-Tek Omniboard**; lanes 11/12 are an **AMF MP chassis (Active Technology Ultra 98)**. The *machine side* (cams, motors, grippers, DIELL, mask) is common across the fleet, which is why one controller board design serves all lanes. But the **C1/C2A connector cavity numbers and some harness landings differ per chassis** — the Omega-Tek retrofit re-routed several landings vs. the OEM factory wire tables (e.g. sweep-reverse M2 lands on C2A on our 21/22 bench, but C1 in the OEM 9800-MP tables). For that reason the controller board uses **function-named connectors** and a **per-chassis adapter harness** that is resolved at cutover, not baked into copper. Cavity codes quoted below are 225-DPI schematic best-effort guesses or single-pair bench measurements; treat them as "look here first," not gospel. The authoritative per-lane cavity map is produced at cutover (see §0/PART C of the at-machine field sheet). **Update 2026-06-27:** an at-machine metering session on 21/22 measured many of these cavities — values marked **✓ measured 2026-06-27** below are ground truth for the 21/22 chassis (proven-wrong predictions retained struck-through); the four motion-cam cavities (SA/SB/TA1/TA2) are **deferred to powered cutover** (cold reads invalidated by relay-coil sneak paths — see §4.2).
 
 ---
 
@@ -35,12 +35,19 @@ There are **two sweep cams that each trip at two angles** (SA, SB), one sweep in
 |---|---|---|---|---|
 | **SA** | Sweep | **270°** and **360°/zero** | Stop sweep run-through at 270°; stop sweep at zero (360°) | `SA_RUNTHRU` (270), `SA_ZERO` (360) |
 | **SB** | Sweep | **66°** and **186°** | Guard stop at 66° (sweep stops, starts the 3 s pin-settle); initiate table spotting at 186° | `SB_GUARD` (66) |
-| **SC** | Sweep | **86°–243°** (window) | Sweep-under-table window → feeds the **TB/SC hardware interlock** (collision avoidance); RP2040 reads it as a *software echo* only | `SC_LO`, `SC_HI` (86, 243) |
+| **SC** | Sweep | **86°–243°** (window) | Sweep-under-table window → feeds the **TB/SC hardware interlock** (collision avoidance); RP2040 reads it as a *software echo* only. **✓ measured 2026-06-27: read at C2A-U via its N.O. (pink) contact** — the shared series-interlock node (see below) | `SC_LO`, `SC_HI` (86, 243) |
 | **TA1** | Table | **355°** and **185°** | Table zero stop at 355°; at 185° reset the 3 s time-delay and flip ball memory | `TA1_ZERO` (355) |
 | **TA2** | Table | **260°** | Initiate sweep run-through; **latch the gripper read** (pin/strike decision); signal "machine ready" | `TA2_RUNTHRU` (260) |
-| **TB** | Table | **105°–255°** (window) | Table-sweep interference window → feeds the **TB/SC hardware interlock**; RP2040 reads it as a software echo only | (window, interlock) |
+| **TB** | Table | **105°–255°** (window) | Table-sweep interference window → feeds the **TB/SC hardware interlock**; RP2040 reads it as a software echo only. **✓ measured 2026-06-27: NO standalone C2A cavity on 21/22** — both TB wires tie into the SC/U node (see below) | (window, interlock) |
 
-**Electrical form (bench/field-confirmed):** the cam inputs are **dry switch closures, normally-closed (NC)**. This is confirmed in the at-machine field sheet (item A4: "cam input form = dry contact (normally-closed)"). On the board, each cam input front-end defaults to **dry-contact wetting** (the isolated wetting supply drives the opto LED through the closed cam to FIELD_GND/common). Per-channel population is jumper-selectable to a 24 VAC voltage-sense front-end if a particular chassis presents the cam as a powered line instead, but the 21/22 default is dry-contact.
+**Electrical form — SPLIT per cam (corrected by the 2026-06-27 at-machine metering; the old blanket "all six cams NC dry" claim from field-sheet item A4 holds only for the motion cams):**
+
+- **Motion cams SA / SB / TA1 / TA2 = dry switch closures, normally-closed (NC)** (field-sheet item A4).
+- **SC is read on its N.O. (pink) contact**, landing at **C2A-U** — ✓ measured 2026-06-27.
+- **TB has NO independent signal on the 21/22 chassis** — ✓ measured 2026-06-27: both TB wires tie into the SC/U node. **SC+TB form a SERIES hardware interlock in the live 24 VAC relay ladder**; the only obtainable signal is the combined SC∧TB interlock on the shared U node, so the board's TB input (GP11) has nothing standalone to observe. Harness + firmware-echo redesign for the single shared interlock signal: **`docs/phase8_interlock_redesign.md`** (in progress).
+- The cam contacts sit **in series in the machine's relay ladder**, not as isolated dry contacts — cold continuity probing hits ~21 Ω sneak paths through relay coils, which is why the per-cam SA/SB/TA1/TA2 cavity map is **deferred to POWERED cutover**. **C2A-N is the shared motion-cam COMMON bus** (never a per-cam signal cavity).
+
+On the board, each cam input front-end defaults to **dry-contact wetting** (the isolated wetting supply drives the opto LED through the closed cam to FIELD_GND/common). Per-channel population is jumper-selectable to a 24 VAC voltage-sense front-end if a particular chassis presents the cam as a powered line instead, but the 21/22 default is dry-contact.
 
 > ⚠️ **(VERIFY: per-cam edge polarity — which physical edge (open→closed vs closed→open) is the angular "trip" for each of SA/SB/SC/TA1/TA2/TB).** The firmware (`main.c`, `scan_inputs()`) forwards *both* edges to the Pi tagged `f` (asserted/fall) or `r` (released/rise); the Pi maps cam+edge → FSM method. The exact edge-to-angle binding is a **deferred cutover field task** (rotate the mechanism by hand, watch which C2A cavity changes at which angle — at-machine field sheet PART C2). Do NOT bake unconfirmed cam polarity into the firmware; the v1.1 cam-stop-overrun enforcement hook in `main.c` is deliberately left disabled until this is measured.
 
@@ -57,7 +64,7 @@ There are **two sweep cams that each trip at two angles** (SA, SB), one sweep in
 
 (Source: `firmware/rp2040/config.h` `PIN_SA`..`PIN_TB`, and `scripts/generate_kicad_netlist_revB.py` `FAST_INPUTS`. **These GP6–GP13 assignments are the as-built board; the GPIO column in `docs/phase8_channel_allocation.md` §2 is STALE — it shows GP0–GP7 and must be ignored.**)
 
-> **(VERIFY: which A&MC pin = which specific cam.)** The schematic associates the cams to A&MC pins 11A/12D/13H/14L/21B/22E/31C, but the cam↔A&MC binding cannot be read cold — it is a cutover at-machine task (rotate the mechanism, watch the cavity). The board does not depend on it; the function-named harness resolves it.
+> **(VERIFY: which A&MC pin = which specific cam.)** The schematic associates the cams to A&MC pins 11A/12D/13H/14L/21B/22E/31C, but the cam↔A&MC binding cannot be read cold — it is a cutover at-machine task (rotate the mechanism, watch the cavity). The 2026-06-27 metering confirmed *why* cold reads fail: N is the shared cam common and ~21 Ω coil sneak paths make every cold read ambiguous — **per-cam SA/SB/TA1/TA2 cavity mapping is DEFERRED TO POWERED CUTOVER** (SC=U and TB=no-cavity are already measured). The board does not depend on it; the function-named harness resolves it.
 
 ---
 
@@ -77,22 +84,22 @@ The 10 grippers are the spotting-table's pin-presence switches: as the table des
 
 **Where they land — board side (MCP23017 IN-A, I²C address 0x20):** these bit assignments are the source-of-truth map; `controller_io.py` `IN_A_MAP` is regression-checked against the PCB netlist generator (`scripts/generate_kicad_netlist_revB.py` `SLOW_INPUT_PINS`) so software and copper cannot drift.
 
-| Gripper | MCP23017 IN-A port.bit | MCP pin (netlist) | J_SLOW_IN_A pin | predicted C2A cavity¹ |
+| Gripper | MCP23017 IN-A port.bit | MCP pin (netlist) | J_SLOW_IN_A pin | C2A cavity¹ (✓ measured 2026-06-27) |
 |---|---|---|---|---|
-| GS1 | A0 | 21 | 1 | 41C |
-| GS2 | A1 | 22 | 2 | 42H |
-| GS3 | A2 | 23 | 3 | 43M |
-| GS4 | A3 | 24 | 4 | 44S |
-| GS5 | A4 | 25 | 5 | 45W |
-| GS6 | A5 | 26 | 6 | 46Z |
-| GS7 | A6 | 27 | 7 | 47 (digit unread) |
-| GS8 | A7 | 28 | 8 | 48H |
-| GS9 | B0 | 1 | 9 | 49 (digit unread) |
-| GS10 | B1 | 2 | 10 | 410U |
+| GS1 | A0 | 21 | 1 | **C** ✓ (matches predicted 41C) |
+| GS2 | A1 | 22 | 2 | **H** ✓ |
+| GS3 | A2 | 23 | 3 | **M** ✓ |
+| GS4 | A3 | 24 | 4 | **S** ✓ |
+| GS5 | A4 | 25 | 5 | **W** ✓ |
+| GS6 | A5 | 26 | 6 | **a** ✓ (~~predicted 46Z~~ — wrong) |
+| GS7 | A6 | 27 | 7 | **e** ✓ |
+| GS8 | A7 | 28 | 8 | **TBD — recheck** (~~predicted 48H — PROVEN WRONG: H is GS2's cavity~~) |
+| GS9 | B0 | 1 | 9 | **r** ✓ |
+| GS10 | B1 | 2 | 10 | **v** ✓ (~~predicted 410U — PROVEN WRONG: U is a common rail~~) |
 
 (Board-side source: `controller_io.py` `IN_A_MAP` + `GRIPPER_ORDER`; `generate_kicad_netlist_revB.py` `SLOW_INPUT_PINS` and `J_SLOW_IN_A` order. MCP23017 pin numbering: GPA0–7 = pins 21–28, GPB0–7 = pins 1–8.)
 
-> ¹ **(VERIFY: per-gripper GS#→C2A cavity, and the 1:1 GS#-to-cavity ordering.)** The C2A cavities above are 225-DPI schematic predictions for the OEM 9800-MP DETAIL-K; our Omega-Tek retrofit lands the grippers on C2A directly but the per-pin map and even the GS#-to-physical-pin order are **NOT confirmed**. This is a deliberate cutover task: drop one pin at a time and watch which input asserts (at-machine field sheet PART C1). It does **not** gate the board — the board only needs the gripper *bank* location + the polarity (both confirmed); the GS1-vs-GS7 software labels are set at cutover.
+> ¹ **✓ Measured at the machine 2026-06-27** by the drop-a-pin method (chassis return — set one pin, watch which cavity closes to frame), which names GS# and cavity together, so the GS#-to-cavity ordering is confirmed too. GS1–5 match the old 225-DPI schematic predictions; GS6–10 correct them — the old **GS8=48H collided with GS2=H** and **GS10=410U landed on a common rail**, both proven wrong. **Still open: GS8 (recheck at machine).** Common rails **J / F / U** ring to everything — never a gripper signal. The cutover drop-a-pin assert check (at-machine field sheet PART C1) remains as the final software-label verification; nothing here gates the board.
 
 ---
 
@@ -102,13 +109,13 @@ Three individual machine-side switches that gate or advance the cycle:
 
 | Signal | Name | Role in the cycle | Electrical form | Board landing (MCP23017 IN-A 0x20) | MCP pin | C2A (tentative) |
 |---|---|---|---|---|---|---|
-| **GP** | Gripper-protect | **Gates the 3 s pin-settle delay** — the table only descends after the delay *and* GP is closed (`gp_closed()` in the FSM; `TIME_DELAY_S = 3.0`). Guards against dropping the table on an obstruction. | dry switch closure (assumed; see VERIFY) | B2 | 3 | (TBD at machine) |
+| **GP** | Gripper-protect | **Gates the 3 s pin-settle delay** — the table only descends after the delay *and* GP is closed (`gp_closed()` in the FSM; `TIME_DELAY_S = 3.0`). Guards against dropping the table on an obstruction. | dry switch closure (assumed; see VERIFY) | B2 | 3 | (still open — not resolved by the 2026-06-27 metering) |
 | **OS** | Off-spot | Off-spot detect. **Not yet consumed by the FSM** — wired on the board for when full machine control grows (marked spare/⊕). | dry switch closure (assumed) | B3 | 4 | (TBD at machine) |
-| **BS** | Bin / #9 bin | Closes when the 10th pin reaches the bin → triggers the **SP spot relay** for the spotting revolution (`bs_closed()` in the FSM). | dry switch closure (assumed) | B4 | 5 | predicted 112cc |
+| **BS** | Bin / #9 bin | Closes when the 10th pin reaches the bin → triggers the **SP spot relay** for the spotting revolution (`bs_closed()` in the FSM). | dry switch closure (assumed) | B4 | 5 | **CC** ✓ measured 2026-06-27 (~~predicted 112cc~~) |
 
 (Source: `controller_io.py` `IN_A_MAP`; `generate_kicad_netlist_revB.py` `SLOW_INPUT_PINS` GP=pin3, OS=pin4, BS=pin5. Note `controller_io.py` comment "OS=pin4=(1,3), BS=pin5=(1,4)" — these were corrected to match the netlist after a Codex catch.)
 
-> ⚠️ **(VERIFY: GP/OS/BS electrical form (dry vs. voltage-sense) and C2A cavities.)** The at-machine field sheet leaves GP/OS/BS rows blank (PART A4 / PART C3) — they are machine-side switches that must be actuated at the machine. The board front-ends default to dry-contact wetting like the cams (the working assumption), jumper-selectable to 24 VAC sense per channel. BS predicted at C2A-112cc, GP/OS cavities unconfirmed. None gate the board layout.
+> ⚠️ **(VERIFY: GP/OS electrical form (dry vs. voltage-sense) and C2A cavities; BS form.)** The at-machine field sheet leaves GP/OS/BS rows blank (PART A4 / PART C3) — they are machine-side switches that must be actuated at the machine. The board front-ends default to dry-contact wetting like the cams (the working assumption), jumper-selectable to 24 VAC sense per channel. **BS measured at C2A-CC (✓ 2026-06-27)**; GP/OS cavities still unconfirmed. None gate the board layout.
 
 ---
 
@@ -125,7 +132,7 @@ Two operator pushbuttons on the machine's control panel:
 
 These are cold-mappable at the bench (you can press them) — the field-sheet/JOB3 method is: black probe on chassis/common, hold the button, sweep the C2A cavities, find the one that closes only while pressed.
 
-> **(VERIFY: PBZ / PBC C2A cavities.)** Both are predicted to be in the "C2A-21EE area" but the exact cavities are unmeasured. Not a board gate.
+> **PBZ = C2A-EE ✓ measured 2026-06-27** (shorts to the common-U node when pressed). **(VERIFY: PBC C2A cavity.)** PBC is still unmeasured (predicted "C2A-EE area"). Not a board gate.
 
 ---
 
@@ -251,7 +258,7 @@ Notes:
 - The relay-enable rail, NE555 watchdog, RP2040 RP_OK, TB/SC interlock, power-down/First-Ball-Zero rule: **§19 Safety Architecture**.
 
 **Confirmed (locked) machine-I/O facts:**
-- Cam form = dry contact, NC (A4). DIELL = NPN open-collector, ~16 V rest / ~0.7 V broken, 24 V supply (characterized end-to-end). Grippers = chassis-return, gripped = closed-to-ground (corrected at machine). Output working voltage = 24 VAC (A1). Relay = Omron G5LE-14 **5 VDC** coil (C116963). Opto = PC817B (C5692981). Expander = MCP23017 I²C (C47023, *not* SPI). Watchdog timer = bipolar NE555 (NE555DR, C7593). RP2040 fast inputs = **GP6–GP13**, RP2040_OK = GP2, UART = GP0/GP1. Board = 250×225 mm, 4 copper layers.
+- Motion-cam form (SA/SB/TA1/TA2) = dry contact, NC (A4); **SC = read on its N.O. contact at C2A-U, TB = no independent signal — SC+TB series interlock (✓ measured 2026-06-27; see `docs/phase8_interlock_redesign.md`)**. DIELL = NPN open-collector, ~16 V rest / ~0.7 V broken, 24 V supply (characterized end-to-end). Grippers = chassis-return, gripped = closed-to-ground (corrected at machine); **gripper cavities GS1=C 2=H 3=M 4=S 5=W 6=a 7=e 9=r 10=v, PBZ=EE, BS=CC (✓ measured 2026-06-27; GS8 recheck)**. Output working voltage = 24 VAC (A1). Relay = Omron G5LE-14 **5 VDC** coil (C116963). Opto = PC817B (C5692981). Expander = MCP23017 I²C (C47023, *not* SPI). Watchdog timer = bipolar NE555 (NE555DR, C7593). RP2040 fast inputs = **GP6–GP13**, RP2040_OK = GP2, UART = GP0/GP1. Board = 250×225 mm, 4 copper layers.
 
 **Deferred to cutover (do NOT guess, NOT board-gating):**
-- Per-gripper GS#→C2A cavity + GS#-to-pin order; per-cam SA/SB/SC/TA1/TA2/TB→C2A cavity + edge-to-angle polarity; exact C1/C2A landings for all 7 outputs; GP/OS/BS/Foul/PBZ/PBC cavities and (for GP/OS/BS/Foul) dry-vs-AC form; TB/SC interlock terminal landing; relay contact current (A2); mask-LED type + `Rled_*` value; M1 existence as a separate relay.
+- Per-cam **SA/SB/TA1/TA2**→C2A cavity (**POWERED cutover only** — cold reads invalidated 2026-06-27 by the shared N common + relay-ladder coil sneak paths, ~21 Ω) + edge-to-angle polarity (still unmeasured); GS8 cavity recheck; exact C1/C2A landings for all 7 outputs; GP/OS/Foul/PBC cavities and (for GP/OS/Foul) dry-vs-AC form; relay contact current (A2); mask-LED type + `Rled_*` value; M1 existence as a separate relay. *(Resolved 2026-06-27, no longer deferred: gripper GS#→cavity map + GS#-to-pin order (GS8 excepted), SC=U, TB=no independent signal (series interlock — landing = the shared U node), PBZ=EE, BS=CC.)*

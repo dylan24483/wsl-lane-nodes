@@ -498,7 +498,7 @@ Bench 5 V lands here. Powers everything: Pico, MCPs, NE555, opto logic sides, U3
 
 > `VCC_5V_RAW` (pin 1) → D17 (anode=RAW, cathode=`VCC_5V`) → the protected `VCC_5V` rail. Expect ~**0.3–0.4 V drop** across D17, so on-board 5 V reads slightly low (e.g. feed 5.0 V, measure ≈4.6–4.7 V at TP1). `VCC_5V` here is the **same net** as J1 pin 1 — never feed 5 V into both J1 and J2 from two supplies.
 
-> **(VERIFY: 5 V supply current budget.)** Worst-case = 6 G5LE coils (≈6 × ~40 mA) + logic + LEDs + margin; exact sizing is an open assembly item in the spec. For logic-only bench bring-up (no relays commanded) a ~1 A bench supply is ample.
+> **(VERIFY: 5 V supply current budget.)** Worst-case = 6 G5LE-**14** coils (meter-confirmed ~65 Ω at 5 V ≈ **~77 mA each** → ≈**460 mA** all-on; the earlier "~40 mA" was the G5LE-**1** 125 Ω figure) + logic + LEDs + margin; exact sizing is an open assembly item in the spec. For bench bring-up a ~1 A supply still covers the full all-relays-on load; logic-only is far below that.
 
 ---
 

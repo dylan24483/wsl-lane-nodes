@@ -7,6 +7,15 @@ Status legend: `[ ]` open · `[~]` blocked on physical verify · `[x]` done.
 
 ## 1. PRE-ORDER GATES (green before reorder)
 
+> **⚠️ GATE SCOPE NOTE (added 2026-07-06).** G1–G5 cover **only the relay remap**. They do NOT
+> gate change-list items **3** (USB clearance — **NOT done in the rev-C layout**, see the change
+> list), **5** (FIELD_WET_V bleed — **NOT implemented**), or **6–8** (the verify-before-commit
+> items). The rev-C order was placed with G1–G5 green and those items unresolved; 3 and 5 carry
+> workarounds (change list + §3 below), and **6–8 remain OPEN and must be resolved before the
+> NEXT spin** (item 6 is further blocked on the powered at-cutover cam/cavity mapping — the
+> 2026-06-27 metering deferred per-cam characterization). Do not treat green G1–G5 as
+> "everything on the change list landed."
+
 ### G1 — Relay footprint/pin remap fixed in the generator  `[x]`
 - The rev-B defect: `scripts/generate_kicad_netlist_revB.py` `relay_output()` (lines ~276-283)
   put `RELAY_ENABLE_RAIL` on pad 1 and the MMBT3904 collector on pad 2, leaving the real
@@ -53,7 +62,12 @@ Status legend: `[ ]` open · `[~]` blocked on physical verify · `[x]` done.
 
 ## 2. INTERIM SOFTWARE / DOC FIXES (do before next bring-up; NOT PCB blockers)
 
-### D1 — Fix `docs/manual_src/11_connector-pinouts.md` §11.6 J5 table  `[ ]`
+### D1 — Fix `docs/manual_src/11_connector-pinouts.md` §11.6 J5 table  `[x]`
+**DONE 2026-07-06** — §11.6 hand-corrected per the rows below (no table generator exists; each
+row was cross-checked against `SLOW_INPUT_PINS` in `generate_kicad_netlist_revB.py` before
+editing), intro rewritten (J5 spans both expanders; PBZ/PBC/FOUL are on IN-A and ARE read
+today). The compiled `WSL_PHASE8_SYSTEM_MANUAL.md`/`.docx` still carries the old table until
+regenerated from `manual_src/`.
 The whole J5 MCP map is wrong vs `SLOW_INPUT_PINS` / `controller_io.py`. Per-row corrections (regenerate from the corrected script rather than hand-edit if possible):
 - **PBZ** → IN-A (U1, 0x20), pin 6 / GPB5 / (port,bit)=(1,5).
 - **PBC** → IN-A (0x20), pin 7 / GPB6 / (1,6).
@@ -73,7 +87,8 @@ The whole J5 MCP map is wrong vs `SLOW_INPUT_PINS` / `controller_io.py`. Per-row
   **footprint symbol = G5LE-1**, **as-ordered part = G5LE-14 (C116963)**, and the
   meter-confirmed pad map: coil pads 2/5, COM pad 1, NO pad 3, NC pad 4 unused.
 
-### D3 — Daemon one-board bench mode  `[ ]`
+### D3 — Daemon one-board bench mode  `[x]`
+- **DONE 2026-07-06** — implemented exactly as specced below (`_parse_lanes`/`_select_boards`/`_build_boards` + `--lanes`, zero-boards → exit 1); selftest 28/28 + flight-recorder suite 71/71 still green.
 - File: `lane_node/controller_daemon.py`. Three localized edits (no touch to BoardController/run()/FSM):
   1. Add `WSL_LANES` env + `_parse_lanes()` / `_select_boards()` after `_shadow_enabled()` (line ~66). Lane filter applied to configs **before** construction so a single-board Pi never opens lane-22's `/dev/ttyAMA1`/bus-3.
   2. Add `_build_boards()` above `main()` — wrap each `BoardController(cfg)` in try/except; an open failure is logged loudly and **skipped** (never ticked → no NE555 kick → rail stays down = fail-safe). Returns the boards that came up clean.
@@ -105,13 +120,13 @@ J2 (5V in) and J6-J12 (motion out) are wire-direct Phoenix MKDS fixed blocks = *
 - Production (×32): DIN 2×10 breakout + ribbon + the 5 plugs; Pi GPIO terminal HAT ×16 optional.
 
 ### Consumables / tools (mostly on hand)
-- Micro-USB cable for RP2040 BOOTSEL/UF2 flashing — **keep the hand-shaved right-angle micro-B** (rev-B USB jams against J1; rev-C clears it).
+- Micro-USB cable for RP2040 BOOTSEL/UF2 flashing — **keep the hand-shaved right-angle micro-B** (rev-B USB jams against J1; **rev-C does NOT clear it** — change-list #3 never made the layout, A1/J1 are unmoved. **Flash the Pico BEFORE soldering it down**, or use the shaved cable).
 - F-F Dupont jumpers (~10): land ribbon GND/SDA/SCL onto **Pi pins 6/3/5**. **NEVER J1 pin1/11.**
 - Hookup wire to bench-close the J14 safety loop: jumper **pin1↔pin2** (TB/SC) and **pin3↔pin4** (Stop/CIS) so RELAY_ENABLE_RAIL can come up. **Do NOT jumper pin1→pin4.** Remove before cutover.
 - Hookup wire to tap an input pin (J3/J4/J5) to FIELD_GND to fire its opto.
 - Iron/solder/flux + ferrule kit (Phoenix plugs hand-terminated; J2/J6-J11 wire-direct).
 - DMM — TP1 VCC_5V, TP3 VCC_3V3, TP4 FIELD_WET_V, TP5 FIELD_GND, TP14 RP2040_OK, TP15 SAFE_STOP_RETURN, TP16 RELAY_ENABLE_RAIL + relay coil/contact continuity.
-- Bench PSU: regulated 5V into J2 (sized for 6 coils ~6×40mA + logic + LEDs + margin). **Do NOT also feed 5V into J1 pin1.**
+- Bench PSU: regulated 5V into J2 — sized for 6 coils ≈ **6 × ~77 mA ≈ 460 mA** (G5LE-**14**, the locked ~65 Ω coil at 5 V — NOT the old "~40 mA" G5LE-1 figure) + logic + LEDs + margin → **≥1 A**. **Do NOT also feed 5V into J1 pin1.**
 - LEDs + limit resistors for the first-article click-test.
 
 ---

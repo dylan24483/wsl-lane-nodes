@@ -181,8 +181,10 @@ to become the protected `VCC_5V` rail (D17 anode = RAW, cathode = `VCC_5V`). Thi
 reverse-polarity damage at the cost of ~0.4 V drop, so the on-board 5 V rail sits slightly
 below the supply. `VCC_5V` and the J1 pin-1 5 V are the **same net** after the diode — do
 not feed 5 V into both J1 and J2 from two different supplies. Size the supply for
-worst-case simultaneous relay coil load (6 populated G5LE coils ≈ 6 × ~40 mA) + logic +
-LEDs + margin (`phase8b_pcb_revB_spec.md` §8.1, §11 item 2).
+worst-case simultaneous relay coil load (6 populated **G5LE-14** coils, meter-confirmed
+~65 Ω at 5 V ≈ **~77 mA each** → ≈ **460 mA all-on**; the earlier "6 × ~40 mA" figure was
+the G5LE-**1** 125 Ω datasheet value — the same -1/-14 confusion behind the rev-B footprint
+bug) + logic + LEDs + margin (`phase8b_pcb_revB_spec.md` §8.1, §11 item 2).
 
 > **(VERIFY: 5 V supply current budget.)** The spec lists "relay coil rail budget"
 > (worst-case relay count incl. any M1 decision) as an open assembly-blocking item; the
@@ -207,7 +209,7 @@ return for the dry-contact wetting.
 | 3 | SC | `FIELD_FAST_SC` | `FAST_SC` | GP8 (Pico 11) | IN | FIELD | Sweep-under-table interlock window (86–243); also the SC interlock echo. |
 | 4 | TA1 | `FIELD_FAST_TA1` | `FAST_TA1` | GP9 (Pico 12) | IN | FIELD | Table cam (355 zero stop / 185 delay reset). |
 | 5 | TA2 | `FIELD_FAST_TA2` | `FAST_TA2` | GP10 (Pico 14) | IN | FIELD | Table cam (260 run-through / pin-latch / decision). |
-| 6 | TB | `FIELD_FAST_TB` | `FAST_TB` | GP11 (Pico 15) | IN | FIELD | Table-sweep interference interlock cam (105–255). |
+| 6 | TB | `FIELD_FAST_TB` | `FAST_TB` | GP11 (Pico 15) | IN | FIELD | Table-sweep interference interlock cam (105–255). ⚠️ **Measured 2026-06-27: TB has NO standalone C2A signal on the 21/22 chassis** — both TB wires tie into the SC/U series-interlock node, so J3-6 has nothing to land on as designed; see `docs/phase8_interlock_redesign.md`. |
 | 7 | DIELL-L | `FIELD_FAST_DIELL_L` | `FAST_DIELL_L` | GP12 (Pico 16) | IN | FIELD | Ball detect, left beam (cushion SS cycle trigger). |
 | 8 | DIELL-R | `FIELD_FAST_DIELL_R` | `FAST_DIELL_R` | GP13 (Pico 17) | IN | FIELD | Ball detect, right beam. |
 | 9 | Field ground | `FIELD_GND` | — | — | — | FIELD | Isolated wetting return (shared with pin 10). |
@@ -274,30 +276,36 @@ are on the safety rail — they are sense-only.
 
 ---
 
-### 11.6 J5 — `J_SLOW_IN_B` (MCP IN-B slow inputs, 12-pin, 3.5 mm)
+### 11.6 J5 — `J_SLOW_IN_B` (slow inputs, 12-pin, 3.5 mm — spans MCP IN-A **and** IN-B)
 
-Manual-operation, 10th-frame, foul, pushbutton, and spare slow inputs, read by **MCP23017
-IN-B (U2, I2C 0x21)**. Pin order follows `slowb_order` in the generator; pin 12 is the
-field-ground return. (IN-B is configured on the board but is not yet *read* by the current
-FSM — see `controller_io.py`.)
+Manual-operation, 10th-frame, foul, pushbutton, and spare slow inputs. **J5 spans both
+expanders** (table corrected 2026-07-06 from `SLOW_INPUT_PINS` in the generator +
+`controller_io.py` — the earlier all-on-IN-B version was wrong on every row):
+**PBZ/PBC/FOUL** land on **MCP23017 IN-A (U1, I2C 0x20) GPB5–GPB7** and **are read by the
+FSM today** (`IN_A_MAP`); pins 4–11 (TENTH…AUX3) land on **MCP23017 IN-B (U2, I2C 0x21)
+GPA0–GPA7** (configured on the board but not yet *read* by the current FSM). Pin order
+follows `slowb_order` in the generator; pin 12 is the field-ground return.
 
-| Pin | Signal | Field net | Logic net | MCP IN-B pin (port,bit) | Dir | Domain | Function |
+| Pin | Signal | Field net | Logic net | MCP · pin (port,bit) | Dir | Domain | Function |
 |---|---|---|---|---|---|---|---|
-| 1 | PBZ | `FIELD_SLOW_PBZ` | `SLOW_PBZ` | 21 (GPA0) | IN | FIELD | First-ball / zero / manual-intervention pushbutton. |
-| 2 | PBC | `FIELD_SLOW_PBC` | `SLOW_PBC` | 22 (GPA1) | IN | FIELD | Cycle pushbutton. |
-| 3 | FOUL | `FIELD_SLOW_FOUL` | `SLOW_FOUL` | 23 (GPA2) | IN | FIELD | Foul-line detector. |
-| 4 | TENTH | `FIELD_SLOW_TENTH` | `SLOW_TENTH` | 24 (GPA3) | IN | FIELD | 10th-frame signal. |
-| 5 | MAN_T | `FIELD_SLOW_MAN_T` | `SLOW_MAN_T` | 25 (GPA4) | IN | FIELD | Manual table. |
-| 6 | MAN_S | `FIELD_SLOW_MAN_S` | `SLOW_MAN_S` | 26 (GPA5) | IN | FIELD | Manual sweep. |
-| 7 | MAN_SWS | `FIELD_SLOW_MAN_SWS` | `SLOW_MAN_SWS` | 27 (GPA6) | IN | FIELD | Manual sweep-switch. |
-| 8 | MAN_SWSR | `FIELD_SLOW_MAN_SWSR` | `SLOW_MAN_SWSR` | 28 (GPA7) | IN | FIELD | Manual sweep-reverse. |
-| 9 | AUX1 | `FIELD_SLOW_AUX1` | `SLOW_AUX1` | 1 (GPB0) | IN | FIELD | Spare input. |
-| 10 | AUX2 | `FIELD_SLOW_AUX2` | `SLOW_AUX2` | 2 (GPB1) | IN | FIELD | Spare input. |
-| 11 | AUX3 | `FIELD_SLOW_AUX3` | `SLOW_AUX3` | 3 (GPB2) | IN | FIELD | Spare input. |
+| 1 | PBZ | `FIELD_SLOW_PBZ` | `SLOW_PBZ` | IN-A (0x20) · 6 (GPB5) = (1,5) | IN | FIELD | First-ball / zero / manual-intervention pushbutton. |
+| 2 | PBC | `FIELD_SLOW_PBC` | `SLOW_PBC` | IN-A (0x20) · 7 (GPB6) = (1,6) | IN | FIELD | Cycle pushbutton. |
+| 3 | FOUL | `FIELD_SLOW_FOUL` | `SLOW_FOUL` | IN-A (0x20) · 8 (GPB7) = (1,7) | IN | FIELD | Foul-line detector. |
+| 4 | TENTH | `FIELD_SLOW_TENTH` | `SLOW_TENTH` | IN-B (0x21) · 21 (GPA0) = (0,0) | IN | FIELD | 10th-frame signal. |
+| 5 | MAN_T | `FIELD_SLOW_MAN_T` | `SLOW_MAN_T` | IN-B (0x21) · 22 (GPA1) = (0,1) | IN | FIELD | Manual table. |
+| 6 | MAN_S | `FIELD_SLOW_MAN_S` | `SLOW_MAN_S` | IN-B (0x21) · 23 (GPA2) = (0,2) | IN | FIELD | Manual sweep. |
+| 7 | MAN_SWS | `FIELD_SLOW_MAN_SWS` | `SLOW_MAN_SWS` | IN-B (0x21) · 24 (GPA3) = (0,3) | IN | FIELD | Manual sweep-switch. |
+| 8 | MAN_SWSR | `FIELD_SLOW_MAN_SWSR` | `SLOW_MAN_SWSR` | IN-B (0x21) · 25 (GPA4) = (0,4) | IN | FIELD | Manual sweep-reverse. |
+| 9 | AUX1 | `FIELD_SLOW_AUX1` | `SLOW_AUX1` | IN-B (0x21) · 26 (GPA5) = (0,5) | IN | FIELD | Spare input. |
+| 10 | AUX2 | `FIELD_SLOW_AUX2` | `SLOW_AUX2` | IN-B (0x21) · 27 (GPA6) = (0,6) | IN | FIELD | Spare input. |
+| 11 | AUX3 | `FIELD_SLOW_AUX3` | `SLOW_AUX3` | IN-B (0x21) · 28 (GPA7) = (0,7) | IN | FIELD | Spare input. |
 | 12 | Field ground | `FIELD_GND` | — | — | — | FIELD | Isolated wetting return for J5. |
 
-**Operating theory.** Same dry-contact opto front-end (PC817 U25…U35) feeding MCP23017
-IN-B. AUX1–AUX3 are deliberately spare for machine-specific discoveries at cutover so that
+**Operating theory.** Same dry-contact opto front-end (PC817 U25…U35), but the logic side
+splits across the two expanders: PBZ/PBC/FOUL fill IN-A's last three GPB bits (continuing
+after the J4 signals), and TENTH…AUX3 start IN-B's GPA bank. The (port,bit) values equal
+`controller_io.py` maps, regression-locked against `SLOW_INPUT_PINS` by the module's
+`__main__` self-test. AUX1–AUX3 are deliberately spare for machine-specific discoveries at cutover so that
 a newly-found switch does not force a board respin. The three manual-* lines exist so a
 service tech's manual table/sweep/sweep-switch/sweep-reverse actuations are visible to the
 Pi.

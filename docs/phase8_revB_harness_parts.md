@@ -70,4 +70,4 @@ DIN rail, board standoffs/enclosure, per-board 5 V supply — part of the panel 
 - **Production (no rush — panel build):** B-1 ×32, B-2 ×32 each, B-3 wiring. DIN breakouts via Winford-direct (fast) or Amazon (2–3 wk, fine for panel timeline).
 
 ## Related (design, not parts) — rev-C fixes surfaced this session
-Break SWD out to a 3-pin header · give the Pico USB end clearance from J1 · add the J1 mating socket to the assembly BOM · consider a min-load/bleed resistor on `FIELD_WET_V`. *(Tracked here so they aren't lost; not a parts purchase.)*
+~~Break SWD out to a 3-pin header~~ **DROPPED** (Dylan 2026-06-25 — superseded by USB clearance, `phase8_revC_change_list.md` #2/#3) · give the Pico USB end clearance from J1 (**#3 — NOT done in the rev-C layout**; flash before soldering / shaved cable) · add the J1 mating socket to the assembly BOM (#4) · consider a min-load/bleed resistor on `FIELD_WET_V` (**#5 — not implemented**). *(Tracked here so they aren't lost; not a parts purchase. Status now lives in `phase8_revC_change_list.md`.)*
