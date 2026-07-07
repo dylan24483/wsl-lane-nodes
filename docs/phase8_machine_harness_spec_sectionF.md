@@ -12,7 +12,7 @@ Synthesized 2026-06-27 from the reverse-engineering docs (provenance at bottom).
 - **Confidence legend:** `confirmed` = bench-measured on the spare cabinet 2026-06-01, or read from a legible schematic detail. `best-effort` = signal→device pairing is solid but the exact C1/C2A pin *digit* is 225-DPI OCR-ceiling guesswork — **must be metered before you crimp.** `TBD` = not yet measured at all. `✓ measured 2026-06-27` = metered on the live 21/22 machine — ground truth, supersedes any earlier prediction.
 - **⊕** = channel is wired/footprinted on the board but the current FSM (`cycle_control_8270.py`) does not use it. Build the lead anyway (no respin at cutover), but it's not on the cutover critical path.
 - **Board-side connectors are already fixed** (Phoenix MC/MKDS plugs on the rev-B BOM). Nothing here changes the board — everything below is the *cable + machine-side mate*.
-- **Remaining blockers after the 2026-06-27 metering:** the four motion-cam cavities SA/SB/TA1/TA2 (**DEFERRED TO POWERED CUTOVER** — cold continuity is invalidated by relay-coil sneak paths, see F.5 step 1), GS8 (recheck), GP, and **one TBD output connector (M1)** (M was confirmed at session-2). SC/TB, the grippers, PBZ and BS are measured. F.5 is the meter list for what's left.
+- **Remaining blockers after the 2026-06/07 metering:** the four motion-cam cavities SA/SB/TA1/TA2 (**DEFERRED TO POWERED CUTOVER** — cold continuity is invalidated by relay-coil sneak paths, see F.5 step 1), GP, and **one TBD output connector (M1)** (M was confirmed at session-2). SC/TB, **all 10 grippers (GS8=K closed 2026-07-07)**, PBZ and BS are measured. F.5 is the meter list for what's left.
 
 ---
 
@@ -47,7 +47,7 @@ Synthesized 2026-06-27 from the reverse-engineering docs (provenance at bottom).
 | J4-5 | GS5 | IN | C2A-**W** ✓ measured 2026-06-27 | Gripper 5 | dry contact | ✓ measured 2026-06-27 |
 | J4-6 | GS6 | IN | C2A-**a** ✓ measured 2026-06-27 (~~predicted 46Z~~ — wrong) | Gripper 6 | dry contact | ✓ measured 2026-06-27 |
 | J4-7 | GS7 | IN | C2A-**e** ✓ measured 2026-06-27 | Gripper 7 | dry contact | ✓ measured 2026-06-27 |
-| J4-8 | GS8 | IN | **TBD — RECHECK at machine** (~~predicted 48H — PROVEN WRONG: H is GS2's cavity~~) | Gripper 8 | dry contact | **unread 2026-06-27, recheck** |
+| J4-8 | GS8 | IN | C2A-**K** ✓ measured 2026-07-07 (~~predicted 48H — PROVEN WRONG: H is GS2's cavity~~) | Gripper 8 | dry contact | ✓ measured 2026-07-07 |
 | J4-9 | GS9 | IN | C2A-**r** ✓ measured 2026-06-27 | Gripper 9 | dry contact | ✓ measured 2026-06-27 |
 | J4-10 | GS10 | IN | C2A-**v** ✓ measured 2026-06-27 (~~predicted 410U — PROVEN WRONG: U is a common rail~~) | Gripper 10 | dry contact | ✓ measured 2026-06-27 |
 | J4-11 | GP | IN | **C2A-? still open** (predicted 412DD — NOT resolved by the 2026-06-27 metering) | Gripper-protect switch | dry contact | best-effort |
@@ -148,7 +148,7 @@ Board ships every input as the **default dry-contact wetting front-end** (FIELD_
 
 | Channel(s) | Decision | Rationale | Lock state |
 |---|---|---|---|
-| **GS1–GS10, GP, BS, OS** (J4) | **DRY-CONTACT** (default) | Mechanical switches to chassis common — clean dry contacts. | **LOCKED** (cavities ✓ measured 2026-06-27; GS8 recheck, GP/OS still open) |
+| **GS1–GS10, GP, BS, OS** (J4) | **DRY-CONTACT** (default) | Mechanical switches to chassis common — clean dry contacts. | **LOCKED** (all 10 gripper cavities ✓ measured; GP/OS still open) |
 | **SA, SB, SC, TA1, TA2, TB** (J3 cams) | **DRY default — VERIFY each isn't a live 24 V cam node** | Omega-Tek cams *may* present switched 24 V. **If metered AC > a few V at the cam C2A pin → switch that channel to 24 VAC-rectified sense.** 2026-06-27: cam contacts sit in series in the 24 VAC relay ladder (coil sneak paths) — the class check must be done POWERED. | **CONDITIONAL — meter POWERED (F.5 step 4)** |
 | **PBZ, PBC, TENTH, MAN_*** (J5) | **DRY-CONTACT** (default) | Pushbuttons + manual toggles = dry. | LOCKED (⊕ future) |
 | **DIELL-L / DIELL-R** | **dedicated active-sensor opto** (~16 V NPN active-low) | Powered 3-wire NPN, not dry. Bench-proven. | **LOCKED (confirmed)** |
@@ -166,8 +166,8 @@ Do these at the spare cabinet, in order. Steps 0–8 bench/idle; 10–12 at-mach
 - **Step 1 — C2A INPUT pin digits. ✓ largely CLOSED 2026-06-27:**
   - **SC = C2A-U ✓** (read on its N.O. pink wire) · **TB = no standalone cavity ✓** (SC+TB series interlock, shares the U node — see `docs/phase8_interlock_redesign.md`).
   - **Motion cams SA/SB/TA1/TA2 — DEFERRED TO POWERED CUTOVER.** The cold continuity-trace method is invalidated: N is the shared cam common and ~21 Ω sneak paths through relay coils make every cold read ambiguous. Map them powered (rotate, watch the cavity go live).
-  - Grippers ✓ (GS1=C 2=H 3=M 4=S 5=W 6=a 7=e 9=r 10=v) — **GS8 recheck**. PBZ=EE ✓, BS=CC ✓.
-  - **Remaining cold work:** GS8 recheck · GP · OS, TENTH, MAN_SWSR (⊕, lower) · MAN_T/S/SWS — upgrade descriptive → real cavity codes.
+  - Grippers ✓ **COMPLETE 10/10** (GS1=C 2=H 3=M 4=S 5=W 6=a 7=e **8=K** 9=r 10=v). PBZ=EE ✓, BS=CC ✓.
+  - **Remaining cold work:** GP · OS, TENTH, MAN_SWSR (⊕, lower) · MAN_T/S/SWS — upgrade descriptive → real cavity codes.
 - **Step 2 — C1 OUTPUT re-confirm (S/T).** Beep-verify **S = C,D,N,T (C not J); T = A,K,H,E,L (L not P)**. *(§4)*
 - **Step 3 — Output close-out (M1 TBD).** Re-confirm M (C2A FF/U/B) + BE straddle. **M1 never metered → meter coil + connector** before populating J12. *(§ M/M1)*
 - **Step 4 — Per-input front-end class (drives F.4).** Meter each input cavity → FIELD_GND: dry (<2 V) vs live 24 VAC. Flips cam channels if any read AC. *(§5)*
@@ -184,7 +184,7 @@ Do these at the spare cabinet, in order. Steps 0–8 bench/idle; 10–12 at-mach
 ## F.6 — OPEN RISKS / HONEST GAPS
 
 1. **Connector P/N known** (AMP 67209/67211, read at the bench) **but housing-vs-contact + gender not yet pinned.** Confirm both before ordering Path-A mates; Path B (splice) stays the de-risked fallback. *(Downgraded from "#1 gap" — the real #1 is the C2A **input** cavity digits, item 2.)*
-2. **C2A input map — largely closed 2026-06-27.** SC=U ✓, TB has no standalone cavity ✓ (series interlock — `docs/phase8_interlock_redesign.md`); grippers/PBZ/BS ✓ measured. Still open: the four motion-cam cavities SA/SB/TA1/TA2 (**powered cutover only** — cold reads invalidated by coil sneak paths), GS8 (recheck), GP, OS/spares. Gripper sense leads are now crimpable (except GS8); don't crimp the four motion-cam leads before the powered mapping.
+2. **C2A input map — closed 2026-07-07 (cold portion).** SC=U ✓, TB has no standalone cavity ✓ (series interlock — `docs/phase8_interlock_redesign.md`); **all 10 grippers**/PBZ/BS ✓ measured. Still open: the four motion-cam cavities SA/SB/TA1/TA2 (**powered cutover only** — cold reads invalidated by coil sneak paths), GP, OS/spares. **All 10 gripper sense leads are now crimpable**; don't crimp the four motion-cam leads before the powered mapping.
 3. **TA2 cavity — deferred to powered cutover.** The old ~~30N~~ candidate is impossible (N = the cam common) and 21A is unconfirmed; cold reads are invalid either way.
 4. **M1 connector never measured; M re-confirm.** Both ⊕ future (not cutover-blocking); don't populate J12 on assumption.
 5. **Cam front-end (dry vs 24 VAC) conditional.** If cams present a live AC node, six J3 channels need the rectified front-end — only F.5 step 4 resolves it.
@@ -196,6 +196,6 @@ Do these at the spare cabinet, in order. Steps 0–8 bench/idle; 10–12 at-mach
 
 ---
 
-**Build-order bottom line (post-2026-06-27):** F.5 step 0 is ✓ mostly done (housing-vs-contact P/N + gender left) and step 1 is ✓ largely closed — remaining cold work is **GS8 recheck + GP + ⊕ stragglers**; the four motion-cam cavities map at **POWERED cutover**. The output side (J6–J11) except M1 is bench-confirmed and **can be cabled now** (18 AWG, Bundle 3). DIELL + grippers (except GS8) + SC/PBZ/BS are build-ready; SA/SB/TA1/TA2 + foul are gated on the powered session; TB gets no lead of its own (series interlock — `docs/phase8_interlock_redesign.md`).
+**Build-order bottom line (post-2026-07-07):** F.5 step 0 is ✓ mostly done (housing-vs-contact P/N + gender left) and step 1 is ✓ closed for everything cold-measurable — remaining cold work is **GP + ⊕ stragglers**; the four motion-cam cavities map at **POWERED cutover**. The output side (J6–J11) except M1 is bench-confirmed and **can be cabled now** (18 AWG, Bundle 3). DIELL + **all 10 grippers** + SC/PBZ/BS are build-ready; SA/SB/TA1/TA2 + foul are gated on the powered session; TB gets no lead of its own (series interlock — `docs/phase8_interlock_redesign.md`).
 
 **Provenance:** `phase8_channel_allocation.md`, `phase8_controller_interface_MAP.md`, `11_connector-pinouts.md` §11.1/§11.4–11.7, `phase8_C1_C2A_pinout_p288.md`, `phase8_controller_interface_fieldsheet.md`, `phase8_bench_session1_FINDINGS.md`, `phase8_bench_session2_probe_list.md`, memory `project_amf_8270_interface_research.md`. Every `confirmed` row traces to the 2026-06-01 bench session; every `best-effort`/`TBD` is flagged in F.5.

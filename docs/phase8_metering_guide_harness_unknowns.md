@@ -16,16 +16,16 @@
 ## 🔵 What's REMAINING (the real list)
 
 ### ✅ Confirmed at the machine (2026-06-27)
-- **Grippers (drop-a-pin):** GS1=**C** · GS2=**H** · GS3=**M** · GS4=**S** · GS5=**W** · GS6=**a** · GS7=**e** · GS8=**TBD (recheck)** · GS9=**r** · GS10=**v**. (GS1–5 match the schematic; GS6–10 resolve/correct it — the old GS8=48H collided with GS2=H, and GS10=U is a common, both wrong.)
+- **Grippers (drop-a-pin) — COMPLETE 10/10:** GS1=**C** · GS2=**H** · GS3=**M** · GS4=**S** · GS5=**W** · GS6=**a** · GS7=**e** · GS8=**K** *(✓ 2026-07-07)* · GS9=**r** · GS10=**v**. (GS1–5 match the schematic; GS6–10 resolve/correct it — the old GS8=48H collided with GS2=H, and GS10=U is a common, both wrong. GS8=K breaks the loose alphabetic run — measurement over pattern; the cutover drop-one-pin gate re-verifies each anyway.)
 - **PBZ** (zero button) **→ EE** (shorts to common U when pressed).
 - **BS** (#9 bin) **→ CC.**
 - **SC** (interlock) **→ U.** · **TB → none** (interlock-only, shares the U node).
 - **Common/ground rails — ignore these, they ring to everything:** **J, F, U** (gripper/control common, chassis return) + **N** (the 5-cam motion common).
 - **Deferred to powered cutover:** motion cams **SA / SB / TA1 / TA2** (buried in the relay ladder — a clean one-read each once powered).
-- **Still open:** GS8 (recheck) · GP (gripper-protect) · OS / PBC / 10th / MAN_* (spare/future) · Foul · DIELL re-check.
+- **Still open:** GP (gripper-protect) · OS / PBC / 10th / MAN_* (spare/future) · Foul · DIELL re-check.
 
 ### ★ 1. C2A INPUT cavity digits — largely CLOSED 2026-06-27 (see ✅ block above)
-**Remaining cold work = GS8 recheck + GP + the ⊕ stragglers.** The four motion cams (SA/SB/TA1/TA2) map at **POWERED cutover only** (§3) — do **not** re-attempt them cold. The reach-lead procedure below is kept for the remaining stragglers. The cams/grippers/switches live on the **machine**; their wires reach the cabinet through C2A.
+**Remaining cold work = GP + the ⊕ stragglers.** The four motion cams (SA/SB/TA1/TA2) map at **POWERED cutover only** (§3) — do **not** re-attempt them cold. The reach-lead procedure below is kept for the remaining stragglers. The cams/grippers/switches live on the **machine**; their wires reach the cabinet through C2A.
 
 **The reach problem + the fix.** C2A is in the cabinet, the cams are out on the mechanism — too far for two meter probes. **Don't buy long probes — use a long extension lead.** Grab **~25 ft of stranded hookup wire with an alligator clip on each end** (or chain 2–3 alligator test-lead sets — about $10). Clip one end to the device's signal terminal at the machine, run the wire back to the cabinet — you've now "brought" that terminal to you, and **both meter probes work at the cabinet**: one on the long lead (= the device), the other sweeping C2A.
 
@@ -48,13 +48,13 @@
 | SA | sweep cam (270/360) switch | ~~confirm 31N~~ cold read INVALID (N = cam common) | **DEFERRED → powered cutover (§3)** | — |
 | SB | sweep guard cam switch | ~~confirm 31H~~ cold read INVALID | **DEFERRED → powered cutover (§3)** | — |
 | TA1 | table cam (355/185) switch | ~~confirm 34N~~ cold read INVALID (N = cam common) | **DEFERRED → powered cutover (§3)** | — |
-| GS1–GS10 | drop-a-pin (chassis return) | **✓** 1=C 2=H 3=M 4=S 5=W 6=a 7=e 8=**TBD** 9=r 10=v | per-pin | see ✅ block |
+| GS1–GS10 | drop-a-pin (chassis return) | **✓ 10/10:** 1=C 2=H 3=M 4=S 5=W 6=a 7=e **8=K** 9=r 10=v | done | see ✅ block |
 | GP / BS | gripper-protect / bin (#9) switch | **BS → CC ✓**; GP still open | confirm | BS=CC |
 | PBZ | zero pushbutton terminal | **→ EE ✓** (shorts to common U pressed) | confirm | EE |
 | OS / TENTH / MAN_SWSR (⊕) | off-spot / 10th / man-reverse switch | **SWEEP — unknown** | LOW | ____ |
 | MAN_T / MAN_S / MAN_SWS (⊕) | manual table / sweep / sweep-switch | sweep T/S/SWS region | LOW | ____ |
 
-> **Priority (post-2026-06-27): GS8 recheck + GP first** — they're the last cold blockers. SC/TB are done (✓ rows above); TA2 and the other motion cams are deferred to the powered session (§3).
+> **Priority (post-2026-07-07): GP is the last cold blocker.** SC/TB and all 10 grippers are done (✓ rows above); TA2 and the other motion cams are deferred to the powered session (§3).
 
 **Grippers — map by dropping a pin (cold; no reach lead needed).** Because every gripper returns to the machine frame, you don't trace each one — you *actuate* it. Machine cold: clip your meter's **black lead to bare chassis/frame**, then **set a single pin into one spotting cup** (or hand-close that one gripper). With the red lead, **back-probe the C2A cavities** — the cavity that now reads **closed to chassis** is that gripper. The pin you dropped tells you the **gripper number** (its pin position, 1–10), so this step *names* GS1…GS10 at the same time. Work one cup at a time across the triangle. (This is the cutover "drop a pin, watch which input asserts" step from §4.3 — doing it with a meter at the bench gets you the cavity map early.)
 
@@ -104,4 +104,4 @@ DMM (continuity/beep, AC + DC volts, **LoZ/low-Z** mode if it has one), **back-p
 ## What to send back
 Photos or typed copy of the **B1 table** (+ any straggler readings). I turn them straight into the corrected Section F input map — and the harness goes from spec to cut-and-crimp.
 
-> **Bottom line (post-2026-06-27):** the cold tracing is essentially **done** — SC/TB, grippers (GS8 excepted), PBZ, BS all measured. Remaining cold = **GS8 recheck + GP + ⊕ stragglers**; the four motion cams map at **POWERED cutover** (§3). The bench output side was already done.
+> **Bottom line (post-2026-07-07):** the cold tracing is **done** — SC/TB, all 10 grippers, PBZ, BS measured. Remaining cold = **GP + ⊕ stragglers**; the four motion cams map at **POWERED cutover** (§3). The bench output side was already done.
