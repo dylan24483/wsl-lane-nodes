@@ -1,0 +1,686 @@
+** Drc report for wsl-phase8b.nc-audit.kicad_pcb **
+** Created on 2026-06-03T17:19:12 **
+** Report includes: Errors, Warnings, Exclusions **
+
+** Found 167 DRC violations **
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.2505 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(86.6000 mm, 13.0000 mm): PTH pad 6 [FIELD_WET_V] of U37
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.1250 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(86.6000 mm, 13.0000 mm): PTH pad 6 [FIELD_WET_V] of U37
+    @(84.6000 mm, 5.5000 mm): Track [GND] on In2.Cu, length 14.5000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.2505 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(81.5200 mm, 13.0000 mm): Track [FIELD_GND] on F.Cu, length 5.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.2050 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(81.5200 mm, 13.0000 mm): PTH pad 4 [FIELD_GND] of U37
+    @(84.6000 mm, 5.5000 mm): Track [GND] on In2.Cu, length 14.5000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 141.5000 mm): Track [OUT_M_B] on In2.Cu, length 1.4000 mm
+    @(240.6000 mm, 143.0000 mm): Track [OUT_M2_A] on In2.Cu, length 14.6000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 143.0000 mm): Track [OUT_M2_A] on In2.Cu, length 14.6000 mm
+    @(240.6000 mm, 141.5000 mm): Track [OUT_M_B] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.3778 mm)
+    Rule: MACHINE independent output clearance; error
+    @(224.5000 mm, 144.0000 mm): Via [OUT_BE_B] on F.Cu - B.Cu
+    @(240.6000 mm, 143.0000 mm): Track [OUT_M2_A] on In2.Cu, length 14.6000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 141.5000 mm): Track [OUT_M_B] on In2.Cu, length 1.4000 mm
+    @(240.6000 mm, 145.0000 mm): Track [OUT_M2_A] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.4432 mm)
+    Rule: MACHINE independent output clearance; error
+    @(220.5000 mm, 127.5000 mm): Via [OUT_SP_A] on F.Cu - B.Cu
+    @(220.0000 mm, 131.9125 mm): Track [OUT_BE_A] on F.Cu, length 2.6125 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.0750 mm)
+    Rule: MACHINE independent output clearance; error
+    @(220.5000 mm, 127.5000 mm): Track [OUT_SP_A] on In1.Cu, length 12.5000 mm
+    @(214.0000 mm, 129.0000 mm): Via [OUT_BE_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.4432 mm)
+    Rule: MACHINE independent output clearance; error
+    @(220.5000 mm, 126.0000 mm): Track [OUT_SP_A] on F.Cu, length 1.5000 mm
+    @(220.0000 mm, 129.3000 mm): Via [OUT_BE_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2682 mm)
+    Rule: MACHINE independent output clearance; error
+    @(220.5000 mm, 127.5000 mm): Via [OUT_SP_A] on F.Cu - B.Cu
+    @(220.0000 mm, 129.3000 mm): Via [OUT_BE_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.4875 mm)
+    Rule: MACHINE independent output clearance; error
+    @(220.5000 mm, 109.9125 mm): Via [OUT_SP_A] on F.Cu - B.Cu
+    @(240.6000 mm, 108.0000 mm): Track [OUT_S_A] on In2.Cu, length 44.6000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.3750 mm)
+    Rule: MACHINE independent output clearance; error
+    @(220.5000 mm, 127.5000 mm): Track [OUT_SP_A] on In1.Cu, length 12.5000 mm
+    @(220.0000 mm, 129.3000 mm): Via [OUT_BE_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(156.0000 mm, 218.0000 mm): Via [SAFE_STOP_RETURN] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.4432 mm)
+    Rule: MACHINE independent output clearance; error
+    @(220.5000 mm, 127.5000 mm): Via [OUT_SP_A] on F.Cu - B.Cu
+    @(220.0000 mm, 129.3000 mm): Track [OUT_BE_A] on B.Cu, length 6.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5561 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 129.0000 mm): Track [OUT_BE_A] on In2.Cu, length 26.6000 mm
+    @(242.0000 mm, 127.5000 mm): PTH pad 6 [OUT_SP_B] of J6
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.6750 mm)
+    Rule: MACHINE independent output clearance; error
+    @(199.0000 mm, 111.5000 mm): Via [OUT_S_B] on F.Cu - B.Cu
+    @(191.6000 mm, 112.6000 mm): Track [OUT_SP_B] on In2.Cu, length 19.4000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 113.5000 mm): Track [OUT_S_B] on In2.Cu, length 2.0000 mm
+    @(240.6000 mm, 117.0000 mm): Track [OUT_T_A] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 113.5000 mm): Track [OUT_S_B] on In2.Cu, length 1.4000 mm
+    @(240.6000 mm, 117.0000 mm): Track [OUT_T_A] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5561 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 131.0000 mm): Track [OUT_BE_A] on In2.Cu, length 2.0000 mm
+    @(242.0000 mm, 127.5000 mm): PTH pad 6 [OUT_SP_B] of J6
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.8500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 111.5000 mm): Track [OUT_S_B] on In2.Cu, length 41.6000 mm
+    @(191.6000 mm, 112.6000 mm): Track [OUT_SP_B] on In2.Cu, length 19.4000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.3778 mm)
+    Rule: MACHINE independent output clearance; error
+    @(222.0000 mm, 144.0000 mm): Track [OUT_BE_B] on F.Cu, length 2.5000 mm
+    @(226.0000 mm, 143.0000 mm): Via [OUT_M2_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(133.0000 mm, 98.9125 mm): Track [BASE_AND_ARM] on F.Cu, length 3.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5750 mm)
+    Rule: MACHINE independent output clearance; error
+    @(230.0000 mm, 158.0000 mm): Via [OUT_M_B] on F.Cu - B.Cu
+    @(229.0000 mm, 146.5000 mm): Track [OUT_M2_B] on B.Cu, length 32.1000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 148.5000 mm): Track [OUT_M2_B] on In2.Cu, length 1.4000 mm
+    @(240.6000 mm, 150.0000 mm): Track [OUT_M1_A] on In2.Cu, length 8.6000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.6250 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 136.0000 mm): Track [OUT_M_A] on In2.Cu, length 20.6000 mm
+    @(231.5000 mm, 137.0500 mm): Via [OUT_BE_B] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 148.5000 mm): Track [OUT_M2_B] on In2.Cu, length 2.0000 mm
+    @(240.6000 mm, 150.0000 mm): Track [OUT_M1_A] on In2.Cu, length 8.6000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.1625 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 111.5000 mm): Track [OUT_S_B] on In2.Cu, length 41.6000 mm
+    @(220.5000 mm, 109.9125 mm): Via [OUT_SP_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2028 mm)
+    Rule: MACHINE independent output clearance; error
+    @(224.5000 mm, 144.0000 mm): Via [OUT_BE_B] on F.Cu - B.Cu
+    @(226.0000 mm, 143.0000 mm): Via [OUT_M2_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.0750 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 129.0000 mm): Track [OUT_BE_A] on In2.Cu, length 26.6000 mm
+    @(220.5000 mm, 127.5000 mm): Via [OUT_SP_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.0750 mm)
+    Rule: MACHINE independent output clearance; error
+    @(223.0000 mm, 139.5000 mm): Track [OUT_M_B] on B.Cu, length 17.1000 mm
+    @(224.5000 mm, 144.0000 mm): Via [OUT_BE_B] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.6250 mm)
+    Rule: MACHINE independent output clearance; error
+    @(231.5000 mm, 137.0500 mm): Track [OUT_BE_B] on In1.Cu, length 14.5000 mm
+    @(220.0000 mm, 136.0000 mm): Via [OUT_M_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.3778 mm)
+    Rule: MACHINE independent output clearance; error
+    @(224.5000 mm, 144.0000 mm): Track [OUT_BE_B] on In1.Cu, length 7.5000 mm
+    @(226.0000 mm, 143.0000 mm): Via [OUT_M2_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 136.0000 mm): Track [OUT_M_A] on In2.Cu, length 20.6000 mm
+    @(240.6000 mm, 134.5000 mm): Track [OUT_BE_B] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 136.0000 mm): Track [OUT_M_A] on In2.Cu, length 20.6000 mm
+    @(242.0000 mm, 134.5000 mm): Track [OUT_BE_B] on In2.Cu, length 1.4000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 120.5000 mm): Track [OUT_T_B] on In2.Cu, length 2.0000 mm
+    @(240.6000 mm, 122.0000 mm): Track [OUT_SP_A] on In2.Cu, length 32.6000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 120.5000 mm): Track [OUT_T_B] on In2.Cu, length 2.0000 mm
+    @(240.6000 mm, 124.0000 mm): Track [OUT_SP_A] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 152.0000 mm): Track [OUT_M1_A] on In2.Cu, length 2.0000 mm
+    @(240.6000 mm, 148.5000 mm): Track [OUT_M2_B] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5561 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 150.0000 mm): Track [OUT_M1_A] on In2.Cu, length 8.6000 mm
+    @(242.0000 mm, 148.5000 mm): PTH pad 12 [OUT_M2_B] of J6
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.6750 mm)
+    Rule: MACHINE independent output clearance; error
+    @(211.0000 mm, 112.6000 mm): Via [OUT_SP_B] on F.Cu - B.Cu
+    @(240.6000 mm, 111.5000 mm): Track [OUT_S_B] on In2.Cu, length 41.6000 mm
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(133.0000 mm, 89.0875 mm): Track [BASE_AND_ARM] on F.Cu, length 3.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.9750 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 115.0000 mm): Track [OUT_T_A] on In2.Cu, length 38.6000 mm
+    @(231.5000 mm, 113.6000 mm): Via [OUT_SP_B] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 127.5000 mm): Track [OUT_SP_B] on In2.Cu, length 2.0000 mm
+    @(240.6000 mm, 131.0000 mm): Track [OUT_BE_A] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 131.0000 mm): Track [OUT_BE_A] on In2.Cu, length 2.0000 mm
+    @(242.0000 mm, 127.5000 mm): Track [OUT_SP_B] on In2.Cu, length 1.4000 mm
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 188.0000 mm): Track [COIL_LO_M2] on F.Cu, length 1.7500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(136.0000 mm, 89.0875 mm): Track [BASE_AND_ARM] on F.Cu, length 9.8250 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1250 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(84.6000 mm, 5.5000 mm): Track [GND] on In2.Cu, length 14.5000 mm
+    @(86.6000 mm, 13.0000 mm): PTH pad 6 [FIELD_WET_V] of U37
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5561 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 136.0000 mm): Track [OUT_M_A] on In2.Cu, length 20.6000 mm
+    @(242.0000 mm, 134.5000 mm): PTH pad 8 [OUT_BE_B] of J6
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 134.5000 mm): Track [OUT_BE_B] on In2.Cu, length 2.0000 mm
+    @(240.6000 mm, 138.0000 mm): Track [OUT_M_A] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.0750 mm)
+    Rule: MACHINE independent output clearance; error
+    @(224.5000 mm, 144.0000 mm): Via [OUT_BE_B] on F.Cu - B.Cu
+    @(226.0000 mm, 143.0000 mm): Track [OUT_M2_A] on B.Cu, length 43.6500 mm
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 177.0000 mm): Track [COIL_LO_M2] on F.Cu, length 5.8625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5561 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 117.0000 mm): Track [OUT_T_A] on In2.Cu, length 2.0000 mm
+    @(242.0000 mm, 113.5000 mm): PTH pad 2 [OUT_S_B] of J6
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 78.0000 mm): Track [COIL_LO_S] on F.Cu, length 11.2000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(240.6000 mm, 113.5000 mm): Track [OUT_S_B] on In2.Cu, length 2.0000 mm
+    @(240.6000 mm, 115.0000 mm): Track [OUT_T_A] on In2.Cu, length 38.6000 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 120.5000 mm): Track [OUT_T_B] on In2.Cu, length 1.4000 mm
+    @(240.6000 mm, 124.0000 mm): Track [OUT_SP_A] on In2.Cu, length 2.0000 mm
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(142.0625 mm, 91.0500 mm): Track [BASE_AND_ARM] on F.Cu, length 6.0625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(166.8000 mm, 177.0000 mm): Track [COIL_LO_M2] on F.Cu, length 11.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 122.0000 mm): Track [RELAY_ENABLE_RAIL] on F.Cu, length 2.9500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 188.0000 mm): Track [COIL_LO_M2] on F.Cu, length 11.2000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(170.0000 mm, 89.0875 mm): Track [BASE_AND_RP_OK] on F.Cu, length 2.2000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 67.0000 mm): Track [COIL_LO_S] on F.Cu, length 5.8625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 111.0000 mm): Track [COIL_LO_SP] on F.Cu, length 5.8625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 144.0000 mm): Track [RELAY_ENABLE_RAIL] on F.Cu, length 2.9500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(170.0000 mm, 98.9125 mm): Track [BASE_AND_RP_OK] on F.Cu, length 2.2000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 122.0000 mm): Track [COIL_LO_SP] on F.Cu, length 1.7500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 78.0000 mm): Track [COIL_LO_S] on F.Cu, length 1.7500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(159.0625 mm, 95.0500 mm): Track [BASE_AND_RP_OK] on F.Cu, length 2.2625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 100.0000 mm): Track [RELAY_ENABLE_RAIL] on F.Cu, length 2.9500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(166.8000 mm, 111.0000 mm): Track [COIL_LO_SP] on F.Cu, length 11.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(166.8000 mm, 67.0000 mm): Track [COIL_LO_S] on F.Cu, length 11.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 78.0000 mm): Track [RELAY_ENABLE_RAIL] on F.Cu, length 2.9500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2750 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(142.0625 mm, 95.7500 mm): Track [AND_MID_ARM_RP] on F.Cu, length 18.8750 mm
+    @(156.8000 mm, 95.0500 mm): Via [BASE_AND_RP_OK] on F.Cu - B.Cu
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(172.2000 mm, 89.0875 mm): Track [BASE_AND_RP_OK] on F.Cu, length 9.8250 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 122.0000 mm): Track [COIL_LO_SP] on F.Cu, length 11.2000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(163.5000 mm, 10.0000 mm): Track [SAFE_TBSC_RETURN] on F.Cu, length 3.5000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.2505 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(81.5200 mm, 13.0000 mm): Track [FIELD_GND] on F.Cu, length 5.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 188.0000 mm): Track [RELAY_ENABLE_RAIL] on F.Cu, length 2.9500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 144.0000 mm): Track [COIL_LO_BE] on F.Cu, length 1.7500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(172.2000 mm, 95.0500 mm): Via [BASE_AND_RP_OK] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.2505 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(81.5200 mm, 8.0000 mm): Track [FIELD_GND] on F.Cu, length 76.0200 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 210.0000 mm): Track [RELAY_ENABLE_RAIL] on F.Cu, length 2.9500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 133.0000 mm): Track [COIL_LO_BE] on F.Cu, length 5.8625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(156.8000 mm, 95.0500 mm): Via [BASE_AND_RP_OK] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(148.0000 mm, 81.0875 mm): Track [RAIL_GATE] on F.Cu, length 2.5000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 144.0000 mm): Track [COIL_LO_BE] on F.Cu, length 11.2000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 166.0000 mm): Track [RELAY_ENABLE_RAIL] on F.Cu, length 2.9500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.0000 mm, 188.0000 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(157.0625 mm, 81.0500 mm): Track [RAIL_GATE] on F.Cu, length 11.5625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(166.8000 mm, 133.0000 mm): Track [COIL_LO_BE] on F.Cu, length 11.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(166.8000 mm, 155.0000 mm): Track [COIL_LO_M] on F.Cu, length 11.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.0000 mm, 166.0000 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(143.9375 mm, 92.0000 mm): Track [RAIL_GATE] on F.Cu, length 1.5625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 155.0000 mm): Track [COIL_LO_M] on F.Cu, length 5.8625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.0000 mm, 100.0000 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 100.0000 mm): Track [COIL_LO_T] on F.Cu, length 11.2000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(145.5000 mm, 81.0500 mm): Track [RAIL_GATE] on F.Cu, length 10.9500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.0000 mm, 210.0000 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 166.0000 mm): Track [COIL_LO_M] on F.Cu, length 1.7500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(166.8000 mm, 89.0000 mm): Track [COIL_LO_T] on F.Cu, length 11.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.0000 mm, 122.0000 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(156.0000 mm, 218.0000 mm): Track [SAFE_STOP_RETURN] on F.Cu, length 3.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 166.0000 mm): Track [COIL_LO_M] on F.Cu, length 11.2000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 100.0000 mm): Track [COIL_LO_T] on F.Cu, length 1.7500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.0000 mm, 144.0000 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(157.0625 mm, 82.9500 mm): Track [SAFE_STOP_RETURN] on F.Cu, length 1.7375 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 89.0000 mm): Track [COIL_LO_T] on F.Cu, length 5.8625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.0000 mm, 82.0000 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(148.0000 mm, 82.9125 mm): Track [SAFE_STOP_RETURN] on F.Cu, length 9.0625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.0000 mm, 78.0000 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(158.8000 mm, 82.9500 mm): Via [SAFE_STOP_RETURN] on F.Cu - B.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 199.0000 mm): Track [COIL_LO_M1] on F.Cu, length 5.8625 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 210.0000 mm): Track [COIL_LO_M1] on F.Cu, length 11.2000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 210.0000 mm): Track [COIL_LO_M1] on F.Cu, length 1.7500 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(166.8000 mm, 199.0000 mm): Track [COIL_LO_M1] on F.Cu, length 11.0000 mm
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(176.0000 mm, 116.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K3
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(176.0000 mm, 138.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K4
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(176.0000 mm, 160.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K5
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 122.0000 mm): PTH pad 2 [COIL_LO_SP] of K3
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 144.0000 mm): PTH pad 2 [COIL_LO_BE] of K4
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(176.0000 mm, 204.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K7
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(176.0000 mm, 182.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K6
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 166.0000 mm): PTH pad 2 [COIL_LO_M] of K5
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 210.0000 mm): PTH pad 2 [COIL_LO_M1] of K7
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 188.0000 mm): PTH pad 2 [COIL_LO_M2] of K6
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 188.0000 mm): Pad 1 [RELAY_ENABLE_RAIL] of D11 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 78.0000 mm): Pad 1 [RELAY_ENABLE_RAIL] of D1 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(157.0625 mm, 81.0500 mm): Pad 1 [RAIL_GATE] of Q14 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 166.0000 mm): Pad 1 [RELAY_ENABLE_RAIL] of D9 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 133.0000 mm): Pad 3 [COIL_LO_BE] of Q4 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 100.0000 mm): Pad 1 [RELAY_ENABLE_RAIL] of D3 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(170.0000 mm, 98.9125 mm): Pad 1 [BASE_AND_RP_OK] of R110 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(148.0000 mm, 82.9125 mm): Pad 1 [SAFE_STOP_RETURN] of R106 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 89.0000 mm): Pad 3 [COIL_LO_T] of Q2 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 177.0000 mm): Pad 3 [COIL_LO_M2] of Q6 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(142.0625 mm, 91.0500 mm): Pad 1 [BASE_AND_ARM] of Q15 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 199.0000 mm): Pad 3 [COIL_LO_M1] of Q7 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 188.0000 mm): Pad 2 [COIL_LO_M2] of D11 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 78.0000 mm): Pad 2 [COIL_LO_S] of D1 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 155.0000 mm): Pad 3 [COIL_LO_M] of Q5 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.2505 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(81.5200 mm, 13.0000 mm): PTH pad 4 [FIELD_GND] of U37
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.2505 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(86.6000 mm, 13.0000 mm): PTH pad 6 [FIELD_WET_V] of U37
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(157.0625 mm, 82.9500 mm): Pad 2 [SAFE_STOP_RETURN] of Q14 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 166.0000 mm): Pad 2 [COIL_LO_M] of D9 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 67.0000 mm): Pad 3 [COIL_LO_S] of Q1 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 100.0000 mm): Pad 2 [COIL_LO_T] of D3 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(159.0625 mm, 95.0500 mm): Pad 1 [BASE_AND_RP_OK] of Q16 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 210.0000 mm): Pad 1 [RELAY_ENABLE_RAIL] of D13 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(148.0000 mm, 81.0875 mm): Pad 2 [RAIL_GATE] of R106 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(133.0000 mm, 98.9125 mm): Pad 1 [BASE_AND_ARM] of R108 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(143.9375 mm, 92.0000 mm): Pad 3 [RAIL_GATE] of Q15 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(176.0000 mm, 72.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K1
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 78.0000 mm): PTH pad 2 [COIL_LO_S] of K1
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(163.5000 mm, 10.0000 mm): PTH pad 2 [SAFE_TBSC_RETURN] of J8
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(167.0000 mm, 10.0000 mm): PTH pad 3 [SAFE_TBSC_RETURN] of J8
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(158.9375 mm, 82.0000 mm): Pad 3 [RELAY_ENABLE_RAIL] of Q14 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(170.5000 mm, 10.0000 mm): PTH pad 4 [SAFE_STOP_RETURN] of J8
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(170.0000 mm, 89.0875 mm): Pad 2 [BASE_AND_RP_OK] of R109 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(133.0000 mm, 89.0875 mm): Pad 2 [BASE_AND_ARM] of R107 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(160.9375 mm, 111.0000 mm): Pad 3 [COIL_LO_SP] of Q3 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(176.0000 mm, 94.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K2
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(178.0000 mm, 100.0000 mm): PTH pad 2 [COIL_LO_T] of K2
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 210.0000 mm): Pad 2 [COIL_LO_M1] of D13 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 144.0000 mm): Pad 1 [RELAY_ENABLE_RAIL] of D7 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 144.0000 mm): Pad 2 [COIL_LO_BE] of D7 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(162.9500 mm, 122.0000 mm): Pad 1 [RELAY_ENABLE_RAIL] of D5 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[clearance]: Clearance violation (netclass 'Safety_Rail' clearance 0.3000 mm; actual 0.2505 mm)
+    Rule: netclass 'Safety_Rail'; error
+    @(165.0500 mm, 122.0000 mm): Pad 2 [COIL_LO_SP] of D5 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - Footprint component type doesn't match footprint pads
+
+** End of Report **

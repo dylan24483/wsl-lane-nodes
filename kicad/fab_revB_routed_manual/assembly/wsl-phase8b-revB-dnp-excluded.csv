@@ -1,0 +1,48 @@
+Designator,Value,Footprint,Reason
+C4,10nF X2 DNP,C_0805_2012Metric,DNP / excluded from BOM and POS
+C5,10nF X2 DNP,C_0805_2012Metric,DNP / excluded from BOM and POS
+C6,10nF X2 DNP,C_0805_2012Metric,DNP / excluded from BOM and POS
+C7,10nF X2 DNP,C_0805_2012Metric,DNP / excluded from BOM and POS
+C8,10nF X2 DNP,C_0805_2012Metric,DNP / excluded from BOM and POS
+C9,10nF X2 DNP,C_0805_2012Metric,DNP / excluded from BOM and POS
+C10,10nF X2 DNP,C_0805_2012Metric,DNP / excluded from BOM and POS
+D2,MOV DNP,D_SMA,DNP / excluded from BOM and POS
+D4,MOV DNP,D_SMA,DNP / excluded from BOM and POS
+D6,MOV DNP,D_SMA,DNP / excluded from BOM and POS
+D8,MOV DNP,D_SMA,DNP / excluded from BOM and POS
+D10,MOV DNP,D_SMA,DNP / excluded from BOM and POS
+D12,MOV DNP,D_SMA,DNP / excluded from BOM and POS
+D13,1N4148,D_SOD-323,DNP / excluded from BOM and POS
+D14,MOV DNP,D_SMA,DNP / excluded from BOM and POS
+J12,J_MOTION_M1 5.08mm,"TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",DNP / excluded from BOM and POS
+K7,G5LE M1 DNP,Relay_SPDT_Omron-G5LE-1,DNP / excluded from BOM and POS
+Q7,MMBT3904 M1,SOT-23,DNP / excluded from BOM and POS
+R69,100R DNP,R_0805_2012Metric,DNP / excluded from BOM and POS
+R72,100R DNP,R_0805_2012Metric,DNP / excluded from BOM and POS
+R75,100R DNP,R_0805_2012Metric,DNP / excluded from BOM and POS
+R78,100R DNP,R_0805_2012Metric,DNP / excluded from BOM and POS
+R81,100R DNP,R_0805_2012Metric,DNP / excluded from BOM and POS
+R84,100R DNP,R_0805_2012Metric,DNP / excluded from BOM and POS
+R85,1k,R_0805_2012Metric,DNP / excluded from BOM and POS
+R86,100k,R_0805_2012Metric,DNP / excluded from BOM and POS
+R87,100R DNP,R_0805_2012Metric,DNP / excluded from BOM and POS
+MK1,M3,MountingHole_3.2mm_M3,Excluded from BOM/POS
+MK2,M3,MountingHole_3.2mm_M3,Excluded from BOM/POS
+MK3,M3,MountingHole_3.2mm_M3,Excluded from BOM/POS
+MK4,M3,MountingHole_3.2mm_M3,Excluded from BOM/POS
+TP1,VCC_5V,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP2,GND,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP3,VCC_3V3,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP4,FIELD_WET_V,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP5,FIELD_GND,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP6,I2C_SDA,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP7,I2C_SCL,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP8,WDOG_KICK,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP9,WDOG_TIMING_NODE,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP10,NE555_TRIG,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP11,NE555_OUT,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP12,WDOG_OK_PULLDOWN,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP13,ARM_PERMIT,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP14,RP2040_OK,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP15,SAFE_STOP_RETURN,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS
+TP16,RELAY_ENABLE_RAIL,TestPoint_Pad_1.5x1.5mm,Excluded from BOM/POS

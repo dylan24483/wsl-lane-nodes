@@ -106,7 +106,7 @@ These conventions hold across every table below. They come from `opto_input()`,
   pull-up to 3V3 (`Rpu`). Firmware (`config.h`) and `controller_io.py`
   (`INPUT_ACTIVE_LOW = True`) both invert this: **asserted/closed reads logical 1.**
 - **Relay contacts are isolated dry NO contacts.** For every `J_MOTION_*`: **pin 2 = COM**
-  (`OUT_x_A`, relay pad 3), **pin 1 = NO** (`OUT_x_B`, relay pad 4). The board never sources
+  (`OUT_x_A`, relay pad 1), **pin 1 = NO** (`OUT_x_B`, relay pad 3). The board never sources
   the voltage on these pins; the machine control circuit does. The contact closes only when
   (a) the FSM commands the bit AND (b) the hardware safety rail is up (Section 10).
 
@@ -319,14 +319,14 @@ safety rail is up.
 
 | Pin | Signal | Net (example, S) | Relay pad | Dir | Domain | Notes |
 |---|---|---|---|---|---|---|
-| 1 | Relay **NO** (normally-open) | `OUT_S_B` | K-pad 4 (NO) | OUT | MACHINE OUTPUT | Open when de-energized; closes to COM when commanded + rail up. |
-| 2 | Relay **COM** (common) | `OUT_S_A` | K-pad 3 (COM) | OUT | MACHINE OUTPUT | The contact common. |
+| 1 | Relay **NO** (normally-open) | `OUT_S_B` | K-pad 3 (NO) | OUT | MACHINE OUTPUT | Open when de-energized; closes to COM when commanded + rail up. |
+| 2 | Relay **COM** (common) | `OUT_S_A` | K-pad 1 (COM) | OUT | MACHINE OUTPUT | The contact common. |
 
 > **Pin 1 = NO, Pin 2 = COM** on *all* J_MOTION_* blocks. This comes straight from
 > `block_connectors()`: `b += j_motion[name][1]` (pin 1 = `OUT_x_B`) and
 > `a += j_motion[name][2]` (pin 2 = `OUT_x_A`); and from `relay_output()`:
-> `relay[3] += out_a` (COM) and `relay[4] += out_b` (NO). Pads sit in the same vertical
-> order as the G5LE contact (B above A).
+> `relay[1] += out_a` (COM) and `relay[3] += out_b` (NO). The metered G5LE-14 pad map is:
+> coil pads 2/5, COM pad 1, NO pad 3, NC pad 4 unused.
 
 **Per-connector function map (the only thing that differs between J6–J12):**
 

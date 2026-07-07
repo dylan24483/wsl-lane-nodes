@@ -1,0 +1,8 @@
+Use,Board-side Header,Required Off-board Part,Suggested Family,Quantity per Board,Notes
+J3 FAST field inputs,J3,10-position 3.5mm pluggable mating plug,"Phoenix MC 1,5/10-ST-3,5 or compatible mate for MCV 1,5/10-G-3,5",1,Order with harness parts; not placed on PCB.
+J4 SLOW A field inputs,J4,14-position 3.5mm pluggable mating plug,"Phoenix MC 1,5/14-ST-3,5 or compatible mate for MCV 1,5/14-G-3,5",1,Order with harness parts; not placed on PCB.
+J5 SLOW B field inputs,J5,12-position 3.5mm pluggable mating plug,"Phoenix MC 1,5/12-ST-3,5 or compatible mate for MCV 1,5/12-G-3,5",1,Order with harness parts; not placed on PCB.
+J13 LED lamps,J13,6-position 3.5mm pluggable mating plug,"Phoenix MC 1,5/6-ST-3,5 or compatible mate for MCV 1,5/6-G-3,5",1,Order with harness parts; not placed on PCB.
+J14 safety loop,J14,4-position 3.5mm pluggable mating plug,"Phoenix MC 1,5/4-ST-3,5 or compatible mate for MCV 1,5/4-G-3,5",1,Order with harness parts; not placed on PCB.
+Mounting hardware,MK1-MK4,M3 mounting hardware and standoffs,M3 screws/standoffs sized for enclosure,4,Board holes are excluded from BOM/POS.
+Pi ribbon cable,J1,2x10 2.54mm IDC ribbon cable/mate,Match J1 shrouded/header choice and Pi-side connector,1,Confirm keying/orientation before harness build.

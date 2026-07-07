@@ -1,6 +1,6 @@
 # WSL Phase 8 — Session Handoff (2026-05-31)
 
-> **⚡ NEXT SESSION: READ `phase8_session_close_2026-06-03.md` FIRST** — current walk-in (rev-B routed, class-aware DRC clean + field session complete, as of 2026-06-03). Then `phase8_session_close_2026-06-01.md` for the prior day. THIS handoff is the deeper background; the close docs supersede §2–§3 for live state.
+> **⚡ NEXT SESSION: READ `phase8_session_close_2026-06-25.md` FIRST** — rev-B **board #1 bench bring-up**, ribbon now in hand; the task is to **wire J1↔Pi and finish Steps 2→3→4** (I²C enumerate → relay-enable rail → relay click test). That doc is the live state + the full step-by-step. Older close docs (`phase8_session_close_2026-06-03.md`, `…06-01.md`) are prior background (rev-B routing/DRC era). THIS handoff is the deeper background; the close docs supersede §2–§3 for live state.
 >
 > This captures the live, in-flight state of the Phase 8 work. The exhaustive technical detail lives in the referenced docs; this ties it together + records the state that only existed in the conversation. **Phase 8 (pinsetter controller replacement + camera scoring) is the CURRENT active work** — *not* the April unified-checkout (that's prior/paused).
 

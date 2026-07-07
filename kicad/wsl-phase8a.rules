@@ -1,0 +1,58 @@
+
+(rules PCB wsl-phase8a.dsn
+  (snap_angle 
+    fortyfive_degree
+  )
+  (rule
+    (width 200.0)
+    (clearance 200.0)
+    (clearance 100.0 (type smd_to_turn_gap))
+    (clearance 50.0 (type smd))
+    (clearance 200.0 (type "kicad_default"))
+  )
+  (padstack "Via[0-1]_600:300_um"
+    (shape
+      (circle F.Cu 600.0 0.0 0.0)
+    )
+    (shape
+      (circle B.Cu 600.0 0.0 0.0)
+    )
+    (attach off)
+  )
+  (via 
+    "Via[0-1]_600:300_um" "Via[0-1]_600:300_um" default
+  )
+  (via 
+    "Via[0-1]_600:300_um-kicad_default" "Via[0-1]_600:300_um" "kicad_default"
+  )
+  (via_rule
+    default "Via[0-1]_600:300_um"
+  )
+  (via_rule
+    "kicad_default" "Via[0-1]_600:300_um-kicad_default"
+  )
+  (class default
+    (clearance_class default)
+    (via_rule default)
+    (rule
+      (width 200.0)
+    )
+    (circuit 
+      (use_layer F.Cu B.Cu)
+    )
+  )
+  (class "kicad_default"
+    "VCC_5V" KICK "Q1_GATE" "NE555_OUT" "DC_CH4_POS" "LED2_ANODE_DRIVE" "Q1_DRAIN" "TIMING_NODE"
+    "DC_CH3_POS" "CH3_RETURN" "AC_CH4_L1" "NE555_CTRL" GND "CH4_RETURN" "AC_CH1_L1" "CH1_RETURN"
+    "AC_CH2_L1" "CH2_RETURN" "NE555_TRIG" "COIL_GND_RETURN" "LED1_ANODE_DRIVE" "DC_CH2_POS" "DC_CH1_POS" "AC_CH3_L1"
+    "Q2_GATE" "VCC_5V_RAW"
+    (clearance_class "kicad_default")
+    (via_rule "kicad_default")
+    (rule
+      (width 200.0)
+    )
+    (circuit 
+      (use_layer F.Cu B.Cu)
+    )
+  )
+)

@@ -1,0 +1,1922 @@
+** Drc report for wsl-phase8b.routed-pass1.kicad_pcb **
+** Created on 2026-06-02T18:41:24 **
+** Report includes: Errors, Warnings, Exclusions **
+
+** Found 473 DRC violations **
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.5323 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(97.9305 mm, 208.4940 mm): Via [FIELD_GND] on F.Cu - B.Cu
+    @(102.3020 mm, 202.6980 mm): Track [WDOG_OK_PULLDOWN] on In1.Cu, length 17.5221 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+    @(34.0000 mm, 54.0000 mm): PTH pad 1 [FIELD_LED_SC] of U6
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+    @(34.0000 mm, 56.5400 mm): PTH pad 2 [FIELD_FAST_SC] of U6
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5890 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(42.1510 mm, 71.5997 mm): Track [FIELD_SLOW_GS3] on In2.Cu, length 21.2976 mm
+    @(41.6200 mm, 68.5400 mm): PTH pad 3 [GND] of U7
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(97.3929 mm, 209.0316 mm): Track [FIELD_GND] on In2.Cu, length 91.4579 mm
+    @(66.9185 mm, 208.0799 mm): Via [GND] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.9368 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(42.8670 mm, 98.9413 mm): Via [FIELD_SLOW_GS2] on F.Cu - B.Cu
+    @(40.3302 mm, 93.8298 mm): Track [GND] on In1.Cu, length 9.4204 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.8723 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(18.3888 mm, 83.3623 mm): Track [FIELD_SLOW_GS4] on In2.Cu, length 29.7889 mm
+    @(41.6200 mm, 80.5400 mm): PTH pad 3 [GND] of U8
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4503 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(61.5997 mm, 93.9403 mm): Track [FIELD_SLOW_GS6] on In2.Cu, length 41.8077 mm
+    @(41.6200 mm, 92.5400 mm): PTH pad 3 [GND] of U9
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4204 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(63.0000 mm, 116.5400 mm): PTH pad 2 [FIELD_SLOW_GS8] of U19
+    @(43.0904 mm, 118.0104 mm): Track [GND] on In2.Cu, length 26.0592 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.5944 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(69.0756 mm, 93.4137 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 15.8350 mm
+    @(70.6200 mm, 80.5400 mm): PTH pad 3 [GND] of U16
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4523 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 56.5400 mm): PTH pad 2 [FIELD_SLOW_FOUL] of U27
+    @(72.1223 mm, 58.0423 mm): Track [GND] on In2.Cu, length 25.9954 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4087 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(94.0702 mm, 83.0113 mm): Track [FIELD_SLOW_PBC] on In1.Cu, length 35.0520 mm
+    @(70.6200 mm, 104.5400 mm): PTH pad 3 [GND] of U18
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.2692 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(88.0350 mm, 82.5724 mm): Track [FIELD_SLOW_TENTH] on In1.Cu, length 105.9636 mm
+    @(70.6200 mm, 104.5400 mm): PTH pad 3 [GND] of U18
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.4577 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.6719 mm, 119.8681 mm): Track [FIELD_SLOW_MAN_SWS] on In2.Cu, length 51.5439 mm
+    @(69.1496 mm, 118.0104 mm): Track [GND] on In2.Cu, length 2.0795 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4544 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(41.0231 mm, 129.9444 mm): Track [FIELD_SLOW_AUX1] on In2.Cu, length 49.5725 mm
+    @(70.6200 mm, 128.5400 mm): PTH pad 3 [GND] of U20
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.3881 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(51.8627 mm, 143.8781 mm): Track [FIELD_SLOW_AUX3] on In2.Cu, length 31.4754 mm
+    @(70.6200 mm, 140.5400 mm): PTH pad 3 [GND] of U21
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 0.5362 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(152.6200 mm, 192.5400 mm): PTH pad 3 [OUT_L_STRIKE_A] of U38
+    @(169.9613 mm, 194.1262 mm): Track [GND] on F.Cu, length 23.3751 mm
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 3.0762 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(152.6200 mm, 190.0000 mm): PTH pad 4 [OUT_L_STRIKE_B] of U38
+    @(169.9613 mm, 194.1262 mm): Track [GND] on F.Cu, length 23.3751 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(50.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 57.0000 mm): Pad 2 [FAST_SC] of R8 on F.Cu
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 0.9414 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(234.4414 mm, 172.4414 mm): Track [OUT_L_FIRST_A] on In2.Cu, length 71.9200 mm
+    @(202.0000 mm, 170.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K6
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 2.4983 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(158.6217 mm, 166.0017 mm): Track [OUT_L_FIRST_B] on In2.Cu, length 73.0110 mm
+    @(202.0000 mm, 170.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K6
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 0.5397 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(151.0620 mm, 204.3626 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 1.6194 mm
+    @(154.7758 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 10.6343 mm
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 0.5017 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(237.4466 mm, 191.9983 mm): Track [OUT_L_STRIKE_A] on In2.Cu, length 80.2280 mm
+    @(202.0000 mm, 194.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K7
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 0.9577 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(242.0000 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 81.8800 mm
+    @(186.2115 mm, 199.1077 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.9402 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(50.0875 mm, 39.0000 mm): Pad 1 [FIELD_WET_V] of R21 on F.Cu
+    @(46.0875 mm, 36.1098 mm): Track [VCC_3V3] on F.Cu, length 20.5504 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.0579 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 150.0000 mm): PTH pad 1 [FIELD_LED_AUX3] of U35
+    @(98.0163 mm, 148.7011 mm): Track [VCC_3V3] on F.Cu, length 7.7133 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4442 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(97.3929 mm, 209.0316 mm): Track [FIELD_GND] on In2.Cu, length 91.4579 mm
+    @(78.8329 mm, 208.0374 mm): Via [VCC_3V3] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.9402 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(51.9125 mm, 39.0000 mm): Pad 2 [FIELD_LED_GS2] of R21 on F.Cu
+    @(46.0875 mm, 36.1098 mm): Track [VCC_3V3] on F.Cu, length 20.5504 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4897 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 152.5400 mm): PTH pad 2 [FIELD_SLOW_AUX3] of U35
+    @(98.0163 mm, 148.7011 mm): Track [VCC_3V3] on F.Cu, length 7.7133 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.6955 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(50.0875 mm, 87.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(48.9420 mm, 81.2003 mm): Via [FAST_TA2] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.5383 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(48.1777 mm, 83.3623 mm): Track [FIELD_SLOW_GS4] on In2.Cu, length 20.9619 mm
+    @(48.9420 mm, 81.2003 mm): Via [FAST_TA2] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.9789 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(234.4414 mm, 172.4414 mm): Track [OUT_L_FIRST_A] on In2.Cu, length 71.9200 mm
+    @(170.1352 mm, 169.9125 mm): Via [DRV_M2] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.0973 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(158.6217 mm, 166.0017 mm): Track [OUT_L_FIRST_B] on In2.Cu, length 73.0110 mm
+    @(170.0224 mm, 164.3544 mm): Via [DRV_M2] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(79.9269 mm, 148.6990 mm): Via [FIELD_WET_V] on F.Cu - B.Cu
+    @(79.0502 mm, 148.2741 mm): Track [NE555_TRIG] on In1.Cu, length 17.2958 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 114.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWSR] of U32
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.4537 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+    @(93.8894 mm, 86.7615 mm): Via [NE555_TRIG] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_S] of U30
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.7392 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 138.0000 mm): PTH pad 1 [FIELD_LED_AUX2] of U34
+    @(93.8894 mm, 133.4349 mm): Track [NE555_TRIG] on In1.Cu, length 20.9858 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.3723 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(94.7719 mm, 83.3019 mm): Track [FIELD_SLOW_PBZ] on In1.Cu, length 40.0601 mm
+    @(93.8894 mm, 86.7615 mm): Via [NE555_TRIG] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 116.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_SWSR] of U32
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 104.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_SWS] of U31
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 128.5400 mm): PTH pad 2 [FIELD_SLOW_AUX1] of U33
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 126.0000 mm): PTH pad 1 [FIELD_LED_AUX1] of U33
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.6747 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(29.0000 mm, 24.0000 mm): Pad 1 [VCC_5V] of D17 on F.Cu
+    @(21.2659 mm, 25.7247 mm): Track [FIELD_WET_V] on F.Cu, length 27.6586 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.0000 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.0000 mm, 10.0000 mm): Track [VCC_5V] on In2.Cu, length 39.0000 mm
+    @(85.7000 mm, 13.0000 mm): PTH pad 6 [FIELD_WET_V] of U41
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.6747 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(33.0000 mm, 24.0000 mm): Pad 2 [VCC_5V_RAW] of D17 on F.Cu
+    @(21.2659 mm, 25.7247 mm): Track [FIELD_WET_V] on F.Cu, length 27.6586 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 129.0000 mm): Pad 2 [SLOW_GS9] of R36 on F.Cu
+    @(79.0875 mm, 135.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(47.9125 mm, 45.0000 mm): Pad 2 [FAST_SB] of R6 on F.Cu
+    @(50.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 141.0000 mm): Pad 2 [SLOW_GS10] of R38 on F.Cu
+    @(79.0875 mm, 135.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 69.0000 mm): Pad 2 [SLOW_GS4] of R26 on F.Cu
+    @(79.0875 mm, 63.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.4748 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(70.6200 mm, 150.0000 mm): PTH pad 4 [SLOW_GP] of U22
+    @(77.8031 mm, 146.5752 mm): Track [FIELD_WET_V] on In2.Cu, length 29.0316 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 33.0000 mm): Pad 2 [SLOW_GS1] of R20 on F.Cu
+    @(79.0875 mm, 27.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 45.0000 mm): Pad 2 [SLOW_GS2] of R22 on F.Cu
+    @(79.0875 mm, 39.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 57.0000 mm): Pad 2 [SLOW_GS3] of R24 on F.Cu
+    @(79.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 81.0000 mm): Pad 2 [SLOW_GS5] of R28 on F.Cu
+    @(79.0875 mm, 75.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 93.0000 mm): Pad 2 [SLOW_GS6] of R30 on F.Cu
+    @(79.0875 mm, 87.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 105.0000 mm): Pad 2 [SLOW_GS7] of R32 on F.Cu
+    @(79.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(76.9125 mm, 117.0000 mm): Pad 2 [SLOW_GS8] of R34 on F.Cu
+    @(79.0875 mm, 123.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(47.9125 mm, 105.0000 mm): Pad 2 [FAST_DIELL_L] of R16 on F.Cu
+    @(50.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(47.9125 mm, 69.0000 mm): Pad 2 [FAST_TA1] of R10 on F.Cu
+    @(50.0875 mm, 63.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(47.9125 mm, 93.0000 mm): Pad 2 [FAST_TB] of R14 on F.Cu
+    @(50.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(47.9125 mm, 117.0000 mm): Pad 2 [FAST_DIELL_R] of R18 on F.Cu
+    @(50.0875 mm, 111.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+    @(34.0000 mm, 42.0000 mm): PTH pad 1 [FIELD_LED_SB] of U5
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+    @(152.6200 mm, 162.5400 mm): PTH pad 3 [OUT_L_FIRST_A] of U36
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+    @(152.6200 mm, 160.0000 mm): PTH pad 4 [OUT_L_FIRST_B] of U36
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4139 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(34.0000 mm, 30.0000 mm): PTH pad 1 [FIELD_LED_SA] of U4
+    @(28.8645 mm, 22.4721 mm): Track [VCC_5V] on In1.Cu, length 11.7781 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(34.0000 mm, 32.5400 mm): PTH pad 2 [FIELD_FAST_SA] of U4
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(34.0000 mm, 44.5400 mm): PTH pad 2 [FIELD_FAST_SB] of U5
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.5013 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(57.2767 mm, 122.8167 mm): Track [FIELD_SLOW_GS9] on In2.Cu, length 28.7927 mm
+    @(37.1929 mm, 123.8680 mm): Via [VCC_5V] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.4358 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(35.3571 mm, 103.1829 mm): Track [FIELD_FAST_DIELL_L] on In1.Cu, length 41.9023 mm
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(34.0000 mm, 116.5400 mm): PTH pad 2 [FIELD_FAST_DIELL_R] of U11
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4103 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(20.7841 mm, 23.4324 mm): Track [FIELD_GND] on In2.Cu, length 49.4035 mm
+    @(28.4497 mm, 22.4721 mm): Via [VCC_5V] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.9609 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(89.1836 mm, 92.5400 mm): Track [FIELD_SLOW_MAN_S] on In1.Cu, length 81.9678 mm
+    @(55.0342 mm, 128.8261 mm): Via [VCC_5V] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4600 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(31.2400 mm, 131.2493 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 53.5076 mm
+    @(37.1929 mm, 123.8680 mm): Via [VCC_5V] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.5683 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(41.0231 mm, 129.9444 mm): Track [FIELD_SLOW_AUX1] on In2.Cu, length 49.5725 mm
+    @(55.0342 mm, 128.8261 mm): Via [VCC_5V] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(34.0000 mm, 114.0000 mm): PTH pad 1 [FIELD_LED_DIELL_R] of U11
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.6762 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(87.5445 mm, 120.9955 mm): Track [FIELD_SLOW_MAN_SWSR] on In2.Cu, length 58.1571 mm
+    @(74.6733 mm, 121.9467 mm): Track [SLOW_GS9] on In2.Cu, length 21.3342 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.2565 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.4385 mm, 87.8185 mm): Track [SLOW_GS4] on In2.Cu, length 30.8560 mm
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.8787 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(242.0000 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 73.8800 mm
+    @(170.7151 mm, 188.0713 mm): Via [DRV_M1] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.4381 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(237.4466 mm, 191.9983 mm): Track [OUT_L_STRIKE_A] on In2.Cu, length 80.2280 mm
+    @(174.1692 mm, 193.9864 mm): Via [DRV_M1] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 2.9636 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(242.0000 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 81.8800 mm
+    @(174.1692 mm, 193.9864 mm): Via [DRV_M1] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.6995 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(63.0000 mm, 32.5400 mm): PTH pad 2 [FIELD_SLOW_GS1] of U12
+    @(46.7845 mm, 35.1645 mm): Track [FAST_SA] on In2.Cu, length 60.5000 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.2650 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(63.0000 mm, 44.5400 mm): PTH pad 2 [FIELD_SLOW_GS2] of U13
+    @(46.3500 mm, 46.7300 mm): Track [FAST_SB] on In2.Cu, length 67.8175 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.6199 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+    @(91.5161 mm, 100.2801 mm): Via [SLOW_BS] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4055 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+    @(91.5161 mm, 100.2801 mm): Track [SLOW_BS] on In1.Cu, length 18.2682 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.4294 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 104.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_SWS] of U31
+    @(91.5161 mm, 100.2801 mm): Track [SLOW_BS] on In1.Cu, length 18.2682 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.4328 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+    @(91.3400 mm, 99.4703 mm): Via [SLOW_OS] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.4536 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(94.7719 mm, 35.3119 mm): Track [FIELD_SLOW_PBZ] on In1.Cu, length 47.9900 mm
+    @(97.5005 mm, 44.1195 mm): Track [SLOW_PBC] on In1.Cu, length 57.0407 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4106 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 32.5400 mm): PTH pad 2 [FIELD_SLOW_PBZ] of U25
+    @(74.4956 mm, 33.8756 mm): Track [SLOW_GS1] on In2.Cu, length 46.4253 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4229 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 44.5400 mm): PTH pad 2 [FIELD_SLOW_PBC] of U26
+    @(74.5079 mm, 45.8879 mm): Track [SLOW_GS2] on In2.Cu, length 55.7074 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4062 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 54.0000 mm): PTH pad 1 [FIELD_LED_FOUL] of U27
+    @(71.9512 mm, 52.6688 mm): Track [SLOW_GS3] on In2.Cu, length 50.4974 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.6158 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_S] of U30
+    @(126.4241 mm, 94.0808 mm): Track [SLOW_GS5] on In2.Cu, length 39.7233 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4400 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(69.0756 mm, 77.5787 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 29.7532 mm
+    @(70.6200 mm, 78.0000 mm): PTH pad 4 [SLOW_GS5] of U16
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.5944 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(69.0756 mm, 93.4137 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 15.8350 mm
+    @(70.6200 mm, 90.0000 mm): PTH pad 4 [SLOW_GS6] of U17
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4091 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(88.9721 mm, 80.5400 mm): Track [FIELD_SLOW_MAN_T] on In1.Cu, length 103.8881 mm
+    @(76.9125 mm, 91.3847 mm): Via [SLOW_GS6] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.2048 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(94.0702 mm, 83.0113 mm): Track [FIELD_SLOW_PBC] on In1.Cu, length 35.0520 mm
+    @(70.6200 mm, 102.0000 mm): PTH pad 4 [SLOW_GS7] of U18
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4731 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(88.0350 mm, 82.5724 mm): Track [FIELD_SLOW_TENTH] on In1.Cu, length 105.9636 mm
+    @(70.6200 mm, 102.0000 mm): PTH pad 4 [SLOW_GS7] of U18
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.0981 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(89.1836 mm, 92.5400 mm): Track [FIELD_SLOW_MAN_S] on In1.Cu, length 81.9678 mm
+    @(70.6200 mm, 114.0000 mm): PTH pad 4 [SLOW_GS8] of U19
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.2650 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(114.1750 mm, 51.8100 mm): Track [FAST_TA1] on In2.Cu, length 53.4388 mm
+    @(63.0000 mm, 54.0000 mm): PTH pad 1 [FIELD_LED_GS3] of U14
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(46.7950 mm, 65.7512 mm): Via [FAST_TA1] on F.Cu - B.Cu
+    @(42.1510 mm, 71.5997 mm): Track [FIELD_SLOW_GS3] on In2.Cu, length 21.2976 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.6913 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(11.6413 mm, 100.3587 mm): Track [FIELD_SLOW_GS1] on In2.Cu, length 41.7923 mm
+    @(41.6200 mm, 102.0000 mm): PTH pad 4 [FAST_DIELL_L] of U10
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 2.1531 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(42.8670 mm, 98.9413 mm): Via [FIELD_SLOW_GS2] on F.Cu - B.Cu
+    @(41.6200 mm, 102.0000 mm): PTH pad 4 [FAST_DIELL_L] of U10
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.6658 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(60.3645 mm, 63.0000 mm): Track [FIELD_LED_GS4] on F.Cu, length 8.4520 mm
+    @(60.0927 mm, 61.8842 mm): Via [FAST_DIELL_L] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+    @(152.6200 mm, 177.5400 mm): PTH pad 3 [OUT_L_SECOND_A] of U37
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.0569 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(204.0000 mm, 176.0000 mm): PTH pad 2 [COIL_LO_M2] of K6
+    @(151.9780 mm, 173.4431 mm): Track [OUT_L_SECOND_A] on In2.Cu, length 73.9134 mm
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+    @(152.6200 mm, 175.0000 mm): PTH pad 4 [OUT_L_SECOND_B] of U37
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4110 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+    @(64.3714 mm, 69.7870 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 3.9458 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(52.7830 mm, 67.4285 mm): Via [FAST_TB] on F.Cu - B.Cu
+    @(53.6347 mm, 88.1736 mm): Track [FIELD_SLOW_GS2] on In1.Cu, length 34.2683 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.1797 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+    @(63.0000 mm, 68.5400 mm): PTH pad 2 [FIELD_SLOW_GS4] of U15
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.7008 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(47.9125 mm, 91.7895 mm): Via [FAST_TB] on F.Cu - B.Cu
+    @(61.5997 mm, 93.9403 mm): Track [FIELD_SLOW_GS6] on In2.Cu, length 41.8077 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.1052 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(41.6200 mm, 114.0000 mm): PTH pad 4 [FAST_DIELL_R] of U11
+    @(58.4048 mm, 111.9448 mm): Track [FIELD_SLOW_GS8] on In2.Cu, length 30.8509 mm
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(152.6200 mm, 207.5400 mm): PTH pad 3 [OUT_L_FOUL_A] of U39
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(152.6200 mm, 205.0000 mm): PTH pad 4 [OUT_L_FOUL_B] of U39
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(152.6200 mm, 192.5400 mm): PTH pad 3 [OUT_L_STRIKE_A] of U38
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(152.6200 mm, 190.0000 mm): PTH pad 4 [OUT_L_STRIKE_B] of U38
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 0.9286 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(204.0000 mm, 200.0000 mm): PTH pad 2 [COIL_LO_M1] of K7
+    @(238.0197 mm, 202.4286 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 85.0237 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(63.0000 mm, 65.6355 mm): Track [FIELD_LED_GS4] on F.Cu, length 3.7272 mm
+    @(60.8953 mm, 64.7353 mm): Via [FAST_DIELL_R] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 1.1611 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+    @(60.8953 mm, 64.7353 mm): Via [FAST_DIELL_R] on F.Cu - B.Cu
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4570 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+    @(61.0126 mm, 64.6180 mm): Track [FAST_DIELL_R] on In2.Cu, length 53.1796 mm
+[creepage]: Creepage violation (rule 'LOGIC to FIELD creepage' creepage 2.5000 mm; actual 0.4570 mm)
+    Rule: LOGIC to FIELD creepage; error
+    @(92.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_TENTH] of U28
+    @(61.0126 mm, 64.6180 mm): Track [FAST_DIELL_R] on In2.Cu, length 53.1796 mm
+[creepage]: Creepage violation (rule 'LOGIC to MACHINE creepage' creepage 3.2000 mm; actual 1.0000 mm)
+    Rule: LOGIC to MACHINE creepage; error
+    @(242.0000 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 81.8800 mm
+    @(204.0000 mm, 200.0000 mm): PTH pad 2 [COIL_LO_M1] of K7
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.0704 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(43.0904 mm, 118.0104 mm): Track [GND] on In2.Cu, length 26.0592 mm
+    @(63.0000 mm, 116.5400 mm): Track [FIELD_SLOW_GS8] on In2.Cu, length 6.4986 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4204 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(43.0904 mm, 118.0104 mm): Track [GND] on In2.Cu, length 26.0592 mm
+    @(63.0000 mm, 116.5400 mm): PTH pad 2 [FIELD_SLOW_GS8] of U19
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.0921 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(242.0000 mm, 204.5000 mm): Track [OUT_L_FOUL_B] on In2.Cu, length 88.8800 mm
+    @(154.7758 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 10.6343 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4577 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(43.0904 mm, 118.0104 mm): Track [GND] on In2.Cu, length 26.0592 mm
+    @(76.6719 mm, 119.8681 mm): Track [FIELD_SLOW_MAN_SWS] on In2.Cu, length 51.5439 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 3.0000 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(204.0000 mm, 200.0000 mm): PTH pad 2 [COIL_LO_M1] of K7
+    @(242.0000 mm, 204.5000 mm): Track [OUT_L_FOUL_B] on In2.Cu, length 88.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4577 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.6719 mm, 119.8681 mm): Track [FIELD_SLOW_MAN_SWS] on In2.Cu, length 51.5439 mm
+    @(69.1496 mm, 118.0104 mm): Track [GND] on In2.Cu, length 2.0795 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.4381 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(174.1692 mm, 193.9864 mm): Via [DRV_M1] on F.Cu - B.Cu
+    @(237.4466 mm, 191.9983 mm): Track [OUT_L_STRIKE_A] on In2.Cu, length 80.2280 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.0921 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(154.7758 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 10.6343 mm
+    @(153.1200 mm, 204.5000 mm): Track [OUT_L_FOUL_B] on In2.Cu, length 0.7071 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5017 mm)
+    Rule: MACHINE independent output clearance; error
+    @(244.5517 mm, 145.6941 mm): Track [OUT_M_A] on In2.Cu, length 7.6941 mm
+    @(242.0000 mm, 145.0000 mm): PTH pad 11 [OUT_M2_A] of J6
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.9636 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(174.1692 mm, 193.9864 mm): Via [DRV_M1] on F.Cu - B.Cu
+    @(242.0000 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 81.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 135.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 141.0000 mm): Track [SLOW_GS10] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2699 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.5161 mm, 100.2801 mm): Via [SLOW_BS] on F.Cu - B.Cu
+    @(83.9125 mm, 102.0000 mm): Track [FIELD_LED_MAN_SWS] on F.Cu, length 8.0875 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1700 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(83.9125 mm, 102.0000 mm): Track [FIELD_LED_MAN_SWS] on F.Cu, length 8.0875 mm
+    @(91.4247 mm, 99.5550 mm): Track [SLOW_OS] on F.Cu, length 0.1198 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 148.5000 mm): Track [OUT_M2_B] on In2.Cu, length 2.5517 mm
+    @(223.4517 mm, 146.7500 mm): Track [OUT_M_A] on In2.Cu, length 20.0441 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 87.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 91.3847 mm): Track [SLOW_GS6] on F.Cu, length 1.6153 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.2500 mm)
+    Rule: MACHINE independent output clearance; error
+    @(223.4517 mm, 146.7500 mm): Track [OUT_M_A] on In2.Cu, length 20.0441 mm
+    @(239.4483 mm, 148.5000 mm): Track [OUT_M2_B] on In2.Cu, length 21.9203 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.0797 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.3400 mm, 99.4703 mm): Via [SLOW_OS] on F.Cu - B.Cu
+    @(83.9125 mm, 102.0000 mm): Track [FIELD_LED_MAN_SWS] on F.Cu, length 8.0875 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.6000 mm)
+    Rule: MACHINE independent output clearance; error
+    @(223.4517 mm, 146.7500 mm): Track [OUT_M_A] on In2.Cu, length 20.0441 mm
+    @(242.0000 mm, 145.0000 mm): PTH pad 11 [OUT_M2_A] of J6
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4449 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(118.8051 mm, 100.2801 mm): Track [SLOW_BS] on F.Cu, length 27.2890 mm
+    @(83.9125 mm, 102.0000 mm): Track [FIELD_LED_MAN_SWS] on F.Cu, length 8.0875 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.6000 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 148.5000 mm): PTH pad 12 [OUT_M2_B] of J6
+    @(223.4517 mm, 146.7500 mm): Track [OUT_M_A] on In2.Cu, length 20.0441 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1700 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(83.9125 mm, 102.0000 mm): Track [FIELD_LED_MAN_SWS] on F.Cu, length 8.0875 mm
+    @(119.3500 mm, 99.5550 mm): Track [SLOW_OS] on F.Cu, length 27.9253 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5087 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 145.0000 mm): PTH pad 11 [OUT_M2_A] of J6
+    @(243.4958 mm, 146.7500 mm): Track [OUT_M_A] on In2.Cu, length 1.4933 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.6986 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 148.5000 mm): PTH pad 12 [OUT_M2_B] of J6
+    @(243.4958 mm, 146.7500 mm): Track [OUT_M_A] on In2.Cu, length 1.4933 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.3247 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(29.0000 mm, 23.0224 mm): Track [VCC_5V] on F.Cu, length 0.9776 mm
+    @(21.2659 mm, 25.7247 mm): Track [FIELD_WET_V] on F.Cu, length 27.6586 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5603 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(20.7841 mm, 23.4324 mm): Track [FIELD_GND] on In2.Cu, length 49.4035 mm
+    @(37.9218 mm, 13.0000 mm): Track [VCC_5V] on In2.Cu, length 13.3956 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.9364 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(174.1692 mm, 193.9864 mm): Via [DRV_M1] on F.Cu - B.Cu
+    @(242.0000 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 73.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4103 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(20.7841 mm, 23.4324 mm): Track [FIELD_GND] on In2.Cu, length 49.4035 mm
+    @(28.4497 mm, 22.4721 mm): Via [VCC_5V] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.3023 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(28.4497 mm, 22.4721 mm): Track [VCC_5V] on F.Cu, length 0.7782 mm
+    @(21.2659 mm, 25.7247 mm): Track [FIELD_WET_V] on F.Cu, length 27.6586 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 3.0043 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(168.1200 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 21.9203 mm
+    @(170.7151 mm, 188.0713 mm): Via [DRV_M1] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.8787 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(170.7151 mm, 188.0713 mm): Via [DRV_M1] on F.Cu - B.Cu
+    @(242.0000 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 73.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(66.9185 mm, 208.0799 mm): Via [GND] on F.Cu - B.Cu
+    @(97.3929 mm, 209.0316 mm): Track [FIELD_GND] on In2.Cu, length 91.4579 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4442 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(78.8329 mm, 208.0374 mm): Via [VCC_3V3] on F.Cu - B.Cu
+    @(97.3929 mm, 209.0316 mm): Track [FIELD_GND] on In2.Cu, length 91.4579 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4256 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(57.9827 mm, 208.0560 mm): Via [VCC_5V] on F.Cu - B.Cu
+    @(97.3929 mm, 209.0316 mm): Track [FIELD_GND] on In2.Cu, length 91.4579 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4523 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 56.5400 mm): PTH pad 2 [FIELD_SLOW_FOUL] of U27
+    @(72.1223 mm, 58.0423 mm): Track [GND] on In2.Cu, length 25.9954 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4902 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(46.0875 mm, 36.1098 mm): Track [VCC_3V3] on F.Cu, length 20.5504 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9402 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 39.0000 mm): Pad 1 [FIELD_WET_V] of R21 on F.Cu
+    @(46.0875 mm, 36.1098 mm): Track [VCC_3V3] on F.Cu, length 20.5504 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4902 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(46.0875 mm, 36.1098 mm): Track [VCC_3V3] on F.Cu, length 20.5504 mm
+    @(60.0000 mm, 39.0000 mm): Track [FIELD_LED_GS2] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4902 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(46.0875 mm, 36.1098 mm): Track [VCC_3V3] on F.Cu, length 20.5504 mm
+    @(51.9125 mm, 39.0000 mm): Track [FIELD_LED_GS2] on F.Cu, length 8.0875 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4503 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(61.5997 mm, 93.9403 mm): Track [FIELD_SLOW_GS6] on In2.Cu, length 41.8077 mm
+    @(41.6200 mm, 92.5400 mm): PTH pad 3 [GND] of U9
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9402 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(46.0875 mm, 36.1098 mm): Track [VCC_3V3] on F.Cu, length 20.5504 mm
+    @(51.9125 mm, 39.0000 mm): Pad 2 [FIELD_LED_GS2] of R21 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.7008 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(61.5997 mm, 93.9403 mm): Track [FIELD_SLOW_GS6] on In2.Cu, length 41.8077 mm
+    @(47.9125 mm, 91.7895 mm): Via [FAST_TB] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8758 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(61.5997 mm, 93.9403 mm): Track [FIELD_SLOW_GS6] on In2.Cu, length 41.8077 mm
+    @(41.6200 mm, 90.0000 mm): Track [FAST_TB] on In2.Cu, length 2.5307 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.7014 mm)
+    Rule: MACHINE independent output clearance; error
+    @(158.6217 mm, 166.0017 mm): Track [OUT_L_FIRST_B] on In2.Cu, length 73.0110 mm
+    @(227.7807 mm, 164.5503 mm): Via [OUT_M2_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8758 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(61.5997 mm, 93.9403 mm): Track [FIELD_SLOW_GS6] on In2.Cu, length 41.8077 mm
+    @(43.4095 mm, 91.7895 mm): Track [FAST_TB] on In2.Cu, length 4.5030 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5017 mm)
+    Rule: MACHINE independent output clearance; error
+    @(239.4483 mm, 145.0000 mm): Track [OUT_M2_A] on In1.Cu, length 7.8827 mm
+    @(242.0000 mm, 152.0000 mm): PTH pad 13 [OUT_M1_A] of J6
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.3507 mm)
+    Rule: MACHINE independent output clearance; error
+    @(239.4483 mm, 152.8827 mm): Track [OUT_M2_A] on In1.Cu, length 16.5005 mm
+    @(239.4483 mm, 155.5000 mm): Track [OUT_M1_B] on In1.Cu, length 7.2500 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.3507 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 155.5000 mm): Track [OUT_M1_B] on In1.Cu, length 2.5517 mm
+    @(239.4483 mm, 152.8827 mm): Track [OUT_M2_A] on In1.Cu, length 16.5005 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.7228 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 152.0000 mm): PTH pad 13 [OUT_M1_A] of J6
+    @(239.4483 mm, 152.8827 mm): Track [OUT_M2_A] on In1.Cu, length 16.5005 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.7250 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 87.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 91.3847 mm): Via [SLOW_GS6] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4091 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(88.9721 mm, 80.5400 mm): Track [FIELD_SLOW_MAN_T] on In1.Cu, length 103.8881 mm
+    @(76.9125 mm, 91.3847 mm): Via [SLOW_GS6] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1836 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.9125 mm, 91.3847 mm): Via [SLOW_GS6] on F.Cu - B.Cu
+    @(88.0350 mm, 82.5724 mm): Track [FIELD_SLOW_TENTH] on In1.Cu, length 105.9636 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.4480 mm)
+    Rule: MACHINE independent output clearance; error
+    @(227.7459 mm, 188.3020 mm): Via [OUT_M1_A] on F.Cu - B.Cu
+    @(242.0000 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 73.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4577 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.6719 mm, 119.8681 mm): Track [FIELD_SLOW_MAN_SWS] on In2.Cu, length 51.5439 mm
+    @(41.6200 mm, 116.5400 mm): Track [GND] on In2.Cu, length 2.0795 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5323 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(97.9305 mm, 208.4940 mm): Via [FIELD_GND] on F.Cu - B.Cu
+    @(102.3020 mm, 202.6980 mm): Track [WDOG_OK_PULLDOWN] on In1.Cu, length 17.5221 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.0675 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(80.0603 mm, 94.5325 mm): Track [SLOW_GS6] on In2.Cu, length 46.1767 mm
+    @(92.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_S] of U30
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 57.0000 mm): Track [FAST_SC] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2476 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(88.9721 mm, 80.5400 mm): Track [FIELD_SLOW_MAN_T] on In1.Cu, length 103.8881 mm
+    @(70.6200 mm, 102.0000 mm): PTH pad 4 [SLOW_GS7] of U18
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9500 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(21.9125 mm, 27.0000 mm): Track [FIELD_LED_SA] on F.Cu, length 9.0875 mm
+    @(29.0000 mm, 24.0000 mm): Pad 1 [VCC_5V] of D17 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1052 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 114.0000 mm): PTH pad 4 [FAST_DIELL_R] of U11
+    @(58.4048 mm, 111.9448 mm): Track [FIELD_SLOW_GS8] on In2.Cu, length 30.8509 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1539 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(21.9125 mm, 27.0000 mm): Track [FIELD_LED_SA] on F.Cu, length 9.0875 mm
+    @(33.0000 mm, 24.0000 mm): Pad 2 [VCC_5V_RAW] of D17 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1539 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(29.0000 mm, 24.0000 mm): Pad 1 [VCC_5V] of D17 on F.Cu
+    @(31.0000 mm, 27.0000 mm): Track [FIELD_LED_SA] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1539 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(33.0000 mm, 24.0000 mm): Pad 2 [VCC_5V_RAW] of D17 on F.Cu
+    @(31.0000 mm, 27.0000 mm): Track [FIELD_LED_SA] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4600 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(37.1929 mm, 123.8680 mm): Via [VCC_5V] on F.Cu - B.Cu
+    @(31.2400 mm, 131.2493 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 53.5076 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5013 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(57.2767 mm, 122.8167 mm): Track [FIELD_SLOW_GS9] on In2.Cu, length 28.7927 mm
+    @(37.1929 mm, 123.8680 mm): Via [VCC_5V] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.3225 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(37.1929 mm, 123.8680 mm): Via [VCC_5V] on F.Cu - B.Cu
+    @(87.5445 mm, 120.9955 mm): Track [FIELD_SLOW_MAN_SWSR] on In2.Cu, length 58.1571 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.9609 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(55.0342 mm, 128.8261 mm): Via [VCC_5V] on F.Cu - B.Cu
+    @(89.1836 mm, 92.5400 mm): Track [FIELD_SLOW_MAN_S] on In1.Cu, length 81.9678 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5683 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.0231 mm, 129.9444 mm): Track [FIELD_SLOW_AUX1] on In2.Cu, length 49.5725 mm
+    @(55.0342 mm, 128.8261 mm): Via [VCC_5V] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1109 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(55.0342 mm, 128.8261 mm): Track [VCC_5V] on In1.Cu, length 76.2814 mm
+    @(89.1836 mm, 92.5400 mm): Track [FIELD_SLOW_MAN_S] on In1.Cu, length 81.9678 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4537 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 86.7615 mm): Via [NE555_TRIG] on F.Cu - B.Cu
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4537 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 86.7615 mm): Via [NE555_TRIG] on F.Cu - B.Cu
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4139 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 30.0000 mm): PTH pad 1 [FIELD_LED_SA] of U4
+    @(28.8645 mm, 22.4721 mm): Track [VCC_5V] on In1.Cu, length 11.7781 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4377 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 32.5400 mm): PTH pad 2 [FIELD_FAST_SA] of U4
+    @(28.8645 mm, 22.4721 mm): Track [VCC_5V] on In1.Cu, length 11.7781 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4537 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 86.7615 mm): Via [NE555_TRIG] on F.Cu - B.Cu
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6100 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(31.2400 mm, 131.2493 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 53.5076 mm
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.3723 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(94.7719 mm, 83.3019 mm): Track [FIELD_SLOW_PBZ] on In1.Cu, length 40.0601 mm
+    @(93.8894 mm, 86.7615 mm): Via [NE555_TRIG] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.0739 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(94.0702 mm, 83.0113 mm): Track [FIELD_SLOW_PBC] on In1.Cu, length 35.0520 mm
+    @(93.8894 mm, 86.7615 mm): Via [NE555_TRIG] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4358 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(35.3571 mm, 61.2806 mm): Track [FIELD_FAST_DIELL_L] on In1.Cu, length 4.1745 mm
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4537 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 86.7615 mm): Via [NE555_TRIG] on F.Cu - B.Cu
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+    @(34.0000 mm, 114.0000 mm): PTH pad 1 [FIELD_LED_DIELL_R] of U11
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_DIELL_L] of U10
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 104.5400 mm): PTH pad 2 [FIELD_FAST_DIELL_L] of U10
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+    @(34.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_FAST_TB] of U9
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4358 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(35.3571 mm, 103.1829 mm): Track [FIELD_FAST_DIELL_L] on In1.Cu, length 41.9023 mm
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5202 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.4247 mm, 99.5550 mm): Track [SLOW_OS] on F.Cu, length 0.1198 mm
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4454 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 133.4349 mm): Track [NE555_TRIG] on In1.Cu, length 20.9858 mm
+    @(79.9269 mm, 148.6990 mm): Via [FIELD_WET_V] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+    @(34.0000 mm, 78.0000 mm): PTH pad 1 [FIELD_LED_TA2] of U8
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6454 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 133.4349 mm): Track [NE555_TRIG] on In1.Cu, length 20.9858 mm
+    @(79.9269 mm, 148.6990 mm): Track [FIELD_WET_V] on In1.Cu, length 11.4171 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 80.5400 mm): PTH pad 2 [FIELD_FAST_TA2] of U8
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5200 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(119.3500 mm, 99.5550 mm): Track [SLOW_OS] on F.Cu, length 27.9253 mm
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 116.5400 mm): PTH pad 2 [FIELD_FAST_DIELL_R] of U11
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_TB] of U9
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(75.8807 mm, 106.0318 mm): Track [SLOW_GS7] on F.Cu, length 1.4592 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_TA1] of U7
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4358 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 104.5400 mm): Track [FIELD_FAST_DIELL_L] on In1.Cu, length 1.9192 mm
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.6995 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(46.7845 mm, 35.1645 mm): Track [FAST_SA] on In2.Cu, length 60.5000 mm
+    @(63.0000 mm, 32.5400 mm): PTH pad 2 [FIELD_SLOW_GS1] of U12
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 68.5400 mm): PTH pad 2 [FIELD_FAST_TA1] of U7
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.7392 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 133.4349 mm): Track [NE555_TRIG] on In1.Cu, length 20.9858 mm
+    @(92.0000 mm, 138.0000 mm): PTH pad 1 [FIELD_LED_AUX2] of U34
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.6995 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(46.7845 mm, 35.1645 mm): Track [FAST_SA] on In2.Cu, length 60.5000 mm
+    @(92.0000 mm, 32.5400 mm): PTH pad 2 [FIELD_SLOW_PBZ] of U25
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1547 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 30.0000 mm): PTH pad 1 [FIELD_LED_SA] of U4
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 32.5400 mm): PTH pad 2 [FIELD_FAST_SA] of U4
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+    @(34.0000 mm, 42.0000 mm): PTH pad 1 [FIELD_LED_SB] of U5
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 44.5400 mm): PTH pad 2 [FIELD_FAST_SB] of U5
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4328 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.3400 mm, 99.4703 mm): Via [SLOW_OS] on F.Cu - B.Cu
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 54.0000 mm): PTH pad 1 [FIELD_LED_SC] of U6
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1429 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(34.0000 mm, 56.5400 mm): PTH pad 2 [FIELD_FAST_SC] of U6
+    @(37.1929 mm, 30.8005 mm): Track [VCC_5V] on In1.Cu, length 93.0675 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4328 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.3400 mm, 99.4703 mm): Via [SLOW_OS] on F.Cu - B.Cu
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0502 mm, 148.2741 mm): Track [NE555_TRIG] on In1.Cu, length 17.2958 mm
+    @(79.9269 mm, 148.6990 mm): Via [FIELD_WET_V] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6017 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0502 mm, 148.2741 mm): Track [NE555_TRIG] on In1.Cu, length 17.2958 mm
+    @(79.9269 mm, 148.6990 mm): Track [FIELD_WET_V] on In1.Cu, length 11.4171 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.6709 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(238.0197 mm, 202.4286 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 85.0237 mm
+    @(186.2115 mm, 199.1077 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4328 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.3400 mm, 99.4703 mm): Via [SLOW_OS] on F.Cu - B.Cu
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 0.9577 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(186.2115 mm, 199.1077 mm): Via [RELAY_ENABLE_RAIL] on F.Cu - B.Cu
+    @(242.0000 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 81.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4328 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.3400 mm, 99.4703 mm): Via [SLOW_OS] on F.Cu - B.Cu
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 126.0000 mm): PTH pad 1 [FIELD_LED_AUX1] of U33
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 128.5400 mm): PTH pad 2 [FIELD_SLOW_AUX1] of U33
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+    @(92.0000 mm, 104.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1026 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(77.8863 mm, 112.9240 mm): Track [SLOW_OS] on In1.Cu, length 19.0264 mm
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.0567 mm)
+    Rule: MACHINE independent output clearance; error
+    @(242.0000 mm, 83.8017 mm): Track [OUT_S_A] on In1.Cu, length 36.4867 mm
+    @(225.0737 mm, 69.4304 mm): Via [OUT_T_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.6144 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+    @(92.0000 mm, 92.5400 mm): Track [FIELD_SLOW_MAN_S] on In1.Cu, length 2.8164 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5656 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(77.8863 mm, 157.3055 mm): Track [SLOW_OS] on In1.Cu, length 44.3815 mm
+    @(79.9269 mm, 148.6990 mm): Via [FIELD_WET_V] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.7656 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(77.8863 mm, 157.3055 mm): Track [SLOW_OS] on In1.Cu, length 44.3815 mm
+    @(79.9269 mm, 148.6990 mm): Track [FIELD_WET_V] on In1.Cu, length 11.4171 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_S] of U30
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5473 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(94.7719 mm, 83.3019 mm): Track [FIELD_SLOW_PBZ] on In1.Cu, length 40.0601 mm
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.2489 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(94.0702 mm, 83.0113 mm): Track [FIELD_SLOW_PBC] on In1.Cu, length 35.0520 mm
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+    @(92.0000 mm, 114.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWSR] of U32
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1126 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_S] of U30
+    @(77.0424 mm, 95.5776 mm): Track [SLOW_GS7] on In2.Cu, length 48.9176 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8900 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(42.1510 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 7.0118 mm
+    @(38.7683 mm, 128.6819 mm): Track [FIELD_SLOW_AUX2] on In2.Cu, length 19.1606 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.9644 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 116.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_SWSR] of U32
+    @(93.8894 mm, 86.7615 mm): Track [NE555_TRIG] on In1.Cu, length 46.6734 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8900 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(42.1510 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 7.0118 mm
+    @(43.3564 mm, 133.2700 mm): Track [FIELD_SLOW_AUX2] on In2.Cu, length 6.4886 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1883 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(42.1510 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 7.0118 mm
+    @(22.2395 mm, 127.7802 mm): Track [FIELD_SLOW_AUX1] on In2.Cu, length 16.6194 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1883 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(42.1510 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 7.0118 mm
+    @(38.8589 mm, 127.7802 mm): Track [FIELD_SLOW_AUX1] on In2.Cu, length 3.0606 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6513 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(42.1510 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 7.0118 mm
+    @(57.2767 mm, 122.8167 mm): Track [FIELD_SLOW_GS9] on In2.Cu, length 28.7927 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4725 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(42.1510 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 7.0118 mm
+    @(87.5445 mm, 120.9955 mm): Track [FIELD_SLOW_MAN_SWSR] on In2.Cu, length 58.1571 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.7183 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(42.1510 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 7.0118 mm
+    @(41.0231 mm, 129.9444 mm): Track [FIELD_SLOW_AUX1] on In2.Cu, length 49.5725 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.3291 mm)
+    Rule: MACHINE independent output clearance; error
+    @(216.2000 mm, 68.0000 mm): PTH pad 4 [OUT_T_B] of K2
+    @(214.1810 mm, 61.9801 mm): Track [OUT_S_B] on In1.Cu, length 31.9887 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 0.5397 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(238.0197 mm, 202.4286 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 85.0237 mm
+    @(154.7758 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 10.6343 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8900 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(55.0342 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 12.8832 mm
+    @(43.3564 mm, 133.2700 mm): Track [FIELD_SLOW_AUX2] on In2.Cu, length 6.4886 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 0.5397 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(152.9960 mm, 202.4286 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 2.7351 mm
+    @(154.7758 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 10.6343 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1883 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(55.0342 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 12.8832 mm
+    @(38.8589 mm, 127.7802 mm): Track [FIELD_SLOW_AUX1] on In2.Cu, length 3.0606 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.6848 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(151.0620 mm, 205.9820 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 2.2033 mm
+    @(154.7758 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 10.6343 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 0.5397 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(154.7758 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 10.6343 mm
+    @(151.0620 mm, 204.3626 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 1.6194 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.7183 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(55.0342 mm, 128.8261 mm): Track [VCC_5V] on In2.Cu, length 12.8832 mm
+    @(41.0231 mm, 129.9444 mm): Track [FIELD_SLOW_AUX1] on In2.Cu, length 49.5725 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 123.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 117.0000 mm): Track [SLOW_GS8] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.5421 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(154.7758 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 10.6343 mm
+    @(152.6200 mm, 205.0000 mm): PTH pad 4 [OUT_L_FOUL_B] of U39
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.7709 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(238.0197 mm, 202.4286 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 85.0237 mm
+    @(186.2115 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 31.4357 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.0000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(85.7000 mm, 13.0000 mm): PTH pad 6 [FIELD_WET_V] of U41
+    @(76.0000 mm, 10.0000 mm): Track [VCC_5V] on In2.Cu, length 39.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.0000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.0000 mm, 10.0000 mm): Track [VCC_5V] on In2.Cu, length 39.0000 mm
+    @(80.6200 mm, 13.0000 mm): PTH pad 4 [FIELD_GND] of U41
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.0577 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(186.2115 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 31.4357 mm
+    @(242.0000 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 81.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.0577 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(186.2115 mm, 199.1077 mm): Track [RELAY_ENABLE_RAIL] on In2.Cu, length 31.4357 mm
+    @(160.1200 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 10.6066 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 45.0000 mm): Track [FAST_SB] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 45.0000 mm): Pad 2 [FAST_SB] of R6 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.3247 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(32.0000 mm, 24.0000 mm): Track [VCC_5V_RAW] on F.Cu, length 1.0000 mm
+    @(21.2659 mm, 25.7247 mm): Track [FIELD_WET_V] on F.Cu, length 27.6586 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.3247 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(18.0000 mm, 10.0000 mm): Track [VCC_5V_RAW] on F.Cu, length 19.7990 mm
+    @(21.2659 mm, 25.7247 mm): Track [FIELD_WET_V] on F.Cu, length 27.6586 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 135.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 141.0000 mm): Pad 2 [SLOW_GS10] of R38 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.0981 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(70.6200 mm, 114.0000 mm): PTH pad 4 [SLOW_GS8] of U19
+    @(89.1836 mm, 92.5400 mm): Track [FIELD_SLOW_MAN_S] on In1.Cu, length 81.9678 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 63.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(46.7950 mm, 65.7512 mm): Track [FAST_TA1] on F.Cu, length 1.5804 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 63.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 69.0000 mm): Pad 2 [FAST_TA1] of R10 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 63.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 66.8687 mm): Track [FAST_TA1] on F.Cu, length 2.1313 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.2455 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(52.7830 mm, 67.4285 mm): Via [FAST_TB] on F.Cu - B.Cu
+    @(50.0875 mm, 63.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 111.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 117.0000 mm): Pad 2 [FAST_DIELL_R] of R18 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 111.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 117.0000 mm): Track [FAST_DIELL_R] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 57.0000 mm): Pad 2 [FAST_SC] of R8 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.7949 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(118.8051 mm, 100.2801 mm): Track [SLOW_BS] on F.Cu, length 27.2890 mm
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 123.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 117.0000 mm): Pad 2 [SLOW_GS8] of R34 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.0579 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(98.0163 mm, 148.7011 mm): Track [VCC_3V3] on F.Cu, length 7.7133 mm
+    @(92.0000 mm, 150.0000 mm): PTH pad 1 [FIELD_LED_AUX3] of U35
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4897 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(98.0163 mm, 148.7011 mm): Track [VCC_3V3] on F.Cu, length 7.7133 mm
+    @(92.0000 mm, 152.5400 mm): PTH pad 2 [FIELD_SLOW_AUX3] of U35
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 75.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 81.0000 mm): Pad 2 [SLOW_GS5] of R28 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 75.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 81.0000 mm): Track [SLOW_GS5] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6199 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.5161 mm, 100.2801 mm): Via [SLOW_BS] on F.Cu - B.Cu
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6199 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.5161 mm, 100.2801 mm): Via [SLOW_BS] on F.Cu - B.Cu
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 87.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 81.0000 mm): Pad 2 [FAST_TA2] of R12 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6199 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.5161 mm, 100.2801 mm): Via [SLOW_BS] on F.Cu - B.Cu
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.6997 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 87.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(48.1128 mm, 81.2003 mm): Track [FAST_TA2] on F.Cu, length 0.2833 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6199 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.5161 mm, 100.2801 mm): Via [SLOW_BS] on F.Cu - B.Cu
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.8705 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 87.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(48.9420 mm, 81.2003 mm): Track [FAST_TA2] on F.Cu, length 0.8292 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6955 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 87.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(48.9420 mm, 81.2003 mm): Via [FAST_TA2] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4055 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.5161 mm, 100.2801 mm): Track [SLOW_BS] on In1.Cu, length 18.2682 mm
+    @(92.0000 mm, 102.0000 mm): PTH pad 1 [FIELD_LED_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4294 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(91.5161 mm, 100.2801 mm): Track [SLOW_BS] on In1.Cu, length 18.2682 mm
+    @(92.0000 mm, 104.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_SWS] of U31
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.8534 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(78.5985 mm, 113.1977 mm): Track [SLOW_BS] on In1.Cu, length 52.1850 mm
+    @(79.9269 mm, 148.6990 mm): Via [FIELD_WET_V] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.0534 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.9269 mm, 148.6990 mm): Track [FIELD_WET_V] on In1.Cu, length 11.4171 mm
+    @(78.5985 mm, 113.1977 mm): Track [SLOW_BS] on In1.Cu, length 52.1850 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 105.0000 mm): Pad 2 [SLOW_GS7] of R32 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 87.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 93.0000 mm): Pad 2 [SLOW_GS6] of R30 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.9125 mm, 45.0000 mm): Pad 2 [SLOW_GS2] of R22 on F.Cu
+    @(79.0875 mm, 39.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 39.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 45.0000 mm): Track [SLOW_GS2] on F.Cu, length 4.2426 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4342 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(69.0756 mm, 93.4137 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 15.8350 mm
+    @(71.9098 mm, 81.8298 mm): Track [GND] on In1.Cu, length 9.4204 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6747 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(29.0000 mm, 24.0000 mm): Pad 1 [VCC_5V] of D17 on F.Cu
+    @(21.2659 mm, 25.7247 mm): Track [FIELD_WET_V] on F.Cu, length 27.6586 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6747 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(33.0000 mm, 24.0000 mm): Pad 2 [VCC_5V_RAW] of D17 on F.Cu
+    @(21.2659 mm, 25.7247 mm): Track [FIELD_WET_V] on F.Cu, length 27.6586 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.9125 mm, 33.0000 mm): Track [SLOW_GS1] on F.Cu, length 4.2426 mm
+    @(79.0875 mm, 27.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.9125 mm, 33.0000 mm): Pad 2 [SLOW_GS1] of R20 on F.Cu
+    @(79.0875 mm, 27.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(46.7950 mm, 65.7512 mm): Via [FAST_TA1] on F.Cu - B.Cu
+    @(42.1510 mm, 71.5997 mm): Track [FIELD_SLOW_GS3] on In2.Cu, length 21.2976 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2650 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 44.5400 mm): PTH pad 2 [FIELD_SLOW_PBC] of U26
+    @(46.3500 mm, 46.7300 mm): Track [FAST_SB] on In2.Cu, length 67.8175 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2650 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 44.5400 mm): PTH pad 2 [FIELD_SLOW_GS2] of U13
+    @(46.3500 mm, 46.7300 mm): Track [FAST_SB] on In2.Cu, length 67.8175 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.9125 mm, 69.0000 mm): Track [SLOW_GS4] on F.Cu, length 1.4534 mm
+    @(79.0875 mm, 63.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9971 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 54.0000 mm): PTH pad 1 [FIELD_LED_GS3] of U14
+    @(60.7362 mm, 51.8100 mm): Track [FAST_TA1] on In2.Cu, length 19.7158 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(47.9125 mm, 91.7895 mm): Track [FAST_TB] on F.Cu, length 1.2105 mm
+    @(50.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5767 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.7362 mm, 51.8100 mm): Track [FAST_TA1] on In2.Cu, length 19.7158 mm
+    @(42.1510 mm, 71.5997 mm): Track [FIELD_SLOW_GS3] on In2.Cu, length 21.2976 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.7250 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(50.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(47.9125 mm, 91.7895 mm): Via [FAST_TB] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5767 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(57.2107 mm, 56.5400 mm): Track [FIELD_SLOW_GS3] on In2.Cu, length 5.7893 mm
+    @(60.7362 mm, 51.8100 mm): Track [FAST_TA1] on In2.Cu, length 19.7158 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(47.9125 mm, 93.0000 mm): Pad 2 [FAST_TB] of R14 on F.Cu
+    @(50.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2650 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 54.0000 mm): PTH pad 1 [FIELD_LED_GS3] of U14
+    @(114.1750 mm, 51.8100 mm): Track [FAST_TA1] on In2.Cu, length 53.4388 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2650 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 54.0000 mm): PTH pad 1 [FIELD_LED_FOUL] of U27
+    @(114.1750 mm, 51.8100 mm): Track [FAST_TA1] on In2.Cu, length 53.4388 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 57.0000 mm): Pad 2 [SLOW_GS3] of R24 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5767 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.8688 mm, 65.7512 mm): Track [FAST_TA1] on In2.Cu, length 4.9262 mm
+    @(42.1510 mm, 71.5997 mm): Track [FIELD_SLOW_GS3] on In2.Cu, length 21.2976 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.9125 mm, 57.0000 mm): Track [SLOW_GS3] on F.Cu, length 4.2426 mm
+    @(79.0875 mm, 51.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 0.5362 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(152.6200 mm, 192.5400 mm): PTH pad 3 [OUT_L_STRIKE_A] of U38
+    @(169.9613 mm, 194.1262 mm): Track [GND] on F.Cu, length 23.3751 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(47.9125 mm, 105.0000 mm): Track [FAST_DIELL_L] on F.Cu, length 1.2830 mm
+    @(50.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 3.0762 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(169.9613 mm, 194.1262 mm): Track [GND] on F.Cu, length 23.3751 mm
+    @(152.6200 mm, 190.0000 mm): PTH pad 4 [OUT_L_STRIKE_B] of U38
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(47.9125 mm, 105.0000 mm): Pad 2 [FAST_DIELL_L] of R16 on F.Cu
+    @(50.0875 mm, 99.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1444 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(69.0756 mm, 93.4137 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 15.8350 mm
+    @(70.6200 mm, 80.5400 mm): Track [GND] on In1.Cu, length 1.8241 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4087 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(94.0702 mm, 83.0113 mm): Track [FIELD_SLOW_PBC] on In1.Cu, length 35.0520 mm
+    @(70.6200 mm, 104.5400 mm): PTH pad 3 [GND] of U18
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2565 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(120.8006 mm, 87.8185 mm): Track [SLOW_GS4] on In2.Cu, length 28.3621 mm
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.2048 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(94.0702 mm, 83.0113 mm): Track [FIELD_SLOW_PBC] on In1.Cu, length 35.0520 mm
+    @(70.6200 mm, 102.0000 mm): PTH pad 4 [SLOW_GS7] of U18
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.3744 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(71.9098 mm, 91.2502 mm): Track [GND] on In1.Cu, length 1.8241 mm
+    @(31.2400 mm, 131.2493 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 53.5076 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.9125 mm, 69.0000 mm): Pad 2 [SLOW_GS4] of R26 on F.Cu
+    @(79.0875 mm, 63.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1444 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(69.0756 mm, 93.4137 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 15.8350 mm
+    @(71.9098 mm, 91.2502 mm): Track [GND] on In1.Cu, length 1.8241 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4536 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(99.6200 mm, 42.0000 mm): Track [SLOW_PBC] on In1.Cu, length 2.9974 mm
+    @(94.7719 mm, 35.3119 mm): Track [FIELD_SLOW_PBZ] on In1.Cu, length 47.9900 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5125 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(79.0875 mm, 135.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+    @(76.9125 mm, 129.0000 mm): Pad 2 [SLOW_GS9] of R36 on F.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2565 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.4385 mm, 87.8185 mm): Track [SLOW_GS4] on In2.Cu, length 30.8560 mm
+    @(92.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_MAN_S] of U30
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5652 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 152.5400 mm): PTH pad 2 [FIELD_SLOW_AUX3] of U35
+    @(92.5622 mm, 154.1552 mm): Track [VCC_3V3] on F.Cu, length 17.4747 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9000 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.9125 mm, 129.0000 mm): Track [SLOW_GS9] on F.Cu, length 1.4801 mm
+    @(79.0875 mm, 135.0000 mm): Track [FIELD_WET_V] on F.Cu, length 12.0000 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4536 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(97.5005 mm, 44.1195 mm): Track [SLOW_PBC] on In1.Cu, length 57.0407 mm
+    @(94.7719 mm, 35.3119 mm): Track [FIELD_SLOW_PBZ] on In1.Cu, length 47.9900 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.1100 mm)
+    Rule: MACHINE independent output clearance; error
+    @(226.1998 mm, 92.0015 mm): Track [OUT_T_A] on In2.Cu, length 14.1419 mm
+    @(224.7402 mm, 93.1723 mm): Via [OUT_SP_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.7096 mm)
+    Rule: MACHINE independent output clearance; error
+    @(226.1998 mm, 103.7515 mm): Track [OUT_T_A] on In2.Cu, length 11.7500 mm
+    @(224.7402 mm, 93.1723 mm): Via [OUT_SP_A] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4748 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(77.8031 mm, 146.5752 mm): Track [FIELD_WET_V] on In2.Cu, length 29.0316 mm
+    @(70.6200 mm, 150.0000 mm): PTH pad 4 [SLOW_GP] of U22
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9368 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(40.3302 mm, 93.8298 mm): Track [GND] on In1.Cu, length 9.4204 mm
+    @(42.8670 mm, 98.9413 mm): Via [FIELD_SLOW_GS2] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.4139 mm)
+    Rule: MACHINE independent output clearance; error
+    @(216.2000 mm, 97.4066 mm): Track [OUT_SP_B] on In1.Cu, length 32.8781 mm
+    @(242.0000 mm, 120.5000 mm): Track [OUT_T_B] on In1.Cu, length 28.4521 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1097 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 68.5400 mm): PTH pad 3 [GND] of U7
+    @(33.1732 mm, 71.5997 mm): Track [FIELD_SLOW_GS3] on In2.Cu, length 8.9778 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.4139 mm)
+    Rule: MACHINE independent output clearance; error
+    @(239.4483 mm, 120.6549 mm): Track [OUT_SP_B] on In1.Cu, length 6.8451 mm
+    @(242.0000 mm, 120.5000 mm): Track [OUT_T_B] on In1.Cu, length 28.4521 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.4536 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(94.7719 mm, 83.3019 mm): Track [FIELD_SLOW_PBZ] on In1.Cu, length 40.0601 mm
+    @(97.5005 mm, 44.1195 mm): Track [SLOW_PBC] on In1.Cu, length 57.0407 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1368 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(42.8670 mm, 98.9413 mm): Track [FIELD_SLOW_GS2] on In1.Cu, length 15.2278 mm
+    @(40.3302 mm, 93.8298 mm): Track [GND] on In1.Cu, length 9.4204 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.4139 mm)
+    Rule: MACHINE independent output clearance; error
+    @(216.2000 mm, 97.4066 mm): Track [OUT_SP_B] on In1.Cu, length 32.8781 mm
+    @(221.8813 mm, 100.3813 mm): Track [OUT_T_B] on In1.Cu, length 24.6983 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.5890 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 68.5400 mm): PTH pad 3 [GND] of U7
+    @(42.1510 mm, 71.5997 mm): Track [FIELD_SLOW_GS3] on In2.Cu, length 21.2976 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1104 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(94.7719 mm, 83.3019 mm): Track [FIELD_SLOW_PBZ] on In1.Cu, length 40.0601 mm
+    @(70.6200 mm, 104.5400 mm): PTH pad 3 [GND] of U18
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5089 mm)
+    Rule: MACHINE independent output clearance; error
+    @(216.2000 mm, 97.4066 mm): Track [OUT_SP_B] on In1.Cu, length 32.8781 mm
+    @(242.0000 mm, 120.5000 mm): PTH pad 4 [OUT_T_B] of J6
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5089 mm)
+    Rule: MACHINE independent output clearance; error
+    @(239.4483 mm, 120.6549 mm): Track [OUT_SP_B] on In1.Cu, length 6.8451 mm
+    @(242.0000 mm, 120.5000 mm): PTH pad 4 [OUT_T_B] of J6
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.2692 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(70.6200 mm, 104.5400 mm): PTH pad 3 [GND] of U18
+    @(88.0350 mm, 82.5724 mm): Track [FIELD_SLOW_TENTH] on In1.Cu, length 105.9636 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4731 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(70.6200 mm, 102.0000 mm): PTH pad 4 [SLOW_GS7] of U18
+    @(88.0350 mm, 82.5724 mm): Track [FIELD_SLOW_TENTH] on In1.Cu, length 105.9636 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.3781 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.6719 mm, 119.8681 mm): Track [FIELD_SLOW_MAN_SWS] on In2.Cu, length 51.5439 mm
+    @(41.6200 mm, 116.5400 mm): PTH pad 3 [GND] of U11
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8036 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.6719 mm, 119.8681 mm): Track [FIELD_SLOW_MAN_SWS] on In2.Cu, length 51.5439 mm
+    @(70.6200 mm, 126.0000 mm): Track [SLOW_GS9] on In2.Cu, length 5.7322 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.3781 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(76.6719 mm, 119.8681 mm): Track [FIELD_SLOW_MAN_SWS] on In2.Cu, length 51.5439 mm
+    @(70.6200 mm, 116.5400 mm): PTH pad 3 [GND] of U19
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8036 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(74.6733 mm, 121.9467 mm): Track [SLOW_GS9] on In2.Cu, length 21.3342 mm
+    @(76.6719 mm, 119.8681 mm): Track [FIELD_SLOW_MAN_SWS] on In2.Cu, length 51.5439 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8036 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(74.6733 mm, 121.9467 mm): Track [SLOW_GS9] on In2.Cu, length 21.3342 mm
+    @(92.0000 mm, 104.5400 mm): Track [FIELD_SLOW_MAN_SWS] on In2.Cu, length 21.6772 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8431 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(48.9420 mm, 81.2003 mm): Via [FAST_TA2] on F.Cu - B.Cu
+    @(18.3888 mm, 83.3623 mm): Track [FIELD_SLOW_GS4] on In2.Cu, length 29.7889 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5383 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(48.9420 mm, 81.2003 mm): Via [FAST_TA2] on F.Cu - B.Cu
+    @(48.1777 mm, 83.3623 mm): Track [FIELD_SLOW_GS4] on In2.Cu, length 20.9619 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.0181 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(45.7417 mm, 78.0000 mm): Track [FAST_TA2] on In2.Cu, length 4.5259 mm
+    @(18.3888 mm, 83.3623 mm): Track [FIELD_SLOW_GS4] on In2.Cu, length 29.7889 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.7133 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(45.7417 mm, 78.0000 mm): Track [FAST_TA2] on In2.Cu, length 4.5259 mm
+    @(48.1777 mm, 83.3623 mm): Track [FIELD_SLOW_GS4] on In2.Cu, length 20.9619 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(52.7830 mm, 67.4285 mm): Via [FAST_TB] on F.Cu - B.Cu
+    @(53.6347 mm, 88.1736 mm): Track [FIELD_SLOW_GS2] on In1.Cu, length 34.2683 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.9789 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(234.4414 mm, 172.4414 mm): Track [OUT_L_FIRST_A] on In2.Cu, length 71.9200 mm
+    @(170.1352 mm, 169.9125 mm): Via [DRV_M2] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5017 mm)
+    Rule: MACHINE independent output clearance; error
+    @(234.4414 mm, 172.4414 mm): Track [OUT_L_FIRST_A] on In2.Cu, length 71.9200 mm
+    @(151.9780 mm, 173.4431 mm): Track [OUT_L_SECOND_A] on In2.Cu, length 73.9134 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5017 mm)
+    Rule: MACHINE independent output clearance; error
+    @(234.4414 mm, 172.4414 mm): Track [OUT_L_FIRST_A] on In2.Cu, length 71.9200 mm
+    @(225.8914 mm, 173.4431 mm): Track [OUT_L_SECOND_A] on In2.Cu, length 19.1724 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.0586 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(234.4414 mm, 172.4414 mm): Track [OUT_L_FIRST_A] on In2.Cu, length 71.9200 mm
+    @(204.0000 mm, 176.0000 mm): PTH pad 2 [COIL_LO_M2] of K6
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6762 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(74.6733 mm, 121.9467 mm): Track [SLOW_GS9] on In2.Cu, length 21.3342 mm
+    @(92.0000 mm, 116.5400 mm): Track [FIELD_SLOW_MAN_SWSR] on In2.Cu, length 6.3010 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 0.9414 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(234.4414 mm, 172.4414 mm): Track [OUT_L_FIRST_A] on In2.Cu, length 71.9200 mm
+    @(202.0000 mm, 170.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K6
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6762 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(74.6733 mm, 121.9467 mm): Track [SLOW_GS9] on In2.Cu, length 21.3342 mm
+    @(87.5445 mm, 120.9955 mm): Track [FIELD_SLOW_MAN_SWSR] on In2.Cu, length 58.1571 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+    @(152.6200 mm, 207.5400 mm): PTH pad 3 [OUT_L_FOUL_A] of U39
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+    @(152.6200 mm, 205.0000 mm): PTH pad 4 [OUT_L_FOUL_B] of U39
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6762 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(70.6200 mm, 126.0000 mm): Track [SLOW_GS9] on In2.Cu, length 5.7322 mm
+    @(87.5445 mm, 120.9955 mm): Track [FIELD_SLOW_MAN_SWSR] on In2.Cu, length 58.1571 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.0394 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(42.8670 mm, 98.9413 mm): Track [FIELD_SLOW_GS2] on In1.Cu, length 15.2278 mm
+    @(47.9125 mm, 91.7895 mm): Via [FAST_TB] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4544 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(70.6200 mm, 128.5400 mm): PTH pad 3 [GND] of U20
+    @(41.0231 mm, 129.9444 mm): Track [FIELD_SLOW_AUX1] on In2.Cu, length 49.5725 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5017 mm)
+    Rule: MACHINE independent output clearance; error
+    @(162.5214 mm, 172.4414 mm): Track [OUT_L_FIRST_A] on In2.Cu, length 14.0027 mm
+    @(151.9780 mm, 173.4431 mm): Track [OUT_L_SECOND_A] on In2.Cu, length 73.9134 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+    @(152.6200 mm, 192.5400 mm): PTH pad 3 [OUT_L_STRIKE_A] of U38
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2144 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(47.9125 mm, 72.2990 mm): Track [FAST_TB] on In1.Cu, length 19.4905 mm
+    @(42.8670 mm, 98.9413 mm): Track [FIELD_SLOW_GS2] on In1.Cu, length 15.2278 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+    @(152.6200 mm, 190.0000 mm): PTH pad 4 [OUT_L_STRIKE_B] of U38
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5767 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(52.7830 mm, 67.4285 mm): Track [FAST_TB] on In1.Cu, length 6.8879 mm
+    @(53.6347 mm, 88.1736 mm): Track [FIELD_SLOW_GS2] on In1.Cu, length 34.2683 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+    @(152.6200 mm, 160.0000 mm): PTH pad 4 [OUT_L_FIRST_B] of U36
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(152.6200 mm, 162.5400 mm): PTH pad 3 [OUT_L_FIRST_A] of U36
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(152.6200 mm, 177.5400 mm): PTH pad 3 [OUT_L_SECOND_A] of U37
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.5283 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(152.6200 mm, 175.0000 mm): PTH pad 4 [OUT_L_SECOND_B] of U37
+    @(150.1667 mm, 217.5862 mm): Track [NE555_OUT] on In1.Cu, length 112.1632 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.0973 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(158.6217 mm, 166.0017 mm): Track [OUT_L_FIRST_B] on In2.Cu, length 73.0110 mm
+    @(170.0224 mm, 164.3544 mm): Via [DRV_M2] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.4983 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(158.6217 mm, 166.0017 mm): Track [OUT_L_FIRST_B] on In2.Cu, length 73.0110 mm
+    @(202.0000 mm, 170.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K6
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.5017 mm)
+    Rule: MACHINE independent output clearance; error
+    @(158.6217 mm, 166.0017 mm): Track [OUT_L_FIRST_B] on In2.Cu, length 73.0110 mm
+    @(216.2000 mm, 164.0000 mm): PTH pad 4 [OUT_M2_B] of K6
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.3881 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(51.8627 mm, 143.8781 mm): Track [FIELD_SLOW_AUX3] on In2.Cu, length 31.4754 mm
+    @(70.6200 mm, 140.5400 mm): PTH pad 3 [GND] of U21
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1611 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Via [FAST_DIELL_R] on F.Cu - B.Cu
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.3898 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(69.0756 mm, 77.5787 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 29.7532 mm
+    @(70.6200 mm, 80.5400 mm): PTH pad 3 [GND] of U16
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.3647 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.3645 mm, 63.0000 mm): Track [FIELD_LED_GS4] on F.Cu, length 8.4520 mm
+    @(60.8953 mm, 64.7353 mm): Via [FAST_DIELL_R] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4400 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(69.0756 mm, 77.5787 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 29.7532 mm
+    @(70.6200 mm, 78.0000 mm): PTH pad 4 [SLOW_GS5] of U16
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8391 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 66.0000 mm): Track [FIELD_LED_GS4] on F.Cu, length 0.3645 mm
+    @(60.8953 mm, 64.7353 mm): Via [FAST_DIELL_R] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5944 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(69.0756 mm, 93.4137 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 15.8350 mm
+    @(70.6200 mm, 92.5400 mm): PTH pad 3 [GND] of U17
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4017 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Via [FAST_DIELL_R] on F.Cu - B.Cu
+    @(63.0000 mm, 65.6355 mm): Track [FIELD_LED_GS4] on F.Cu, length 3.7272 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5944 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(69.0756 mm, 93.4137 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 15.8350 mm
+    @(70.6200 mm, 90.0000 mm): PTH pad 4 [SLOW_GS6] of U17
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5944 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(70.6200 mm, 80.5400 mm): PTH pad 3 [GND] of U16
+    @(69.0756 mm, 93.4137 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 15.8350 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6658 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.3645 mm, 63.0000 mm): Track [FIELD_LED_GS4] on F.Cu, length 8.4520 mm
+    @(60.0927 mm, 61.8842 mm): Via [FAST_DIELL_L] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.5944 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(69.0756 mm, 93.4137 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 15.8350 mm
+    @(70.6200 mm, 78.0000 mm): PTH pad 4 [SLOW_GS5] of U16
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1611 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Via [FAST_DIELL_R] on F.Cu - B.Cu
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6984 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.0927 mm, 61.8842 mm): Via [FAST_DIELL_L] on F.Cu - B.Cu
+    @(63.0000 mm, 65.6355 mm): Track [FIELD_LED_GS4] on F.Cu, length 3.7272 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1611 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Via [FAST_DIELL_R] on F.Cu - B.Cu
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.9806 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(151.9780 mm, 173.4431 mm): Track [OUT_L_SECOND_A] on In2.Cu, length 73.9134 mm
+    @(170.1352 mm, 169.9125 mm): Via [DRV_M2] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1611 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Via [FAST_DIELL_R] on F.Cu - B.Cu
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.8244 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(70.6200 mm, 92.5400 mm): PTH pad 3 [GND] of U17
+    @(31.2400 mm, 131.2493 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 53.5076 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1113 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(31.2400 mm, 131.2493 mm): Track [FIELD_SLOW_FOUL] on In1.Cu, length 53.5076 mm
+    @(41.6200 mm, 116.5400 mm): PTH pad 3 [GND] of U11
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.6301 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.0927 mm, 91.0054 mm): Track [FAST_DIELL_L] on In1.Cu, length 29.1212 mm
+    @(61.5813 mm, 92.2110 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 11.5226 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.0418 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+    @(61.5813 mm, 92.2110 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 11.5226 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9823 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.0927 mm, 91.0054 mm): Track [FAST_DIELL_L] on In1.Cu, length 29.1212 mm
+    @(63.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_GS6] of U17
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1797 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+    @(63.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_GS6] of U17
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.3625 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_GS6] of U17
+    @(60.0927 mm, 91.0054 mm): Track [FAST_DIELL_L] on In1.Cu, length 29.1212 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.6325 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_GS6] of U17
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9823 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.0927 mm, 91.0054 mm): Track [FAST_DIELL_L] on In1.Cu, length 29.1212 mm
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1797 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2136 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.0927 mm, 91.0054 mm): Track [FAST_DIELL_L] on In1.Cu, length 29.1212 mm
+    @(61.5813 mm, 72.5771 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 19.6339 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4110 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+    @(61.5813 mm, 72.5771 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 19.6339 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1797 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 68.5400 mm): PTH pad 2 [FIELD_SLOW_GS4] of U15
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9823 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 68.5400 mm): PTH pad 2 [FIELD_SLOW_GS4] of U15
+    @(60.0927 mm, 91.0054 mm): Track [FAST_DIELL_L] on In1.Cu, length 29.1212 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1797 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+    @(63.0000 mm, 78.0000 mm): PTH pad 1 [FIELD_LED_GS5] of U16
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9823 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.0927 mm, 91.0054 mm): Track [FAST_DIELL_L] on In1.Cu, length 29.1212 mm
+    @(63.0000 mm, 78.0000 mm): PTH pad 1 [FIELD_LED_GS5] of U16
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.1797 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+    @(63.0000 mm, 80.5400 mm): PTH pad 2 [FIELD_SLOW_GS5] of U16
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.9823 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.0927 mm, 91.0054 mm): Track [FAST_DIELL_L] on In1.Cu, length 29.1212 mm
+    @(63.0000 mm, 80.5400 mm): PTH pad 2 [FIELD_SLOW_GS5] of U16
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2136 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(64.3714 mm, 69.7870 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 3.9458 mm
+    @(60.0927 mm, 91.0054 mm): Track [FAST_DIELL_L] on In1.Cu, length 29.1212 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4110 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(64.3714 mm, 69.7870 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 3.9458 mm
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In1.Cu, length 26.3517 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.4301 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(53.4336 mm, 100.3587 mm): Via [FIELD_SLOW_GS1] on F.Cu - B.Cu
+    @(47.0053 mm, 104.0928 mm): Track [FAST_DIELL_L] on In1.Cu, length 18.5084 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.6301 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(47.0053 mm, 104.0928 mm): Track [FAST_DIELL_L] on In1.Cu, length 18.5084 mm
+    @(61.5813 mm, 92.2110 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 11.5226 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.8049 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(53.4336 mm, 100.3587 mm): Via [FIELD_SLOW_GS1] on F.Cu - B.Cu
+    @(60.8953 mm, 91.0870 mm): Track [FAST_DIELL_R] on In1.Cu, length 17.9468 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.0259 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_GS6] of U17
+    @(47.0053 mm, 104.0928 mm): Track [FAST_DIELL_L] on In1.Cu, length 18.5084 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.0049 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 91.0870 mm): Track [FAST_DIELL_R] on In1.Cu, length 17.9468 mm
+    @(61.5813 mm, 92.2110 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 11.5226 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.3625 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_GS6] of U17
+    @(47.0053 mm, 104.0928 mm): Track [FAST_DIELL_L] on In1.Cu, length 18.5084 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2698 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 91.0870 mm): Track [FAST_DIELL_R] on In1.Cu, length 17.9468 mm
+    @(63.0000 mm, 90.0000 mm): PTH pad 1 [FIELD_LED_GS6] of U17
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2136 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(61.5813 mm, 72.5771 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 19.6339 mm
+    @(47.0053 mm, 104.0928 mm): Track [FAST_DIELL_L] on In1.Cu, length 18.5084 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.6325 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(63.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_GS6] of U17
+    @(60.8953 mm, 91.0870 mm): Track [FAST_DIELL_R] on In1.Cu, length 17.9468 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4110 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 91.0870 mm): Track [FAST_DIELL_R] on In1.Cu, length 17.9468 mm
+    @(61.5813 mm, 72.5771 mm): Track [FIELD_SLOW_GS1] on In1.Cu, length 19.6339 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 0.9286 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(238.0197 mm, 202.4286 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 85.0237 mm
+    @(204.0000 mm, 200.0000 mm): PTH pad 2 [COIL_LO_M1] of K7
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.9286 mm)
+    Rule: MACHINE independent output clearance; error
+    @(216.2000 mm, 200.0000 mm): PTH pad 3 [OUT_M1_A] of K7
+    @(238.0197 mm, 202.4286 mm): Track [OUT_L_FOUL_A] on In2.Cu, length 85.0237 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.2858 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(60.8953 mm, 64.7353 mm): Track [FAST_DIELL_R] on In2.Cu, length 0.1659 mm
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4570 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(61.0126 mm, 64.6180 mm): Track [FAST_DIELL_R] on In2.Cu, length 53.1796 mm
+    @(63.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_GS4] of U15
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.3663 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(44.9125 mm, 102.0000 mm): Track [FAST_DIELL_L] on In2.Cu, length 2.9597 mm
+    @(11.6413 mm, 100.3587 mm): Track [FIELD_SLOW_GS1] on In2.Cu, length 41.7923 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4570 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(61.0126 mm, 64.6180 mm): Track [FAST_DIELL_R] on In2.Cu, length 53.1796 mm
+    @(92.0000 mm, 66.0000 mm): PTH pad 1 [FIELD_LED_TENTH] of U28
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.3663 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 102.0000 mm): Track [FAST_DIELL_L] on In2.Cu, length 3.2925 mm
+    @(11.6413 mm, 100.3587 mm): Track [FIELD_SLOW_GS1] on In2.Cu, length 41.7923 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.9983 mm)
+    Rule: MACHINE independent output clearance; error
+    @(239.4483 mm, 194.0000 mm): Track [OUT_L_STRIKE_A] on In2.Cu, length 2.8308 mm
+    @(242.0000 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 73.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4106 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 32.5400 mm): PTH pad 2 [FIELD_SLOW_PBZ] of U25
+    @(74.4956 mm, 33.8756 mm): Track [SLOW_GS1] on In2.Cu, length 46.4253 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.0569 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(204.0000 mm, 176.0000 mm): PTH pad 2 [COIL_LO_M2] of K6
+    @(151.9780 mm, 173.4431 mm): Track [OUT_L_SECOND_A] on In2.Cu, length 73.9134 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.9431 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(202.0000 mm, 170.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K6
+    @(151.9780 mm, 173.4431 mm): Track [OUT_L_SECOND_A] on In2.Cu, length 73.9134 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.0569 mm)
+    Rule: MACHINE independent output clearance; error
+    @(216.2000 mm, 176.0000 mm): PTH pad 3 [OUT_M2_A] of K6
+    @(151.9780 mm, 173.4431 mm): Track [OUT_L_SECOND_A] on In2.Cu, length 73.9134 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.9983 mm)
+    Rule: MACHINE independent output clearance; error
+    @(168.1200 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 21.9203 mm
+    @(237.4466 mm, 191.9983 mm): Track [OUT_L_STRIKE_A] on In2.Cu, length 80.2280 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 0.5017 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(202.0000 mm, 194.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K7
+    @(237.4466 mm, 191.9983 mm): Track [OUT_L_STRIKE_A] on In2.Cu, length 80.2280 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 0.9983 mm)
+    Rule: MACHINE independent output clearance; error
+    @(237.4466 mm, 191.9983 mm): Track [OUT_L_STRIKE_A] on In2.Cu, length 80.2280 mm
+    @(242.0000 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 73.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.0000 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(202.0000 mm, 194.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K7
+    @(242.0000 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 73.8800 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.0000 mm)
+    Rule: MACHINE independent output clearance; error
+    @(216.2000 mm, 188.0000 mm): PTH pad 4 [OUT_M1_B] of K7
+    @(242.0000 mm, 190.5000 mm): Track [OUT_L_SECOND_B] on In2.Cu, length 73.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 2.0000 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(202.0000 mm, 194.0000 mm): PTH pad 1 [RELAY_ENABLE_RAIL] of K7
+    @(242.0000 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 81.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to MACHINE clearance' clearance 3.2000 mm; actual 1.0000 mm)
+    Rule: LOGIC to MACHINE clearance; error
+    @(204.0000 mm, 200.0000 mm): PTH pad 2 [COIL_LO_M1] of K7
+    @(242.0000 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 81.8800 mm
+[clearance]: Clearance violation (rule 'MACHINE independent output clearance' clearance 1.5000 mm; actual 1.0000 mm)
+    Rule: MACHINE independent output clearance; error
+    @(216.2000 mm, 200.0000 mm): PTH pad 3 [OUT_M1_A] of K7
+    @(242.0000 mm, 197.5000 mm): Track [OUT_L_STRIKE_B] on In2.Cu, length 81.8800 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4229 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(74.5079 mm, 45.8879 mm): Track [SLOW_GS2] on In2.Cu, length 55.7074 mm
+    @(92.0000 mm, 44.5400 mm): PTH pad 2 [FIELD_SLOW_PBC] of U26
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6913 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 102.0000 mm): PTH pad 4 [FAST_DIELL_L] of U10
+    @(11.6413 mm, 100.3587 mm): Track [FIELD_SLOW_GS1] on In2.Cu, length 41.7923 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1531 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 102.0000 mm): PTH pad 4 [FAST_DIELL_L] of U10
+    @(42.8670 mm, 98.9413 mm): Via [FIELD_SLOW_GS2] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1531 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 102.0000 mm): PTH pad 4 [FAST_DIELL_L] of U10
+    @(42.8670 mm, 98.9413 mm): Via [FIELD_SLOW_GS2] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1531 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 102.0000 mm): PTH pad 4 [FAST_DIELL_L] of U10
+    @(42.8670 mm, 98.9413 mm): Via [FIELD_SLOW_GS2] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1531 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 102.0000 mm): PTH pad 4 [FAST_DIELL_L] of U10
+    @(42.8670 mm, 98.9413 mm): Via [FIELD_SLOW_GS2] on F.Cu - B.Cu
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.3531 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 102.0000 mm): PTH pad 4 [FAST_DIELL_L] of U10
+    @(42.8670 mm, 98.9413 mm): Track [FIELD_SLOW_GS2] on In1.Cu, length 15.2278 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 2.1087 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 102.0000 mm): PTH pad 4 [FAST_DIELL_L] of U10
+    @(11.9104 mm, 98.9413 mm): Track [FIELD_SLOW_GS2] on In2.Cu, length 30.9566 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.4062 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(92.0000 mm, 54.0000 mm): PTH pad 1 [FIELD_LED_FOUL] of U27
+    @(71.9512 mm, 52.6688 mm): Track [SLOW_GS3] on In2.Cu, length 50.4974 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 1.8723 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(41.6200 mm, 80.5400 mm): PTH pad 3 [GND] of U8
+    @(18.3888 mm, 83.3623 mm): Track [FIELD_SLOW_GS4] on In2.Cu, length 29.7889 mm
+[clearance]: Clearance violation (rule 'LOGIC to FIELD clearance' clearance 2.5000 mm; actual 0.6158 mm)
+    Rule: LOGIC to FIELD clearance; error
+    @(126.4241 mm, 94.0808 mm): Track [SLOW_GS5] on In2.Cu, length 39.7233 mm
+    @(92.0000 mm, 92.5400 mm): PTH pad 2 [FIELD_SLOW_MAN_S] of U30
+
+** Found 3 unconnected pads **
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(75.0875 mm, 57.0000 mm): Track [VCC_3V3] on F.Cu, length 12.0000 mm
+    @(75.0875 mm, 93.0000 mm): Track [VCC_3V3] on F.Cu, length 12.0000 mm
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(75.0875 mm, 105.0000 mm): Pad 1 [VCC_3V3] of R32 on F.Cu
+    @(75.0875 mm, 117.0000 mm): Pad 1 [VCC_3V3] of R34 on F.Cu
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(75.0875 mm, 153.0000 mm): Track [VCC_3V3] on F.Cu, length 12.0000 mm
+    @(75.0875 mm, 117.0000 mm): Track [VCC_3V3] on F.Cu, length 12.0000 mm
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - Footprint component type doesn't match footprint pads
+
+** End of Report **

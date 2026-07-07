@@ -1,0 +1,25 @@
+(version 1)
+
+# Rev-B first-pass isolation rules derived from
+# docs/phase8b_pcb_revB_netclass_creepage.md.
+# Final distances still depend on at-machine output working voltage.
+
+(rule "LOGIC to FIELD clearance"
+    (condition "(A.hasNetclass('Field_Sense') && (B.hasNetclass('Logic_Signal') || B.hasNetclass('Logic_Power') || B.hasNetclass('Safety_Rail'))) || (B.hasNetclass('Field_Sense') && (A.hasNetclass('Logic_Signal') || A.hasNetclass('Logic_Power') || A.hasNetclass('Safety_Rail')))")
+    (constraint clearance (min 2.5mm)))
+
+(rule "LOGIC to FIELD creepage"
+    (condition "(A.hasNetclass('Field_Sense') && (B.hasNetclass('Logic_Signal') || B.hasNetclass('Logic_Power') || B.hasNetclass('Safety_Rail'))) || (B.hasNetclass('Field_Sense') && (A.hasNetclass('Logic_Signal') || A.hasNetclass('Logic_Power') || A.hasNetclass('Safety_Rail')))")
+    (constraint creepage (min 2.5mm)))
+
+(rule "LOGIC to MACHINE clearance"
+    (condition "(A.hasNetclass('Machine_Output') && (B.hasNetclass('Logic_Signal') || B.hasNetclass('Logic_Power') || B.hasNetclass('Safety_Rail'))) || (B.hasNetclass('Machine_Output') && (A.hasNetclass('Logic_Signal') || A.hasNetclass('Logic_Power') || A.hasNetclass('Safety_Rail')))")
+    (constraint clearance (min 3.2mm)))
+
+(rule "LOGIC to MACHINE creepage"
+    (condition "(A.hasNetclass('Machine_Output') && (B.hasNetclass('Logic_Signal') || B.hasNetclass('Logic_Power') || B.hasNetclass('Safety_Rail'))) || (B.hasNetclass('Machine_Output') && (A.hasNetclass('Logic_Signal') || A.hasNetclass('Logic_Power') || A.hasNetclass('Safety_Rail')))")
+    (constraint creepage (min 3.2mm)))
+
+(rule "MACHINE independent output clearance"
+    (condition "A.hasNetclass('Machine_Output') && B.hasNetclass('Machine_Output') && A.NetName != B.NetName && !((A.NetName == 'OUT_S_A' || A.NetName == 'OUT_S_B' || A.NetName == 'SNUB_S') && (B.NetName == 'OUT_S_A' || B.NetName == 'OUT_S_B' || B.NetName == 'SNUB_S')) && !((A.NetName == 'OUT_T_A' || A.NetName == 'OUT_T_B' || A.NetName == 'SNUB_T') && (B.NetName == 'OUT_T_A' || B.NetName == 'OUT_T_B' || B.NetName == 'SNUB_T')) && !((A.NetName == 'OUT_SP_A' || A.NetName == 'OUT_SP_B' || A.NetName == 'SNUB_SP') && (B.NetName == 'OUT_SP_A' || B.NetName == 'OUT_SP_B' || B.NetName == 'SNUB_SP')) && !((A.NetName == 'OUT_BE_A' || A.NetName == 'OUT_BE_B' || A.NetName == 'SNUB_BE') && (B.NetName == 'OUT_BE_A' || B.NetName == 'OUT_BE_B' || B.NetName == 'SNUB_BE')) && !((A.NetName == 'OUT_M_A' || A.NetName == 'OUT_M_B' || A.NetName == 'SNUB_M') && (B.NetName == 'OUT_M_A' || B.NetName == 'OUT_M_B' || B.NetName == 'SNUB_M')) && !((A.NetName == 'OUT_M2_A' || A.NetName == 'OUT_M2_B' || A.NetName == 'SNUB_M2') && (B.NetName == 'OUT_M2_A' || B.NetName == 'OUT_M2_B' || B.NetName == 'SNUB_M2')) && !((A.NetName == 'OUT_M1_A' || A.NetName == 'OUT_M1_B' || A.NetName == 'SNUB_M1') && (B.NetName == 'OUT_M1_A' || B.NetName == 'OUT_M1_B' || B.NetName == 'SNUB_M1'))")
+    (constraint clearance (min 1.5mm)))

@@ -1,0 +1,7 @@
+Mate For,Qty,Manufacturer,MFR Part #,Description,Status,Notes,URL
+J3,1,Phoenix Contact,1840447,"MC 1,5/10-ST-3,5, 10-position 3.5mm screw plug",Locked,"Mates J3 MCV 1,5/10-G-3,5.",https://www.phoenixcontact.com/en-us/products/pcb-plug-mc-1510-st-35-1840447?type=pdf
+J4,1,Phoenix Contact,1840489,"MC 1,5/14-ST-3,5, 14-position 3.5mm screw plug",Locked,"Mates J4 MCV 1,5/14-G-3,5.",https://www.phoenixcontact.com/en-pc/products/printed-circuit-board-connector-mc-15-14-st-35-1840489
+J5,1,Phoenix Contact,1840463,"MC 1,5/12-ST-3,5, 12-position 3.5mm screw plug",Locked,"Mates J5 MCV 1,5/12-G-3,5.",https://www.phoenixcontact.com/en-us/products/pcb-plug-mc-1512-st-35-1840463
+J13,1,Phoenix Contact,1840405,"MC 1,5/ 6-ST-3,5, 6-position 3.5mm screw plug",Locked,"Mates J13 MCV 1,5/ 6-G-3,5.",https://www.phoenixcontact.com/en-pc/products/printed-circuit-board-connector-mc-15-6-st-35-1840405
+J14,1,Phoenix Contact,1840382,"MC 1,5/ 4-ST-3,5, 4-position 3.5mm screw plug",Locked,"Mates J14 MCV 1,5/ 4-G-3,5.",https://www.phoenixcontact.com/en-us/products/pcb-plug-mc-15-4-st-35-1840382
+J1,1,CNC Tech candidate,3030-20-0102-00,20-position IDC socket candidate for 2x10 2.54mm ribbon harness,Candidate - verify with J1,"Verify keying, strain relief, cable gauge, and pin-1 convention.",https://www.digikey.com/en/products/detail/cnc-tech/3030-20-0102-00/3821471

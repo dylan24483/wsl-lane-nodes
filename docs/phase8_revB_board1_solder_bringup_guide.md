@@ -583,10 +583,10 @@ Each motion output is its own 2-pin screw block carrying **one G5LE-14 relay's C
 
 | Pin | Signal | Relay pad | Notes |
 |---|---|---|---|
-| **1** | Relay **NO** (normally-open) | K-pad 4 (NO) | `OUT_x_B`. Open when de-energized; closes to COM when commanded + rail up. |
-| **2** | Relay **COM** (common) | K-pad 3 (COM) | `OUT_x_A`. The contact common. |
+| **1** | Relay **NO** (normally-open) | K-pad 3 (NO) | `OUT_x_B`. Open when de-energized; closes to COM when commanded + rail up. |
+| **2** | Relay **COM** (common) | K-pad 1 (COM) | `OUT_x_A`. The contact common. |
 
-> **Pin 1 = NO, Pin 2 = COM on all of J6–J11.** Straight from the generator: `b += j_motion[name][1]` (pin 1 = `OUT_x_B`/NO) and `a += j_motion[name][2]` (pin 2 = `OUT_x_A`/COM); `relay_output()` puts `relay[3]=COM`, `relay[4]=NO`. Pads sit in G5LE contact order (B above A).
+> **Pin 1 = NO, Pin 2 = COM on all of J6–J11.** Straight from the generator: `b += j_motion[name][1]` (pin 1 = `OUT_x_B`/NO) and `a += j_motion[name][2]` (pin 2 = `OUT_x_A`/COM); `relay_output()` puts `relay[1]=COM`, `relay[3]=NO`. Metered G5LE-14 map: coil pads 2/5, COM pad 1, NO pad 3, NC pad 4 unused.
 
 **Per-connector map (the only thing that differs):**
 
@@ -1122,4 +1122,3 @@ All logic-domain values referenced to **TP2 (GND)**; field-domain to **TP5 (FIEL
 **Source files cited:** `docs/manual_src/22_troubleshooting.md` (§22.0/22.4-22.7), `21_bringup-cutover.md` (§21.2.1-21.2.2 sequence + TP map), `06_board-power.md` (§6.3 A1→3V3, §6.4 U37, §6.5 coil rail, §6.8-6.9 assembly/test-point values), `11_connector-pinouts.md` (§11.2 J1, §11.7 J_MOTION, §11.9 J14, §11.10 TP map), `12_channel-maps.md` (§12.2 GPIO, §12.3 I²C addresses, §12.7 OUT-A bit map, §12.10 watchdog timing), `19_safety-architecture.md` (§19.2.5 six-condition rail, §19.3 firmware layer, §19.7 G3 gate), `firmware/rp2040/README.md` (flash/BOOTSEL, bench bring-up, fail-safe-low RP_OK), `scripts/generate_kicad_netlist_revB.py` (net names), `kicad/fab_revB_routed_manual/assembly/wsl-phase8b-revB-hand-solder-bom.csv` (A1/U37/J-connector parts).
 
 ---
-

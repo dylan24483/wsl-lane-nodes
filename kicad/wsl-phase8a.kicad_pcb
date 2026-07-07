@@ -63,7 +63,7 @@
 			(svgprecision 4)
 			(plotframeref no)
 			(mode 1)
-			(useauxorigin no)
+			(useauxorigin yes)
 			(pdf_front_fp_property_popups yes)
 			(pdf_back_fp_property_popups yes)
 			(pdf_metadata yes)
@@ -82,9 +82,9 @@
 			(subtractmaskfromsilk no)
 			(outputformat 1)
 			(mirror no)
-			(drillshape 1)
+			(drillshape 0)
 			(scaleselection 1)
-			(outputdirectory "")
+			(outputdirectory "gerbers/")
 		)
 	)
 	(footprint "TestPoint:TestPoint_Pad_1.5x1.5mm"
@@ -7663,6 +7663,7 @@
 		(property "Reference" "J3"
 			(at 2.54 -6.32 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "2822b14f-86ef-4fcd-a700-d8f4cfb60322")
 			(effects
 				(font
@@ -9131,6 +9132,7 @@
 		(property "Reference" "TP3"
 			(at 0 -1.648 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "648dd2f6-70cb-4a03-8bb5-a5ed6473e0ce")
 			(effects
 				(font
@@ -10014,6 +10016,7 @@
 		(property "Reference" "D9"
 			(at 0 -2.5 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "dd6a7c2e-b669-4d05-9d3c-5cf184119a87")
 			(effects
 				(font
@@ -11801,6 +11804,7 @@
 		(property "Reference" "R2"
 			(at 0 -1.65 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "a6e88e64-2e02-4984-813a-513f3b8dd7d3")
 			(effects
 				(font
@@ -14166,32 +14170,10 @@
 		(layer "Edge.Cuts")
 		(uuid "1650b644-6471-4ec2-9189-0c1f6c5a64eb")
 	)
-	(gr_text "+5V/GND"
-		(at 17 22 0)
-		(layer "F.SilkS")
-		(uuid "670c6deb-f113-463a-864d-d08a1032d2d0")
-		(effects
-			(font
-				(size 0.9 0.9)
-				(thickness 0.15)
-			)
-		)
-	)
 	(gr_text "AEDIKO"
 		(at 17 45 0)
 		(layer "F.SilkS")
 		(uuid "8139895b-2018-466a-9ba1-b179bafbfe64")
-		(effects
-			(font
-				(size 0.9 0.9)
-				(thickness 0.15)
-			)
-		)
-	)
-	(gr_text "KICK/GND"
-		(at 17 78 0)
-		(layer "F.SilkS")
-		(uuid "122a6568-c160-4034-b68b-af32fa160115")
 		(effects
 			(font
 				(size 0.9 0.9)
@@ -14243,8 +14225,30 @@
 			)
 		)
 	)
+	(gr_text "+5V/GND"
+		(at 1.5 26 90)
+		(layer "F.SilkS")
+		(uuid "670c6deb-f113-463a-864d-d08a1032d2d0")
+		(effects
+			(font
+				(size 0.9 0.9)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "KICK/GND"
+		(at 1.5 78 90)
+		(layer "F.SilkS")
+		(uuid "122a6568-c160-4034-b68b-af32fa160115")
+		(effects
+			(font
+				(size 0.9 0.9)
+				(thickness 0.15)
+			)
+		)
+	)
 	(gr_text "CH1 DC"
-		(at 20 15 0)
+		(at 12.5 12.5 0)
 		(layer "F.SilkS")
 		(uuid "dd72d361-cc00-49c1-8811-739ac5f0404b")
 		(effects
@@ -14255,7 +14259,7 @@
 		)
 	)
 	(gr_text "CH2 DC"
-		(at 40 15 0)
+		(at 32.5 12.5 0)
 		(layer "F.SilkS")
 		(uuid "acf84ac9-bc4c-4dcf-9a88-074068abd18b")
 		(effects
@@ -14266,7 +14270,7 @@
 		)
 	)
 	(gr_text "CH3 DC"
-		(at 60 15 0)
+		(at 52.5 12.5 0)
 		(layer "F.SilkS")
 		(uuid "642700b9-5237-4a10-abaa-459ac3f3730e")
 		(effects
@@ -14277,7 +14281,7 @@
 		)
 	)
 	(gr_text "CH4 DC"
-		(at 80 15 0)
+		(at 72.5 12.5 0)
 		(layer "F.SilkS")
 		(uuid "5c8ae63c-8add-4986-b869-935331b018bd")
 		(effects
@@ -14590,6 +14594,14 @@
 		(uuid "c41cb460-de53-4c0b-b846-d4d324dfab33")
 	)
 	(segment
+		(start 34.475 64.095)
+		(end 35.6 62.8)
+		(width 0.3)
+		(layer "F.Cu")
+		(net "VCC_5V")
+		(uuid "c66c264e-27ca-4756-9d48-7cf30f35e2eb")
+	)
+	(segment
 		(start 71.0875 68.5862)
 		(end 77.0131 68.5862)
 		(width 0.2)
@@ -14628,6 +14640,30 @@
 		(layer "F.Cu")
 		(net "VCC_5V")
 		(uuid "f78f116e-44b9-458b-8c74-fa05f6934982")
+	)
+	(via
+		(at 35.6 62.8)
+		(size 0.6)
+		(drill 0.3)
+		(layers "F.Cu" "B.Cu")
+		(net "VCC_5V")
+		(uuid "1f06b8c8-f17a-4b06-ba05-15bc3bea68b7")
+	)
+	(via
+		(at 37.6813 76.0613)
+		(size 0.6)
+		(drill 0.3)
+		(layers "F.Cu" "B.Cu")
+		(net "VCC_5V")
+		(uuid "d4cd76fc-d436-4234-9598-d00d780fcefe")
+	)
+	(segment
+		(start 35.6 62.8)
+		(end 37.6813 76.0613)
+		(width 0.3)
+		(layer "B.Cu")
+		(net "VCC_5V")
+		(uuid "66b8c63f-9b71-450e-a4d3-3e71574d1702")
 	)
 	(segment
 		(start 30.0001 58.0695)
