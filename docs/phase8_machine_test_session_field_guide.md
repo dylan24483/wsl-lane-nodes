@@ -43,16 +43,24 @@ GP closes when the grippers are **fully open** (it's what tells the brain the ta
 **"Forcing the danger state"** = both interlock cam switches closed at once, exactly what happens when sweep and table are on a collision course: **clamp the SC lever pressed AND the TB lever pressed** (their N.O. contacts close in-window — you proved SC's N.O. is the pink wire on 06-27). Two spring clamps; hands away.
 
 ### 2A. THE BIG ONE — does the ladder alone kill the motors? (Candidate-C premise, §4.2)
-The MP manual claims the rear-panel **manual Sweep/Table buttons bypass all brain logic *except* this interlock** — which makes them the perfect probe: if the interlock still stops a *manual-button* command, the protection lives in the **ladder**, not the Omega-Tek brain.
+The MP manual claims the rear-panel **manual Sweep/Table controls bypass all brain logic *except* this interlock** — which makes them the perfect probe: if the interlock still stops a *manual* command, the protection lives in the **ladder**, not the Omega-Tek brain.
 
-1. Clip your meter (LoZ, VAC) **across the S contactor coil** (the Siemens 3TH4022 — 24 VAC coil, per your 06-01 bench read). A helper watching/listening for the click works too.
-2. **Baseline:** press manual **Sweep** — contactor pulls in, coil reads ~24 VAC, no motion (motor unplugged). Release.
-3. **Force the danger state** (clamp SC + TB levers). Press manual **Sweep** again:
-   - **Contactor does NOT pull in / coil stays ~0 V → LADDER PROTECTION IS REAL** — strong evidence for candidate C.
-   - **Contactor pulls in anyway (~24 VAC) → premise FALSE** — the interlock is brain-mediated on this retrofit; **candidate C is dead → candidate A** (aux switches).
-4. **Drop-test variant:** press manual Sweep first (contactor in), *then* clamp both levers → coil should **drop** if the ladder protects.
-5. Repeat 2–4 for **T** (manual Table button, T contactor coil).
-6. **Control:** unclamp ONE lever (either) → manual command should work normally again. If it doesn't, note which lever alone blocks it.
+**What "manual Sweep" is:** a switch on the **REAR CONTROL PANEL** — the small operator box at the back of the machine, the same box carrying the PBZ zero button you mapped to EE. Op-manual p11 legend: **S** = manual sweep, **T** = manual table (plus SWS/SWSR run/reverse). It is **NOT any cam switch** — SA/SB/SC on the shaft are sensors, they command nothing.
+
+**Finding the right coil + the exact probe points:**
+1. Motors unplugged, machine powered. Flip manual **S** ON for a second, OFF. **Something in the cabinet CLACKS** — that device is the S chain; no label-hunting needed. If TWO devices click (small relay driving a big one), use the **bigger one — the one with THICK motor wires on its terminals** (the motor contactor: the thing the interlock must kill).
+2. On that device: the **two SMALL screw terminals with THIN control wires** are the coil — Siemens marks them **A1 / A2** (top + bottom corner, or both on front). This is the **same 5 Ω pair from the 06-01 bench read**. The FAT lugs with thick wires are motor contacts — stay off them.
+3. **Power OFF → alligator-clip one meter lead to A1, one to A2** (clips, hands-free — never held probes on a live cabinet). Meter to **VAC, LoZ**. Power ON, read from a step back.
+4. "Dead" vs "energized" is read **ACROSS A1–A2** (a differential read — chassis/ground is NOT involved): energized ≈ **24 VAC + a loud clack**; dead ≈ **0 V + silence**. Don't read coil-to-chassis — ladder nodes can float at odd voltages and fake an "energized." **The clack alone is a valid answer**; the meter just gives you a number to write down.
+
+**The test:**
+1. **Baseline:** manual **S** ON — clack, ~24 VAC across A1–A2, no motion (motor unplugged). Record the coil V (this also closes the old "heavy-lug contactor coil V" straggler). Switch OFF.
+2. **Force the danger state** (clamp SC + TB levers pressed). Manual **S** ON again:
+   - **No clack / ~0 V across A1–A2 → LADDER PROTECTION IS REAL** — strong evidence for candidate C.
+   - **Clacks anyway / ~24 VAC → premise FALSE** — the interlock is brain-mediated on this retrofit; **candidate C is dead → candidate A** (aux switches).
+3. **Drop-test variant:** manual S ON first (contactor in), *then* clamp both levers → coil should **drop to 0 V** if the ladder protects.
+4. Repeat 1–3 for **T** (manual Table switch; re-find its contactor by the clack, move the clips to ITS A1/A2).
+5. **Control:** unclamp ONE lever (either) → manual command should work normally again. If it doesn't, note which lever alone blocks it.
 
 **Record (each of S and T): baseline V ____ · forced-command result ____ · drop-test result ____ · single-lever control ____**
 
