@@ -96,6 +96,7 @@ sudo systemctl daemon-reload
 - **Track-B controller — DO NOT ENABLE until spec §12.9 bench validation passes.**
   It DRIVES THE PINSETTER. Provision the file (done above) but leave it disabled.
   After validation: `sudo systemctl enable --now lane-node-controller`.
+  **TODO (one-board bench Pi / D3):** the unit's stock `ExecStart` runs BOTH boards — add `--lanes 21` to `ExecStart` (or a drop-in with `Environment=WSL_LANES=21`) so the absent board-22 I²C bus/UART is never opened.
 
 > ⚠️ **The `systemctl enable` trap (learned the hard way):** `enable` is what survives
 > a reboot/power-event. A unit that's only `start`ed (active but not enabled) comes

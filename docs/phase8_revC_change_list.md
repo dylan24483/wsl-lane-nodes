@@ -93,3 +93,6 @@ the ordered part number differs from the footprint name (G5LE-1 vs G5LE-14 is ex
 Before trusting a populated board, energize one channel of each output type (one relay, one
 status lamp) and confirm make/break. A netlist/ERC review cannot catch a footprint mismatch;
 only a datasheet cross-check or a physical test does.
+
+### 12. Export every spin to a NEW dated directory — never overwrite the as-ordered package
+The Jun-26 re-export rmtree'd `kicad/fab_revB_routed_manual/` in place, destroying the rev-B-as-ordered gerbers (that tree is now the rev-C-as-ordered package under revB filenames — see `kicad/fab_revB_routed_manual/PROVENANCE.md`); parameterize the REV/output-dir in `export_fab_revB.py` before the next spin.

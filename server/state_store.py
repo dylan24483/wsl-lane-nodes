@@ -206,6 +206,9 @@ def _bowler_to_jd(b: BowlerGame) -> dict:
         'current_frame_idx': b.current_frame_idx,
         'ball_in_frame': b.ball_in_frame,
         'mask_before_ball': b.mask_before_ball,
+        # getattr: legacy-pickle-restored bowlers may predate the flag.
+        'mask_before_synthetic': bool(getattr(b, 'mask_before_synthetic',
+                                              False)),
         'game_over': b.game_over,
         'speed_ball1': b.speed_ball1,
         'speed_ball2': b.speed_ball2,
@@ -225,6 +228,7 @@ def _bowler_from_jd(d: dict) -> BowlerGame:
     b.current_frame_idx = int(d.get('current_frame_idx', 0))
     b.ball_in_frame = int(d.get('ball_in_frame', 1))
     b.mask_before_ball = int(d.get('mask_before_ball', 0x3FF))
+    b.mask_before_synthetic = bool(d.get('mask_before_synthetic', False))
     b.game_over = bool(d.get('game_over', False))
     b.speed_ball1 = d.get('speed_ball1', 0)
     b.speed_ball2 = d.get('speed_ball2', 0)
@@ -240,6 +244,27 @@ def _bowler_from_jd(d: dict) -> BowlerGame:
     return b
 
 
+# The engine's _start_new_game caps completed_games at 24 per lane object;
+# mirror that bound on restore so a hand-edited / foreign snapshot can't
+# balloon the in-memory archive (and every re-save thereafter).
+_COMPLETED_GAMES_MAX = 24
+
+
+def _completed_games_from_jd(d: dict, label: str) -> list:
+    """H27 archive with a loud, bounded restore. Old snapshots without the
+    field load cleanly as []."""
+    cg = d.get('completed_games') or []
+    if not isinstance(cg, list):
+        log.warning(f"{label}: completed_games is {type(cg).__name__}, "
+                    f"not a list — dropping the archive.")
+        return []
+    if len(cg) > _COMPLETED_GAMES_MAX:
+        log.warning(f"{label}: completed_games has {len(cg)} entries; "
+                    f"TRUNCATING to the most recent {_COMPLETED_GAMES_MAX}.")
+        cg = cg[-_COMPLETED_GAMES_MAX:]
+    return list(cg)
+
+
 def _lane_obj_to_jd(ls) -> dict:
     if isinstance(ls, CrossLaneScoring):
         bowlers = list(ls.bowlers)
@@ -251,6 +276,8 @@ def _lane_obj_to_jd(ls) -> dict:
             'game_number': ls.game_number,
             'is_active': ls.is_active,
             'started_at': ls.started_at,
+            # H27 archive — finished scoresheets must survive a restart.
+            'completed_games': ls.completed_games,
             'bowlers': [_bowler_to_jd(b) for b in bowlers],
             # Queues hold references into bowlers — serialize as indexes
             # so identity is rebuilt on load.
@@ -264,6 +291,8 @@ def _lane_obj_to_jd(ls) -> dict:
         'game_number': ls.game_number,
         'is_active': ls.is_active,
         'started_at': ls.started_at,
+        # H27 archive — finished scoresheets must survive a restart.
+        'completed_games': ls.completed_games,
         'bowlers': [_bowler_to_jd(b) for b in ls.bowlers],
     }
 
@@ -274,6 +303,8 @@ def _lane_obj_from_jd(d: dict):
         obj.game_number = int(d.get('game_number', 1))
         obj.is_active = bool(d.get('is_active', False))
         obj.started_at = d.get('started_at')
+        obj.completed_games = _completed_games_from_jd(
+            d, f"cross {d.get('lane_left')}/{d.get('lane_right')}")
         bowlers = [_bowler_from_jd(bd) for bd in d.get('bowlers', [])]
         obj.bowlers = bowlers
         queues = {}
@@ -290,6 +321,8 @@ def _lane_obj_from_jd(d: dict):
         obj.game_number = int(d.get('game_number', 1))
         obj.is_active = bool(d.get('is_active', False))
         obj.started_at = d.get('started_at')
+        obj.completed_games = _completed_games_from_jd(
+            d, f"lane {d.get('lane_id')}")
         obj.bowlers = [_bowler_from_jd(bd) for bd in d.get('bowlers', [])]
         return obj
     raise ValueError(f"unknown lane object kind {d.get('kind')!r}")

@@ -34,6 +34,8 @@ SAFETY notes:
 
 Run the off-hardware self-test:   python controller_daemon.py --selftest
 Run for real (on the Pi):         python controller_daemon.py        # needs gpiozero/smbus/pyserial
+                                  # ⚠️ LIVE by default (shadow is opt-in) — see the
+                                  # WSL_CONTROLLER_SHADOW / WSL_LIVE_OUTPUTS notes below.
 One-board bench rig (D3):         python controller_daemon.py --lanes 21   # or WSL_LANES=21
 """
 from __future__ import annotations
@@ -57,14 +59,27 @@ log = logging.getLogger("controller_daemon")
 
 # Shadow/canary soak (idea #11). When WSL_CONTROLLER_SHADOW is truthy the FSM runs
 # on the REAL inputs but every output is routed to a record-only shim (ShadowIO) and
-# the relay-enable ARM is hard-held LOW — no relay is ever energized. DEFAULT OFF:
-# it must be impossible to accidentally run live. See ShadowIO in controller_io.py.
+# the relay-enable ARM is hard-held LOW — no relay is ever energized.
+# ⚠️ SHADOW IS OPT-IN — THE DEFAULT IS LIVE (review #52): a bare
+# `python controller_daemon.py` on wired hardware drives REAL outputs. main()
+# logs an unmissable LIVE-vs-SHADOW banner at startup either way.
+# See ShadowIO in controller_io.py.
 SHADOW_ENV = "WSL_CONTROLLER_SHADOW"
+# Explicit live acknowledgment (review #52). NOT a gate — the default stays
+# live-when-shadow-off so existing bench workflows are byte-for-byte unchanged;
+# it only selects which startup banner prints: LIVE-acknowledged vs a loud
+# LIVE-BY-DEFAULT warning. Flip this into a hard gate at/after the §12.9 bench
+# sign-off if the accidental-run posture must match the bench-gated claims.
+LIVE_ENV = "WSL_LIVE_OUTPUTS"
 _FALSEY = ("0", "false", "no", "off", "")
 
 
 def _shadow_enabled():
     return os.environ.get(SHADOW_ENV, "0").strip().lower() not in _FALSEY
+
+
+def _live_acknowledged():
+    return os.environ.get(LIVE_ENV, "0").strip().lower() not in _FALSEY
 
 
 # One-board bench mode (readiness item D3). WSL_LANES env / --lanes CLI select a
@@ -226,7 +241,8 @@ class BoardController:
 
         # SHADOW/CANARY SOAK (idea #11): wrap the real io so the FSM drives NOTHING.
         # The wrapper records every command the FSM WOULD have issued and hard-holds
-        # the real ARM LOW. Default OFF (env gate) — impossible to run live by accident.
+        # the real ARM LOW. Shadow is OPT-IN (env gate, default off) — a run WITHOUT
+        # it is LIVE on wired hardware; see the mode banner in main() (review #52).
         if self.shadow:
             self.io = ShadowIO(self.io, recorder=self.recorder)
             log.warning("L%s: SHADOW MODE active (%s set) — FSM runs on real inputs but "
@@ -508,6 +524,22 @@ def main(argv=None):
 
     if args.selftest:
         return _selftest()
+
+    # LIVE/SHADOW mode banner (review #52): one unmissable line BEFORE any
+    # hardware is opened. Shadow is opt-in; a run without WSL_CONTROLLER_SHADOW
+    # IS live on wired hardware — the banner makes that explicit every start.
+    if _shadow_enabled():
+        log.warning("=== MODE: SHADOW (%s set) — FSM runs on real inputs; outputs "
+                    "are record-only, ARM hard-held LOW; no relay can energize ===",
+                    SHADOW_ENV)
+    elif _live_acknowledged():
+        log.warning("=== MODE: LIVE (%s acknowledged) — outputs DRIVE REAL RELAYS "
+                    "on wired hardware ===", LIVE_ENV)
+    else:
+        log.warning("=== MODE: LIVE **BY DEFAULT** — outputs DRIVE REAL RELAYS on "
+                    "wired hardware. Set %s=1 to acknowledge a deliberate live run, "
+                    "or %s=1 for a no-actuation shadow soak ===",
+                    LIVE_ENV, SHADOW_ENV)
 
     spec = args.lanes if args.lanes is not None else os.environ.get(LANES_ENV)
     try:

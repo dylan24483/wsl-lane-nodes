@@ -9,6 +9,7 @@ field that routes to the right physical GPIO.
 """
 
 import asyncio
+import hmac
 import json
 import logging
 import signal
@@ -64,10 +65,15 @@ def _parse_lanes(raw):
     return lanes
 
 LANES = _parse_lanes(os.environ.get("WSL_LANES"))
-# Shared auth token, matching the server's LANE_NODE_TOKEN. When the server
-# has LANE_NODE_TOKEN set, it rejects any HELLO without the same value; when
+# Shared auth token, matching the server's LANE_NODE_TOKEN. SYMMETRIC
+# (review #51): when the server has LANE_NODE_TOKEN set, it rejects any HELLO
+# without the same value; when THIS NODE has it set, command_handler rejects
+# any server command frame (CYCLE/OPEN/CLOSE/RESET/POWER_*) that does not
+# carry the same token — the HELLO-only auth protected the server but left
+# any host impersonating WSL-SRV:8765 with direct relay actuation. When
 # unset on both sides, behavior is unchanged (unauthenticated, bench compat).
-# Set it in the systemd unit (Environment=LANE_NODE_TOKEN=...) at provisioning.
+# Set it in the systemd unit (Environment=LANE_NODE_TOKEN=...) at provisioning
+# — the SAME value on the server and every Pi.
 LANE_NODE_TOKEN = os.environ.get("LANE_NODE_TOKEN", "").strip()
 
 # How DIELL ball-detect events flow into scoring:
@@ -548,7 +554,29 @@ async def command_handler(ws):
         except Exception as e:
             log.warning(f"malformed server frame ignored ({e!r}): {raw[:200]!r}")
             continue
-        log.info(f"← {raw}")
+        # Never log the shared token (frames carry it when auth is on).
+        if isinstance(msg, dict) and "token" in msg:
+            log.info("← %s", json.dumps({k: ("***" if k == "token" else v)
+                                         for k, v in msg.items()}))
+        else:
+            log.info(f"← {raw}")
+
+        # Symmetric auth (review #51): the HELLO token authenticates this node
+        # TO the server only; nothing authenticated the server to us, so an
+        # impersonated WSL-SRV:8765 got direct relay actuation. When
+        # LANE_NODE_TOKEN is set, every command frame must carry the same
+        # token (the server stamps it in encode()) or it is REJECTED loudly.
+        # Unset = unchanged (unauthenticated bench compat, both sides).
+        if LANE_NODE_TOKEN:
+            supplied = msg.get("token") or ""
+            if not (isinstance(supplied, str)
+                    and hmac.compare_digest(supplied, LANE_NODE_TOKEN)):
+                log.error(f"REJECTED server command frame: bad or missing token "
+                          f"(type={cmd_type!r} lane={lane!r} from "
+                          f"{getattr(ws, 'remote_address', '?')}). This node has "
+                          f"LANE_NODE_TOKEN set; the server must be started with "
+                          f"the SAME LANE_NODE_TOKEN so it stamps command frames.")
+                continue
 
         if lane not in LANES:
             log.warning(f"Command for unknown lane {lane}; this node handles {LANES}")

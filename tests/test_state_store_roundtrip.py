@@ -288,6 +288,120 @@ def test_missing_db_starts_fresh():
 
 
 # ---------------------------------------------------------------
+# 4. H27 completed_games archive survives a restart (review #46)
+# ---------------------------------------------------------------
+def make_finished_single(lane_id=25):
+    """Single lane where game 1 finished (perfect game) and rolled over —
+    completed_games holds one archived scoresheet."""
+    ls = LaneScoring(lane_id)
+    ls.start(['AMY'])
+    for _ in range(12):
+        ls.record_ball(ALL_DOWN)
+    return ls
+
+
+def make_finished_cross(lane_left=27, lane_right=28):
+    cls = CrossLaneScoring(lane_left, lane_right)
+    cls.add_bowler('ZOE', starting_lane=lane_left)
+    cls.start()
+    b = cls.bowlers[0]
+    for _ in range(12):
+        cls.record_ball_for_lane(b.current_physical_lane, ALL_DOWN)
+    return cls
+
+
+def test_completed_games_survive_roundtrip():
+    with fresh_db():
+        ls = make_finished_single(25)
+        cls = make_finished_cross(27, 28)
+        assert_eq(len(ls.completed_games), 1, "single archived one game")
+        assert_eq(len(cls.completed_games), 1, "cross archived one game")
+        assert_eq(ls.completed_games[0]['players'][0]['current_total'], 300,
+                  "archived scoresheet holds the finished score")
+
+        state_store.save_lanes({25: ls, 27: cls, 28: cls}, {})
+        loaded, _ = state_store.load_lanes()
+
+        assert_eq(loaded[25].completed_games, ls.completed_games,
+                  "single-lane completed_games survive restart")
+        assert_eq(loaded[27].completed_games, cls.completed_games,
+                  "cross-lane completed_games survive restart")
+        assert_eq(loaded[25].game_number, 2, "game_number survives with archive")
+        assert_eq(strip_ts(loaded[25].to_scoring_response(25)),
+                  strip_ts(ls.to_scoring_response(25)),
+                  "scoring response (incl. completed_games) identical")
+
+
+def test_old_snapshot_without_new_fields_loads_cleanly():
+    # A snapshot written BEFORE completed_games / mask_before_synthetic
+    # were serialized must load with the defaults ([], False).
+    with fresh_db():
+        ls = make_finished_single(25)
+        state_store.save_lanes({25: ls}, {25: 12})
+        blob = read_blob()
+        data = json.loads(blob.decode('utf-8'))
+        for od in data['objects']:
+            od.pop('completed_games', None)
+            for bd in od.get('bowlers', []):
+                bd.pop('mask_before_synthetic', None)
+        write_blob(json.dumps(data).encode('utf-8'))
+
+        loaded, counters = state_store.load_lanes()
+        assert_eq(counters, {25: 12}, "old snapshot still loads")
+        assert_eq(loaded[25].completed_games, [],
+                  "missing completed_games defaults to []")
+        assert_eq(loaded[25].bowlers[0].mask_before_synthetic, False,
+                  "missing mask_before_synthetic defaults to False")
+
+
+def test_oversized_completed_games_truncated_on_load():
+    # Foreign / hand-edited snapshots can't balloon the in-memory archive:
+    # restore keeps only the most recent _COMPLETED_GAMES_MAX entries.
+    with fresh_db():
+        ls = make_finished_single(25)
+        state_store.save_lanes({25: ls}, {})
+        data = json.loads(read_blob().decode('utf-8'))
+        for od in data['objects']:
+            od['completed_games'] = [{'game_number': i, 'players': []}
+                                     for i in range(1, 31)]
+        write_blob(json.dumps(data).encode('utf-8'))
+
+        loaded, _ = state_store.load_lanes()
+        cg = loaded[25].completed_games
+        assert_eq(len(cg), state_store._COMPLETED_GAMES_MAX,
+                  "oversized archive truncated on load")
+        assert_eq(cg[-1]['game_number'], 30, "most recent games kept")
+        assert_eq(cg[0]['game_number'],
+                  31 - state_store._COMPLETED_GAMES_MAX,
+                  "oldest surplus games dropped")
+
+
+def test_mask_before_synthetic_survives_roundtrip():
+    # Review #45: a correction seeds a synthetic (count-only) mask. If the
+    # server restarts between the correction and the next ball, the flag
+    # must survive or the next camera mask mis-diffs positionally.
+    with fresh_db():
+        ls = LaneScoring(21)
+        ls.start(['DEE'])
+        ls.record_ball(0x3E0)                       # 5 down, mid-frame
+        r = ls.correct_frame(0, 0, [{'pins_down': 5}])
+        assert_true(r['ok'], "in-progress correction applied")
+        assert_true(ls.bowlers[0].mask_before_synthetic,
+                    "correction seeded a synthetic mask")
+
+        state_store.save_lanes({21: ls}, {21: 1})
+        loaded, _ = state_store.load_lanes()
+        b = loaded[21].bowlers[0]
+        assert_eq(b.mask_before_synthetic, True,
+                  "synthetic flag survives restart")
+        # The restored engine must diff the next REAL mask by count (3),
+        # not against the fictional reconstruction (5 -> bogus spare).
+        bowl = b.record_ball(0x300)
+        assert_eq(bowl.pins_down, 3, "post-restart ball diffs by count")
+        assert_eq(b.frames[0].is_spare, False, "no bogus spare after restart")
+
+
+# ---------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------
 TESTS = [
@@ -295,6 +409,10 @@ TESTS = [
     test_legacy_pickle_migrates_to_json_once,
     test_corrupted_blob_starts_fresh,
     test_missing_db_starts_fresh,
+    test_completed_games_survive_roundtrip,
+    test_old_snapshot_without_new_fields_loads_cleanly,
+    test_oversized_completed_games_truncated_on_load,
+    test_mask_before_synthetic_survives_roundtrip,
 ]
 
 

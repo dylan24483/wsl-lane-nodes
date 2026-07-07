@@ -175,6 +175,13 @@ class BowlerGame:
         self.current_frame_idx = 0  # 0-based index into self.frames
         self.ball_in_frame = 1  # 1 or 2 (or 3 in 10th)
         self.mask_before_ball = 0x3FF  # All pins standing at start of frame
+        # True when mask_before_ball is a desk correction's RECONSTRUCTED
+        # pin_map (topologically arbitrary — see set_frame_bowls). The next
+        # record_ball must then diff by COUNT, not pin position: a positional
+        # diff of the real camera mask against a fictional layout miscounts
+        # pinfall (e.g. scores a bogus spare). Consumed (reset False) by the
+        # next recorded ball.
+        self.mask_before_synthetic = False
         self.game_over = False
         # Speed tracking (populated externally if available)
         self.speed_ball1 = 0
@@ -254,8 +261,19 @@ class BowlerGame:
         if self.ball_in_frame == 1:
             knocked = 10 - bin(mask).count('1')
             self.mask_before_ball = 0x3FF  # Full rack
+        elif getattr(self, 'mask_before_synthetic', False):
+            # mask_before_ball is a correction's reconstructed pin_map: the
+            # COUNT of standing pins is right but WHICH pins is fiction, so
+            # diff by count only (clamped — a camera glitch can't score
+            # negative pinfall). getattr: objects restored from a pre-flag
+            # snapshot lack the attribute.
+            standing_before = bin(self.mask_before_ball & 0x3FF).count('1')
+            knocked = max(0, standing_before - bin(mask).count('1'))
         else:
             knocked = pins_down_between(self.mask_before_ball, mask)
+        # Any synthetic seed is consumed by this ball; every path below
+        # reassigns mask_before_ball from a real camera mask or a full rack.
+        self.mask_before_synthetic = False
 
         # Determine display character
         if foul:
@@ -684,6 +702,7 @@ class BowlerGame:
                 self.current_frame_idx = min(frame_idx + 1, 9)
                 self.ball_in_frame = 1
                 self.mask_before_ball = 0x3FF
+                self.mask_before_synthetic = False
             return
 
         # Frame still in progress — stay on it, point at the next ball.
@@ -693,8 +712,13 @@ class BowlerGame:
         # foul respots the full rack, otherwise it's the last ball's remaining pins.
         if last is None or last.foul or last.display in ('X', '/'):
             self.mask_before_ball = 0x3FF
+            self.mask_before_synthetic = False
         else:
+            # The reconstructed pin_map preserves standing-pin COUNTS, not
+            # which pins stand. Flag it so record_ball diffs the next REAL
+            # camera mask by count instead of position.
             self.mask_before_ball = last.pin_map
+            self.mask_before_synthetic = True
 
 
 # ============================================================

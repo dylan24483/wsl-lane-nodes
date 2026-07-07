@@ -34,6 +34,9 @@ log = logging.getLogger('server')
 # identical to before (unauthenticated, with a loud startup warning). When
 # set, every POST must carry the same value in the X-Lane-Token header and
 # every WS HELLO must carry it in a "token" field, or it is rejected.
+# SYMMETRIC (review #51): when set, encode() also stamps the token into every
+# server->node command frame, and the node rejects command frames without it
+# — so an impersonated server can no longer actuate relays.
 # GET endpoints (display HTML, /api/lane/N/scoring, /api/state, /api/health)
 # stay open — the overhead displays poll them and they send no hardware
 # commands. The same env var configures the Pi client (lane_node.py) and
@@ -183,7 +186,15 @@ except ValueError:
     BALL_DEDUP_WINDOW_S = 0.0
 _last_ball_at: dict = {}   # lane-id -> time.monotonic() of last ACCEPTED ball
 
-def encode(t, **f): return json.dumps({"type": t, "ts": time.time(), **f})
+def encode(t, **f):
+    """Build a server->node frame. Every frame this server sends a node is a
+    COMMAND (CYCLE / OPEN_LANE / CLOSE_LANE / RESET / POWER_*), so when
+    LANE_NODE_TOKEN is set it is stamped into the frame — the node (review
+    #51, symmetric auth) rejects command frames without the matching token.
+    Unset = frame shape byte-identical to before (unauthenticated bench)."""
+    if AUTH_TOKEN and "token" not in f:
+        f["token"] = AUTH_TOKEN
+    return json.dumps({"type": t, "ts": time.time(), **f})
 def decode(r): return json.loads(r)
 
 def _socket_owns_lane(node_id, lane):
@@ -982,7 +993,9 @@ class HttpHandler(BaseHTTPRequestHandler):
             self._send(200, 'application/json',
                        json.dumps({
                            "sent_to": sent,
-                           "msg": json.loads(msg),
+                           # never echo the auth token back to the HTTP caller
+                           "msg": {k: v for k, v in json.loads(msg).items()
+                                   if k != "token"},
                            "hardware_command_sent": send_hardware_command,
                        }).encode('utf-8'))
         elif len(parts) == 4 and parts[0] == 'api' and parts[1] == 'pair' and parts[3] == 'open-league':
@@ -1126,7 +1139,8 @@ async def main():
     main_loop = asyncio.get_running_loop()
     if AUTH_TOKEN:
         log.info("LANE_NODE_TOKEN set — POST control API (:8766) and WS HELLO "
-                 "(:8765) require the shared token.")
+                 "(:8765) require the shared token; node-bound command frames "
+                 "are stamped with it (symmetric auth, review #51).")
     else:
         log.warning(
             "LANE_NODE_TOKEN not set — :8766 control POSTs and :8765 WS are "

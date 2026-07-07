@@ -93,7 +93,7 @@ These were **deliberately deferred** to cutover because they're easier with the 
 ### 3.1 Per-gripper GS# → C2A cavity (scoring/pin-sense map)
 - Polarity is **locked: gripped (pin present) = CLOSED to ground**, return = **machine chassis** (not a C2A common pin). Block confirmed at C2A **4-bank (≈41C…410U)**; the per-GS# 1:1 is what we capture.
 - **Method:** harness's gripper bank landed → inputs read in the live feed. **Lift ONE pin off the deck at a time** (or hand-actuate one gripper) and watch which `GS` channel deasserts. Record GS# → channel. Walk all 10 (corner + center first to catch ordering); flag any that don't follow the block order.
-- Set the result in `controller_io.py` GS map (software binding; no board change).
+- Realize the result in the **HARNESS crimp order** (J4 lead *N* → measured cavity of gripper *N*) — do **NOT** edit the `controller_io.py` GS map; the netlist drift guard forbids it (see §7 gripper-mask gates, review finding #23).
 
 ### 3.2 Per-cam SA/SB/SC/TA1/TA2/TB → C2A cavity + trip angle
 - **Method:** LOCKED OUT, **hand-rotate** the sweep/table mechanism; watch which **fast input** fires at which cam angle. Expected roles to confirm: SA (sweep run-through/zero ~270/360°), SB (guard ~66/186°), TA1 (table zero ~355/185°), TA2 (run-through ~260°), SC + TB (interlock cams). Record cam → C2A cavity → RP2040 GP#.
@@ -231,6 +231,11 @@ Brief night staff: "21+22 are on the new Pi controller. The machine cycles autom
 | **G5** | Stage 8 | ball cycle correct + manual deck check across a few balls/leaves both lanes *(the auto-score half is **BLOCKED** until the unified scoring+control daemon — §2 prerequisite; until then G5 gates on cycle correctness only)* | flip scoring to manual (Track-A Step 7); controller stays if G3/G4 passed |
 
 **Rule:** any failure at or before **G4 = rollback to the OEM brain.** Do not debug machine motion live.
+
+**Gripper-mask gates** (crosscut deferrals from the 2026-06-27 review, findings #23/#24 — enforce at **G2**, captured via §3.1):
+
+- **G2-GS8:** the **GS8 C2A cavity MUST be read before any gripper-mask-based decision is trusted.** GS8 is unread as of 2026-06-27 (the old 48H prediction is proven wrong — H is GS2's cavity). An unwired/unlanded GS8 input reads idle-high = "not standing" (`INPUT_ACTIVE_LOW`), so a **pin-8-only leave reads `mask==0` → false STRIKE** → the fresh-rack cycle sweeps the standing pin. Until GS8 is measured and landed, the FSM's strike/respot decision is untrustworthy — do not pass G2 with GS8 = TBD.
+- **G2-GSMAP:** the **GS-label→J4-lead binding is fixed in software** (`controller_io.py` `IN_A_MAP` order; the netlist drift guard asserts it — do NOT edit the map at cutover). **Cutover assignment happens in the HARNESS:** crimp J4 lead *N* to the **measured** C2A cavity of gripper *N* per the Section F J4 table (`phase8_machine_harness_spec_sectionF.md` §F.1, J4 `J_SLOW_IN_A`). **Verify by the drop-one-pin test per gripper** (lift one pin at a time, confirm the asserted GS label matches — §3.1) **before trusting the mask.**
 
 ---
 

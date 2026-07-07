@@ -328,3 +328,77 @@ def test_correction_not_ending_game_does_not_roll_over():
     assert r['ok']
     assert ls.game_number == 1
     assert ls.completed_games == []
+
+
+# ------------------------------------------------------------------
+# Finding 45 — after correcting the in-progress frame, the next REAL
+# camera mask must diff by COUNT, not against the synthetic
+# reconstructed pin_map (whose standing pins are fiction)
+# ------------------------------------------------------------------
+def test_real_ball_after_correction_diffs_by_count():
+    # Physical ball 1 leaves pins 6-10 (5 down); desk corrects the
+    # in-progress frame to pins_down=5. The reconstruction "leaves"
+    # pins 1-5 (low bits first) — topological fiction. Real ball 2
+    # knocks pins 6-8; the camera mask shows pins 9-10 standing. The
+    # old positional diff credited 5 (a bogus SPARE for a 3-pin ball);
+    # the count diff credits 3.
+    ls, b = single()
+    b.record_ball(0x3E0)                     # pins 6-10 standing (miscored)
+    r = ls.correct_frame(0, 0, [{'pins_down': 5}])
+    assert r['ok'], r.get('error')
+    assert b.mask_before_synthetic is True   # seed flagged as fiction
+    assert b.ball_in_frame == 2
+    bowl = b.record_ball(0x300)              # real ball 2: pins 9-10 stand
+    assert bowl.pins_down == 3               # count diff, not positional 5
+    f = b.frames[0]
+    assert f.is_spare is False               # the bogus spare is gone
+    assert f.score == 8
+    assert displays(f) == ['5', '3']
+    assert b.mask_before_synthetic is False  # seed consumed by the ball
+
+
+def test_real_ball_after_correction_never_scores_negative():
+    # Camera reports MORE pins standing than the corrected count implied
+    # (operator under-counted or the rack was reset): clamp to 0, never
+    # negative pinfall.
+    ls, b = single()
+    b.record_ball(0x3E0)
+    assert ls.correct_frame(0, 0, [{'pins_down': 8}])['ok']  # 2 "standing"
+    bowl = b.record_ball(0x3C0)              # camera: 4 standing
+    assert bowl.pins_down == 0
+    assert bowl.display == '-'
+    assert b.frames[0].is_spare is False
+    assert b.frames[0].score == 8
+
+
+def test_tenth_ball3_after_correction_diffs_by_count():
+    # 10th corrected to [X, 4] mid-frame: ball 3 continues ball 2's
+    # reconstructed rack (6 "standing"). Real ball 3's camera mask shows
+    # 2 standing -> count diff credits 4.
+    ls, b = single()
+    gutter_frames(b, 9)                      # bowler on the 10th
+    b.record_ball(CLEARED)                   # 10th ball 1 = strike
+    b.record_ball(0x3E0)                     # ball 2 miscored
+    r = ls.correct_frame(0, 9, [{'pins_down': 10}, {'pins_down': 4}])
+    assert r['ok'], r.get('error')
+    assert b.ball_in_frame == 3
+    assert b.mask_before_synthetic is True
+    bowl = b.record_ball(0x280)              # real ball 3: 2 pins stand
+    assert bowl.pins_down == 4               # 6 standing - 2 standing
+    assert bowl.display == '4'
+    assert b.frames[9].total_pins_this_frame == 18
+    assert b.game_over is True
+
+
+def test_correction_to_fresh_rack_keeps_positional_diff():
+    # A correction whose last ball is a mark/foul respots a REAL full
+    # rack — the synthetic flag must stay off so the next ball keeps the
+    # exact positional diff.
+    ls, b = single()
+    b.record_ball(CLEARED, foul=True)
+    r = ls.correct_frame(0, 0, [{'pins_down': 10, 'foul': True}])
+    assert r['ok'], r.get('error')
+    assert b.mask_before_ball == 0x3FF
+    assert b.mask_before_synthetic is False
+    bowl = b.record_ball(0x201)              # pins 1,10 standing -> 8 down
+    assert bowl.pins_down == 8

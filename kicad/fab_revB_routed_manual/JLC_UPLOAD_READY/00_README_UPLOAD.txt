@@ -35,7 +35,8 @@ Critical part-match checks:
 
 Mandatory preview checks before ordering:
 - Pin 1/orientation markers for U1-U3 and U36 match the KiCad board.
-- Diode cathode stripes for D1-D7/D9-D15/D17-D30 and polarity for C5/C6 are correct.
+- Cathode stripes for D1/D3/D5/D7/D9/D11/D15/D16 (1N4148), D17 (SS14) orientation,
+  and C11 (100uF electrolytic) polarity are correct. (C5/C6 are DNP; D18+ do not exist.)
 - Relay bodies sit in the machine-contact band and do not rotate.
 - PC817 optos stay vertical in the field/logic barrier row.
 - A1, J1-J11, J13, J14, U37 are not placed by JLC.
