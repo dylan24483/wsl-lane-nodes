@@ -22,7 +22,7 @@
 - **SC** (interlock) **→ U.** · **TB → none** (interlock-only, shares the U node).
 - **Common/ground rails — ignore these, they ring to everything:** **J, F, U** (gripper/control common, chassis return) + **N** (the 5-cam motion common).
 - **Deferred to powered cutover:** motion cams **SA / SB / TA1 / TA2** (buried in the relay ladder — a clean one-read each once powered).
-- **Still open:** GP (gripper-protect) · OS / PBC / 10th / MAN_* (spare/future) · Foul · DIELL re-check.
+- **Still open:** GP (gripper-protect — **DEFERRED 2026-07-07 to a later session or the powered cutover**; predicted ~412DD, no manual photo exists, method = watch DD/sweep while working one gripper's fingers fully open) · OS / PBC / 10th / MAN_* (spare/future) · Foul · DIELL re-check.
 
 ### ★ 1. C2A INPUT cavity digits — largely CLOSED 2026-06-27 (see ✅ block above)
 **Remaining cold work = GP + the ⊕ stragglers.** The four motion cams (SA/SB/TA1/TA2) map at **POWERED cutover only** (§3) — do **not** re-attempt them cold. The reach-lead procedure below is kept for the remaining stragglers. The cams/grippers/switches live on the **machine**; their wires reach the cabinet through C2A.
@@ -54,7 +54,7 @@
 | OS / TENTH / MAN_SWSR (⊕) | off-spot / 10th / man-reverse switch | **SWEEP — unknown** | LOW | ____ |
 | MAN_T / MAN_S / MAN_SWS (⊕) | manual table / sweep / sweep-switch | sweep T/S/SWS region | LOW | ____ |
 
-> **Priority (post-2026-07-07): GP is the last cold blocker.** SC/TB and all 10 grippers are done (✓ rows above); TA2 and the other motion cams are deferred to the powered session (§3).
+> **Status (post-2026-07-07): the cold campaign is CLOSED.** SC/TB, all 10 grippers, PBZ, BS done; **GP deferred by decision** (catch it at the powered session — it gates nothing in the harness build; J4-11 lead gets cut/labeled but not landed). TA2 and the other motion cams map at the powered session (§3).
 
 **Grippers — map by dropping a pin (cold; no reach lead needed).** Because every gripper returns to the machine frame, you don't trace each one — you *actuate* it. Machine cold: clip your meter's **black lead to bare chassis/frame**, then **set a single pin into one spotting cup** (or hand-close that one gripper). With the red lead, **back-probe the C2A cavities** — the cavity that now reads **closed to chassis** is that gripper. The pin you dropped tells you the **gripper number** (its pin position, 1–10), so this step *names* GS1…GS10 at the same time. Work one cup at a time across the triangle. (This is the cutover "drop a pin, watch which input asserts" step from §4.3 — doing it with a meter at the bench gets you the cavity map early.)
 
