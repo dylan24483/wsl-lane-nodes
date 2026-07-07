@@ -83,8 +83,11 @@
 /*                                                                                            */
 /*  Bench/cutover sequence to ARM these (runbook §3.2 -> §6 Stage 7, per board):               */
 /*    1. Hand-rotate each stop cam; record which edge ('f' = asserted/fall, 'r' = released/    */
-/*       rise) is the angular ZERO-STOP trip. Cams are normally-closed dry contacts that the   */
-/*       opto inverts, so the un-bench-confirmed DEFAULT below assumes 'f' = the trip edge     */
+/*       rise) is the angular ZERO-STOP trip. Motion cams (SA/SB/TA1/TA2) are normally-closed  */
+/*       dry contacts; SC is N.O. and TB has NO independent signal on the metered 21/22        */
+/*       chassis (SC+TB = series interlock at one node, 2026-06-27 — see                       */
+/*       docs/phase8_interlock_redesign.md). The opto inverts, so the un-bench-confirmed       */
+/*       DEFAULT below assumes 'f' = the trip edge                                             */
 /*       (consistent with rp2040_link.RP2040Link(trip_edge="f")). VERIFY, do not assume.       */
 /*    2. Set the matching CAM_*_TRIP to that edge, flip the relevant *_ENABLED to 1, rebuild.  */
 /*    3. Re-run the Stage-6b cam-stop rail-drop sub-test (G3): command S/T, let the stop-cam   */

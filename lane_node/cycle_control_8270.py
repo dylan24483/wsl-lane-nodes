@@ -26,8 +26,10 @@ level here; the points that need confirming against the schematic or the real
 machine are marked  # CONFIRM .
 
 SAFETY (the Pi's responsibilities; hardware backstops exist independently):
-  * interlock_ok() (TB/SC) gates EVERY motor energize. Hardware enforces it too;
-    this is the software echo, never the sole guard.
+  * interlock_ok() (TB/SC) gates EVERY motor energize. ⚠️ The hardware interlock
+    is PLANNED, not landed — design open per docs/phase8_interlock_redesign.md
+    (measured 2026-06-27: the J_SAFETY dry loop is unbuildable as drawn). Until
+    it lands, this software echo is the ONLY guard.
   * On power restore the FSM comes up in MANUAL_INTERVENTION and drives NOTHING
     until the operator presses First-Ball-Zero — the MP "Power-Down" rule (§5).
   * io.watchdog_kick() every poll(); the NE555 drops all relays if we stop.

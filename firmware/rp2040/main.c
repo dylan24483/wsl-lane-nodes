@@ -21,10 +21,13 @@
  *
  * SAFETY MODEL (read before editing — sources: docs/phase8b_pcb_revB_spec.md §4,
  * docs/phase8_8270_SYSTEM_REFERENCE.md §5):
- *   - This board is NEVER the only safety device. The TB/SC collision interlock
- *     (J_SAFETY hardware NC loop), the Stop/CIS/master-breaker chain, the NE555
- *     watchdog (watches the *Pi*), and regenerative motor braking are all in
- *     hardware, independent of this firmware.
+ *   - This board is NEVER the only safety device for the Stop/CIS/master-breaker
+ *     chain, the NE555 watchdog (watches the *Pi*), or regenerative motor
+ *     braking — those are in hardware, independent of this firmware. The TB/SC
+ *     collision interlock is the EXCEPTION: it is PLANNED hardware only — design
+ *     open per docs/phase8_interlock_redesign.md (measured 2026-06-27: the
+ *     J_SAFETY NC loop is unbuildable as drawn). Until it lands, the software
+ *     echo is the ONLY TB/SC guard.
  *   - RP_OK is FAIL-SAFE LOW. Telemetry must NEVER block the safety loop: UART TX
  *     is a non-blocking ring buffer; the RP_OK drive + watchdog kick run every
  *     loop pass regardless of UART state. A dead UART cannot cause unsafe motion
@@ -37,8 +40,9 @@
  *     per-cam edge->angle polarity that is a deferred cutover field item
  *     (phase8_trackB_controller_cutover_runbook.md §3.2). Do NOT bake in unconfirmed
  *     cam polarity. The hook is marked  // v1.1  below.
- *   - SC/TB collision echo gating RP_OK (the hardware J_SAFETY loop is primary;
- *     the firmware echo is enabled once the SC/TB windows are bench-confirmed).
+ *   - SC/TB collision echo gating RP_OK (the hardware J_SAFETY loop is PLANNED
+ *     only — design open per docs/phase8_interlock_redesign.md; the firmware
+ *     echo is enabled once the SC/TB windows are bench-confirmed).
  *
  * This firmware is bench-bring-up gated (spec §12.9) before any live machine.
  */

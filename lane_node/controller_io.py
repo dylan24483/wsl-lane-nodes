@@ -16,10 +16,11 @@ implementations of that interface:
 Channel assignments come from `docs/phase8_channel_allocation.md` (per-board,
 self-contained: 3× MCP23017 @ 0x20–0x23 on the board's own I²C bus + 1 RP2040).
 
-⚠️ SAFETY: this module is the software half. The hardware half (TB/SC interlock,
-relay-enable rail, NE555 watchdog, RP2040 cam-stop, regenerative braking) is
-NEVER bypassed here — `io.interlock_ok()` is a SECONDARY echo, and every motor
-energize in the FSM is also gated downstream by the hardware rail. MachineIO is
+⚠️ SAFETY: this module is the software half. The hardware half (relay-enable
+rail, NE555 watchdog, RP2040 cam-stop, regenerative braking) is NEVER bypassed
+here. The TB/SC hardware interlock is PLANNED only — design open per
+docs/phase8_interlock_redesign.md; until it lands, `io.interlock_ok()` is the
+ONLY TB/SC guard, not a secondary echo. MachineIO is
 NOT to drive a live machine until the full hardware safety chain is bench-proven
 (see docs/phase8_PLAN_A_full_replacement.md + the off-live validation gate #17).
 
@@ -242,11 +243,13 @@ class MachineIO:
     def read_input(self, name): return self._read_in(name)   # PBZ/PBC/Foul/OS/... for the daemon
 
     def interlock_ok(self):
-        """SECONDARY software echo of the TB/SC interlock. The AUTHORITATIVE
-        interlock is the hardware TB+SC loop; this read is advisory (lets the FSM
-        avoid commanding into a known-bad state). When the RP2040 link is wired,
-        echo its SC/TB collision state; otherwise default True so the software
-        echo never *enables* motion the hardware would block."""
+        """Software echo of the TB/SC interlock. ⚠️ The hardware TB+SC loop is
+        PLANNED, not landed — design open per docs/phase8_interlock_redesign.md
+        (measured 2026-06-27: no isolatable dry NC pair exists to land J_SAFETY
+        as drawn). Until that design lands, this echo is the ONLY TB/SC guard.
+        When the RP2040 link is wired, echo its SC/TB collision state; otherwise
+        default True — which today means NO interlock protection, not "the
+        hardware has it covered"."""
         if self._rp2040 is not None:
             return self._rp2040.interlock_ok()
         return True

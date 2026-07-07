@@ -37,7 +37,7 @@
   | Arm OK | Pi arm GPIO (asserts only after operator-safe state / First-Ball-Zero) | false |
   | RP2040 OK | RP2040 heartbeat/permission | false |
   | Cam-stop OK | RP2040 immediate cam-edge drop path | false on fault |
-  | TB/SC interlock OK | external hardware interlock loop (NC) | open/false |
+  | TB/SC interlock OK | external hardware interlock loop (NC) — **landing design OPEN, see §3.4 + `phase8_interlock_redesign.md`** | open/false |
   | Stop/CIS/master OK | external machine safety chain | open/false |
 
 - **Cam-stops are now SOLELY the RP2040's job.** Bench work (JOB-2) found the OEM machine uses **logic stops** (triac board), not hardwired cam-in-series — so removing the Omega-Tek board removes the existing cam-stop. The RP2040 hardware cam-stop **replaces** it. This is why the RP2040 cam-stop must be bench-proven (spec §12.9) *before* this cutover, and why the §6 Stage-6b cam-stop drop test is a hard gate.
@@ -114,8 +114,12 @@ Confirm the **measured** output cavities against THIS in-place machine before la
 
 > **Harness note:** outputs span **both** C1 (S, T) and C2A (M2, SP, M, BE) → J_MOTION_OUT needs leads to **both** machine connectors. The board switches the coil circuit only; it does not supply the ~24 VAC coil power.
 
-### 3.4 TB/SC hardware interlock → exact terminals (J_SAFETY)
-- OEM: TB + SC are in **parallel into the 24 V control path**; J_SAFETY wants an **NC series loop** that opens on a table/sweep interference. **Method:** LOCKED OUT, find the TB + SC cam switches, confirm the NC loop, record exactly where it lands, and land J_SAFETY into it. This is a **first-class rail condition** — it must remove rail permission in hardware, not via firmware.
+### 3.4 TB/SC hardware interlock → J_SAFETY landing — ⚠️ REDESIGN OPEN, do NOT land as originally written
+- **Measured 2026-06-27 (this machine):** SC + TB are a **SERIES interlock** embedded in the **live 24 VAC relay ladder** at a single node (**TSG-1 = C2A-U**) — NOT "parallel into the 24 V control path" as this step previously claimed. SC is accessible only via its **N.O. (pink)** wire (closed *in* the danger window — the inverse of a closed-when-safe loop); **TB has no standalone cavity** — both its wires tie into the same U node and neither isolates. **There is no isolatable dry NC pair to land J_SAFE1/2 on.**
+- **The original method (LOCKED OUT continuity trace) is INVALID here:** the interlock contacts sit in series inside the relay ladder, so cold beeps travel **sneak paths through ~21 Ω relay coils** — a cold trace can neither find nor verify the landing. Interlock characterization is a **POWERED** capture (one deliberate test at a time, §1 mode B).
+- ⛔ **Never land J_SAFE1/2 into the ladder as drawn** — that ties the board's VCC5 dry-sense loop into a live 24 VAC node.
+- **The hardware landing is an OPEN DESIGN DECISION** — `phase8_interlock_redesign.md` (3 candidates: aux contacts added at the SC/TB switches · interposing relay sensing the interlock node · documented + powered-verified reliance on the OEM series contacts inside the coil circuits the board switches). **This step cannot be executed — and the cutover cannot be scheduled — until that decision lands** (feeds G2 + G3).
+- Still true: this is a **first-class rail condition** — whatever design is chosen must remove motion permission **in hardware, not via firmware**. Until it lands, the software echo is the ONLY TB/SC guard (and it is itself pending the single-node redesign — review findings #4/#12).
 
 ### 3.5 Stop/CIS/master chain — confirm, preserve, do not replace
 - OEM service p11: Stop + C.I.S. parallel, both cut the master breaker. **Confirm continuity** (Stop in RUN vs STOP drops the motor-relay coil rail) and **leave the chain intact upstream.** J_SAFETY's Stop/CIS sense ties into this chain so the board's rail also requires it OK.
@@ -146,7 +150,7 @@ The board exposes function-named connectors; this per-chassis harness lands them
 | | Foul (Radaray) | foul detector lead | edge; confirm form |
 | | 10th / manual T/S/SWS/SWSR | spare (future) | — |
 | **J_LAMP_LED** | L_FIRST/SECOND/STRIKE/FOUL | **our LEDs in the mask housings** | 5 V logic via low-side FET; **machine 15 VDC mask supply abandoned** |
-| **J_SAFETY** | TB/SC NC loop | 24 V control path — **CAPTURE §3.4** | hardware NC series; rail condition |
+| **J_SAFETY** | TB/SC NC loop | **BLOCKED — no isolatable dry pair exists (measured 2026-06-27); design open per `phase8_interlock_redesign.md`, see §3.4** | hardware NC series; rail condition |
 | | Stop/CIS/master sense | upstream chain — confirm §3.5 | preserve; rail condition |
 | **J_PI** | I²C bus, UART(↔RP2040), WDOG-kick GPIO12, ARM, INT | Pi 40-pin | per-board bus (board-22 on i2c-gpio) |
 | **J_PWR** | 5 V logic, isolated field-wetting, 12 V DIELL | enclosure supplies | RPP + transient protection on input |
@@ -193,7 +197,7 @@ One connector group at a time, **double-checking each against the §4 map**, lif
    - de-assert arm → rail drops
    - reset/halt the RP2040 → rail drops
    - trigger a cam-stop edge → rail drops  **⚠️ requires RP2040 firmware v1.1 (cam-stop overrun). v1 firmware provides only the motion max-run backstop, NOT per-cam-edge enforcement — it depends on the §3.2 per-cam edge→angle polarity. So capture cam polarity FIRST (§3.2), flash v1.1, THEN run this sub-test. This sub-test is BLOCKED until then; the other five rail-drop conditions are testable with v1.**
-   - open the TB/SC loop → rail drops
+   - open the TB/SC loop → rail drops  **⚠️ BLOCKED until the interlock design lands (`phase8_interlock_redesign.md` — decision OPEN). When run: prove it at the MACHINE side — physically force the SC/TB interlock (hold/rotate the followers into the interference state, or open the aux/interposed path at its machine-side origin) → motion permission must drop. Lifting a wire at the J_SAFE terminal is NOT sufficient. ⛔ Jumpering J_SAFE1-2 to bring the rail up is FORBIDDEN — a jumpered loop passes a terminal-lift test while silently removing collision protection, and nothing in software can detect it. (Sole exception: candidate C of the redesign doc, where a *documented, labeled* harness jumper is the design — then this sub-test becomes: force SC/TB into the danger state while the board commands S/T → the COIL circuit must drop even with the board contact closed.)**
    - open the Stop/CIS chain → rail drops
    **Every one must drop motion permission. Any failure → ABORT + rollback (G3).** Do not proceed to live motion with a safety condition that doesn't drop the rail.
 
@@ -222,7 +226,7 @@ Brief night staff: "21+22 are on the new Pi controller. The machine cycles autom
 |---|---|---|---|
 | **G1** | before scheduling | unit bench-validated (spec §12.9 all steps) · firmware proven · Track-A scoring soaked clean · spare on hand · OEM brain photographed | don't schedule |
 | **G2** | after Stage 2 | all §3 field items captured; harness map §4 complete; no surprises vs measured cavities | resolve or defer non-blocking; abort if a safety landing (TB/SC) is unclear |
-| **G3** | Stage 6b | **EVERY** rail condition (watchdog, arm, RP2040, cam-stop, TB/SC, Stop/CIS) independently drops motion permission | **ABORT → rollback** |
+| **G3** | Stage 6b | **EVERY** rail condition (watchdog, arm, RP2040, cam-stop, TB/SC, Stop/CIS) independently drops motion permission · **TB/SC proven by physically forcing the interlock at the MACHINE side** (not a J_SAFE terminal lift) · **a J_SAFE1-2 jumper = automatic FAIL** (unless it IS the landed candidate-C design, in which case the live coil-drop proof replaces the rail-drop proof — `phase8_interlock_redesign.md`) | **ABORT → rollback** |
 | **G4** | Stage 7 | commanded S/T/SP each stop on cams; full reset completes + stops; no runaway | **breaker OFF → rollback** |
 | **G5** | Stage 8 | ball cycle correct + manual deck check across a few balls/leaves both lanes *(the auto-score half is **BLOCKED** until the unified scoring+control daemon — §2 prerequisite; until then G5 gates on cycle correctness only)* | flip scoring to manual (Track-A Step 7); controller stays if G3/G4 passed |
 
@@ -290,5 +294,5 @@ SA __/__/__°  SB __/__/__°  SC __/__/__°  TA1 __/__/__°  TA2 __/__/__°  TB 
 cam-stop drop confirmed (Stage 7)?  S:__  T:__
 ```
 **B.3 Outputs (§3.3 confirm)** — S(C1 C,D,N,T)__ · T(C1 A,K,H,E,L)__ · SP(C2A)__ · BE(straddle)__ · M(C2A)__ · M2(C2A)__ · M1 exists? Y/N __
-**B.4 Safety (§3.4/§3.5)** — TB/SC NC loop terminals: ______ · NC confirmed Y/N __ · Stop drops coil rail Y/N __
+**B.4 Safety (§3.4/§3.5)** — interlock design landed (`phase8_interlock_redesign.md` candidate A/B/C): __ · machine-side SC/TB force drops motion permission Y/N __ · Stop drops coil rail Y/N __
 **B.5 Switches** — PBZ __ · PBC __ · GP __ · OS __ · BS __ · Foul form __
