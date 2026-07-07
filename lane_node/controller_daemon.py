@@ -34,6 +34,7 @@ SAFETY notes:
 
 Run the off-hardware self-test:   python controller_daemon.py --selftest
 Run for real (on the Pi):         python controller_daemon.py        # needs gpiozero/smbus/pyserial
+One-board bench rig (D3):         python controller_daemon.py --lanes 21   # or WSL_LANES=21
 """
 from __future__ import annotations
 import argparse
@@ -64,6 +65,37 @@ _FALSEY = ("0", "false", "no", "off", "")
 
 def _shadow_enabled():
     return os.environ.get(SHADOW_ENV, "0").strip().lower() not in _FALSEY
+
+
+# One-board bench mode (readiness item D3). WSL_LANES env / --lanes CLI select a
+# SUBSET of DEFAULT_BOARDS *before* construction, so a single-board rig never
+# opens the absent board's I2C bus / UART. CLI beats env; unset/empty = all.
+LANES_ENV = "WSL_LANES"
+
+
+def _parse_lanes(spec):
+    """'21' / '21,22' -> [21, 22] (deduped, order kept). None/blank -> None (= all).
+    Raises ValueError on a non-integer token."""
+    if spec is None or not spec.strip():
+        return None
+    lanes = []
+    for tok in spec.replace(",", " ").split():
+        n = int(tok)
+        if n not in lanes:
+            lanes.append(n)
+    return lanes
+
+
+def _select_boards(configs, lanes):
+    """Filter board configs to the requested lanes (None = all). An unknown lane
+    is a hard error — a typo must not silently run the wrong board."""
+    if lanes is None:
+        return list(configs)
+    by_lane = {c.lane: c for c in configs}
+    unknown = sorted(set(lanes) - set(by_lane))
+    if unknown:
+        raise ValueError(f"unknown lane(s) {unknown}; available: {sorted(by_lane)}")
+    return [by_lane[n] for n in lanes]
 
 
 # Map an FSM state TRANSITION to the discrete mechanical event it represents, for the
@@ -377,17 +409,46 @@ def run(boards, hz: float = 50.0):
             b.safe_off()
 
 
+def _build_boards(configs):
+    """Construct a BoardController per config, isolating open failures (D3): a
+    board whose hardware won't open (missing I2C bus / UART on a partial bench
+    rig) is logged LOUDLY and skipped. A skipped board is never ticked -> its
+    NE555 never gets kicked -> its safety rail stays down = fail-safe by hardware."""
+    boards = []
+    for cfg in configs:
+        try:
+            boards.append(BoardController(cfg))
+        except Exception:
+            log.exception("L%s: board bring-up FAILED (i2c_bus=%s uart=%s) -> SKIPPED; "
+                          "never ticked, NE555 never kicked, rail stays down (fail-safe)",
+                          cfg.lane, cfg.i2c_bus, cfg.uart_port)
+    return boards
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Phase 8b Track-B controller daemon (skeleton)")
     ap.add_argument("--selftest", action="store_true", help="run the off-hardware assembly self-test and exit")
     ap.add_argument("--hz", type=float, default=50.0, help="control loop rate")
+    ap.add_argument("--lanes", default=None,
+                    help=f"comma-separated lane subset (e.g. '21'); overrides {LANES_ENV}; "
+                         "default = all of DEFAULT_BOARDS")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
     if args.selftest:
         return _selftest()
 
-    boards = [BoardController(cfg) for cfg in DEFAULT_BOARDS]   # real hardware
+    spec = args.lanes if args.lanes is not None else os.environ.get(LANES_ENV)
+    try:
+        configs = _select_boards(DEFAULT_BOARDS, _parse_lanes(spec))
+    except ValueError as e:
+        log.error("bad lane selection %r: %s", spec, e)
+        return 1
+    boards = _build_boards(configs)                             # real hardware
+    if not boards:
+        log.error("ZERO boards came up (requested lanes=%s) -> exiting 1",
+                  [c.lane for c in configs])
+        return 1
     run(boards, hz=args.hz)
     return 0
 
