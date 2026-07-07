@@ -83,7 +83,7 @@
 
 ### 2. Short stragglers (knock out alongside)
 - **M1 (ball-return) output** — never measured. Only needed if you ever populate J12 (DNP). Low priority — beep its coil → connector when convenient.
-- **Heavy-lug S/T contactor coil V** + **verify the suspect T <1Ω read** (armature-press: steady = coil, jumps = contact). Minor — affects contact-rating/snubber sizing, not the harness map. The S/T contactors are almost certainly 24 VAC like everything else; just confirm.
+- ~~**Heavy-lug S/T contactor coil V**~~ **✓ CLOSED 2026-07-07: both S and T motor-contactor coils = 24 VAC** (measured live across A1–A2 during the interlock test-2A session). The suspect T<1Ω cold read is moot for the harness (it was a contact, not the coil — the live coil reads confirm).
 
 ### 3. At-machine, POWERED (during cutover prep — one deliberate test at a time, locked out otherwise)
 - **Front-end class (dry vs 24 VAC):** **no reach problem here** — you meter right at the cabinet: the cam's signal is present at its C2A cavity once the machine is powered, so meter **cavity → FIELD_GND** (both in the cabinet) with the probe **loaded (LoZ)**. **< 2 V or open = dry** (keep the opto front-end); **12–24 VAC = live** (that channel needs the 24 VAC-rectified sense). The **six cam channels** (SA/SB/SC/TA1/TA2/TB) are the ones in question.

@@ -90,6 +90,23 @@ All three candidates need the same facts, none of which cold probing can supply.
 2. **C's premise:** with the OEM brain still in place, establish whether forcing SC+TB into the danger state kills the S/T motor-relay coil rail via the **ladder alone** (upstream of / independent of the brain's outputs). This can and should be answered **before** cutover day.
 3. **Window angles:** capture the actual SC/TB closure angles vs cam rotation. Feeds A's alignment target and the (separate-workstream) single-node software echo.
 
+## 4-RESULTS — §4.2 MEASURED 2026-07-07 (Dylan, at the machine): **PREMISE TRUE — the ladder alone kills both motor coils**
+
+Method: motors unplugged; meter (VAC, LoZ) clipped **across A1–A2** of each motor contactor coil; interlock forced by holding the SC + TB cam-switch levers; motion commanded from the **rear-panel manual S / T switches** (brain-independent path).
+
+| Levers (SC+TB) | Manual S → S-contactor coil | Manual T → T-contactor coil |
+|---|---|---|
+| **both held BACK (off buttons)** | **0 VAC (0.07 VDC noise) — DEAD** | **0 VAC — DEAD** |
+| both pressing buttons | 24 VAC — energized | 24 VAC — energized |
+| one back, one pressed | 24 VAC — energized | 24 VAC — energized |
+| switch off (control) | 0 V | — |
+
+Findings locked by this session:
+1. **Candidate C's premise is TRUE**: a manual (brain-bypassing) motion command is blocked by the ladder when both cams are in the blocking state — for **both S and T**. The OEM collision protection lives in the relay ladder and survives brain removal, **provided the board's contact lands in series with these same coil circuits** (§3-C insertion-point caveat → re-prove per lane at Stage 6b/G3 as already gated).
+2. **Contact logic = parallel closed-when-SAFE:** coil dies only when **both** switches release; either one pressed keeps it alive. This is the OEM "TB + SC in PARALLEL" reconciled with the single measured node: two parallel safe-contacts, danger = both open.
+3. **Actuation direction INVERTED vs the pre-session assumption:** the blocking/danger state = **levers held BACK (buttons released)**, i.e. on the cams the interference window presents as the follower dropping back, not being pressed. Any software echo / aux-switch design must use this polarity — and the powered cam-window capture (§4.3) should still confirm the lever-back↔in-window mapping on the rotating machine.
+4. Bonus: **S and T motor-contactor coils = 24 VAC** (closes the 2026-06-01 "heavy-lug contactor coil V" straggler).
+
 ## 5. Recommendation — ⚠️ decision stays OPEN for Dylan
 
 **Recommended path: run §4 first; then C if its premise proves out, else A. B only as a distant fallback, and then only in the B′ (coil-rail-sensing, fail-safe) variant.**
@@ -114,3 +131,4 @@ Rationale:
 | date | decision | by | notes |
 |---|---|---|---|
 | 2026-07-06 | **OPEN** | — | doc created; §4 powered session not yet run |
+| 2026-07-07 | **OPEN — premise PROVEN, C is now the live recommendation** | measurements: Dylan | §4.2 answered TRUE at the machine (see §4-RESULTS): ladder alone kills S+T coils on manual command, both-levers-back = danger. Remaining before formal C adoption: §4.3 window-angle capture + per-lane Stage-6b insertion-point proof. Dylan to record the formal pick here. |
