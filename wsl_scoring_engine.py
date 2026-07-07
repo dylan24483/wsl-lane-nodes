@@ -484,6 +484,11 @@ class BowlerGame:
         """Rewrite one frame's bowls. bowls_data is a list of dicts:
         [{'pins_down': 0-10, 'foul': bool?}]. Returns {ok, error?, frame?}.
 
+        `pins_down` is the PHYSICAL pinfall of that ball (what the operator
+        saw fall — the same number Bowl.to_dict reports for a fresh rack), so
+        an untouched resave round-trips losslessly. A fouled ball SCORES zero
+        (USBC) and respots the rack for the next ball — mirror of record_ball.
+
         Does NOT move current_frame_idx — correcting frame 3 while the
         bowler is on frame 7 keeps the bowler on frame 7."""
         if frame_idx < 0 or frame_idx >= len(self.frames):
@@ -505,35 +510,48 @@ class BowlerGame:
                 return {'ok': False, 'error': f'Ball {i+1}: pins_down must be 0-10 (got {p})'}
             norm.append({'pins_down': p, 'foul': bool(bd.get('foul', False))})
 
+        # SCORED pinfall per ball (a foul credits 0 — USBC, mirror of
+        # record_ball's eff). Strike/spare and 3rd-ball entitlement run on
+        # eff; the raw physical counts only constrain a ball that CONTINUES
+        # the previous ball's rack (a foul respots, so it never constrains
+        # the next ball).
+        eff = [0 if b['foul'] else b['pins_down'] for b in norm]
+
         # Frame-shape validation
         if is_tenth:
             if len(norm) < 1 or len(norm) > 3:
                 return {'ok': False, 'error': '10th frame needs 1-3 balls'}
-            # 10th frame: ball 2 only limited by ball 1 if ball 1 wasn't a strike
-            if len(norm) >= 2 and norm[0]['pins_down'] != 10:
+            # Ball 2 shares ball 1's rack only when ball 1 was neither a
+            # strike nor a foul (both leave/respot a fresh rack for ball 2)
+            if len(norm) >= 2 and not norm[0]['foul'] and norm[0]['pins_down'] != 10:
                 if norm[0]['pins_down'] + norm[1]['pins_down'] > 10:
                     return {'ok': False, 'error':
                             f"Balls 1+2 pins ({norm[0]['pins_down']}+{norm[1]['pins_down']}) > 10"}
-            # 3 balls require strike on ball 1 OR spare on balls 1+2
+            # 3 balls require a SCORED strike on ball 1 OR spare on balls 1+2
+            # (a fouled 10-count scores 0, so it earns no 3rd ball)
             if len(norm) == 3:
-                ball1_strike = norm[0]['pins_down'] == 10
-                balls12_spare = (not ball1_strike) and (norm[0]['pins_down'] + norm[1]['pins_down'] == 10)
+                ball1_strike = eff[0] == 10
+                balls12_spare = (not ball1_strike) and (eff[0] + eff[1] == 10)
                 if not (ball1_strike or balls12_spare):
                     return {'ok': False,
                             'error': '10th frame 3rd ball only allowed after strike or spare'}
             # Ball 3 pins validation: depends on state after balls 1-2
             if len(norm) == 3:
                 b3 = norm[2]['pins_down']
-                if norm[0]['pins_down'] == 10 and norm[1]['pins_down'] != 10:
-                    # Strike → fresh rack for ball 2. Ball 3 continues from ball-2 state.
+                if eff[0] == 10 and not norm[1]['foul'] and norm[1]['pins_down'] != 10:
+                    # Strike → fresh rack for ball 2. Ball 3 continues from
+                    # ball-2 state (a ball-2 strike or foul respots instead).
                     if norm[1]['pins_down'] + b3 > 10:
                         return {'ok': False, 'error': f"10th frame ball 3 ({b3}) + ball 2 ({norm[1]['pins_down']}) > 10"}
         else:
             if len(norm) < 1 or len(norm) > 2:
                 return {'ok': False, 'error': 'Frames 1-9 need 1-2 balls'}
-            if norm[0]['pins_down'] == 10 and len(norm) > 1:
+            if eff[0] == 10 and len(norm) > 1:
                 return {'ok': False, 'error': 'No 2nd ball after strike in frames 1-9'}
-            if len(norm) == 2 and norm[0]['pins_down'] + norm[1]['pins_down'] > 10:
+            # Physical sum only constrains ball 2 when ball 1 did NOT foul
+            # (a ball-1 foul respots the full rack, so ball 2 may face 0-10)
+            if (len(norm) == 2 and not norm[0]['foul']
+                    and norm[0]['pins_down'] + norm[1]['pins_down'] > 10):
                 return {'ok': False,
                         'error': f"Balls 1+2 pins ({norm[0]['pins_down']}+{norm[1]['pins_down']}) > 10"}
 
@@ -556,6 +574,7 @@ class BowlerGame:
             # remaining mask.
             fresh_rack = (
                 i == 0
+                or frame.bowls[-1].foul  # a foul respots the full rack (USBC)
                 or (is_tenth and frame.is_strike and i == 1)
                 or (is_tenth and i == 2 and frame.bowls[-1].display in ('/', 'X'))
             )
@@ -602,7 +621,9 @@ class BowlerGame:
             else:
                 display = str(pins)
 
-            bowl = Bowl(num=i + 1, pin_map=mask, pins_knocked=pins,
+            # pins_knocked is the SCORED pinfall — 0 on a foul, mirror of
+            # record_ball. The physical count survives in pin_map/to_dict.
+            bowl = Bowl(num=i + 1, pin_map=mask, pins_knocked=eff[i],
                         display=display, foul=foul)
             bowl.modified = True
             frame.bowls.append(bowl)
@@ -627,10 +648,13 @@ class BowlerGame:
         # Recalculate all running scores (this frame may now feed strike/spare
         # bonuses into earlier frames, or have its own bonus resolved)
         self._recalc_scores()
-        # Update game_over based on 10th frame completion — a correction
-        # that un-completes the 10th un-ends the game.
-        self.game_over = bool(self.frames[9].is_complete
-                              and self.frames[9].score is not None)
+        # Update game_over from the 10th frame's COMPLETENESS alone — a
+        # correction that un-completes the 10th itself un-ends the game.
+        # Do NOT condition on frames[9].score: an incomplete PAST-frame
+        # correction cascades score=None through the 10th, and treating
+        # that as "not over" would let a stray post-game ball append a
+        # phantom bowl into the closed 10th (then archive a corrupt game).
+        self.game_over = bool(self.frames[9].is_complete)
 
         # Resync the live cursor if we just rewrote the IN-PROGRESS frame.
         # Correcting a PAST frame intentionally leaves the cursor alone (a fix to
@@ -848,7 +872,24 @@ class LaneScoring:
         if bowler_idx < 0 or bowler_idx >= len(self.bowlers):
             return {'ok': False,
                     'error': f'bowler_idx {bowler_idx} out of range (0-{len(self.bowlers)-1})'}
-        return self.bowlers[bowler_idx].set_frame_bowls(frame_idx, bowls_data)
+        bowler = self.bowlers[bowler_idx]
+        # Reject frames the bowler hasn't reached: a pre-populated future
+        # frame stays is_complete while the live cursor is behind it, so the
+        # bowler's later real balls would append as extra bowls into the
+        # already-full frame and corrupt the game.
+        if frame_idx > bowler.current_frame_idx:
+            return {'ok': False,
+                    'error': (f'cannot correct frame {frame_idx + 1} - '
+                              f'bowler is on frame {bowler.current_frame_idx + 1}')}
+        res = bowler.set_frame_bowls(frame_idx, bowls_data)
+        # A correction can END the last active game (e.g. completing a 10th
+        # the camera missed). The record_ball path's rollover never runs in
+        # that case, so roll over here too — otherwise the lane goes dead
+        # (record_ball returns None forever) and the finished game is never
+        # archived to completed_games (H27).
+        if res.get('ok') and self.bowlers and all(b.game_over for b in self.bowlers):
+            self._start_new_game()
+        return res
 
     def _advance_to_next_active(self):
         """Skip past any game-over bowlers to find the next active one."""
@@ -1030,7 +1071,17 @@ class CrossLaneScoring:
         if bowler_idx < 0 or bowler_idx >= len(self.bowlers):
             return {'ok': False,
                     'error': f'bowler_idx {bowler_idx} out of range (0-{len(self.bowlers)-1})'}
-        return self.bowlers[bowler_idx].set_frame_bowls(frame_idx, bowls_data)
+        bowler = self.bowlers[bowler_idx]
+        # Same guards as LaneScoring.correct_frame: no future-frame edits,
+        # and roll over if the correction just ended the last active game.
+        if frame_idx > bowler.current_frame_idx:
+            return {'ok': False,
+                    'error': (f'cannot correct frame {frame_idx + 1} - '
+                              f'bowler is on frame {bowler.current_frame_idx + 1}')}
+        res = bowler.set_frame_bowls(frame_idx, bowls_data)
+        if res.get('ok') and self.bowlers and all(b.game_over for b in self.bowlers):
+            self._start_new_game()
+        return res
 
     def _advance_bowler_from_lane(self, lane_id: int, bowler: BowlerGame):
         queue = self._lane_queues.get(lane_id, [])
