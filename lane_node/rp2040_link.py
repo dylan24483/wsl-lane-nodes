@@ -316,6 +316,16 @@ class RP2040Link:
         self._last_drp = None
         # Fresh firmware = motors all stopped; let the run-mask reconciliation
         # start a fresh episode (it re-sends RUN for anything still commanded).
+        #
+        # DELIBERATE: _cmd_run is NOT cleared on a firmware reboot. The MCP23017
+        # outputs are latched by the Pi, so a motor commanded ON is still
+        # PHYSICALLY running through an RP2040 reboot — re-sending RUN restores
+        # the max-run/motion-no-run backstop for exactly those motors. Clearing
+        # instead (pre-flash review 2026-07-07 finding 2 proposed it) would leave
+        # a still-running motor unsupervised until the daemon's next transition.
+        # The review's stale-resend scenario (daemon wedged >250 ms mid-change)
+        # is bounded: the 50 Hz health trip corrects within ~20 ms and a truly
+        # wedged Pi drops the NE555 rail regardless.
         self._resync_tries = {}
         self._run_mismatch = ()
         v11 = ev.get("v11")

@@ -103,6 +103,11 @@ static void txr_drain(void) {
  *   emit()     — critical lines (boot/hb/flt/rp_ok/ack): may fill the ring.
  *   emit_evt() — cam/ball telemetry: only enqueued while TXR_HEADROOM bytes
  *                stay free, so an event flood can never starve hb/flt/rp_ok. */
+/* SIZE BUDGET (pre-flash review 2026-07-07): the longest single line is the boot
+ * event = 141 B stock / 147 B worst-case (10-digit maxrun_ms + both postures "off").
+ * Headroom is only ~13 B — if you ADD A BOOT FIELD, re-count the worst case or the
+ * whole boot line silently drops (visible only as txr_drops) and the Pi loses
+ * maxrun_ms + v11 posture. Grow fmtbuf with the line, never trust it silently. */
 static char fmtbuf[160];
 static void emit_v(bool lowprio, const char *fmt, va_list ap) {
     int n = vsnprintf(fmtbuf, sizeof(fmtbuf), fmt, ap);

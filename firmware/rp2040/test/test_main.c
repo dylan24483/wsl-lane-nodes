@@ -233,17 +233,30 @@ int main(void) {
     pump();
     CHECK(!fault_latched, "sane edge rate does not trip the chatter guard");
     CHECK(tx_has("\"id\":\"TB\""), "sane-rate edges still emitted");
-    /* SLIDING window (v1.1.1): ~12 ms-spaced edges = ~8.3 per any 100 ms span. The old
-     * tumbling window never collected > 8 in one aligned window, so this rate never
-     * latched; the sliding ring latches at the 9th edge (8 x 12 ms = 96 ms < 100 ms). */
-    for (int i = 1; i <= 12 && !fault_latched; i++) {
-        mock_gpio_in[PIN_SB] = (i & 1) ? 0 : 1;
+    /* SLIDING-window (v1.1.1) DISCRIMINATION test. The old tumbling window reset
+     * EDGE-ALIGNED (win_start = first edge after a >=100 ms gap), so a uniform burst
+     * starting at the window origin lands in ONE aligned window and does NOT tell the
+     * two algorithms apart (pre-flash review 2026-07-07, simulated both ways).
+     * Discriminating shape: one ANCHOR edge (pins the old window origin at t0), a
+     * 40 ms gap, then a 9-edge burst at ~12 ms spacing (edges ~t0+42 .. t0+138).
+     * Old tumbling: [t0,t0+100) holds anchor+5 = 6 edges, next window holds 4 ->
+     * NEVER latches. Sliding ring: the 9 burst edges span ~96 ms < 100 ms ->
+     * latches exactly at the 9th burst edge. */
+    {
+        int lvl0 = mock_gpio_in[PIN_SB];
+        mock_gpio_in[PIN_SB] = !lvl0;                      /* anchor edge */
         scan_inputs();
-        advance_us(DEBOUNCE_CAM_US + 10); scan_inputs();   /* debounced edge lands */
-        advance_ms(10);                                    /* ~12 ms total spacing */
+        advance_us(DEBOUNCE_CAM_US + 10); scan_inputs();   /* anchor lands at ~t0 */
+        advance_ms(40);                                    /* gap: burst starts +40 ms */
+        for (int i = 1; i <= 9 && !fault_latched; i++) {
+            mock_gpio_in[PIN_SB] = (i & 1) ? lvl0 : !lvl0; /* 9 toggles = 9 edges */
+            scan_inputs();
+            advance_us(DEBOUNCE_CAM_US + 10); scan_inputs();  /* debounced edge lands */
+            advance_ms(10);                                   /* ~12 ms total spacing */
+        }
     }
     CHECK(fault_latched && strcmp(fault_code, "chatter") == 0,
-          "boundary-straddling burst latches (sliding window, old tumbling missed it)");
+          "anchored boundary-straddling burst latches (sliding window; old tumbling never latched this shape)");
     rx_feed("CLEAR\n"); poll_uart();
     CHECK(!fault_latched, "CLEAR recovers after the straddle test");
     /* ring headroom: an event flood cannot starve hb/flt */
