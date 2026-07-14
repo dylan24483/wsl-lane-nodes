@@ -133,6 +133,15 @@ J2 (5V in) and J6-J12 (motion out) are wire-direct Phoenix MKDS fixed blocks = *
 
 ## 4. FIRST-ARTICLE QUALITY GATE (per assembled board, before trusting it)
 
+> **✅ REV-C BOARD #1 — RELAY GATE PASSED 2026-07-13.** Rails PASS (TP1 4.6 V · TP3 3.3 V ·
+> TP4 ~11 V no-load [expected, no bleed] · TP5↔TP2 OPEN · 43 mA idle). I²C 0x20/0x21/0x22.
+> **All 6 relays make AND break** via `lane_node/bench_first_article.py` (K6/M2 required a
+> J11 pin-2 cold-joint reflow first — fillet wetted pad not pin). Bench gotcha for the record:
+> post-rework I²C EREMOTEIO flakiness = bare stripped ribbon conductors touching at the
+> Dupont junctions — insulate every cut end (conductor 1 is live 4.6 V). Still open on this
+> board: rail knock-out proofs + measured NE555 timeout, J13 LED, input poke. Boards 2–5:
+> not yet tested — each needs its own pass of this gate.
+
 > ⚠️ **On a rev-B board this gate WILL FAIL — the relay footprint mismatch means no relay energizes. That failure is EXPECTED and is the headline rev-C fix.** Everything upstream (MCP → driver transistor → RELAY_ENABLE_RAIL) is already validated. Only expect working relays on the G2-corrected rev-C spin.
 
 - `[ ]` Rails good at TPs (VCC_5V, VCC_3V3, FIELD_WET_V, RP2040_OK=3.3V, RELAY_ENABLE_RAIL up with J14 loop closed).
