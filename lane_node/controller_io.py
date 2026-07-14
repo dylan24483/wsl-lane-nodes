@@ -118,15 +118,37 @@ class _MCP23017:
         return self.bus.read_byte_data(self.addr, _GPIOA if port == 0 else _GPIOB)
 
     def write_bit(self, port, bit, value):
+        # C-02 (hw-independence audit 2026-07-09): the cache must never run ahead
+        # of the hardware. A cache updated before a NACKed write leaves a stale
+        # bit that the NEXT write to ANY other bit on the port re-asserts — an
+        # uncommanded energize. Order: bus write -> commit cache -> readback.
         olat = self._olat[port]
         olat = (olat | (1 << bit)) if value else (olat & ~(1 << bit))
-        self._olat[port] = olat
-        self.bus.write_byte_data(self.addr, _OLATA if port == 0 else _OLATB, olat)
+        reg = _OLATA if port == 0 else _OLATB
+        self.bus.write_byte_data(self.addr, reg, olat)
+        self._olat[port] = olat        # write returned: cache = best estimate
+        readback = self.bus.read_byte_data(self.addr, reg)
+        if readback != olat:
+            # Trust the hardware over intent so later writes carry truth, then
+            # raise so the tick-level fail-safe (disarm + First-Ball-Zero) runs.
+            self._olat[port] = readback
+            raise IOError(
+                f"MCP@{self.addr:#04x} OLAT{'A' if port == 0 else 'B'} readback "
+                f"{readback:#04x} != commanded {olat:#04x}")
 
     def all_off(self):
-        self._olat = [0x00, 0x00]
-        self.bus.write_byte_data(self.addr, _OLATA, 0x00)
-        self.bus.write_byte_data(self.addr, _OLATB, 0x00)
+        # Safety path: attempt BOTH ports even if the first write fails, commit
+        # the cache only per confirmed write, and re-raise the first error.
+        err = None
+        for port, reg in ((0, _OLATA), (1, _OLATB)):
+            try:
+                self.bus.write_byte_data(self.addr, reg, 0x00)
+                self._olat[port] = 0x00
+            except Exception as e:
+                if err is None:
+                    err = e
+        if err is not None:
+            raise err
 
 
 class MachineIO:

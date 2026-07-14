@@ -466,6 +466,19 @@ def run(boards, hz: float = 50.0):
                         b.recorder.record("tick_error", type(e).__name__, str(e)[:120])
                     except Exception:
                         pass
+                    # C-02 (hw-independence audit 2026-07-09): fail safe on the FIRST
+                    # I/O exception, not the third. A failed write may have desynced
+                    # commanded vs physical output state, so treat all software output
+                    # state as invalid: motors off + MANUAL_INTERVENTION (recovery
+                    # requires a deliberate First-Ball-Zero) + ARM dropped. A bare
+                    # arm(False) is not enough — the next healthy tick would re-arm
+                    # from FSM state with possibly-stale latches.
+                    try:
+                        b.fsm.power_restore()
+                        b.io.arm(False)
+                    except Exception:
+                        log.exception("L%s post-exception safe-state attempt raised "
+                                      "(budget/trip path still runs)", b.cfg.lane)
                     if b.tick_errors >= TICK_ERROR_BUDGET:
                         log.error("L%s tick error budget exhausted -> SAFETY TRIP "
                                   "this board (outputs off, ARM dropped, kick stops); "
