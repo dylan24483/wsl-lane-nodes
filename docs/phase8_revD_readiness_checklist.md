@@ -20,8 +20,10 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 - `phase8_revD_change_spec.md` items A–G (2026-07-19, corrected 2026-07-20). Independent
   verify pass re-derived all electrical math (bleed dissipation, ADC margins, tap hold-off
   ladders, wetting 73.7/200 mA, D17 budget) and confirmed it; zero critical findings. One
-  optimistic prose bound on the NE555 tap margin was noted — still electrically safe (the
-  spec's own worst-case arithmetic bounds the read ≤ 3.27 V < 3.3 V).
+  optimistic prose bound on the NE555 tap margin was noted and has since been CORRECTED in
+  spec §E.2 (run-log COR-2, 2026-07-20): honest worst-case light-load read ≈ 3.53 V — above
+  VDD 3.3 V but below the RP2040 3.6 V absolute max, clamp current bounded to single-digit µA
+  by the ≥ 100k source impedance. Electrically safe; the old ≤ 3.27 V figure is retired.
 - Review-fix pass closed 6 distinct findings (item-E temperature qualification, two
   cross-mate hazards, SS34 swap, OG-1 surfaced, ERC waiver + run log formalized); the full
   tool chain was re-run green afterward.

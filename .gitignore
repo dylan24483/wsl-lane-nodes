@@ -27,3 +27,6 @@ tools/java25/
 # Local design-safety snapshots (protected by external mirror in C:\Users\Dylan DeYoung\WSL_Backups;
 # kept out of git because this repo has a known history-size problem)
 backups/
+
+# place_components_revD.py --force reruns save the prior board as .bak (intermediate, never commit)
+kicad/revD/*.bak

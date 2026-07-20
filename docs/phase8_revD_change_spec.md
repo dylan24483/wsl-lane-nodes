@@ -143,6 +143,13 @@ the envelope differently, but the envelope, banding, and gutters are non-negotia
 | `D_PROT` | (101, 24, 0) | **(110, 25, 0)** | Follows J_PWR; keeps the VRAW→VCC_5V run short. |
 | `J_PI` | (126, 10, 90) | unchanged | Ribbon no longer in the cable path. |
 
+> **AS-PLACED (2026-07-20, run-log COR-3):** the layout agent exercised the RECOMMENDED-VERIFY
+> latitude above: `RP_PICO` landed at **(100, 33, 0)** (not (92, 33, 0) — Rpu-column courtyard
+> collision, Rpu column itself moved x 92→86) and `J_PI` moved to **(135.5, 10, 90)** (+9.5 mm
+> right; this table's "unchanged" describes the recommendation, not the board). Envelope,
+> banding, and gutters verified intact (placement DRC 0). Pi ribbon length/dress + enclosure
+> ribbon opening re-check is folded into gate OG-1.
+
 Watch items for the layout agent: ISO_WET at (73.9, 13, 90) courtyard vs the Pico's new left
 edge; J_PI footprint-origin overhang at y=10; item-D/E parts want to live near the new Pico
 position (§D, §E placements already assume it).
@@ -378,8 +385,13 @@ the series-only proof below where a shunt would break reading.
 **680 kΩ** to GND (ratio 0.872).
 
 - NE555 (bipolar, VCC ≈ 4.7 V) output high ≈ VCC−1.2…1.7 ≈ 3.0–3.5 V → read 2.6–3.05 V > VIH ✓.
-  Absolute worst rail 5.25 V → out ≤ ~4.0 V → 3.5 × 0.872… bounded ≤ 3.27 V < 3.3 V ✓ (a plain
-  wire or a 2:1 divider both fail here — this ratio is deliberate). Low ≈ 0.25 V → 0.22 V ✓.
+  **Worst-case bound (COR-2, 2026-07-20 — the original "≤ 3.27 V < 3.3 V" line assumed
+  VOH ≤ 3.75 V and was optimistic):** absolute worst rail 5.25 V at light load (Thevenin ≈ 87k
+  is µA-class for the 555) gives VOH up to ≈ VCC−1.2 ≈ 4.05 V → read ≈ 4.05 × 0.872 ≈
+  **3.53 V**. That exceeds VDD 3.3 V but stays below the RP2040 3.6 V absolute maximum, and the
+  ≥ 100 kΩ source impedance bounds any pad-clamp current to single-digit µA — electrically
+  safe, but do not quote the old 3.27 V figure. (A plain wire or a 2:1 divider still fail
+  here — this ratio remains deliberate.) Low ≈ 0.25 V → 0.22 V ✓.
   Thevenin ≈ 87k → leakage error ±0.09 V ✓.
 - *Can't-assert proof:* NE555_OUT is a push-pull mA-class output; a faulted GPIO injects at most
   3.3 V/100k = 33 µA — 2+ orders below the 555's drive. ✓

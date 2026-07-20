@@ -116,6 +116,24 @@ firmware never drives GP16–GP19, disarm drives ARM_PERMIT low (never tristate)
 fault-injection gate repeats AT TEMPERATURE (≥70 °C on the Q_AND_*/Q_RAIL region). Option
 NOT taken (safety-rail value change needing its own review): R_RAIL_GATE_PULLUP 100k→22k.
 
+### COR-2 — NE555 tap-read worst-case bound was optimistic (2026-07-20 sweep)
+
+The spec §E.2 line "bounded ≤ 3.27 V < 3.3 V" assumed 555 VOH ≤ 3.75 V. At light load
+(Thevenin ≈ 87k → µA-class draw) a bipolar 555's VOH can reach ≈ VCC−1.2 ≈ 4.05 V at the
+5.25 V worst rail → divider read ≈ **3.53 V**: above VDD 3.3 V, below the RP2040 3.6 V
+absolute maximum, pad-clamp current bounded to single-digit µA by the ≥ 100 kΩ source
+impedance. Electrically safe — no netlist/value change; spec §E.2 + checklist G1 text
+corrected. (This was the verify pass's "optimistic prose bound" observation, now closed.)
+
+### COR-3 — "J_PI unchanged" was a recommendation, not the as-placed truth (2026-07-20 sweep)
+
+As placed by `place_components_revD.py`: `J_PI` moved (126, 10, 90) → **(135.5, 10, 90)**
+(+9.5 mm right) and `RP_PICO` landed at **(100, 33, 0)**, not the spec table's recommended
+(92, 33, 0) (Rpu-column courtyard collision; Rpu column itself moved x 92→86). The spec table
+was RECOMMENDED-VERIFY so the deviation is sanctioned; the change-list item-B line stating
+"J_PI unchanged" as fact was wrong and is corrected. Consequence folded into **OG-1**: the
+enclosure re-check must also cover Pi ribbon length/dress and the ribbon opening position.
+
 ---
 
 ## Tool-run records
@@ -132,3 +150,56 @@ NOT taken (safety-rail value change needing its own review): R_RAIL_GATE_PULLUP 
 | Placement DRC | `kicad-cli pcb drc` → `kicad/revD/DRC-revD-placement.rpt` | **0 violations**; 499 unconnected pads (expected — unrouted placement stage, identical to pre-fix baseline) |
 | Board audit | KiCad-10 python `scripts/audit_revD_board.py kicad/revD/wsl-phase8b-revD.kicad_pcb --pre-route` | **ALL PASS** (zone fill advisory only, per --pre-route) |
 | Rev-C integrity | sha256 of all rev-B/rev-C scripts + `kicad/` top-level design files, before vs after | verified unchanged (see session record) |
+
+### 2026-07-20 open-issues sweep (pre-routing clean-slate pass)
+
+Walked every open item from the readiness checklist (G1–G14), the change-list STATUS block,
+and the build campaign's recorded risk register before starting routing. Confirmations:
+
+- **D_PROT = SS34 is IN the netlist** — `kicad/wsl-phase8b-revD.net` line ~623 `(value
+  "SS34")`; diff records it as the sole whitelisted CHANGED_PART (FR-3). The build-phase risk
+  note "SS34 recommendation not reflected in the netlist" is OBSOLETE — closed by the
+  review-fix pass.
+- **WVR-ERC-1 is enforced fail-closed** — `generate_kicad_netlist_revD.py::check_erc_waiver()`
+  exits 2 on any drift in error count, warning count, or error identity (verifies the emitted
+  `.erc` text against the waived substring) and runs unconditionally in `main()` before the
+  netlist is written.
+- **Footprint-review run log covers every new part class** — FR-1 (PC817 ×8), FR-2 (MCV 1×10
+  J15 / 1×06 J16 + mating plugs), FR-3 (SS34/SMA), FR-6 (0805 passives incl. the one new 680k
+  value), FR-7 (K1–K7 pad-map regression). Verify pass independently confirmed the only new
+  (value, footprint) classes are 100nF-0805, 680k-0805, and the two Phoenix MCV variants.
+- **Coding-key requirement captured end-to-end** — CP-MSTB 1734634 in checklist G13 harness
+  BOM table + OG-3 + FR-4/FR-5 + change-list C/F; board file carries all 4 silk warnings
+  ("KEYED: NOT J15" / "NOT J3" / "NOT J16" / "NOT J13 LAMP").
+- **Verify pass's 4 minor observations dispositioned:** (1) generator-docstring "0 ERC errors"
+  nit — already fixed in the review-fix pass (docstring now states the 1-error waiver);
+  (2) NE555 tap prose bound — closed as COR-2; (3) opto placement pitch is 5.70 mm vs the
+  courtyard-true 5.68 mm cited in prose — cosmetic, placement DRC 0, no action; (4) the USB
+  keep-out envelope is Dwgs_User documentation text, NOT a DRC rule area — DRC will NOT
+  police it; the router and G12 visual inspection must (routing-phase watch item).
+- **REFDES_SHIFT cross-reference** — 46 refdes shifted rev-C→rev-D (watchdog/rail/lamp/snubber
+  R families, U_WDOG U36→U44, ISO_WET U37→U45). `kicad/revD/netlist_diff_revC_to_revD.txt`
+  is the authoritative cross-reference; never probe a rev-D board from rev-C photos/notes.
+- **Sidecar re-copy trap (standing)** — re-copying `.kicad_pro/.prl/.dru` from rev-C over the
+  revD sidecars silently reverts netclass assignments to 184; after ANY sidecar operation
+  re-run `apply_netclasses_revD.py --write` + `audit_revD_board.py` (the 2026-06-03
+  false-green lesson).
+- **Generator artifacts exist at BOTH repo root and `scripts/`** (root = rev-C convention,
+  `scripts/` = this campaign's cwd) — sklib copies byte-identical; the two `.erc` copies carry
+  the identical 1-error + 40-warning baseline (warning ORDER is nondeterministic between runs;
+  only counts + the error identity are contractual).
+- **Backup posture (Dylan's directive)** — rev-C: snapshot `backups/revC_design_snapshot_
+  2026-07-19/` (189 files, MANIFEST.json; gitignored by design) + external mirror
+  `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-20_phase8_revC_revD\` (418 files, manifest) +
+  `...zip` with `.sha256`. Rev-D: committed in `230f217` + same external mirror. Hash verify
+  this sweep: 189/189 UNCHANGED before and after all edits.
+- **Cleanup** — removed `kicad/revD/wsl-phase8b-revD.kicad_pcb.bak` from git + disk (stale
+  pre-final intermediate, hazard of being opened as the board; `--force` reruns recreate one)
+  and gitignored `kicad/revD/*.bak`.
+
+Resulting open-gate set (nothing else remains): **G7** (powered-session or explicit waiver,
+items 6–7) · **G8/OG-1** (Dylan 240 mm sign-off + enclosure re-check incl. ribbon, BLOCKS
+routing start) · **G9–G12** (route → post-route DRC/audit → write `export_fab_revD.py` →
+Gerber/JLC inspection) · **G13/OG-3** (harness + coding-part order) · **G14** (Dylan doc
+review) · first-article §2 incl. OG-4 at-temperature tap test · characterization session
+(analog population, DC1–DC3).

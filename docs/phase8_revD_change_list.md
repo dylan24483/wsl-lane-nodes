@@ -71,7 +71,12 @@
   right-angle cable or pre-solder BOOTSEL).
 - Rev-D placement moves the Pico so its micro-USB faces the **top board edge** — the cable
   overmold hangs off-board. A documented **16 × 12 × 40 mm keep-out envelope** is drawn on
-  Dwgs_User and must survive routing. J_PWR/D_PROT moved with it; J_PI unchanged.
+  Dwgs_User and must survive routing. J_PWR/D_PROT moved with it. **COR-3 (2026-07-20):** the
+  earlier "J_PI unchanged" claim here was wrong — as placed, J_PI moved **+9.5 mm right,
+  (126, 10, 90) → (135.5, 10, 90)**, and the Pico landed at (100, 33, 0) not the spec's
+  recommended (92, 33, 0) (Rpu-column collision, documented in `place_components_revD.py`).
+  Pi ribbon length/dress and the enclosure ribbon opening are folded into the OG-1 enclosure
+  re-check.
 - **SWD stays DROPPED** (Dylan 2026-06-25, rev-C item 2) — no debug header was silently
   re-added. Ordinary-cable UF2 flashing is the requirement; the compiled-OFF firmware
   detectors guarantee at least one reflash per board after Phase 0.
