@@ -23,3 +23,7 @@ lane_node/_*.txt
 
 # Bundled FreeRouting JRE (toolchain, re-downloadable)
 tools/java25/
+
+# Local design-safety snapshots (protected by external mirror in C:\Users\Dylan DeYoung\WSL_Backups;
+# kept out of git because this repo has a known history-size problem)
+backups/
