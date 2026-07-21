@@ -88,15 +88,23 @@ IN_A_MAP = {
 GRIPPER_ORDER = [f"GS{i}" for i in range(1, 11)]  # GS1=bit0 ... GS10=bit9 of the mask
 
 # ---- slow-input bit map on IN-B (chip 0x21) — matches generator SLOW_INPUT_PINS ----
-# 10th-frame + the manual-motion switches + the 3 spare AUX sensor channels
+# 10th-frame + the manual-motion switches + the spare AUX sensor channels
 # (2026-07-19 diagnostics scope: manual-override visibility -> alert suppression;
-# AUX1-3 are the only populated spare inputs — BE current switch / exit photoeye /
+# AUX channels are the spare inputs — BE current switch / exit photoeye /
 # distributor index land here when installed).
 # ⚠️ SOURCE OF TRUTH = the netlist generator's SLOW_INPUT_PINS MCP_IN_B entries
 # (the channel-map doc's IN-B channel count was stale — netlist wins; PBC is on
-# IN-A GPB6, NOT here). All 8 channels are GPA0-7; GPB0-7 are unpopulated
-# (respin-only spares, no optos/connector). The __main__ regression guard below
-# re-derives this from the generator and fails on drift.
+# IN-A GPB6, NOT here).
+#
+# BOARD REVISIONS (H3, Codex audit 2026-07-21):
+#   rev-B/rev-C (generate_kicad_netlist_revB.py): 8 channels, all on GPA0-7.
+#     GPB0-7 are UNPOPULATED on those boards (no optos, no connector).
+#   rev-D      (generate_kicad_netlist_revD.py): adds AUX4-AUX11 as populated
+#     opto channels on GPB0-7 (J15 field connector, change-spec item C).
+# The map is selected EXPLICITLY per board via MachineIO/RecordingIO
+# board_rev= (default "revC" — the validated pilot hardware on machine 22);
+# there is no auto-detection. The __main__ regression guard below re-derives
+# BOTH revisions from their generators and fails on drift.
 IN_B_MAP = {
     "TENTH":    (0, 0),  # 10th-frame button      gen pin 21
     "MAN_T":    (0, 1),  # manual table           gen pin 22
@@ -107,6 +115,23 @@ IN_B_MAP = {
     "AUX2":     (0, 6),  # spare (exit_beam)      gen pin 27
     "AUX3":     (0, 7),  # spare (dist_index)     gen pin 28
 }
+# rev-D appends AUX4-11 on GPB0-7 (gen pins 1-8) — everything else identical.
+IN_B_MAP_REVD = dict(IN_B_MAP)
+IN_B_MAP_REVD.update({f"AUX{i}": (1, i - 4) for i in range(4, 12)})
+# Explicit board-revision -> IN-B map selection table. rev-B and rev-C share
+# the same netlist-generator input section, so they share a map.
+IN_B_MAPS = {"revB": IN_B_MAP, "revC": IN_B_MAP, "revD": IN_B_MAP_REVD}
+DEFAULT_BOARD_REV = "revC"
+
+
+def in_b_map_for(board_rev):
+    """Resolve a board revision string to its IN-B map. Unknown revisions are
+    a HARD error — a typo must not silently read the wrong bank."""
+    try:
+        return IN_B_MAPS[board_rev]
+    except KeyError:
+        raise ValueError(f"unknown board_rev {board_rev!r}; "
+                         f"known: {sorted(IN_B_MAPS)}") from None
 
 # Optos are active-low at the MCP pin (switch closed → opto pulls pin LOW).
 # So "asserted/closed" = pin reads 0. INPUT_ACTIVE_LOW flips that in firmware;
@@ -190,12 +215,18 @@ class MachineIO:
     """
 
     def __init__(self, lane_id, bus_id, *, watchdog_kick=None, arm_relays=None,
-                 now=None, enable_pin_lamps=False, rp2040=None, recorder=None):
+                 now=None, enable_pin_lamps=False, rp2040=None, recorder=None,
+                 board_rev=DEFAULT_BOARD_REV):
         self.lane = lane_id
         self._kick = watchdog_kick or (lambda: None)
         self._arm = arm_relays or (lambda on: None)
         self._now = now or time.monotonic
         self.enable_pin_lamps = enable_pin_lamps
+        # H3 (2026-07-21): explicit board-revision IN-B map selection (rev-D
+        # populates the GPB0-7 AUX4-11 bank; rev-B/C have GPA only).
+        self.board_rev = board_rev
+        self.in_b_map = in_b_map_for(board_rev)
+        self._in_b_has_gpb = any(port == 1 for port, _ in self.in_b_map.values())
         self._rp2040 = rp2040    # RP2040Link (or None): SC/TB interlock echo + RUN/STOP
         self._out_state = {}     # last commanded value per output (change-logging + dup suppress)
         self._armed = None       # last arm() value (change-logging)
@@ -272,19 +303,21 @@ class MachineIO:
         if name in IN_A_MAP:
             chip, (port, bit) = self.in_a, IN_A_MAP[name]
         else:
-            chip, (port, bit) = self.in_b, IN_B_MAP[name]
+            chip, (port, bit) = self.in_b, self.in_b_map[name]
         raw = (chip.read_port(port) >> bit) & 1
         return (raw == 0) if INPUT_ACTIVE_LOW else (raw == 1)
 
     def read_inputs_b(self):
-        """All IN-B channels decoded from ONE port read (every channel sits on
-        GPA0-7 — see IN_B_MAP). {name: asserted}; same active-low convention and
-        edge/debounce ownership as the IN-A reads. Cheap enough for the daemon's
-        per-tick slow poll (a single I²C register read)."""
-        p0 = self.in_b.read_port(0)
+        """All IN-B channels for THIS board revision, decoded from one port
+        read per populated port (rev-B/C: GPA only = one read; rev-D: GPA+GPB
+        = two reads — the AUX4-11 bank). {name: asserted}; same active-low
+        convention and edge/debounce ownership as the IN-A reads. Cheap enough
+        for the daemon's per-tick slow poll (1-2 I²C register reads)."""
+        ports = [self.in_b.read_port(0),
+                 self.in_b.read_port(1) if self._in_b_has_gpb else 0]
         out = {}
-        for name, (_port, bit) in IN_B_MAP.items():
-            raw = (p0 >> bit) & 1
+        for name, (port, bit) in self.in_b_map.items():
+            raw = (ports[port] >> bit) & 1
             out[name] = (raw == 0) if INPUT_ACTIVE_LOW else (raw == 1)
         return out
 
@@ -370,10 +403,13 @@ class RecordingIO:
     Set .grippers / .gp / .bs / .interlock to script a cycle; read .events for
     the ordered (name, value) output log."""
 
-    def __init__(self, now=None, rp2040=None, recorder=None):
+    def __init__(self, now=None, rp2040=None, recorder=None,
+                 board_rev=DEFAULT_BOARD_REV):
         self._t = 0.0
         self._now = now
         self._rp2040 = rp2040
+        self.board_rev = board_rev
+        self.in_b_map = in_b_map_for(board_rev)
         self.recorder = recorder or NULL_RECORDER   # flight recorder (idea #10), observe-only
         self.events = []          # ordered (kind, *args) of every output call
         self.outputs = {}         # latest value per output name
@@ -409,7 +445,7 @@ class RecordingIO:
     def gp_closed(self): return self.gp
     def bs_closed(self): return self.bs
     def read_input(self, name): return bool(self.slow.get(name, False))
-    def read_inputs_b(self): return {n: bool(self.slow.get(n, False)) for n in IN_B_MAP}
+    def read_inputs_b(self): return {n: bool(self.slow.get(n, False)) for n in self.in_b_map}
     def interlock_ok(self): return self._rp2040.interlock_ok() if self._rp2040 is not None else self.interlock
 
     # housekeeping
@@ -546,18 +582,15 @@ if __name__ == "__main__":
     print("controller_io RecordingIO drives the FSM through a strike cycle OK")
     print(f"  output events: {len(io.events)}; final lamps={io.lamps}")
 
-    # --- regression guard: OUT_A_MAP / IN_A_MAP MUST match the PCB netlist generator ---
-    # The board is routed from generate_kicad_netlist_revB.py; drift here = WRONG pins on
-    # real hardware (exactly the BS/OS + M1/M2 + strike/foul swaps Codex caught 2026-06-03).
+    # --- regression guard: pin maps MUST match the PCB netlist generators ---
+    # The boards are routed from generate_kicad_netlist_revB.py (rev-B/C) and
+    # generate_kicad_netlist_revD.py (rev-D); drift here = WRONG pins on real
+    # hardware (exactly the BS/OS + M1/M2 + strike/foul swaps Codex caught
+    # 2026-06-03). H3 (2026-07-21): the guard is PARAMETRIZED — BOTH board
+    # revisions are checked against their own generator, selected explicitly,
+    # so the rev-D AUX4-11 GPB bank can never drift unnoticed while the rev-C
+    # pilot board keeps its own check. Mirrored in tests/test_pin_map_drift.py.
     import ast
-    gen_path = Path(__file__).resolve().parents[1] / "scripts" / "generate_kicad_netlist_revB.py"
-    gtree = ast.parse(gen_path.read_text(encoding="utf-8"))
-    gdicts = {}
-    for node in gtree.body:
-        if (isinstance(node, ast.Assign) and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)
-                and node.targets[0].id in ("OUTPUT_PINS", "SLOW_INPUT_PINS")):
-            gdicts[node.targets[0].id] = ast.literal_eval(node.value)
 
     def _pin_to_portbit(pin):
         if 21 <= pin <= 28: return (0, pin - 21)   # GPA0-7
@@ -566,24 +599,58 @@ if __name__ == "__main__":
 
     OUT_KEY = {"L_FIRST": "first_ball", "L_SECOND": "second_ball",
                "L_STRIKE": "strike", "L_FOUL": "foul"}
-    exp_out = {OUT_KEY.get(n, n): _pin_to_portbit(p) for n, p in gdicts["OUTPUT_PINS"].items()}
-    assert OUT_A_MAP == exp_out, f"OUT_A_MAP drift vs generator:\n  code={OUT_A_MAP}\n  gen ={exp_out}"
 
-    exp_in = {("Foul" if n == "FOUL" else n): _pin_to_portbit(p)
-              for n, (chip, p) in gdicts["SLOW_INPUT_PINS"].items() if chip == "MCP_IN_A"}
-    assert IN_A_MAP == exp_in, f"IN_A_MAP drift vs generator:\n  code={IN_A_MAP}\n  gen ={exp_in}"
+    def _check_generator(gen_name, expected_in_b, label):
+        gen_path = Path(__file__).resolve().parents[1] / "scripts" / gen_name
+        gtree = ast.parse(gen_path.read_text(encoding="utf-8"))
+        gdicts = {}
+        for node in gtree.body:
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id in ("OUTPUT_PINS", "SLOW_INPUT_PINS")):
+                gdicts[node.targets[0].id] = ast.literal_eval(node.value)
+        exp_out = {OUT_KEY.get(n, n): _pin_to_portbit(p)
+                   for n, p in gdicts["OUTPUT_PINS"].items()}
+        assert OUT_A_MAP == exp_out, \
+            f"[{label}] OUT_A_MAP drift:\n  code={OUT_A_MAP}\n  gen ={exp_out}"
+        exp_in = {("Foul" if n == "FOUL" else n): _pin_to_portbit(p)
+                  for n, (chip, p) in gdicts["SLOW_INPUT_PINS"].items()
+                  if chip == "MCP_IN_A"}
+        assert IN_A_MAP == exp_in, \
+            f"[{label}] IN_A_MAP drift:\n  code={IN_A_MAP}\n  gen ={exp_in}"
+        exp_inb = {n: _pin_to_portbit(p)
+                   for n, (chip, p) in gdicts["SLOW_INPUT_PINS"].items()
+                   if chip == "MCP_IN_B"}
+        assert expected_in_b == exp_inb, \
+            f"[{label}] IN-B map drift:\n  code={expected_in_b}\n  gen ={exp_inb}"
 
-    exp_inb = {n: _pin_to_portbit(p)
-               for n, (chip, p) in gdicts["SLOW_INPUT_PINS"].items() if chip == "MCP_IN_B"}
-    assert IN_B_MAP == exp_inb, f"IN_B_MAP drift vs generator:\n  code={IN_B_MAP}\n  gen ={exp_inb}"
+    _check_generator("generate_kicad_netlist_revB.py", IN_B_MAPS["revC"], "revB/C")
+    _check_generator("generate_kicad_netlist_revD.py", IN_B_MAPS["revD"], "revD")
+    # structural invariants across the revisions
     assert all(port == 0 for (port, _bit) in IN_B_MAP.values()), \
-        "read_inputs_b assumes every IN-B channel is on GPA (one port read)"
+        "rev-B/C IN-B channels must all be on GPA (single port read)"
+    assert {n: pb for n, pb in IN_B_MAP_REVD.items() if n in IN_B_MAP} == IN_B_MAP, \
+        "rev-D IN-B map must be a strict superset of the rev-C map"
+    assert sorted(set(IN_B_MAP_REVD) - set(IN_B_MAP)) == [f"AUX{i}" for i in (10, 11, 4, 5, 6, 7, 8, 9)], \
+        "rev-D IN-B additions must be exactly AUX4-11"
 
-    # read_inputs_b smoke on the fake: scripted levels come back per-name
+    # read_inputs_b smoke on the fake: scripted levels come back per-name,
+    # per board revision.
     rio = RecordingIO()
     rio.slow["MAN_T"] = True
     inb = rio.read_inputs_b()
     assert set(inb) == set(IN_B_MAP) and inb["MAN_T"] is True and inb["AUX1"] is False, inb
-    print(f"pin maps match the PCB generator: OUT_A_MAP({len(OUT_A_MAP)}) + "
-          f"IN_A_MAP({len(IN_A_MAP)}) + IN_B_MAP({len(IN_B_MAP)}) OK")
+    riod = RecordingIO(board_rev="revD")
+    riod.slow["AUX9"] = True
+    inbd = riod.read_inputs_b()
+    assert set(inbd) == set(IN_B_MAP_REVD) and inbd["AUX9"] is True and inbd["AUX4"] is False, inbd
+    try:
+        RecordingIO(board_rev="revZ")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unknown board_rev must raise")
+    print(f"pin maps match BOTH PCB generators: OUT_A_MAP({len(OUT_A_MAP)}) + "
+          f"IN_A_MAP({len(IN_A_MAP)}) + IN_B_MAP revC({len(IN_B_MAP)}) / "
+          f"revD({len(IN_B_MAP_REVD)}) OK")
     sys.exit(0)

@@ -64,10 +64,17 @@ class FakeShipper:
         return True
 
 
-def mk_board(roles=None, writer=None, shipper=None, cam_sink=None):
-    return BoardController(BoardConfig(21, 1, "sim", 0, 0), sim=True,
+def mk_board(roles=None, writer=None, shipper=None, cam_sink=None,
+             board_rev="revC", slow_debounce_n=1, fsm_debounce_n=None):
+    # slow_debounce_n=1 keeps the rule-logic tests on raw single-tick pulses
+    # (debounce passthrough); the debounce layer itself has dedicated tests
+    # below (test_slow_debounce_* / test_diag_debounce_*).
+    return BoardController(BoardConfig(21, 1, "sim", 0, 0,
+                                       board_rev=board_rev), sim=True,
                            diag_writer=writer, cycle_shipper=shipper,
-                           cam_sink=cam_sink, aux_roles=roles or {})
+                           cam_sink=cam_sink, aux_roles=roles or {},
+                           slow_debounce_n=slow_debounce_n,
+                           fsm_debounce_n=fsm_debounce_n)
 
 
 def hb(bc, extra=""):
@@ -883,7 +890,13 @@ def test_parse_aux_roles():
     assert _parse_aux_roles("") == {}
     assert _parse_aux_roles("aux1=be_current,aux2=exit_beam,aux3=dist_index") == {
         "AUX1": "be_current", "AUX2": "exit_beam", "AUX3": "dist_index"}
-    assert _parse_aux_roles("aux9=be_current,aux1=warp_drive,garbage") == {}
+    # H3 (2026-07-21): aux4-aux11 (rev-D GPB bank) are now valid role keys
+    assert _parse_aux_roles("aux9=be_current,aux1=warp_drive,garbage") == {
+        "AUX9": "be_current"}
+    assert _parse_aux_roles("aux4=exit_beam,aux11=dist_index") == {
+        "AUX4": "exit_beam", "AUX11": "dist_index"}
+    # beyond the bank / zero-indexed keys stay invalid
+    assert _parse_aux_roles("aux12=be_current,aux0=exit_beam") == {}
 
 
 def test_master_killswitch_silences_everything():
@@ -903,6 +916,107 @@ def test_master_killswitch_silences_everything():
         bc.tick()
         assert bc.fsm.state is State.FAULT, "control behavior unchanged"
         assert w.events == [], "master kill-switch: zero events emitted"
+
+
+# ── H3 (Codex audit 2026-07-21): IN-B GPB bank + stable-time debounce ──────────
+
+def test_slow_debounce_semantics():
+    """SlowDebounce: n=1 passthrough; n=3 needs 3 consecutive identical
+    samples; alternating chatter is never accepted; the initial level is a
+    baseline, never an edge."""
+    d1 = cd.SlowDebounce(1, initial=False)
+    assert d1.update(True) is True and d1.update(False) is False, "n=1 = raw"
+    d3 = cd.SlowDebounce(3, initial=False)
+    assert d3.update(True) is False          # 1st sample of new level
+    assert d3.update(True) is False          # 2nd
+    assert d3.update(True) is True           # 3rd consecutive -> accepted
+    assert d3.update(False) is True          # release needs its own 3 samples
+    assert d3.update(False) is True
+    assert d3.update(False) is False
+    dchat = cd.SlowDebounce(3, initial=False)
+    for _ in range(50):                      # 50 Hz contact chatter
+        assert dchat.update(True) is False
+        assert dchat.update(False) is False
+    dinit = cd.SlowDebounce(3, initial=True)
+    assert dinit.stable is True, "already-asserted at start = baseline"
+
+
+def test_diag_debounce_filters_single_tick_glitch():
+    """A 1-tick MAN_T glitch never reaches the diagnostics rules at n=3; a
+    held level does (after 3 consecutive samples). The FSM path (PBZ) stays
+    raw by default in the SAME board."""
+    w = FakeWriter()
+    bc = mk_board(writer=w, slow_debounce_n=3)
+    to_ready(bc)                                     # raw PBZ pulse still works
+    bc.io.slow["MAN_T"] = True                       # 1-tick glitch
+    bc.tick()
+    bc.io.slow["MAN_T"] = False
+    for _ in range(5):
+        bc.tick()
+    assert w.of_type("manual_override") == [], "glitch must not fake an edge"
+    bc.io.slow["MAN_T"] = True                       # genuine held input
+    for _ in range(4):
+        bc.tick()
+    evs = w.of_type("manual_override")
+    assert len(evs) == 1 and evs[0].detail["input"] == "MAN_T", evs
+    bc.io.slow["MAN_T"] = False
+
+
+def test_debounce_defaults_and_env_knobs():
+    with _EnvPatch(WSL_SLOW_DEBOUNCE_N="5", WSL_SLOW_DEBOUNCE_FSM_N="2"):
+        bc = mk_board(slow_debounce_n=None, fsm_debounce_n=None)
+        assert bc._diag_deb_n == 5 and bc._fsm_deb_n == 2
+    # constructor args beat env; garbage env falls back to defaults
+    with _EnvPatch(WSL_SLOW_DEBOUNCE_N="garbage", WSL_SLOW_DEBOUNCE_FSM_N="-3"):
+        bc = mk_board(slow_debounce_n=None, fsm_debounce_n=None)
+        assert bc._diag_deb_n == cd.DEFAULT_SLOW_DEBOUNCE_N == 3
+        assert bc._fsm_deb_n == cd.DEFAULT_SLOW_DEBOUNCE_FSM_N == 1, \
+            "FSM path must default RAW (safety-path semantics unchanged)"
+
+
+def test_fsm_debounce_optin_delays_pbz():
+    """With the FLAGGED knob raised, a 1-tick PBZ pulse is rejected and a held
+    PBZ acts after n samples — proving the knob works without being default."""
+    bc = mk_board(fsm_debounce_n=3)
+    hb(bc); bc.tick()
+    bc.io.slow["PBZ"] = True                          # 1-tick pulse: too short
+    bc.tick()
+    bc.io.slow["PBZ"] = False
+    hb(bc); bc.tick()
+    assert bc.fsm.state is State.MANUAL_INTERVENTION, "glitch PBZ ignored"
+    bc.io.slow["PBZ"] = True                          # held: accepted on 3rd tick
+    bc.tick(); bc.tick()
+    hb(bc); bc.tick()
+    assert bc.fsm.state is State.READY, "held PBZ accepted after n samples"
+    bc.io.slow["PBZ"] = False
+
+
+def test_revd_board_reads_gpb_aux_bank():
+    """board_rev='revD' selects the 16-channel IN-B map (AUX4-11 on GPB) and
+    the aux-role surface drives rules off the new channels; a rev-C board
+    keeps the 8-channel map."""
+    from controller_io import IN_B_MAP, IN_B_MAP_REVD
+    bc_c = mk_board()
+    assert set(bc_c.io.read_inputs_b()) == set(IN_B_MAP) and len(IN_B_MAP) == 8
+    with _EnvPatch(WSL_DIAG_BE_STUCK_MIN="0.05"):
+        w = FakeWriter()
+        bc = mk_board(roles={"AUX9": "be_current"}, writer=w, board_rev="revD")
+        assert set(bc.io.read_inputs_b()) == set(IN_B_MAP_REVD) \
+            and len(IN_B_MAP_REVD) == 16
+        to_ready(bc)
+        bc.io.slow["AUX9"] = True                    # BE current, lane idle
+        bc.tick()
+        advance(bc, 4.0)
+        bc.tick()
+        evs = w.of_type("be_stuck_running")
+        assert len(evs) == 1 and evs[0].severity == "fault", \
+            "rev-D GPB channel must drive the mapped AUX rule"
+
+
+def test_stuck_exempt_covers_full_aux_bank():
+    for i in range(1, 12):
+        assert f"AUX{i}" in cd.STUCK_EXEMPT, f"AUX{i} missing from STUCK_EXEMPT"
+    assert "AUX0" not in cd.STUCK_EXEMPT and "AUX12" not in cd.STUCK_EXEMPT
 
 
 if __name__ == "__main__":

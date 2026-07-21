@@ -121,6 +121,25 @@ DIST_GAP_S_ENV = "WSL_DIAG_DIST_GAP_S"        # dist-index pulse gap during a cy
 PLATFORM_ENV = "WSL_DIAG_PLATFORM"            # platform-health background thread
 PLATFORM_POLL_S_ENV = "WSL_DIAG_PLATFORM_POLL_S"
 AUX_ROLES_ENV = "WSL_DIAG_AUX_ROLES"          # e.g. "aux1=be_current,aux2=exit_beam,aux3=dist_index"
+# Stable-time debounce (H3, Codex audit 2026-07-21): a slow-input LEVEL is
+# accepted only after N consecutive identical samples at the 50 Hz tick cadence
+# (N*20 ms of stability). Two independent knobs:
+#   WSL_SLOW_DEBOUNCE_N     — the DIAGNOSTICS rules' inputs (IN-A watched +
+#                             IN-B AUX/manual banks). Default 3 (~60 ms) —
+#                             opto/contact bounce must not fake rule edges.
+#   WSL_SLOW_DEBOUNCE_FSM_N — the FSM ACTION inputs (PBZ/BS/Foul rising edges
+#                             -> first_ball_zero/bin_full/on_foul). Default 1
+#                             (= RAW, byte-for-byte legacy semantics).
+#     ⚠️ SAFETY-PATH FLAG: raising this ALTERS cycle-input timing (each accepted
+#     edge lags the physical edge by (N-1)..N ticks, 20-60 ms at N=2-3). That is
+#     mechanically negligible for PBZ (operator button), BS (bin microswitch)
+#     and Foul (>100 ms beam events), but it is a deliberate, bench-signed-off
+#     change — set it at §12.9 bench validation, not casually. Default stays 1
+#     precisely so this remediation does NOT silently change safety semantics.
+SLOW_DEBOUNCE_ENV = "WSL_SLOW_DEBOUNCE_N"
+SLOW_DEBOUNCE_FSM_ENV = "WSL_SLOW_DEBOUNCE_FSM_N"
+DEFAULT_SLOW_DEBOUNCE_N = 3
+DEFAULT_SLOW_DEBOUNCE_FSM_N = 1
 
 DEFAULT_SUPPRESS_MIN = 10.0
 # Episode cap (2026-07-19 review): a MAN_* opto failed shorted-on (or
@@ -143,12 +162,16 @@ DEFAULT_PLATFORM_POLL_S = 60.0
 MANUAL_INPUT_NAMES = ("MAN_T", "MAN_S", "MAN_SWS", "MAN_SWSR", "TENTH", "PBC")
 # Stuck-input rule exemptions: BS asserted at rest is NORMAL (bin stays full);
 # MAN_* held is a mechanic session (manual-override rule owns those); AUX
-# channels have their own role rules.
-STUCK_EXEMPT = ("BS", "MAN_T", "MAN_S", "MAN_SWS", "MAN_SWSR",
-                "AUX1", "AUX2", "AUX3")
+# channels have their own role rules. AUX4-11 (rev-D IN-B GPB bank) included —
+# same dormant-unless-mapped posture as AUX1-3 (H3, 2026-07-21).
+STUCK_EXEMPT = ("BS", "MAN_T", "MAN_S", "MAN_SWS", "MAN_SWSR") \
+    + tuple(f"AUX{i}" for i in range(1, 12))
 
 AUX_ROLE_VALID = ("be_current", "exit_beam", "dist_index")
-_AUX_KEY_TO_INPUT = {"aux1": "AUX1", "aux2": "AUX2", "aux3": "AUX3"}
+# aux1-aux3 = rev-B/C spare channels (GPA); aux4-aux11 = the rev-D GPB bank.
+# On a rev-B/C board a mapped aux4+ role simply never sees a level (the
+# channel is absent from that board's IN-B map) — dormant, not an error.
+_AUX_KEY_TO_INPUT = {f"aux{i}": f"AUX{i}" for i in range(1, 12)}
 
 
 def _env_on(name, default="1"):
@@ -160,6 +183,44 @@ def _env_float(name, default):
         return float(os.environ.get(name, "").strip() or default)
     except Exception:
         return float(default)
+
+
+def _env_int(name, default, lo=1, hi=50):
+    """Bounded positive int env knob; garbage/out-of-range -> default."""
+    try:
+        v = int(os.environ.get(name, "").strip() or default)
+        return v if lo <= v <= hi else int(default)
+    except Exception:
+        return int(default)
+
+
+class SlowDebounce:
+    """Stable-time debouncer for the 50 Hz slow-input samples (H3, Codex
+    audit 2026-07-21): a NEW level is accepted only after `n` CONSECUTIVE
+    identical samples (n * tick period of stability — n=3 @ 50 Hz = ~60 ms).
+    n=1 is exact passthrough (legacy raw behavior). The initial level is a
+    BASELINE, never an edge (mirrors the daemon's startup rule, review #28).
+    Bounded state (three scalars per input); update() never raises."""
+
+    __slots__ = ("n", "stable", "_cand", "_count")
+
+    def __init__(self, n, initial=False):
+        self.n = max(1, int(n))
+        self.stable = bool(initial)
+        self._cand = self.stable
+        self._count = 0
+
+    def update(self, raw):
+        raw = bool(raw)
+        if raw == self.stable:
+            self._count = 0                     # agreement -> reset any streak
+        else:
+            self._count = self._count + 1 if raw == self._cand else 1
+            if self._count >= self.n:
+                self.stable = raw               # n consecutive samples: accept
+                self._count = 0
+        self._cand = raw
+        return self.stable
 
 
 def _utc_now_iso():
@@ -300,10 +361,16 @@ class BoardConfig:
     arm_pin: int        # Pi BCM GPIO -> relay-enable ARM for this board (HIGH=permit)
     wdog_pin: int       # Pi BCM GPIO -> this board's NE555 watchdog kick
     # AUX sensor role map for the diagnostics rules ({'AUX1': 'be_current',
-    # 'AUX2': 'exit_beam', 'AUX3': 'dist_index'}). None -> the WSL_DIAG_AUX_ROLES
-    # env applies. Sensors are NOT installed yet, so the shipped default is
-    # UNMAPPED and every AUX rule stays dormant (scope §4 shortlist lands here).
+    # 'AUX2': 'exit_beam', 'AUX3': 'dist_index'; rev-D boards add AUX4-11}).
+    # None -> the WSL_DIAG_AUX_ROLES env applies. Sensors are NOT installed
+    # yet, so the shipped default is UNMAPPED and every AUX rule stays dormant
+    # (scope §4 shortlist lands here).
     aux_roles: dict = field(default=None)
+    # PCB revision driving this lane — selects the IN-B channel map
+    # (controller_io.IN_B_MAPS): rev-B/C = 8 GPA channels; rev-D adds the
+    # AUX4-11 GPB bank. EXPLICIT per board (H3): the pilot rev-C board on
+    # machine 22 and a future rev-D board can coexist in one daemon.
+    board_rev: str = "revC"
 
 
 # Per-pair Pi pin plan.  Source of truth: docs/phase8_channel_allocation.md §4
@@ -864,7 +931,7 @@ class BoardController:
 
     def __init__(self, cfg: BoardConfig, *, sim: bool = False, shadow=None,
                  cam_sink=None, diag_writer=None, cycle_shipper=None,
-                 aux_roles=None):
+                 aux_roles=None, slow_debounce_n=None, fsm_debounce_n=None):
         self.cfg = cfg
         self.sim = sim
         self._wdog = None
@@ -880,7 +947,8 @@ class BoardController:
             # edge times and Pi-side telemetry times live on ONE timebase — the
             # lambda resolves self.io lazily (io is built on the next line).
             self.link = RP2040Link(now=lambda: self.io.now())
-            self.io = RecordingIO(rp2040=self.link, recorder=self.recorder)
+            self.io = RecordingIO(rp2040=self.link, recorder=self.recorder,
+                                  board_rev=cfg.board_rev)
         else:
             from gpiozero import LED                       # lazy: Pi-only
             self._arm_led = LED(cfg.arm_pin)               # de-asserted by default
@@ -891,6 +959,7 @@ class BoardController:
                 watchdog_kick=self._kick_wdog,             # poll() calls this
                 arm_relays=self._set_arm,
                 recorder=self.recorder,
+                board_rev=cfg.board_rev,
             )
             self.link.start()                              # background serial reader
 
@@ -947,7 +1016,25 @@ class BoardController:
         # _watched extends the FSM inputs with PBC (manual-override visibility —
         # it has no FSM action, only the diagnostics rules consume it).
         self._watched = list(self._actions) + ["PBC"]
+        # Stable-time debounce (H3, 2026-07-21): two knobs, read at
+        # construction (debouncers hold per-input state, so a restart applies
+        # a new value). Constructor args beat env (tests); see the env-block
+        # comment up top for the safety-path flag on the FSM knob.
+        self._diag_deb_n = (int(slow_debounce_n) if slow_debounce_n is not None
+                            else _env_int(SLOW_DEBOUNCE_ENV,
+                                          DEFAULT_SLOW_DEBOUNCE_N))
+        self._fsm_deb_n = (int(fsm_debounce_n) if fsm_debounce_n is not None
+                           else _env_int(SLOW_DEBOUNCE_FSM_ENV,
+                                         DEFAULT_SLOW_DEBOUNCE_FSM_N))
+        if self._fsm_deb_n > 1:
+            log.warning("L%s: FSM slow-input debounce ACTIVE (n=%d, ~%d ms) — "
+                        "PBZ/BS/Foul edges lag the physical edge; this is a "
+                        "deliberate bench-signed-off safety-path change (%s)",
+                        cfg.lane, self._fsm_deb_n, self._fsm_deb_n * 20,
+                        SLOW_DEBOUNCE_FSM_ENV)
         self._prev_slow = {}
+        self._fsm_deb = {}
+        self._diag_deb = {}     # lazily per-name (IN-A watched + IN-B channels)
         for name in self._watched:
             cur = bool(self.io.read_input(name))
             if cur:
@@ -956,6 +1043,9 @@ class BoardController:
                           "synthesized; it must deassert then re-assert to act",
                           cfg.lane, name)
             self._prev_slow[name] = cur
+            # baseline the debouncers from the same startup read (no edge)
+            self._fsm_deb[name] = SlowDebounce(self._fsm_deb_n, initial=cur)
+            self._diag_deb[name] = SlowDebounce(self._diag_deb_n, initial=cur)
         self._maxrun_refused = False   # review #30: one-time log latch for the arm refusal
         self._was_healthy = True
         self._prev_arm = False     # rail_drop emitter: last commanded arm value
@@ -983,15 +1073,21 @@ class BoardController:
     # ---- per-tick control logic -------------------------------------------
     def _slow_edges(self):
         """Read the watched IN-A slow inputs, fire FSM actions on rising edges,
-        and return this tick's {name: level} so the diagnostics rules reuse the
-        SAME reads (no duplicate I²C traffic)."""
+        and return this tick's RAW {name: level} so the diagnostics rules reuse
+        the SAME reads (no duplicate I²C traffic; _diag_poll applies the
+        diagnostics-path debounce to these raw levels).
+
+        FSM action edges go through the FSM debouncer — n=1 by default, which
+        is EXACT legacy raw behavior; see SLOW_DEBOUNCE_FSM_ENV (safety-path
+        semantics only change when that knob is deliberately raised)."""
         levels = {}
         for name in self._watched:
-            cur = bool(self.io.read_input(name))
-            levels[name] = cur
+            raw = bool(self.io.read_input(name))
+            levels[name] = raw
+            cur = self._fsm_deb[name].update(raw)          # n=1 -> cur == raw
             action = self._actions.get(name)
             if action is not None and cur and not self._prev_slow[name]:
-                action()                                   # rising edge  # CONFIRM debounce
+                action()                                   # rising (debounce-stable) edge
             self._prev_slow[name] = cur
         return levels
 
@@ -1180,10 +1276,30 @@ class BoardController:
         except Exception:
             log.debug("L%s _note_arm swallowed", self.cfg.lane, exc_info=True)
 
+    def _debounce_for_diag(self, levels):
+        """Apply the diagnostics-path stable-time debounce (H3) to a raw
+        {name: level} dict. Per-input SlowDebounce state is created on first
+        sight, BASELINED to the first observed level (never an edge — the
+        review-#28 startup rule extended to every diagnostics input)."""
+        if levels is None:
+            return None
+        out = {}
+        for name, raw in levels.items():
+            deb = self._diag_deb.get(name)
+            if deb is None:
+                deb = self._diag_deb[name] = SlowDebounce(self._diag_deb_n,
+                                                          initial=raw)
+            out[name] = deb.update(raw)
+        return out
+
     def _diag_poll(self, slow_levels):
-        """Feed this tick's levels to the diagnostics rules. IN-B is ONE extra
-        I²C register read; a failing IN-B read is swallowed (diagnostics must
-        never trip the lane — observe-only)."""
+        """Feed this tick's levels to the diagnostics rules. IN-B is 1-2 extra
+        I²C register reads; a failing IN-B read is swallowed (diagnostics must
+        never trip the lane — observe-only). All MCP-sampled levels pass the
+        stable-time debounce (WSL_SLOW_DEBOUNCE_N consecutive 50 Hz samples)
+        before any rule sees them; DIELL levels arrive pre-sampled from the
+        firmware heartbeat and feed a 30 s-threshold rule, so they are used
+        as-is."""
         try:
             inb = None
             reader = getattr(self.io, "read_inputs_b", None)
@@ -1200,7 +1316,8 @@ class BoardController:
             self.diag.poll(self.io.now(),
                            ready=self.fsm.state is State.READY,
                            in_motion=self.fsm.state in MOTION_STATES,
-                           slow_levels=slow_levels, inb_levels=inb,
+                           slow_levels=self._debounce_for_diag(slow_levels),
+                           inb_levels=self._debounce_for_diag(inb),
                            diell_levels=diell)
         except Exception:
             log.debug("L%s _diag_poll swallowed", self.cfg.lane, exc_info=True)
