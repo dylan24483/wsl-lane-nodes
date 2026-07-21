@@ -742,6 +742,99 @@ def test_machine_posts_share_the_lane_token_gate():
 # ---------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------
+# ---------------------------------------------------------------
+# H4 (Codex audit 2026-07-21): cross-repo contract, SERVER side
+# server/machine_contract.json is the single source of truth. The client
+# suite (test_diag_events.py) pins HttpSink to the same file. The wrapped
+# {"cycle": {...}} POST below is the exact shape the Pi has always sent —
+# before the H4 fix the server validated the WRAPPER as the row and 400'd
+# every real cycle POST while both sides' fakes stayed green.
+# ---------------------------------------------------------------
+CONTRACT_PATH = REPO_ROOT / "server" / "machine_contract.json"
+
+
+def _contract():
+    with open(CONTRACT_PATH, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def test_cycle_post_accepts_canonical_wrapped_shape():
+    with fresh_db():
+        # canonical wrapper (the H4 repro — this 400'd pre-fix)
+        status, body = http('POST', '/api/machine/cycles', {
+            'cycle': {'lane_id': 22, 'final_state': 'READY',
+                      'cycle_type': 'ball', 'ball': 1}})
+        assert_eq(status, 200, "canonical {'cycle': row} accepted")
+        assert_true(isinstance(body['id'], int), "cycle id returned")
+        # the contract fixture body VERBATIM — the same object the client
+        # suite proves HttpSink.post_cycle emits byte-for-byte
+        status, body = http('POST', '/api/machine/cycles',
+                            _contract()['examples']['cycle_post_body'])
+        assert_eq(status, 200, "contract fixture cycle body accepted")
+        # events fixture verbatim too
+        status, body = http('POST', '/api/machine/events',
+                            _contract()['examples']['events_post_body'])
+        assert_eq(status, 200, "contract fixture events body accepted")
+        assert_eq(body['inserted'], 1, "fixture batch inserted")
+        # a wrapped non-object is still a 400, not a crash
+        status, _ = http('POST', '/api/machine/cycles', {'cycle': 5})
+        assert_eq(status, 400, "wrapped non-object rejected")
+
+
+def test_contract_file_pins_server_vocab_and_shapes():
+    c = _contract()
+    ep = c['endpoints']
+    assert_eq(ep['cycles_post']['path'], '/api/machine/cycles', "cycles path")
+    assert_eq(ep['events_post']['path'], '/api/machine/events', "events path")
+    assert_eq(ep['cycles_post']['request_wrapper_key'], 'cycle', "cycle wrapper")
+    assert_eq(ep['events_post']['request_wrapper_key'], 'events', "events wrapper")
+    assert_eq(ep['events_post']['max_batch'], machine_store.MAX_EVENT_BATCH,
+              "max batch")
+    v = c['vocab']
+    assert_eq(sorted(machine_store.EVENT_TYPES), v['event_types'],
+              "event_types vocab in lockstep")
+    assert_eq(list(machine_store.SEVERITIES), v['severities'], "severities")
+    assert_eq(sorted(machine_store.CYCLE_TYPES), v['cycle_types'], "cycle_types")
+    assert_eq(sorted(machine_store.FINAL_STATES), v['final_states'],
+              "final_states")
+    assert_eq(list(machine_store.INTERVAL_COLUMNS), v['interval_columns'],
+              "interval columns")
+    # the recorded hash (the WSL Systems contract test asserts the same value)
+    import hashlib
+    recorded = (REPO_ROOT / "server" / "machine_contract.sha256") \
+        .read_text(encoding='utf-8').split()[0].strip()
+    actual = hashlib.sha256(CONTRACT_PATH.read_bytes()).hexdigest()
+    assert_eq(recorded, actual,
+              "machine_contract.sha256 must match machine_contract.json "
+              "(update BOTH + every consumer when the contract changes)")
+
+
+def test_machine_health_carries_bridge_contract_keys():
+    c = _contract()
+    keys = c['endpoints']['machine_health_get']['lane_entry_bridge_keys']
+    with fresh_db():
+        http('POST', '/api/machine/events', [{
+            'lane_id': 21, 'severity': 'fault', 'event_type': 'fsm_fault',
+            'code': 'motion_timeout:S'}])
+        status, body = http('GET', '/api/machine/health')
+        assert_eq(status, 200, "machine health ok")
+        entry = body['lanes']['21']
+        for k in keys:
+            assert_true(k in entry, f"bridge key {k!r} present in rollup entry")
+        assert_eq(entry['fault'], True, "fault latched")
+        # the contract's machine_health_response example (the WSL Systems
+        # bridge-contract test loads it in place of its inline fake) must
+        # carry EXACTLY the key set the real rollup produces for a faulted
+        # lane — a drifted example would re-open the fake-vs-fake gap.
+        example = c['examples']['machine_health_response']
+        assert_eq(sorted(example['lanes']['21'].keys()), sorted(entry.keys()),
+                  "machine_health_response example keys == real rollup keys")
+        assert_eq(sorted(example.keys()),
+                  sorted(c['endpoints']['machine_health_get']
+                         ['response_top_fields']),
+                  "example top-level keys match declared response fields")
+
+
 TESTS = [
     test_schema_check_on_severity_only_plus_indexes,
     test_post_events_batch_and_diagnostics_readback,
@@ -758,6 +851,9 @@ TESTS = [
     test_retention_thread_prunes_at_startup_and_is_idempotent,
     test_kill_switch_blocks_ingest_not_ack_or_reads,
     test_machine_posts_share_the_lane_token_gate,
+    test_cycle_post_accepts_canonical_wrapped_shape,
+    test_contract_file_pins_server_vocab_and_shapes,
+    test_machine_health_carries_bridge_contract_keys,
 ]
 
 

@@ -434,6 +434,64 @@ def test_writer_events_reach_jsonl_and_http_together():
     assert len(posts) == 1 and posts[0][1]["events"][0]["lane_id"] == 22
 
 
+# ── H4 (Codex audit 2026-07-21): cross-repo contract, CLIENT side ──────────────
+# server/machine_contract.json is the single source of truth for the machine-
+# diagnostics HTTP contract. These tests pin the CLIENT (HttpSink) to it; the
+# server suite (test_machine_diagnostics.py) pins the server + store to the
+# SAME file, so the two sides can never again drift while their own fakes
+# stay green (the exact failure mode behind the H4 cycle-wrapper mismatch).
+
+_CONTRACT_PATH = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), '..', 'server', 'machine_contract.json'))
+
+
+def _contract():
+    with open(_CONTRACT_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def test_contract_client_paths_and_wrappers():
+    c = _contract()
+    assert HttpSink.EVENTS_PATH == c["endpoints"]["events_post"]["path"]
+    assert HttpSink.CYCLES_PATH == c["endpoints"]["cycles_post"]["path"]
+    assert c["endpoints"]["events_post"]["request_wrapper_key"] == "events"
+    assert c["endpoints"]["cycles_post"]["request_wrapper_key"] == "cycle"
+    # the client's actual wire shapes match the declared wrappers
+    posts = []
+    sink = HttpSink("http://x:8766", flush_n=1,
+                    post=lambda url, payload: posts.append((url, payload)))
+    sink.emit({"lane_id": 22, "severity": "info", "event_type": "recovered"})
+    sink.flush()
+    assert posts[-1][0].endswith(c["endpoints"]["events_post"]["path"])
+    assert list(posts[-1][1].keys()) == ["events"]
+    sink.post_cycle({"lane_id": 22, "final_state": "READY"})
+    assert posts[-1][0].endswith(c["endpoints"]["cycles_post"]["path"])
+    assert list(posts[-1][1].keys()) == ["cycle"]
+    assert posts[-1][1]["cycle"]["lane_id"] == 22
+
+
+def test_contract_client_fixture_roundtrip():
+    """post_cycle on the contract fixture's inner row produces EXACTLY the
+    fixture's canonical POST body — the byte-level wire shape the server
+    suite POSTs verbatim at its ingest."""
+    c = _contract()
+    fixture = c["examples"]["cycle_post_body"]
+    posts = []
+    sink = HttpSink("http://x:8766",
+                    post=lambda url, payload: posts.append(payload))
+    assert sink.post_cycle(dict(fixture["cycle"])) is True
+    assert posts[-1] == fixture, (posts[-1], fixture)
+
+
+def test_contract_client_vocab_and_auth():
+    c = _contract()
+    assert list(de.SEVERITIES) == c["vocab"]["severities"]
+    assert de.TOKEN_ENV == c["auth"]["env"]
+    import inspect
+    assert c["auth"]["header"] in inspect.getsource(HttpSink._urllib_post), \
+        "the auth header _urllib_post sets must match the contract"
+
+
 if __name__ == "__main__":
     fns = [(n, f) for n, f in sorted(globals().items())
            if n.startswith("test_") and callable(f)]

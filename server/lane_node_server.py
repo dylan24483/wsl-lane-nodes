@@ -948,6 +948,15 @@ class HttpHandler(BaseHTTPRequestHandler):
             body, err = self._read_json_body(65536)
             if err:
                 return self._send(400, 'application/json', err)
+            # H4 (Codex audit 2026-07-21): the CANONICAL request shape is
+            # {"cycle": {row}} — the shape diag_events.HttpSink.post_cycle has
+            # always sent (server/machine_contract.json is the single source
+            # of truth; both repos' test suites verify against it). The old
+            # code validated the whole body as the row, so every real Pi
+            # cycle POST 400'd while fake-vs-fake tests stayed green. A bare
+            # row body (no 'cycle' key) is tolerated for compatibility.
+            if isinstance(body, dict) and 'cycle' in body:
+                body = body['cycle']
             try:
                 row = machine_store.validate_cycle(body)
             except ValueError as e:

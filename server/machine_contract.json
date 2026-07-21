@@ -1,0 +1,158 @@
+{
+  "contract": "wsl-phase8-machine-diagnostics",
+  "contract_version": 1,
+  "updated": "2026-07-21",
+  "description": "SINGLE SOURCE OF TRUTH for the machine-diagnostics HTTP contract between the Pi lane-node daemon (client: lane_node/diag_events.py HttpSink), the :8766 lane-node server (server/lane_node_server.py + server/machine_store.py), and the WSL Systems bridge (wsl_phase8_bridge.py). Established closing Codex NO-GO audit finding H4 (2026-07-21): the cycle POST wrapper mismatch survived because each side's tests validated against their own fake. BOTH repos' test suites load this file and verify their side against it; change it only with a matching change on every consumer plus the recorded sha256 (server/machine_contract.sha256).",
+  "auth": {
+    "header": "X-Lane-Token",
+    "env": "LANE_NODE_TOKEN",
+    "posture": "required on every POST when LANE_NODE_TOKEN is set; GETs stay open (LAN-internal)"
+  },
+  "endpoints": {
+    "events_post": {
+      "method": "POST",
+      "path": "/api/machine/events",
+      "request_wrapper_key": "events",
+      "request_wrapper_kind": "list",
+      "bare_body_tolerated": true,
+      "max_batch": 500,
+      "event_required_fields": ["lane_id", "severity", "event_type"],
+      "event_optional_fields": ["code", "cycle_id", "detail", "detail_json", "blackbox_file", "incident_id", "created_at", "ts_utc"],
+      "event_timestamp_precedence": ["created_at", "ts_utc", "server-receive-time"],
+      "response_ok_fields": ["ok", "inserted", "ids"]
+    },
+    "cycles_post": {
+      "method": "POST",
+      "path": "/api/machine/cycles",
+      "request_wrapper_key": "cycle",
+      "request_wrapper_kind": "object",
+      "bare_body_tolerated": true,
+      "cycle_required_fields": ["lane_id", "final_state"],
+      "cycle_optional_fields": ["started_at", "ended_at", "cycle_type", "ball", "aborted", "ss_to_guard_ms", "guard_to_table_ms", "table_to_ta2_ms", "ta2_to_sa_ms", "sa_to_ta1zero_ms", "bs_to_ta1zero_ms", "gs_mask", "cam_mask", "fw_version", "shadow"],
+      "response_ok_fields": ["ok", "id"]
+    },
+    "event_ack_post": {
+      "method": "POST",
+      "path_template": "/api/machine/events/<id>/ack",
+      "body_keys_accepted": ["acknowledged_by", "by"],
+      "body_value": "wsl.db staff id — integer or null, OPAQUE across the domain boundary",
+      "response_ok_fields": ["ok", "event"]
+    },
+    "event_resolve_post": {
+      "method": "POST",
+      "path_template": "/api/machine/events/<id>/resolve",
+      "body_required": false,
+      "response_ok_fields": ["ok", "event"]
+    },
+    "machine_health_get": {
+      "method": "GET",
+      "path": "/api/machine/health",
+      "response_top_fields": ["ok", "generated_at", "lanes"],
+      "lane_entry_bridge_keys": ["fault", "code", "since", "acked", "event_id", "severity"],
+      "lane_entry_bridge_keys_note": "the keys wsl_phase8_bridge._parse_machine_health whitelists and wsl_machine_alerts.observe_health consumes; fault-latch fields come from the NEWEST OPEN fault event, never last_event_*"
+    },
+    "lane_diagnostics_get": {
+      "method": "GET",
+      "path_template": "/api/lane/<N>/diagnostics",
+      "response_top_fields": ["ok", "lane", "open_faults", "events", "latest_cycle", "baseline"]
+    }
+  },
+  "vocab": {
+    "severities": ["info", "warn", "fault"],
+    "event_types": [
+      "ball_return_missing",
+      "be_no_current",
+      "be_stuck_running",
+      "beam_blocked",
+      "chatter",
+      "dist_index_stall",
+      "drift_alarm",
+      "fsm_fault",
+      "fw_fault",
+      "fw_reboot",
+      "gripper_disagree",
+      "link_lost",
+      "manual_override",
+      "pi_undervoltage",
+      "rail_drop",
+      "recovered",
+      "rp2040_wdt_reset",
+      "run_mismatch",
+      "service_restart",
+      "short_rack",
+      "stuck_input",
+      "unexpected_edge"
+    ],
+    "cycle_types": ["ball", "manual", "power_on", "reset", "test"],
+    "final_states": ["FAULT", "MANUAL_INTERVENTION", "READY"],
+    "interval_columns": ["ss_to_guard_ms", "guard_to_table_ms", "table_to_ta2_ms", "ta2_to_sa_ms", "sa_to_ta1zero_ms", "bs_to_ta1zero_ms"],
+    "lane_id_range": [1, 32],
+    "mask_range": [0, 1023]
+  },
+  "examples": {
+    "machine_health_response": {
+      "ok": true,
+      "generated_at": "2026-07-21T18:00:00.000+00:00",
+      "lanes": {
+        "21": {
+          "open_faults": 1,
+          "fault": true,
+          "code": "motion_timeout:S",
+          "since": "2026-07-21T17:55:00.000+00:00",
+          "acked": false,
+          "event_id": 101,
+          "severity": "fault",
+          "last_event_at": "2026-07-21T17:55:00.000+00:00",
+          "last_event_type": "fsm_fault",
+          "last_event_code": "motion_timeout:S",
+          "last_cycle_at": "2026-07-21T17:54:50.000+00:00",
+          "last_cycle_final_state": "FAULT"
+        },
+        "22": {
+          "open_faults": 0,
+          "fault": false,
+          "code": null,
+          "since": null,
+          "acked": false,
+          "last_event_at": "2026-07-21T17:40:00.000+00:00",
+          "last_event_type": "service_restart",
+          "last_event_code": "daemon_start",
+          "last_cycle_at": "2026-07-21T17:41:00.000+00:00",
+          "last_cycle_final_state": "READY"
+        }
+      }
+    },
+    "cycle_post_body": {
+      "cycle": {
+        "lane_id": 22,
+        "final_state": "READY",
+        "cycle_type": "ball",
+        "started_at": "2026-07-21T18:00:00.000+00:00",
+        "ended_at": "2026-07-21T18:00:12.500+00:00",
+        "ball": 1,
+        "aborted": false,
+        "ss_to_guard_ms": 850,
+        "guard_to_table_ms": 3100,
+        "table_to_ta2_ms": 1200,
+        "ta2_to_sa_ms": 900,
+        "sa_to_ta1zero_ms": 2100,
+        "bs_to_ta1zero_ms": 1700,
+        "gs_mask": 0,
+        "fw_version": "1.1.1",
+        "shadow": false
+      }
+    },
+    "events_post_body": {
+      "events": [
+        {
+          "lane_id": 22,
+          "severity": "warn",
+          "event_type": "stuck_input",
+          "code": "input:GP",
+          "detail": {"input": "GP", "held_s": 61.0, "threshold_s": 60.0},
+          "ts_utc": "2026-07-21T18:00:00.000+00:00"
+        }
+      ]
+    }
+  }
+}
