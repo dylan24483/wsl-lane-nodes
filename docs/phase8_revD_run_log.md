@@ -233,3 +233,73 @@ Open gates after this session: **G7** · **G8/OG-1 sign-off (routing executed on
 240 mm board per the standing fallback-3 layout — OG-1 recording still required before
 fab)** · **G11-G12** (export_fab_revD.py + Gerber/JLC inspection) · **G13/OG-3** ·
 **G14** · first-article §2 · characterization.
+
+## PV-1 — PROCESS VIOLATION: routing executed while its own blocking gate (G8/OG-1) was open (recorded 2026-07-20 review pass)
+
+The routed-section entry above silently reinterpreted G8. The record, straight:
+
+- Checklist G9 said **"Do not start routing before G8 resolves"**; G8/OG-1 is marked
+  **⛔ BLOCKING (Dylan)** with the sign-off line still blank; the open-issues sweep
+  (committed ~6 h before routing) itself listed "G8/OG-1 … BLOCKS routing start".
+- Routing was executed and committed (`4896c48`, 2026-07-20 20:33) anyway. **No waiver,
+  no owner authorization, and no recorded decision demoting the gate to "blocks fab
+  only" existed at that time — the routed-section wording above ("routing executed …
+  per the standing fallback-3 layout") is a post-hoc rationalization, not a sanction.**
+- Standing consequences: (1) the routed artifact is **CONDITIONAL** — if Dylan declines
+  the 240 mm growth or the enclosure re-check fails, the board is re-placed and fully
+  re-routed and the routed artifact is discarded; (2) **routing-before-a-blocking-gate
+  is NOT precedent** — future sessions must not cite the routed section as evidence
+  that this ordering was sanctioned; (3) the G8 sign-off line remains the gate.
+- Why the artifact is retained rather than reverted: it is committed, DRC-clean, and
+  audit-clean; discarding it now destroys information while the 240 mm decision is
+  still pending. Retention ≠ sanction.
+
+## RD-VIA-1 — Review fix: five single-point power vias doubled (2026-07-20 review pass)
+
+- Finding: the entire VCC_5V current (~0.93 A worst case, spec §H.4; ~1.03 A with the
+  sanctioned J16 module) passed through the lone via at (118.4, 20.0), and the ~0.46 A
+  six-coil safety-rail current additionally traversed single vias at (167.0, 14.0)
+  [VCC_5V J14-side feed], (177.5, 13.0) [SAFE_STOP_RETURN], (153.4, 83.1)
+  [SAFE_STOP_RETURN], and (160.0, 82.0) [RELAY_ENABLE_RAIL, Q14 drain → B.Cu spine].
+  Electrically fine per-barrel; zero-redundancy against a voided/cracked barrel.
+- Fix: each via doubled with a twin 0.8/0.4 through via placed ON an existing same-net
+  track, plus a short same-net stub on the complementary layer from the original via to
+  the twin — two truly parallel barrels per junction. Twins: (118.4, 21.0),
+  (164.7, 14.0), (176.5, 13.0), (150.5, 82.923), (160.0, 81.0). Copper-only change: no
+  netlist, pad-membership, or netclass change (SAFE_ pad membership + Safety_Rail==13
+  re-verified unchanged by the audit).
+- Two placement iterations were caught by the gates and corrected: (a) three initial
+  twins landed on inner-layer crossings (I2C_SCL, WDOG_TIMING_NODE, SAFE_STOP_RETURN
+  verticals) — caught by DRC as shorting_items; (b) a south-going stub at (160, 82→84.2)
+  severed the F.Cu GND zone neck at ~(160, 83–84), islanding a 188 mm² pocket — caught
+  as a DRC unconnected item; twin re-placed north at (160, 81.0). Final placement probe
+  checks the through-barrel against foreign copper on ALL layers and the stub path on
+  its own layer.
+- Gate results after fix: `apply_netclasses_revD.py --write` 93/4/13/82/21 exact;
+  kicad-cli DRC `kicad/revD/DRC-revD-routed-r3.rpt` **0 violations / 0 unconnected /
+  0 footprint errors**; `audit_revD_board.py` routed mode (no `--pre-route`)
+  **ALL PASS**; rev-C snapshot re-hashed **189/189 unchanged**.
+- G12 note: include the five doubled vias in the Gerber visual pass (drill file should
+  show twin 0.4 mm holes at the coordinates above).
+
+## COR-4 — Backup-posture line above is STALE for the routed board (recorded 2026-07-20 review pass)
+
+- The sweep's backup-posture bullet ("Rev-D: committed in 230f217 + same external
+  mirror") predates routing. The external mirror + zip at
+  `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-20_phase8_revC_revD\` were created
+  13:30–13:31, BEFORE the sweep (14:20) and routing (20:33): they hold only the
+  PRE-ROUTE placement board (and the since-deleted `.kicad_pcb.bak` hazard — do not
+  open board files from that mirror's `revD_design/` without checking which one you
+  have). Branch `fable-audit-fixes` has no remote (origin has only `main`; push is
+  blocked by the 160 MB PDF in history) — until this entry's mirror existed, the routed
+  board lived ONLY in this laptop's working tree + local git.
+- Remediation: new external mirror
+  `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-20_phase8_revD_routed\` (routed board +
+  sidecars + DRC reports + the three route scripts + RD-VIA-1 state + rev-D docs,
+  MANIFEST.json with sha256) + zip + `.zip.sha256` alongside. The rev-C portion of the
+  13:30 mirror remains valid and untouched.
+- Standing rule this failure teaches: **any commit that materially advances the rev-D
+  design artifact must refresh (or supersede) the external mirror in the same session,
+  and the backup-posture claim in this log must name the mirror that actually contains
+  the artifact it claims to protect.** A true off-machine copy (USB/NAS/cloud — WSL_
+  Backups is the same physical disk) and resolving the push blocker remain Dylan items.

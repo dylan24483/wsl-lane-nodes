@@ -97,24 +97,46 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 - Consequences: bottom mounting holes at y=236; `phase8_pair_enclosure_spec.md` (assumes
   225 mm) standoff/panel math invalidated — enclosure/subpanel/backplate purchases are
   frozen until re-checked.
+- **Enclosure re-check scope (expanded 2026-07-20, review findings):** in addition to the
+  standoff/panel math and the Pi ribbon length/dress/opening (COR-3), the re-check MUST
+  cover the **bottom-edge copper proximity of opto row 39 (SLOW_AUX11)**: routed copper
+  reaches y=238.72 (1.28 mm from the y=240 routed edge — legal vs the 0.5 mm constraint
+  and typical ±0.3 mm routed-edge tolerance, but any enclosure lip, panel clamp, or edge
+  chamfer along the bottom edge contacts row-39 copper first, and a depanel/handling nick
+  there lands on live AUX11 copper). Row-39 stub at y=237.1; row-39 DIP-4 courtyard bottom
+  ~0.6 mm from the edge. A bottom-edge lip/clamp design must keep ≥ the panel tolerance
+  clear of the edge, or the 36-row alternative below removes row 39 entirely.
 - **Alternative if declined: 36 opto rows (AUX4–AUX7 only) fits 225 mm** — requires a
-  placement re-run and netlist/audit-count changes (a mini spin of steps I.1–I.6).
+  placement re-run and netlist/audit-count changes (a mini spin of steps I.1–I.6) **and a
+  full re-route (the routed artifact below is 240 mm-specific)**.
 - Record the decision in `phase8_revD_run_log.md` gate OG-1 (sign-off line is waiting).
 
-### G9 — Routing complete  `[ ]`  **(HONEST STATUS: route-ready, NOT routed)**
-- The delivered board is placement + netclasses + keep-outs only. FreeRouting was NOT
-  attempted — the repo formally abandoned it (no `.ses` exists; DSN cannot carry the
-  creepage rules), so routing is manual, per the rev-C pattern.
-- Scope: full board (item B makes x≈80–135 a re-route region anyway; 40-row opto column;
-  tap runs to the moved Pico; series tap resistors within ~10 mm of their source nodes).
-- The USB keep-out envelope and the gutters are non-negotiable constraints on the router.
-- Do not start routing before G8 resolves — a 240→225 reversal re-places the board.
+### G9 — Routing complete  `[x]`  **⚠️ EXECUTED OUT OF ORDER — see run-log PV-1; artifact CONDITIONAL on G8**
+- Board fully routed 2026-07-20 by `scripts/route_revD.py` (+ `route_revD_lib.py`,
+  `route_revD_logic.py`) — manual/deterministic, rev-C house style, all passes re-derived
+  for the rev-D placement. Layer discipline + machine-side pattern per the run log.
+- **Process violation on record:** this gate's own line said "Do not start routing before
+  G8 resolves" and routing ran anyway with G8 still open. That was NOT sanctioned — run-log
+  **PV-1** records it. Consequence stands: if Dylan declines the 240 mm growth, the routed
+  artifact is DISCARDED (re-place + full re-route). Routing-before-G8 is not precedent.
+- 2026-07-20 review-fix RD-VIA-1: the five single-point power vias (VCC_5V feed ×2,
+  SAFE_STOP_RETURN ×2, RELAY_ENABLE_RAIL spine entry) were doubled with parallel twin
+  barrels + same-net stubs (copper-only; no netlist/pad/netclass change).
+- **Re-run trap:** `route_revD.py` must ONLY run against the pristine pre-route placement
+  board. Restore with `git show a045330:kicad/revD/wsl-phase8b-revD.kicad_pcb` — use
+  **a045330, NOT 230f217** (230f217 also carries a divergent same-size `.kicad_pcb.bak`
+  that is easy to open by mistake; it was removed in a045330). Re-running against the
+  routed board can crash pcbnew's swig layer, and a re-run OVERWRITES the verified routed
+  artifact (which now also carries the RD-VIA-1 redundant vias the router does NOT emit).
 
-### G10 — Post-route DRC + routed-mode audit + zone fills  `[ ]`
-- KiCad DRC with the carried `.dru`: **0 violations / 0 unconnected / 0 footprint errors**
-  (the 499 pre-route unconnected must go to zero).
-- `audit_revD_board.py` in routed board mode (without `--pre-route`): ALL PASS, including
-  zone-fill checks and the Safety_Rail==13 stop-ship invariant.
+### G10 — Post-route DRC + routed-mode audit + zone fills  `[x]`  (2026-07-20)
+- KiCad DRC with the carried `.dru`: **0 violations / 0 unconnected / 0 footprint errors** —
+  `kicad/revD/DRC-revD-routed-r3.rpt` (r2 = as-routed; r3 = after RD-VIA-1 via redundancy;
+  netclasses re-applied via `apply_netclasses_revD.py --write` before each DRC).
+- `audit_revD_board.py` in routed board mode (without `--pre-route`): **ALL PASS**,
+  including zone-fill checks (F.Cu GND zone filled, no orphan islands — an early RD-VIA-1
+  stub placement severed a zone neck at (160, 83–84) and was caught and re-placed north)
+  and the Safety_Rail==13 stop-ship invariant.
 
 ### G11 — Fab export to a NEW dated directory  `[ ]`
 - `export_fab_revD.py` is **not yet written** (spec step I.7). Requirements: REV and
@@ -153,6 +175,17 @@ Carry the rev-C §4 gate wholesale (rails → i2cdetect → one relay → all si
 rev-D extensions. One channel of each NEW I/O type must pass before trusting the board
 (process item 11).
 
+- `[ ]` **⛔ FIRST, before ANY powered bring-up: regenerate the per-board test documents
+  for rev-D refdes.** The AUX4–11 opto-bank insertion shifted 46 refdes vs rev-C (ISO_WET
+  U37→U45, U_WDOG U36→U44, the watchdog/rail/lamp/snubber R families — e.g. R106 is now a
+  lamp LED resistor, and the rail-gate pullup is R124). **Every rev-C bench artifact (TP
+  map, board-1 bench test packet, solder/bring-up guides) names WRONG parts on a rev-D
+  board** — a technician probing U37 from the rev-C TP map lands on the AUX5 optocoupler,
+  not the isolated wetting supply, during a procedure that includes powered safety-rail
+  fault injection. `kicad/revD/netlist_diff_revC_to_revD.txt` (REFDES_SHIFT lines) is the
+  authoritative cross-reference; regenerate the docs from the rev-D netlist, never
+  hand-translate from rev-C notes.
+
 - `[ ]` Rails at TPs — **NEW: TP4 unloaded reads ≤ ~6 V** (item A landed; 11–14 V float
   gone — if TP4 still floats high the bleed is missing/open). TP4 under opto load ≥ ~4.5 V.
   Regression: TP5↔TP2 still OPEN (isolation).
@@ -189,13 +222,16 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
 ## 3. WHAT REMAINS BEFORE A FAB ORDER (plain-English summary)
 
 1. **Dylan signs off (or declines) the 240 mm board** — G8/OG-1. Declining means a 36-row
-   re-spin of placement + counts. Enclosure spec must be re-checked either way.
+   re-spin of placement + counts **and discarding the routed artifact (full re-route)**.
+   Enclosure spec must be re-checked either way — now including row-39 bottom-edge copper
+   proximity and the Pi ribbon dress (COR-3).
 2. **Resolve or waive rev-C items 6–7** — G7 (powered at-machine metering session, which is
    already the queued next field step for machine 22).
-3. **Route the board** — G9; it is route-ready today, not routed. Then post-route DRC +
-   routed-mode audit — G10.
+3. ~~Route the board~~ **DONE 2026-07-20 (G9+G10: DRC 0/0/0, routed-mode audit ALL PASS,
+   RD-VIA-1 power-via redundancy) — but routed OUT OF ORDER while G8 was open (run-log
+   PV-1); the artifact is conditional on Dylan's G8 sign-off.**
 4. **Write `export_fab_revD.py` and export** to `kicad/fab_revD_<date>/` — G11; inspect
-   Gerbers + JLC preview — G12.
+   Gerbers + JLC preview — G12 (include the five doubled power vias in the visual pass).
 5. **Order the harness/coding parts with the boards** — G13.
 6. **Final sacred-file hash re-verify + Dylan's review** — G6 (re-run) + G14.
 
