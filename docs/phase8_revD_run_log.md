@@ -428,3 +428,17 @@ The routed-section entry above silently reinterpreted G8. The record, straight:
   separate future target for the first-article task, necessarily built with the invariant
   bypassed behind its physical jumper, and excluded from any release artifact.
 - **Sacred check:** revC snapshot MANIFEST re-verified after this batch — **189/189 OK**.
+
+### H4 addendum (2026-07-21, later same session): contract landed, pinned, drift alarm already proven live
+
+- `server/machine_contract.json` v1 landed mid-session and was revised once while the
+  WSL consumer was pinning it — the first pin (`01b9beac...`) tripped the drift alarm
+  on the very first HEAD-worktree run, which is the H4 mechanism working. Re-verified
+  every consumed field, re-pinned to the settled hash
+  `2618f6ee4f80fd53de2cf14f6ba03c34aaef83dd1285b00441f63e826388da8b` (matches
+  `server/machine_contract.sha256`). WSL Systems commits: `b38cc54` (diagnostics
+  campaign coherence, closes C3 WSL-half + H5), `d4baf68` + `d1eb105` (H4 pin).
+- Standing rule now enforced by test: changing `machine_contract.json` requires
+  updating the lane sidecar AND `MACHINE_CONTRACT_SHA256` in WSL Systems
+  `tests/test_phase8_bridge_contract.py` in the same coordinated change, with both
+  suites re-run. The WSL suite hard-fails on any mismatch.
