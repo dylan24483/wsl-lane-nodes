@@ -352,3 +352,48 @@ The routed-section entry above silently reinterpreted G8. The record, straight:
 - Rev-D design work committed on `fable-audit-fixes` (explicit staging only, no push):
   `230f217` route-ready campaign → `a045330` sweep → `4896c48` routed → `67c3820`
   review-fix → finalize-docs commit (this file, change list, checklist).
+
+
+## M7 BACKUP-DISK DISPOSITION + H4 CONSUMER-SIDE COORDINATION (2026-07-21, WSL Systems coherence task)
+
+### M7 — off-disk copy: NO second volume available on this laptop (OPEN ITEM, owner Dylan)
+
+- Enumeration (2026-07-21): `Get-Disk` shows exactly ONE physical volume — Disk 0
+  (WD PC SN5000S NVMe, 953.9 GB, all of C:). Disk 1 is a USB card reader with
+  **No Media** (E: reports 0 bytes). `net use` lists **no** network connections; the
+  NAS from `WSL Systems/NAS_BACKUP_RELEASE_GATE_2026-07-12.md` is still a requirements
+  list (no UNC root, hostname, or credentials exist yet). There is nowhere on this
+  machine to place an off-disk copy, and cloud is prohibited for these artifacts.
+- Integrity re-verified 2026-07-21 before recording this item — both zips match their
+  recorded `.zip.sha256` exactly:
+  - `2026-07-20_phase8_revC_revD.zip` (361,099,110 bytes)
+    `E51999A53C29C8F1BA38C53586C9CE7211F6DEC4786736CC3F100FA45F9C1440`
+  - `2026-07-20_phase8_revD_routed.zip` (727,842 bytes)
+    `26FBA29EC6E022FD9B31C308E5771C040C8032ABC4AE9E723A50ABE65A35D604`
+- **OPEN ITEM (Dylan, manual): copy `C:\Users\Dylan DeYoung\WSL_Backups\` — both zips,
+  both `.zip.sha256` sidecars, and the two mirror directories — off this physical disk.**
+  Approved destinations, in preference order: (a) WSL-SRV via AnyDesk file transfer
+  (e.g. `C:\QDesk\backups\phase8_mirrors\`), (b) a USB drive with actual media (the
+  installed BR28 reader is empty), stored away from the laptop. NEVER a cloud service.
+  After copying, run `Get-FileHash -Algorithm SHA256` on the destination copies and
+  confirm both hashes equal the values above before trusting the copy; record the
+  destination + verification date here. Until then every rev-C/rev-D mirror (including
+  the git history, which cannot push — 160 MB PDF blocker) lives on ONE disk.
+
+### H4 (consumer side) — WSL Systems now consumes the canonical contract file
+
+- `WSL Systems/tests/test_phase8_bridge_contract.py` no longer trusts only its own
+  inline fake: when `wsl-lane-nodes/server/machine_contract.json` exists it loads
+  `examples.machine_health_response` from it, prints the file sha256, and (once pinned)
+  hard-fails on hash drift. The inline payload remains ONLY as the clean-clone fallback
+  (C3 gate: WSL Systems must test green from a clone without the lane repo on disk).
+- **Agreed contract-file shape (pinned 2026-07-21, for the lane-nodes H4 task):**
+  `{"contract_version": 1, "endpoints": {...}, "examples":
+  {"machine_health_response": {...}, ...}}` — the `machine_health_response` example
+  must carry the real `machine_store.machine_health()` rollup shape (bridge keys
+  `fault/code/since/acked/event_id/severity` plus the informational extras).
+- **COORDINATION (lane-nodes H4 task, then WSL side): `server/machine_contract.json`
+  did NOT exist when the WSL consumer ran (2026-07-21). After it lands, record its
+  sha256 and pin `MACHINE_CONTRACT_SHA256` in
+  `WSL Systems/tests/test_phase8_bridge_contract.py` (currently `None` = warn-only),
+  and re-run both repos' suites against the same file.**
