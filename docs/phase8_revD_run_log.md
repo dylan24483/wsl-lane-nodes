@@ -203,3 +203,33 @@ routing start) · **G9–G12** (route → post-route DRC/audit → write `export
 Gerber/JLC inspection) · **G13/OG-3** (harness + coding-part order) · **G14** (Dylan doc
 review) · first-article §2 incl. OG-4 at-temperature tap test · characterization session
 (analog population, DC1–DC3).
+
+## 2026-07-20 — ROUTING (G9 + G10 evidence)
+
+- **Board fully routed** by the NEW `scripts/route_revD.py` (+ `route_revD_lib.py`,
+  `route_revD_logic.py`) — manual/deterministic in the rev-C house style, but every pass
+  re-derived for the rev-D placement (the rev-C router's geometry does not transfer:
+  Pico at the top edge with on-module TP4-6/debug pads, 40-row 5.7 mm column, Rpu at 86,
+  AUX/tap/divider/J15/J16). Layer discipline: In1 horizontals, In2 verticals, B.Cu
+  power backbones + GPA staircase elbows + field backbones, F.Cu stubs; F.Cu GND zone in
+  the LOGIC room only (rev-C pattern; no planes in FIELD/MACHINE). Machine-side passes
+  carry the rev-C pattern (contact cores B.Cu/In2, escapes at x=216/228, COIL_LO trunk
+  166.8, rail spine x=160 with K-coil doglegs).
+- **Self-check**: the router carries a built-in geometric checker (added-copper vs
+  added-copper, vs every numbered pad, vs keep-out rule areas, netclass-aware
+  clearances) — 0 problems at generation.
+- **Gate results**: kicad-cli DRC (`kicad/revD/DRC-revD-routed-r2.rpt`):
+  **0 violations / 0 unconnected / 0 footprint errors** (creepage .kicad_dru live,
+  netclasses re-applied via `apply_netclasses_revD.py --write` BEFORE the DRC —
+  false-green lesson). `audit_revD_board.py` board mode WITHOUT `--pre-route`:
+  **ALL PASS** (93/4/13/82/21, GND zone filled, connectivity 0 unconnected).
+- **Rev-C sacred check**: snapshot manifest re-verified 189/189 unchanged after routing.
+- Note: `route_revD.py` re-runs assume the pristine (git) placement board — restore
+  `kicad/revD/wsl-phase8b-revD.kicad_pcb` from git before re-running (the script clears
+  tracks but reloading a previously zone-filled board through the zone-removal path can
+  crash pcbnew's swig layer).
+
+Open gates after this session: **G7** · **G8/OG-1 sign-off (routing executed on the
+240 mm board per the standing fallback-3 layout — OG-1 recording still required before
+fab)** · **G11-G12** (export_fab_revD.py + Gerber/JLC inspection) · **G13/OG-3** ·
+**G14** · first-article §2 · characterization.
