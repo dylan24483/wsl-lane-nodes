@@ -22,6 +22,9 @@ every later rev-D gate record. Append-only.
   (250×225, "assumed NOT to shrink") panel/standoff math is invalidated for rev-D.
 - **Until Dylan signs off here (append the sign-off line below): do NOT treat step I.5 routing
   as fab-gating, and do NOT order enclosures/subpanels/backplates.**
+- **2026-07-20 finalize pass: the enclosure re-check half of this gate is RESOLVED with
+  evidence — see the "OG-1 ENCLOSURE RE-CHECK" record at the end of this log. Dylan's
+  decision half is still open; the sign-off line below stays blank until he writes it.**
 - Sign-off record: _____________________________ (date / decision / enclosure re-check result)
 
 ### OG-3 — Cross-mate keying parts must be ON the harness order before first article
@@ -303,3 +306,49 @@ The routed-section entry above silently reinterpreted G8. The record, straight:
   and the backup-posture claim in this log must name the mirror that actually contains
   the artifact it claims to protect.** A true off-machine copy (USB/NAS/cloud — WSL_
   Backups is the same physical disk) and resolving the push blocker remain Dylan items.
+
+## OG-1 ENCLOSURE RE-CHECK — RESOLVED WITH EVIDENCE (2026-07-20 finalize pass; decision half still Dylan's)
+
+- **Verdict: the 250×225 → 250×240 growth is a spec update, not a conflict.** Nothing in
+  hardware is committed to 225 mm:
+  - No fleet enclosure, subpanel, or backplate has been purchased. The pair enclosure spec
+    (`phase8_pair_enclosure_spec.md`, 2026-07-14) is a spec/sourcing document; the
+    enclosure sourcing brief (`c757db9`) is still an open research task hunting a cheaper
+    box; HANDOFF open-task #12 "production DIN enclosure" is still open; and this log's
+    own OG-1 entry froze purchases pending this very gate — the freeze held.
+  - The only purchased enclosures are two Ogrmar 8×6×4 boxes already disqualified for even
+    the 225 mm board, plus the already-specced lane-21/22 pilot single-board Saginaw
+    SCE-24EL2008LP, whose ~578×428 mm panel class takes a single 250×240 board trivially.
+  - **Layout D re-math at 240 mm:** 20+240+150+240+20 = **670 mm panel height × 310 mm
+    width** — fits the incumbent SCE-30EL2408LP's SCE-30P24 subpanel (686×533 mm usable)
+    with **16 mm to spare** (was 46 mm at 225 mm).
+  - **COR-3 J_PI +9.5 mm move — non-issue for the enclosure:** the J1 ribbon is internal
+    (board→Pi inside the box; glands are all bottom-face field/Cat6 penetrations),
+    production ribbons are order-later pre-made IDC assemblies with no committed length,
+    and the spec's ribbon budget is ~80–150 mm, against which 9.5 mm of lateral shift is
+    noise.
+- **Row-39 bottom-edge copper (SLOW_AUX11, y=238.72, 1.28 mm from the routed edge):** not
+  checkable yet — no enclosure/backplate is purchased or detail-designed. Carried as a
+  binding constraint on the eventual bottom-edge lip/clamp/backplate design (keep ≥ the
+  panel tolerance clear of the edge), to be verified at enclosure-design time; the 36-row
+  alternative removes row 39 entirely.
+- **What this record does NOT do:** it does not close G8. Dylan's formal 240 mm sign-off
+  (the blank line in the OG-1 section above) is still required and is packaged into the
+  G14 review. PV-1's consequence stands unchanged: if he declines, the routed artifact is
+  discarded (36-row re-spin + full re-route).
+
+## FINALIZE RECORD — campaign close-out (2026-07-20)
+
+- Docs synced to end-state: change-list STATUS rewritten (routing DONE with gate numbers,
+  OG-1 evidence, remaining-gates list = owner/physical/export items only); checklist G8 →
+  `[~]` with the evidence + carried row-39 constraint; §3 summary updated.
+- External mirror `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-20_phase8_revC_revD\`
+  refreshed in place with the ROUTED board + sidecars + DRC r2/r3 reports + the three
+  route scripts + final docs (MANIFEST.json regenerated for the revD_design section,
+  zip + `.zip.sha256` rebuilt and re-verified). The since-deleted pre-route
+  `kicad/revD/wsl-phase8b-revD.kicad_pcb.bak` remains in the mirror as a historical
+  capture, flagged stale in the manifest — do not open it as the board.
+- Rev-C sacred snapshot re-hashed 189/189 intact at campaign close.
+- Rev-D design work committed on `fable-audit-fixes` (explicit staging only, no push):
+  `230f217` route-ready campaign → `a045330` sweep → `4896c48` routed → `67c3820`
+  review-fix → finalize-docs commit (this file, change list, checklist).

@@ -90,26 +90,40 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   explicit waiver in `phase8_revD_run_log.md` accepting the rev-C-validated defaults for
   this spin.** Do not silently repeat rev-C's gate-scope mistake.
 
-### G8 — OG-1: board growth 250×225 → 250×240 signed off + enclosure re-checked  `[ ]`  **⛔ BLOCKING (Dylan)**
+### G8 — OG-1: board growth 250×225 → 250×240 signed off + enclosure re-checked  `[~]`  **enclosure re-check RESOLVED (evidence, 2026-07-20); formal sign-off pending (Dylan — rides G14)**
 - Spec §C.4 fallback 3 was executed in `place_components_revD.py` (BOARD_H=240) with the
   required owner sign-off **not yet given**. Arithmetic verified honest: true DIP-4_W7.62
   courtyard 5.59–5.68 mm → 40 rows cannot fit 225 mm; fallbacks 1–2 are dead.
-- Consequences: bottom mounting holes at y=236; `phase8_pair_enclosure_spec.md` (assumes
-  225 mm) standoff/panel math invalidated — enclosure/subpanel/backplate purchases are
-  frozen until re-checked.
-- **Enclosure re-check scope (expanded 2026-07-20, review findings):** in addition to the
-  standoff/panel math and the Pi ribbon length/dress/opening (COR-3), the re-check MUST
-  cover the **bottom-edge copper proximity of opto row 39 (SLOW_AUX11)**: routed copper
-  reaches y=238.72 (1.28 mm from the y=240 routed edge — legal vs the 0.5 mm constraint
+- **Enclosure re-check RESOLVED 2026-07-20 — verdict: 240 mm is a spec update, not a
+  conflict** (full evidence in the change-list STATUS + run-log OG-1 record):
+  - **Nothing is committed to 225 mm in hardware:** no fleet enclosure, subpanel, or
+    backplate has been purchased — purchases were explicitly frozen pending this gate;
+    `phase8_pair_enclosure_spec.md` (2026-07-14) is a spec/sourcing document; the sourcing
+    brief is still an open research task; HANDOFF task #12 is still open. The only
+    purchased boxes are two Ogrmar 8×6×4 (already disqualified even at 225 mm) and the
+    pilot Saginaw SCE-24EL2008LP, whose ~578×428 mm panel class takes one 250×240 board
+    trivially.
+  - **Layout D re-math at 240 mm:** 20+240+150+240+20 = 670 mm panel height × 310 mm width
+    — fits the incumbent SCE-30EL2408LP's SCE-30P24 subpanel (686×533 mm usable) with
+    16 mm to spare (was 46 mm at 225 mm).
+  - **COR-3 J_PI +9.5 mm move:** non-issue — the J1 ribbon is internal (board→Pi inside
+    the box; glands are all bottom-face field/Cat6), production ribbons are order-later
+    pre-made IDC assemblies with no committed length, and 9.5 mm of lateral shift is noise
+    against the ~80–150 mm ribbon budget.
+- **Row-39 bottom-edge copper (SLOW_AUX11) — CARRIED CONSTRAINT, not yet checkable:** routed
+  copper reaches y=238.72 (1.28 mm from the y=240 routed edge — legal vs the 0.5 mm rule
   and typical ±0.3 mm routed-edge tolerance, but any enclosure lip, panel clamp, or edge
   chamfer along the bottom edge contacts row-39 copper first, and a depanel/handling nick
-  there lands on live AUX11 copper). Row-39 stub at y=237.1; row-39 DIP-4 courtyard bottom
-  ~0.6 mm from the edge. A bottom-edge lip/clamp design must keep ≥ the panel tolerance
-  clear of the edge, or the 36-row alternative below removes row 39 entirely.
-- **Alternative if declined: 36 opto rows (AUX4–AUX7 only) fits 225 mm** — requires a
-  placement re-run and netlist/audit-count changes (a mini spin of steps I.1–I.6) **and a
-  full re-route (the routed artifact below is 240 mm-specific)**.
-- Record the decision in `phase8_revD_run_log.md` gate OG-1 (sign-off line is waiting).
+  lands on live AUX11 copper). Since no enclosure/backplate is purchased or designed yet,
+  this is a **binding requirement on the eventual bottom-edge lip/clamp design** (keep ≥
+  the panel tolerance clear of the edge), to be verified at enclosure-design/purchase time
+  — or the 36-row alternative removes row 39 entirely.
+- **Alternative if the 240 mm sign-off is declined: 36 opto rows (AUX4–AUX7 only) fits
+  225 mm** — requires a placement re-run and netlist/audit-count changes (a mini spin of
+  steps I.1–I.6) **and a full re-route (the routed artifact below is 240 mm-specific)**.
+- **To close this gate:** Dylan appends the sign-off line in `phase8_revD_run_log.md` gate
+  OG-1 (still blank — the evidence record is there waiting for his decision; folded into
+  the G14 review packet).
 
 ### G9 — Routing complete  `[x]`  **⚠️ EXECUTED OUT OF ORDER — see run-log PV-1; artifact CONDITIONAL on G8**
 - Board fully routed 2026-07-20 by `scripts/route_revD.py` (+ `route_revD_lib.py`,
@@ -221,19 +235,26 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
 
 ## 3. WHAT REMAINS BEFORE A FAB ORDER (plain-English summary)
 
-1. **Dylan signs off (or declines) the 240 mm board** — G8/OG-1. Declining means a 36-row
-   re-spin of placement + counts **and discarding the routed artifact (full re-route)**.
-   Enclosure spec must be re-checked either way — now including row-39 bottom-edge copper
-   proximity and the Pi ribbon dress (COR-3).
+1. **Dylan signs off (or declines) the 240 mm board** — G8/OG-1. The enclosure re-check
+   half is **RESOLVED with evidence (2026-07-20: nothing purchased, Layout D re-math fits
+   the incumbent SCE-30P24 with 16 mm to spare, ribbon shift is noise)** — what remains is
+   his decision itself. Declining means a 36-row re-spin of placement + counts **and
+   discarding the routed artifact (full re-route)**. Row-39 bottom-edge copper proximity
+   is a carried constraint on the eventual enclosure lip/backplate design.
 2. **Resolve or waive rev-C items 6–7** — G7 (powered at-machine metering session, which is
    already the queued next field step for machine 22).
 3. ~~Route the board~~ **DONE 2026-07-20 (G9+G10: DRC 0/0/0, routed-mode audit ALL PASS,
-   RD-VIA-1 power-via redundancy) — but routed OUT OF ORDER while G8 was open (run-log
-   PV-1); the artifact is conditional on Dylan's G8 sign-off.**
+   RD-VIA-1 power-via redundancy, independent 8-check verification pass) — but routed OUT
+   OF ORDER while G8 was open (run-log PV-1); the artifact is conditional on Dylan's G8
+   sign-off.**
 4. **Write `export_fab_revD.py` and export** to `kicad/fab_revD_<date>/` — G11; inspect
    Gerbers + JLC preview — G12 (include the five doubled power vias in the visual pass).
 5. **Order the harness/coding parts with the boards** — G13.
 6. **Final sacred-file hash re-verify + Dylan's review** — G6 (re-run) + G14.
+7. **After assembly, the §2 first-article gate** — starts with ⛔ regenerating the per-board
+   test docs for rev-D refdes, and includes the MANDATORY at-temperature (≥70 °C) rail-tap
+   repeat (OG-4). The characterization session (analog population, DC1–DC3) is scheduled
+   but not fab-blocking.
 
 Not fab-blocking but scheduled: the **characterization session** that decides external
 analog population (CT current channels, 24 VAC sense, temp channels — all on the external

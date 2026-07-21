@@ -9,7 +9,10 @@
 >
 > **SACRED-FILE RULE:** every rev-B/rev-C design file is untouched (189/189 snapshot-manifest
 > hashes verified before AND after every tool run — `backups/revC_design_snapshot_2026-07-19/
-> MANIFEST.json`). All rev-D work is in NEW `*revD*` files; nothing is committed or staged.
+> MANIFEST.json`). All rev-D work is in NEW `*revD*` files, committed on `fable-audit-fixes`
+> with explicit per-file staging only (`230f217` → `a045330` → `4896c48` → `67c3820` + the
+> finalize commit); no commit touches any rev-B/rev-C design file or the uncommitted
+> diagnostics-software campaign. Not pushed (branch has no remote — 160 MB-PDF push blocker).
 > Reminder: **every rev-C artifact carries a revB filename** — `generate_kicad_netlist_revB.py`
 > IS the rev-C generator and `kicad/fab_revB_routed_manual/` IS the rev-C-as-ordered package.
 
@@ -26,30 +29,64 @@
 - **Diff vs rev-C** — `scripts/diff_netlist_revC_to_revD.py` → CLEAN: 36 added parts, 29 added
   nets, 11 touch-point nets additions-only, 173 nets byte-unchanged, **0 removals**, sole
   changed part = D_PROT SS14→SS34 (whitelisted, run-log FR-3).
-- **Board (route-READY, not routed)** — `kicad/revD/wsl-phase8b-revD.kicad_pcb`: 250×240 mm,
-  252 parts placed, netclasses **93/4/13/82/21** exact, sidecars (`.kicad_pro/.prl/.dru`)
-  copied and the `.dru` isolation rules proven live, USB keep-out envelope drawn, placement
-  DRC **0 violations** (499 unconnected pads = expected pre-route), `audit_revD_board.py`
-  **ALL PASS in both netlist and board modes** and provably fails closed.
+- **Board — FULLY ROUTED (2026-07-20)** — `kicad/revD/wsl-phase8b-revD.kicad_pcb`: 250×240 mm,
+  252 parts, routed to zero by `scripts/route_revD.py` (+ `_lib`/`_logic`; deterministic,
+  rev-C house style re-derived for the rev-D placement). Post-route gates: kicad-cli DRC
+  **0 violations / 0 unconnected / 0 footprint errors** (`DRC-revD-routed-r3.rpt`, live
+  `.kicad_dru` creepage rules — proven to actually fire via a scratchpad mutation test —
+  netclasses re-applied **93/4/13/82/21** exact before DRC); `audit_revD_board.py` in routed
+  board mode **ALL PASS** incl. zone fills and the Safety_Rail==13 stop-ship invariant;
+  independent post-route verification passed all 8 checks (isolation geometry L-F 2.501 mm
+  ≥ 2.5, L-M 3.200 mm ≥ 3.2, opto rows ≥ 5.656 mm; no plane cheating; USB keep-out clear).
+  Review-fix pass RD-VIA-1 doubled the five single-point power vias (copper-only).
+  **Honesty note:** routing executed while gate G8/OG-1 was still open — recorded as
+  process violation **PV-1**, not sanctioned; artifact conditional on the G8 sign-off.
 - **Process artifacts** — footprint-vs-datasheet reviews FR-1…FR-7 recorded in
   `phase8_revD_run_log.md`; review-fix pass closed 6 distinct findings (item-E temperature
   qualification, J3/J15 + J13/J16 cross-mate coding, SS34 swap, OG-1 surfaced as blocking,
-  WVR-ERC-1 recorded, run log backfilled with genuinely-performed reviews); full tool chain
-  re-run green after the fixes.
+  WVR-ERC-1 recorded, run log backfilled with genuinely-performed reviews); open-issues
+  sweep walked G1–G14 + the risk register (COR-2/COR-3 doc corrections); post-route review
+  fix pass (RD-VIA-1, PV-1, COR-4, refdes-doc first-article gate); full tool chain re-run
+  green after every pass.
+- **OG-1 enclosure re-check — RESOLVED with evidence (2026-07-20).** Verdict: **240 mm is a
+  spec update, not a conflict.** No fleet enclosure, subpanel, or backplate has been
+  purchased (purchases were explicitly frozen pending this gate; the 2026-07-14 pair
+  enclosure spec is a spec/sourcing document; the sourcing brief is still open research;
+  HANDOFF task #12 still open). Only purchased boxes: two Ogrmar 8×6×4 already disqualified
+  at 225 mm, and the lane-21/22 pilot Saginaw SCE-24EL2008LP whose ~578×428 mm panel class
+  takes a single 250×240 board trivially. Layout D re-math at 240 mm: 20+240+150+240+20 =
+  **670 mm panel height × 310 mm width** — fits the incumbent SCE-30EL2408LP's SCE-30P24
+  subpanel (686×533 mm usable) with **16 mm to spare** (was 46 mm at 225). The COR-3 J_PI
+  +9.5 mm move is noise against the ~80–150 mm internal-ribbon budget (pre-made IDC
+  assemblies, ordered later; all glands are bottom-face field/Cat6). Row-39 bottom-edge
+  copper (1.28 mm to routed edge) carries as a **design constraint on the not-yet-designed
+  enclosure lip/clamp/backplate** — nothing exists yet to check it against. Dylan's formal
+  240 mm sign-off is still open (folded into G14; run-log OG-1 sign-off line still blank).
+- **Backups** — sacred rev-C snapshot re-hash 189/189 after every batch; external mirrors +
+  verified zips in `C:\Users\Dylan DeYoung\WSL_Backups\` (`2026-07-20_phase8_revC_revD`,
+  refreshed with the routed board + final docs, and `2026-07-20_phase8_revD_routed`).
 
-**GATES REMAINING (fab order is blocked until all clear — checklist has the detail):**
-1. **OG-1 — Dylan sign-off on the 250×225 → 250×240 board growth + enclosure re-check.**
-   Blocking. Alternative if declined: 36 opto rows fit 225 mm.
-2. **Routing.** The board is route-ready, NOT routed. Manual route (FreeRouting is formally
-   abandoned in this repo — no `.ses` exists; DSN cannot carry the creepage rules), then
-   post-route DRC + routed-mode audit + zone fills.
-3. **Fab export + Gerber inspection.** `export_fab_revD.py` not yet written (new dated dir,
+**GATES REMAINING (fab order is blocked until all clear — checklist has the detail; all are
+owner decisions, physical/powered sessions, or export steps — no open design work):**
+1. **G8 residual — Dylan's formal sign-off on the 250×225 → 250×240 growth.** The enclosure
+   re-check half is RESOLVED (evidence above); the sign-off half rides G14. If declined:
+   36-row re-spin + full re-route (routed artifact discarded per PV-1).
+2. **G7 — rev-C carried verify items 6–7** (per-channel front-end choice, arc-suppression
+   sizing) — blocked on the powered at-machine metering session (meter tapped-lead live
+   voltages BEFORE reconnecting any board); resolve or record an explicit waiver.
+3. **G11 — fab export.** `export_fab_revD.py` not yet written (new dated dir,
    refuses-if-exists — the rmtree lesson).
-4. **Rev-C carried verify items 6–7** (per-channel front-end choice, arc-suppression sizing) —
-   blocked on the powered at-machine metering session; resolve or record an explicit waiver.
-5. **Characterization session** for analog population — CT current channels + temp ride the
-   external-module path (J16 / USB-ADC); nothing analog populates on-board, ever.
-6. **Dylan's overall review** of this change list + the spec.
+4. **G12 — manual Gerber inspection + JLC preview** (incl. the five doubled power vias).
+5. **G13 — harness/coding BOM order** (1840447/1840405 plugs + CP-MSTB 1734634 profiles)
+   ships WITH the boards; profiles fitted before first article.
+6. **First-article gate** — checklist §2: ⛔ regenerate per-board test docs for rev-D refdes
+   FIRST (46 REFDES_SHIFTs make every rev-C bench artifact wrong), then rails/GPB/ADC/tap
+   tests incl. the **at-temperature (≥70 °C) rail-tap repeat (OG-4 — cold-only does not
+   discharge it)** and the physical cross-mate refusal tests.
+7. **Characterization session** for analog population (DC1–DC3) — CT current channels + temp
+   ride the external-module path (J16 / USB-ADC); nothing analog populates on-board, ever.
+8. **G14 — Dylan's overall review** of this change list + spec + checklist + run log
+   (parked decisions: OG-1 sign-off, G7 waiver-or-session, J16 polyfuse, OUT-B override).
 
 ---
 
