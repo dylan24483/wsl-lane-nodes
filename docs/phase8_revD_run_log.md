@@ -442,3 +442,87 @@ The routed-section entry above silently reinterpreted G8. The record, straight:
   updating the lane sidecar AND `MACHINE_CONTRACT_SHA256` in WSL Systems
   `tests/test_phase8_bridge_contract.py` in the same coordinated change, with both
   suites re-run. The WSL suite hard-fails on any mismatch.
+## LANE-NODE SOFTWARE REMEDIATION (2026-07-21, Codex NO-GO audit — H3 / H4 lane-half / M1 / C3 lane-half)
+
+### H3 — IN-B GPB bank read path + parametrized drift guard + stable-time debounce + AUX4-11 roles
+
+- `controller_io.py`: `IN_B_MAP_REVD` = rev-C map + AUX4-11 on GPB0-7 (gen pins 1-8);
+  `IN_B_MAPS` selection table with EXPLICIT `board_rev=` on MachineIO/RecordingIO
+  (default `revC` = the validated machine-22 pilot board; unknown rev raises).
+  `read_inputs_b` reads GPB only when the selected map populates it (rev-C stays a
+  single register read). `_read_in` routes through the per-board map.
+- Drift guard PARAMETRIZED over both generators: rev-B/C generator ↔ rev-C maps AND
+  rev-D generator ↔ rev-D maps, both checked in `controller_io.py --main` and in
+  `tests/test_pin_map_drift.py` (4 tests incl. structural invariants: rev-C GPA-only,
+  rev-D strict superset adding exactly AUX4-11). The old guard pinned the rev-B
+  generator only — the audit's "accidental non-use" class for the GPB bank.
+- `controller_daemon.py`: `SlowDebounce` — N consecutive identical 50 Hz samples
+  accept a new level. Diagnostics-path inputs (IN-A watched + IN-B banks) debounce at
+  `WSL_SLOW_DEBOUNCE_N` (default 3 ≈ 60 ms). ⚠️ FLAGGED safety-path knob: the FSM
+  action inputs (PBZ/BS/Foul) keep RAW legacy semantics at the default
+  `WSL_SLOW_DEBOUNCE_FSM_N=1`; raising it is a deliberate bench-sign-off change and
+  logs a warning banner at construction. DIELL levels stay firmware-sampled (30 s
+  rule threshold; documented in `_diag_poll`).
+- AUX role surface: `aux1..aux11` accepted in `WSL_DIAG_AUX_ROLES` /
+  `BoardConfig.aux_roles`; AUX4-11 stuck-exempt; dormant-unless-mapped exactly like
+  AUX1-3 (a mapped aux4+ role on a rev-C board simply never sees a level).
+- `BoardConfig.board_rev` (default revC) plumbs the revision to the io layer per lane.
+
+### H4 (lane-nodes half) — cycle POST contract fixed + single-source-of-truth contract file
+
+- Root cause confirmed: `_handle_machine_post` validated the whole body as the cycle
+  row while `HttpSink.post_cycle` has always sent `{"cycle": row}` — every real Pi
+  cycle POST would have 400'd; each side's fakes matched its own bug.
+- Fix: server unwraps the canonical `{"cycle": {...}}` (bare row tolerated for
+  compatibility); `server/machine_contract.json` (contract_version 1) is the single
+  source of truth — endpoints/wrappers/vocab/auth + `examples.machine_health_response`
+  in the WSL-consumer-agreed shape + verbatim POST-body examples. sha256 recorded in
+  `server/machine_contract.sha256` = `2618f6ee4f80fd53de2cf14f6ba03c34aaef83dd1285b00441f63e826388da8b`,
+  pinned on the WSL Systems side (see H4 addendum above).
+- Both suites verify the SAME file: `tests/test_machine_diagnostics.py` POSTs the
+  contract examples VERBATIM at the real loopback HTTP handler (the wrapped shape is
+  the pre-fix repro), pins store vocab to the contract, and asserts the
+  machine_health example's key set equals the REAL rollup's key set;
+  `tests/test_diag_events.py` proves HttpSink's wire shapes (paths, wrapper keys,
+  byte-level cycle example round-trip, auth header/env) against the same file.
+
+### M1 — netlist diff deepened to an expected-DELTA table
+
+- `scripts/diff_netlist_revC_to_revD.py` now pins, beyond names/counts:
+  every added part's exact value+footprint (`EXPECTED_ADDED_PART_SPECS`, 46 parts),
+  every added net's exact (tag,pin) membership (`EXPECTED_ADDED_NET_NODES`, 33 nets),
+  and every touched rev-C net's exact ADDED nodes
+  (`EXPECTED_TOUCHED_NET_ADDITIONS`, 11 nets; plus "documented additions never
+  arrived" detection). Import-time lockstep asserts tie the three deep tables to the
+  existing name-level whitelists. Current netlists (incl. the R1 2N7002 tap stage +
+  R2.5 MCV _D1.4 repoints): **CLEAN — 46/46 + 33/33 + 11/11**. Negative test:
+  mutating one tap resistor value (1M→100k, the H1/C1 class) fails with
+  `DEEP_PART_MISMATCH` + exit 1.
+- Encoded values were the ones Codex's manual deep pass verified; any future rev-D
+  netlist change must update the tables in the same commit or the script exits 1.
+
+### C3 (lane-nodes half) — coherent commits + suites
+
+- The previously uncommitted 2026-07-19 diagnostics software campaign committed as
+  `a3a52bc` (explicit staging, kicad/.history excluded); today's H3/H4/M1 changes
+  committed on top (see git log). Suites green at commit time:
+  **160 pytest-native + 10 script-style standalone + daemon selftest 30/30 +
+  controller_io dual-generator guard + machine_diagnostics 18/18 +
+  diag_events 26/26 + daemon_diagnostics 42/42 standalone.**
+- **Sacred check:** revC snapshot MANIFEST verified before and after this batch —
+  **189/189 OK** (see below).
+- **Commits (this task):** `a3a52bc` (2026-07-19 diagnostics campaign, C3),
+  `f96ad87` (H3), `6c7a078` (H4 lane half), `9fd2566` (.gitattributes LF pin on the
+  contract + sidecar — autocrlf would have broken the pinned hash on re-clone).
+- **Clean-clone reproduction (C3 gate):** fresh `git clone` of this repo at
+  `9fd2566` in Temp — contract file bytes reproduce sha256 `2618f6ee...` exactly;
+  suites **160 pytest-native + 10 standalone ALL PASS** (engine-mirror P9 guard run
+  with its documented `WSL_ENGINE_MIRROR_OPTIONAL=1` escape since the sibling
+  WSL Systems checkout is absent in Temp; it passes hard in the real tree).
+- **NOT committed (deliberately — P7, concurrent hardware batch):**
+  `scripts/diff_netlist_revC_to_revD.py` (M1 deep tables + the R1/R2.5 whitelist
+  updates) must land WITH `kicad/wsl-phase8b-revD.net` +
+  `scripts/generate_kicad_netlist_revD.py` in the hardware campaign's commit —
+  committing it alone would pin deep expectations for a netlist state not at that
+  hash. The deep check is proven CLEAN (46/46 + 33/33 + 11/11) against the current
+  working-tree netlists.

@@ -142,7 +142,16 @@ owner decisions, physical/powered sessions, or export steps — no open design w
   5.25 mm premise) → **board grew to 250×240 mm** (spec §C.4 fallback 3, bottom mounting
   holes now y=236). **This is gate OG-1 — PENDING Dylan sign-off + enclosure re-check**
   (`phase8_pair_enclosure_spec.md` still assumes 225 mm). Alternative if declined: 36 rows.
-- Software companion (`IN_B_MAP`, startup self-test, stuck-input coverage) ships in the
+- Software companion — **LANDED 2026-07-21 (Codex audit H3 remediation)**:
+  `controller_io.IN_B_MAP_REVD` (AUX4-11 on GPB0-7) with EXPLICIT per-board
+  `board_rev` selection (`IN_B_MAPS`, unknown rev = hard error), dual-generator
+  drift guards (rev-B/C AND rev-D, `tests/test_pin_map_drift.py` + both
+  `__main__` guards), `read_inputs_b` two-port read, AUX4-11 in the
+  `WSL_DIAG_AUX_ROLES` surface (dormant-unless-mapped, stuck-exempt), and
+  stable-time debounce on all diagnostics slow inputs
+  (`WSL_SLOW_DEBOUNCE_N`, default 3 samples ≈60 ms @ 50 Hz; FSM safety path
+  stays raw unless `WSL_SLOW_DEBOUNCE_FSM_N` is deliberately raised — flagged).
+  Originally scoped to ship in the
   separate 2026-07-19 diagnostics software campaign — NOT this board task.
 
 ### D. VCC_5V board-self-health ADC divider (GP26/ADC0)
