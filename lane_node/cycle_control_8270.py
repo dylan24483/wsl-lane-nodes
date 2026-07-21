@@ -46,9 +46,27 @@ R2 (2026-06-10 audit fixes):
   * foul reclassification is gated to the delivery window.
   * Two BENCH-GATED switches default to the original DRAFT-R1 behavior:
     SKIP_TABLE_DESCENT_ON_SECOND_BALL, POLL_BS_LEVEL_IN_TABLE_FINISH (below).
+
+R3 (2026-07-19 diagnostics scope, Phase 1 — observe-only except the ONE
+sanctioned trip):
+  * _fault(why, code=...) carries a stable machine-readable code alongside the
+    free text; last_fault = dict(code, why, state, t). _fault(why) still works.
+  * per-MOTOR continuous energized-time tracking survives state transitions
+    (closes audit H-02: the per-state motion timer resets on EVERY _enter(), so
+    a table energized across TABLE_DETECT->RUNTHROUGH->TABLE_FINISH ran 23.7 s
+    with no software timeout). Overrun past MAX_MOTOR_ENERGIZED_S latches the
+    EXISTING _fault() path — the one sanctioned trip-authority addition; env
+    kill-switch reverts it to observe-only tracking.
+  * unexpected-edge observers: every state-guarded handler counts events that
+    arrive in a non-matching state (per-(event,state) counters) and offers them
+    to an optional injected on_diag hook. Counters/hook NEVER change state,
+    never drive an output, never raise (catch-all + drop counter).
+  * diagnostics_snapshot() -> dict(counters, per-motor energized seconds,
+    last_fault, drop counter) for the daemon/emitters. Cheap, bounded.
 """
 
 from __future__ import annotations
+import os
 import time
 from enum import Enum
 
@@ -67,6 +85,39 @@ TIME_DELAY_S = 3.0     # pin-settle delay, gated by GP (gripper-protect) closed
 MAX_MOTION_S = 8.0     # safety backstop per motor motion. FIELD: set = measured + margin
 GUARD_DELAY_MAX_S = 30.0   # bound on the GUARD_DELAY wait (GP never closing / refused
                            # energize) before latching FAULT. FIELD: tune at bench.
+
+# ---- DIAGNOSTICS (2026-07-19 scope doc, Phase 1) --------------------------------
+# Env kill-switches follow the house WSL_* pattern: default ON, any of the falsey
+# strings disables at runtime. Everything here is OBSERVE-ONLY except the H-02
+# motor-overrun trip, which latches the EXISTING _fault() path (the one sanctioned
+# trip-authority addition of the diagnostics campaign).
+_FALSEY = ("0", "false", "no", "off", "")
+
+# Per-motor CONTINUOUS energized-time ceiling (H-02 fix). Derivation — do not
+# guess, measure (sim instrumented in __main__ below):
+#   * sim-measured longest LEGAL continuous run = TABLE ~3.9 s on the sim's
+#     pretend timings (descent->260, run-through, BS, spotting rev, all with the
+#     table never de-energized — the exact H-02 span).
+#   * scaling that SAME span with the only documented real number (12.1 RPM
+#     nominal ~= 4.96 s/table-rev): descent 0->260 (~3.6 s) + 260->355 (~1.3 s)
+#     + a full spotting revolution when BS closes before the zero stop (~5.0 s)
+#     ~= 10 s worst-case LEGAL continuous table run.
+#   * default = 10 s + ~50% margin = 15 s. Generous by design (a false trip is
+#     a lane down mid-league, §6 of the scope doc), yet well under the 23.7 s
+#     H-02 runaway the audit observed, and above MAX_MOTION_S so a single-state
+#     stall still faults first via the per-state motion timeout.
+# FIELD: retune = measured + margin at the powered session (env-overridable).
+MAX_MOTOR_ENERGIZED_S = float(os.environ.get("WSL_FSM_MAX_MOTOR_ENERGIZED_S", "15.0"))
+
+# Kill-switch for the H-02 trip alone: "0" keeps the per-motor tracking (snapshot
+# still reports energized seconds) but never latches FAULT from it.
+MOTOR_OVERRUN_TRIP_ENV = "WSL_FSM_MOTOR_OVERRUN_TRIP"
+# Kill-switch for the unexpected-edge counters + the on_diag hook delivery.
+DIAG_ENV = "WSL_FSM_DIAG"
+
+
+def _env_on(name):
+    return os.environ.get(name, "1").strip().lower() not in _FALSEY
 
 # ---- BENCH-GATED behavior switches (default = original DRAFT-R1 behavior) ------
 # Flip ONLY after the corresponding sequence is confirmed on the bench (§12.9).
@@ -147,6 +198,17 @@ class CycleController:
         self.pins = 0            # latched standing-pin mask this cycle
         self._t_state = 0.0      # time entered current state (for delay + backstop)
         self._table_done = False # table reached zero (TA1@355) this cycle
+        # ---- diagnostics (R3; observe-only — see module header) ----------------
+        self.on_diag = None      # optional injected hook: on_diag(event_dict).
+                                 # None-safe; exceptions swallowed + counted below.
+        self.last_fault = None   # dict(code, why, state, t) of the last _fault()
+        self.diag_counters = {}  # "event:state" -> count of unexpected edges
+        self.diag_drops = 0      # on_diag/observer exceptions swallowed
+        # per-motor CONTINUOUS energized window (H-02): start time while ON, None
+        # while off. A repeated energize is a latch no-op (bin_full re-energizing
+        # a still-running table must NOT reset the window — that gap IS the bug).
+        self._energized_since = {"sweep": None, "table": None, "spot": None}
+        self._energized_longest = {"sweep": 0.0, "table": 0.0, "spot": 0.0}
 
     # ---- power / safety ----------------------------------------------------
     def power_restore(self):
@@ -182,11 +244,43 @@ class CycleController:
             self.io.log(f"L{self.lane}: First-Ball-Zero -> READY (1st ball)")
         elif self.state is State.READY:
             self._toggle_ball()
+        else:
+            # PBZ mid-cycle is a silent no-op by design; count it — an operator
+            # pressing PBZ while a motion is in flight is a mechanic-at-machine
+            # signal (scope doc §1 manual-intervention discrimination).
+            self._diag_unexpected("first_ball_zero")
 
     def _all_motors_off(self):
-        self.io.set_sweep(False)
-        self.io.set_table(False)
-        self.io.set_spot(False)
+        self._set_sweep(False)
+        self._set_table(False)
+        self._set_spot(False)
+
+    # ---- motor output wrappers (R3, H-02) ----------------------------------
+    # EVERY sweep/table/spot output goes through here so per-motor CONTINUOUS
+    # energized time survives state transitions (the per-state motion timer in
+    # poll() resets on every _enter() — that reset is exactly the H-02 gap).
+    def _track_motor(self, name, on):
+        since = self._energized_since[name]
+        if on:
+            if since is None:                     # off->on opens the window;
+                self._energized_since[name] = self.io.now()   # on->on is a latch no-op
+        elif since is not None:                   # on->off closes the window
+            run = self.io.now() - since
+            if run > self._energized_longest[name]:
+                self._energized_longest[name] = run
+            self._energized_since[name] = None
+
+    def _set_sweep(self, on):
+        self._track_motor("sweep", on)
+        self.io.set_sweep(on)
+
+    def _set_table(self, on):
+        self._track_motor("table", on)
+        self.io.set_table(on)
+
+    def _set_spot(self, on):
+        self._track_motor("spot", on)
+        self.io.set_spot(on)
 
     def _safe_sweep(self, on):
         """Energize/de-energize the sweep. Returns False when an energize is REFUSED
@@ -194,7 +288,7 @@ class CycleController:
         if on and not self.io.interlock_ok():
             self.io.log(f"L{self.lane}: SWEEP energize BLOCKED — interlock open (safety)")
             return False
-        self.io.set_sweep(on)
+        self._set_sweep(on)
         return True
 
     def _safe_table(self, on):
@@ -203,15 +297,111 @@ class CycleController:
         if on and not self.io.interlock_ok():
             self.io.log(f"L{self.lane}: TABLE energize BLOCKED — interlock open (safety)")
             return False
-        self.io.set_table(on)
+        self._set_table(on)
         return True
 
-    def _fault(self, why):
+    def _fault(self, why, code=None):
         """Latch FAULT: motors off, state FAULT. Recovery is operator-deliberate —
-        PBZ (-> MANUAL_INTERVENTION) then a second PBZ to re-arm; never automatic."""
+        PBZ (-> MANUAL_INTERVENTION) then a second PBZ to re-arm; never automatic.
+
+        R3: `code` is a stable machine-readable fault code (see the internal call
+        sites for the full set). Backward compatible — _fault(why) alone still
+        works (external callers get code='unspecified'). last_fault snapshots the
+        code + free text + the state the fault fired IN (pre-FAULT) + io.now()."""
+        self.last_fault = {
+            "code": code or "unspecified",
+            "why": why,
+            "state": self.state.value,
+            "t": self.io.now(),
+        }
         self.io.log(f"L{self.lane}: FAULT — {why}; motors OFF")
         self._all_motors_off()
         self._enter(State.FAULT)
+        self._emit_diag({"kind": "fault", "lane": self.lane, **self.last_fault})
+
+    # ---- diagnostics plumbing (R3; observe-only, never raises) --------------
+    def _emit_diag(self, event):
+        """Offer a diagnostics event dict to the optional injected on_diag hook.
+        None-safe, env-gated, and NEVER raises into control flow — a broken hook
+        is swallowed and counted, per the diagnostics contract."""
+        hook = self.on_diag
+        if hook is None or not _env_on(DIAG_ENV):
+            return
+        try:
+            hook(event)
+        except Exception:
+            self.diag_drops += 1
+
+    def _diag_unexpected(self, event_name):
+        """Unexpected-edge observer (scope doc §1 'cam out-of-order'): an event
+        arrived in a state whose handler ignores it. Increment the bounded
+        per-(event,state) counter + offer it to on_diag. NEVER changes state,
+        drives no output, never raises.
+
+        NOTE for consumers: rp2040_link.dispatch_cam fires BOTH angle-variants
+        of the dual-lobe SA/TA1 cams per physical edge, and BS closes routinely
+        as the back end refills the bin — so some keys (e.g.
+        'cam_SA_runthrough:table_finish', 'cam_TA1_zero:table_detect',
+        'bin_full:ready') increment on perfectly NORMAL cycles. Baseline per-key;
+        a nonzero count is not by itself a fault signal. The dangerous keys are
+        cam edges in the at-rest states (READY/MANUAL_INTERVENTION/FAULT) =
+        uncommanded motion."""
+        if not _env_on(DIAG_ENV):
+            return
+        try:
+            key = f"{event_name}:{self.state.value}"
+            n = self.diag_counters.get(key, 0) + 1
+            self.diag_counters[key] = n
+            self._emit_diag({"kind": "unexpected_edge", "event": event_name,
+                             "state": self.state.value, "lane": self.lane,
+                             "t": self.io.now(), "count": n})
+        except Exception:
+            self.diag_drops += 1
+
+    def _check_motor_overrun(self, now):
+        """H-02 backstop: a motor output continuously energized past
+        MAX_MOTOR_ENERGIZED_S — across ANY number of state transitions — latches
+        the existing FAULT path. This is the ONE sanctioned trip-authority
+        addition of the diagnostics campaign; the env kill-switch reverts it to
+        observe-only tracking. Single-state stalls still fault FIRST via the
+        per-state MAX_MOTION_S timer (MAX_MOTOR_ENERGIZED_S > MAX_MOTION_S), so
+        this only ever fires on the cross-state runs the per-state timer misses."""
+        if self.state is State.FAULT:
+            return
+        for name in ("sweep", "table", "spot"):
+            since = self._energized_since[name]
+            if since is None:
+                continue
+            run = now - since
+            if run > self._energized_longest[name]:   # keep longest fresh while ON
+                self._energized_longest[name] = run
+            if run > MAX_MOTOR_ENERGIZED_S and _env_on(MOTOR_OVERRUN_TRIP_ENV):
+                self._fault(
+                    f"{name} energized {run:.1f}s continuously across state "
+                    f"transitions (> MAX_MOTOR_ENERGIZED_S={MAX_MOTOR_ENERGIZED_S}s)",
+                    code=f"motor_energized_overrun:{name}")
+                return                                 # motors now off; windows closed
+
+    def diagnostics_snapshot(self):
+        """Observe-only snapshot for the daemon/emitters: unexpected-edge
+        counters, per-motor energized seconds (current continuous run + longest
+        seen), last_fault, and the hook drop counter. Cheap — a handful of small
+        dicts per call, no history, no allocation storms."""
+        now = self.io.now()
+        energized = {}
+        longest = dict(self._energized_longest)
+        for name, since in self._energized_since.items():
+            run = 0.0 if since is None else now - since
+            energized[name] = run
+            if run > longest[name]:
+                longest[name] = run
+        return {
+            "counters": dict(self.diag_counters),
+            "motor_energized_s": energized,
+            "motor_longest_run_s": longest,
+            "last_fault": dict(self.last_fault) if self.last_fault else None,
+            "diag_drops": self.diag_drops,
+        }
 
     def _enter(self, state):
         self.state = state
@@ -227,6 +417,9 @@ class CycleController:
         """SS / DIELL: a ball was thrown. Start a cycle if READY + safe."""
         if self.state is not State.READY:
             self.io.log(f"L{self.lane}: ball ignored (state={self.state.value})")
+            # ball events during motion states are the continuous-cycling / jam
+            # signature (scope doc §1) — count them, never act on them.
+            self._diag_unexpected("on_ball")
             return
         if not self.io.interlock_ok():
             self.io.log(f"L{self.lane}: ball ignored — interlock open")
@@ -258,9 +451,11 @@ class CycleController:
     # Each handler maps directly to a step in SYSTEM_REFERENCE §2.
     def cam_SB_guard(self):          # sweep reached 66°
         if self.state is State.SWEEP_TO_GUARD:
-            self.io.set_sweep(False)
+            self._set_sweep(False)
             self._enter(State.GUARD_DELAY)     # start 3s settle (poll() checks GP + timer)
             self.io.log(f"L{self.lane}: sweep@66 guard -> {TIME_DELAY_S}s delay")
+        else:
+            self._diag_unexpected("cam_SB_guard")
 
     def cam_TA2_runthrough(self):    # table reached 260°
         if self.state is State.TABLE_DETECT:
@@ -273,10 +468,13 @@ class CycleController:
             if not self._safe_sweep(True):             # sweep run-through begins
                 # refused mid-motion with the table descending: do NOT pretend the
                 # run-through started — stop everything and latch FAULT.
-                self._fault("sweep energize refused at TA2@260 (interlock)")
+                self._fault("sweep energize refused at TA2@260 (interlock)",
+                            code="refused_energize:sweep")
                 return
             self._enter(State.RUNTHROUGH)
             self.io.log(f"L{self.lane}: TA2@260 pins={self.pins:010b} cycle={self.cycle.value} -> runthrough")
+        else:
+            self._diag_unexpected("cam_TA2_runthrough")
 
     def _needs_fresh_rack(self):
         """True for cycles that clear the deck + spot a NEW full rack (via SP),
@@ -289,7 +487,7 @@ class CycleController:
 
     def cam_SA_runthrough(self):     # sweep reached 270° (cam SA -> C2A-31N)
         if self.state is State.RUNTHROUGH:
-            self.io.set_sweep(False)
+            self._set_sweep(False)
             self._enter(State.TABLE_FINISH)
             # Fresh-rack cycles wait for BS (bin full) -> bin_full() fires SP.
             # 1st-ball respot needs no SP and completes once table zero (TA1) has
@@ -300,10 +498,20 @@ class CycleController:
                 # table already reached zero during RUNTHROUGH (TA1 honored there):
                 # both motions are complete -> the respot cycle is done.
                 self._finish_cycle()
+        else:
+            # NOTE: increments once per NORMAL cycle in TABLE_FINISH/SPOTTING —
+            # the SA@360 lobe of the dual-trip SA cam (dispatch_cam fires both
+            # variants). Baseline per-key; see _diag_unexpected.
+            self._diag_unexpected("cam_SA_runthrough")
 
     def cam_TA1_delayreset(self):    # table passed 185° (cam TA1 -> C2A-34N)
-        # resets the time-delay memory (§2). No motor change here.
-        pass
+        # resets the time-delay memory (§2). No motor change here. The table
+        # legitimately passes 185° whenever its revolution is in flight; a TA1
+        # edge in any OTHER state means the table is physically turning with no
+        # command — count it (observe-only).
+        if self.state not in (State.TABLE_DETECT, State.RUNTHROUGH,
+                              State.TABLE_FINISH, State.SPOTTING):
+            self._diag_unexpected("cam_TA1_delayreset")
 
     def cam_TA1_zero(self):          # table reached 355°/zero (cam TA1 -> C2A-34N)
         # Table zero stop. Honored in EVERY state where the table is commanded on —
@@ -312,12 +520,12 @@ class CycleController:
         # TABLE_FINISH (respot) or SPOTTING (fresh rack: release SP once the
         # spotting revolution returns the table to zero).
         if self.state is State.SPOTTING:
-            self.io.set_spot(False)      # CONFIRM: SP de-energize timing vs cam
-            self.io.set_table(False)
+            self._set_spot(False)        # CONFIRM: SP de-energize timing vs cam
+            self._set_table(False)
             self._table_done = True
             self._finish_cycle()
         elif self.state is State.TABLE_FINISH:
-            self.io.set_table(False)
+            self._set_table(False)
             self._table_done = True
             if self._needs_fresh_rack():
                 # fresh-rack: table parked at zero; STAY in TABLE_FINISH awaiting
@@ -329,13 +537,20 @@ class CycleController:
         elif self.state is State.RUNTHROUGH:
             # zero-stop arriving while the sweep run-through is still in motion:
             # stop the table NOW and latch table_done; cam_SA_runthrough completes.
-            self.io.set_table(False)
+            self._set_table(False)
             self._table_done = True
             self.io.log(f"L{self.lane}: TA1@zero during run-through — table stopped at zero")
+        else:
+            # NOTE: increments once per NORMAL cycle in TABLE_DETECT — the
+            # TA1@185 lobe of the dual-trip TA1 cam during the descent
+            # (dispatch_cam fires both variants). Baseline per-key.
+            self._diag_unexpected("cam_TA1_zero")
 
     def cam_SA_zero(self):           # sweep reached 360°/zero (cam SA -> C2A-31N)
         if self.state in (State.TABLE_FINISH, State.SPOTTING):
-            self.io.set_sweep(False)
+            self._set_sweep(False)
+        else:
+            self._diag_unexpected("cam_SA_zero")
 
     def bin_full(self):              # BS: 10th pin delivered to bin (BS -> C2A-112cc)
         """Bin full (BS closes). On fresh-rack cycles (2nd/strike/foul), this is
@@ -348,17 +563,23 @@ class CycleController:
             if not self.io.interlock_ok():
                 self.io.log(f"L{self.lane}: BS but interlock open — SP BLOCKED (safety)")
                 return
-            self.io.set_spot(True)
+            self._set_spot(True)
             # The spotting revolution needs the table driven. If the table already
             # stopped at zero (TA1 honored during run-through / TABLE_FINISH) this
             # re-energizes it; if it is still running this is a latch no-op.
             # CONFIRM SP-vs-table drive interplay on the bench.
             if not self._safe_table(True):
-                self.io.set_spot(False)      # never leave SP latched with no revolution
-                self._fault("table energize refused for spotting revolution")
+                self._set_spot(False)        # never leave SP latched with no revolution
+                self._fault("table energize refused for spotting revolution",
+                            code="refused_energize:table")
                 return
             self._enter(State.SPOTTING)
             self.io.log(f"L{self.lane}: BS@bin-full -> SP energized, spotting fresh rack")
+        else:
+            # NOTE: BS closes ROUTINELY as the back end refills the bin (any
+            # state, respot cycles included) — these keys are expected-noise;
+            # baseline per-key, never treat nonzero as a fault by itself.
+            self._diag_unexpected("bin_full")
 
     def _finish_cycle(self):
         """End-of-cycle bookkeeping: flip ball memory / reset strike+foul (§2)."""
@@ -379,6 +600,12 @@ class CycleController:
         self.io.watchdog_kick()
         now = self.io.now()
 
+        # H-02: per-motor continuous energized-time backstop — checked in EVERY
+        # state (a motor stuck ON with the FSM at rest is exactly the case the
+        # per-state timer below can never see). May latch FAULT; the rest of
+        # poll() then falls through its state guards harmlessly.
+        self._check_motor_overrun(now)
+
         # GUARD_DELAY: after 3s (and GP closed) start the table down — or, with the
         # bench-gated sequence fix enabled, send the sweep straight into the
         # run-through on SECOND_BALL/FOUL (table stays at zero, §2).
@@ -398,7 +625,8 @@ class CycleController:
             # Bounded wait: GP never closing (wedged pin?) or a persistently refused
             # energize must surface as FAULT, not stall here silently forever.
             if self.state is State.GUARD_DELAY and (now - self._t_state) > GUARD_DELAY_MAX_S:
-                self._fault(f"GUARD_DELAY > {GUARD_DELAY_MAX_S}s (GP open or energize refused)")
+                self._fault(f"GUARD_DELAY > {GUARD_DELAY_MAX_S}s (GP open or energize refused)",
+                            code="guard_delay_timeout")
             return
 
         if self.state in MOTION_STATES:
@@ -406,7 +634,8 @@ class CycleController:
             # motion state is active, stop everything and latch FAULT — never let
             # the FSM and the physical machine silently diverge.
             if not self.io.interlock_ok():
-                self._fault(f"interlock opened mid-motion ({self.state.value})")
+                self._fault(f"interlock opened mid-motion ({self.state.value})",
+                            code=f"interlock_open:{self.state.name}")
                 return
             # BS LEVEL poll (bench-gated): a bin that is ALREADY full at
             # TABLE_FINISH must still spot the fresh rack (the daemon's BS edge
@@ -419,7 +648,8 @@ class CycleController:
             # Safety backstop: any motion state stuck too long -> FAULT + power off.
             # Includes SPOTTING (SP energized) — a stuck spotting rev must also fault.
             if (now - self._t_state) > MAX_MOTION_S:
-                self._fault(f"{self.state.value} > {MAX_MOTION_S}s (motion never completed)")
+                self._fault(f"{self.state.value} > {MAX_MOTION_S}s (motion never completed)",
+                            code=f"motion_timeout:{self.state.name}")
 
 
 # --------------------- bench simulator (R1, no hardware) ------------------------
@@ -530,12 +760,26 @@ if __name__ == "__main__":
     assert c.state is State.READY and c.ball is Ball.SECOND, \
         f"respot completes once sweep also stops (got {c.state})"
 
+    # --- R3: MEASURE the longest LEGAL continuous per-motor energized run.  ---
+    # Captured HERE — after the 3 full cycles + the TA1-ordering cycle, BEFORE
+    # any fault-injection below pollutes the windows. This measurement (plus the
+    # 12.1 RPM real-machine scaling documented at MAX_MOTOR_ENERGIZED_S) is what
+    # the H-02 default is derived from — sim-measured, not guessed.
+    legal_runs = dict(c._energized_longest)
+    print("\n  [diag] longest LEGAL continuous energized runs (sim timings): "
+          + ", ".join(f"{k}={v:.2f}s" for k, v in sorted(legal_runs.items())))
+    assert max(legal_runs.values()) > 0, "measurement must have captured real runs"
+    assert max(legal_runs.values()) * 1.5 <= MAX_MOTOR_ENERGIZED_S, \
+        "MAX_MOTOR_ENERGIZED_S must clear the sim's longest legal run by >=50%"
+
     # --- R2: motion timeout -> FAULT; PBZ recovers (two deliberate presses) ---
     print("\n--- R2: FAULT recovery via PBZ ---")
     c.on_ball()                         # 2nd-ball cycle starts (sweep on)
     assert c.state is State.SWEEP_TO_GUARD
     io.t = round(io.t + MAX_MOTION_S + 0.2, 2); c.poll()
     assert c.state is State.FAULT, "stuck motion must FAULT"
+    assert c.last_fault and c.last_fault["code"] == "motion_timeout:SWEEP_TO_GUARD", \
+        f"structured fault code expected (got {c.last_fault})"
     c.on_ball()
     assert c.state is State.FAULT, "ball in FAULT must be ignored"
     c.first_ball_zero()
@@ -617,9 +861,36 @@ if __name__ == "__main__":
     assert c5.state is State.READY and c5.ball is Ball.FIRST
     SKIP_TABLE_DESCENT_ON_SECOND_BALL = False
     POLL_BS_LEVEL_IN_TABLE_FINISH = False
+    # fold the skip-descent path's legal runs into the H-02 margin check too
+    assert max(c5._energized_longest.values()) * 1.5 <= MAX_MOTOR_ENERGIZED_S, \
+        "skip-descent path legal runs must also clear the H-02 default by >=50%"
+
+    # --- R3: H-02 — a motor energized CONTINUOUSLY across state transitions ---
+    # Each state stays under MAX_MOTION_S (the per-state timer never fires — that
+    # reset-per-transition is the H-02 bug), but the table's continuous run
+    # crosses MAX_MOTOR_ENERGIZED_S -> the overrun backstop latches FAULT.
+    print("\n--- R3: per-motor energized-time overrun (H-02) ---")
+    c6 = CycleController(26, io)
+    c6.power_restore(); c6.first_ball_zero()
+    io.grip = 0b0000000101              # 1st-ball respot: table stays on to TA1
+    c6.on_ball(); c6.cam_SB_guard()
+    io.t = round(io.t + TIME_DELAY_S + 0.1, 2); c6.poll()
+    assert c6.state is State.TABLE_DETECT      # table energized here
+    io.t = round(io.t + 6.0, 2); c6.poll()     # 6s < MAX_MOTION_S: no per-state fault
+    c6.cam_TA2_runthrough()                    # timer resets; table STAYS energized
+    io.t = round(io.t + 6.0, 2); c6.poll()     # 12s continuous — still under ceiling
+    assert c6.state is State.RUNTHROUGH, "under MAX_MOTOR_ENERGIZED_S: no trip yet"
+    c6.cam_SA_runthrough()                     # timer resets again; table still on
+    io.t = round(io.t + 4.0, 2); c6.poll()     # 16s continuous > 15s ceiling
+    assert c6.state is State.FAULT, "cross-state energized overrun must FAULT (H-02)"
+    assert c6.last_fault["code"] == "motor_energized_overrun:table", c6.last_fault
+    snap = c6.diagnostics_snapshot()
+    assert snap["motor_longest_run_s"]["table"] > MAX_MOTOR_ENERGIZED_S
+    assert snap["motor_energized_s"]["table"] == 0.0, "FAULT de-energized the table"
 
     print("\nALL ASSERTS PASSED (1st-ball respot, 2nd-ball SP spot, strike SP spot, "
           "interlock guard, R2: TA1-in-runthrough ordering, FAULT/PBZ recovery, "
           "foul window, refused-energize, bounded GUARD_DELAY, mid-motion interlock, "
-          "PBZ at-zero gate, bench-gated switch wiring).")
+          "PBZ at-zero gate, bench-gated switch wiring, R3: fault codes + H-02 "
+          "energized-overrun + legal-run margin measurement).")
     sys.exit(0)

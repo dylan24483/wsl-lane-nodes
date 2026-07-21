@@ -87,6 +87,27 @@ IN_A_MAP = {
 }
 GRIPPER_ORDER = [f"GS{i}" for i in range(1, 11)]  # GS1=bit0 ... GS10=bit9 of the mask
 
+# ---- slow-input bit map on IN-B (chip 0x21) — matches generator SLOW_INPUT_PINS ----
+# 10th-frame + the manual-motion switches + the 3 spare AUX sensor channels
+# (2026-07-19 diagnostics scope: manual-override visibility -> alert suppression;
+# AUX1-3 are the only populated spare inputs — BE current switch / exit photoeye /
+# distributor index land here when installed).
+# ⚠️ SOURCE OF TRUTH = the netlist generator's SLOW_INPUT_PINS MCP_IN_B entries
+# (the channel-map doc's IN-B channel count was stale — netlist wins; PBC is on
+# IN-A GPB6, NOT here). All 8 channels are GPA0-7; GPB0-7 are unpopulated
+# (respin-only spares, no optos/connector). The __main__ regression guard below
+# re-derives this from the generator and fails on drift.
+IN_B_MAP = {
+    "TENTH":    (0, 0),  # 10th-frame button      gen pin 21
+    "MAN_T":    (0, 1),  # manual table           gen pin 22
+    "MAN_S":    (0, 2),  # manual sweep           gen pin 23
+    "MAN_SWS":  (0, 3),  # manual sweep-switch    gen pin 24
+    "MAN_SWSR": (0, 4),  # manual sweep reverse   gen pin 25
+    "AUX1":     (0, 5),  # spare (be_current)     gen pin 26
+    "AUX2":     (0, 6),  # spare (exit_beam)      gen pin 27
+    "AUX3":     (0, 7),  # spare (dist_index)     gen pin 28
+}
+
 # Optos are active-low at the MCP pin (switch closed → opto pulls pin LOW).
 # So "asserted/closed" = pin reads 0. INPUT_ACTIVE_LOW flips that in firmware;
 # set False per-channel only if a particular front-end is wired active-high.
@@ -245,9 +266,27 @@ class MachineIO:
 
     # ---- slow inputs (FSM reads) ------------------------------------------
     def _read_in(self, name):
-        port, bit = IN_A_MAP[name]
-        raw = (self.in_a.read_port(port) >> bit) & 1
+        # IN-A first (the FSM's inputs), IN-B for the diagnostics channels
+        # (manual/10th/AUX). Same opto front-end -> same active-low semantics;
+        # edge detection + debounce stay the daemon's job, exactly as for IN-A.
+        if name in IN_A_MAP:
+            chip, (port, bit) = self.in_a, IN_A_MAP[name]
+        else:
+            chip, (port, bit) = self.in_b, IN_B_MAP[name]
+        raw = (chip.read_port(port) >> bit) & 1
         return (raw == 0) if INPUT_ACTIVE_LOW else (raw == 1)
+
+    def read_inputs_b(self):
+        """All IN-B channels decoded from ONE port read (every channel sits on
+        GPA0-7 — see IN_B_MAP). {name: asserted}; same active-low convention and
+        edge/debounce ownership as the IN-A reads. Cheap enough for the daemon's
+        per-tick slow poll (a single I²C register read)."""
+        p0 = self.in_b.read_port(0)
+        out = {}
+        for name, (_port, bit) in IN_B_MAP.items():
+            raw = (p0 >> bit) & 1
+            out[name] = (raw == 0) if INPUT_ACTIVE_LOW else (raw == 1)
+        return out
 
     def read_grippers(self):
         """10-bit standing-pin mask (bit n-1 = GSn standing). Reads both ports
@@ -370,6 +409,7 @@ class RecordingIO:
     def gp_closed(self): return self.gp
     def bs_closed(self): return self.bs
     def read_input(self, name): return bool(self.slow.get(name, False))
+    def read_inputs_b(self): return {n: bool(self.slow.get(n, False)) for n in IN_B_MAP}
     def interlock_ok(self): return self._rp2040.interlock_ok() if self._rp2040 is not None else self.interlock
 
     # housekeeping
@@ -462,6 +502,7 @@ class ShadowIO:
     def gp_closed(self): return self._io.gp_closed()
     def bs_closed(self): return self._io.bs_closed()
     def read_input(self, name): return self._io.read_input(name)
+    def read_inputs_b(self): return self._io.read_inputs_b()
     def interlock_ok(self): return self._io.interlock_ok()
     def watchdog_kick(self): return self._io.watchdog_kick()
     def now(self):
@@ -531,5 +572,18 @@ if __name__ == "__main__":
     exp_in = {("Foul" if n == "FOUL" else n): _pin_to_portbit(p)
               for n, (chip, p) in gdicts["SLOW_INPUT_PINS"].items() if chip == "MCP_IN_A"}
     assert IN_A_MAP == exp_in, f"IN_A_MAP drift vs generator:\n  code={IN_A_MAP}\n  gen ={exp_in}"
-    print(f"pin maps match the PCB generator: OUT_A_MAP({len(OUT_A_MAP)}) + IN_A_MAP({len(IN_A_MAP)}) OK")
+
+    exp_inb = {n: _pin_to_portbit(p)
+               for n, (chip, p) in gdicts["SLOW_INPUT_PINS"].items() if chip == "MCP_IN_B"}
+    assert IN_B_MAP == exp_inb, f"IN_B_MAP drift vs generator:\n  code={IN_B_MAP}\n  gen ={exp_inb}"
+    assert all(port == 0 for (port, _bit) in IN_B_MAP.values()), \
+        "read_inputs_b assumes every IN-B channel is on GPA (one port read)"
+
+    # read_inputs_b smoke on the fake: scripted levels come back per-name
+    rio = RecordingIO()
+    rio.slow["MAN_T"] = True
+    inb = rio.read_inputs_b()
+    assert set(inb) == set(IN_B_MAP) and inb["MAN_T"] is True and inb["AUX1"] is False, inb
+    print(f"pin maps match the PCB generator: OUT_A_MAP({len(OUT_A_MAP)}) + "
+          f"IN_A_MAP({len(IN_A_MAP)}) + IN_B_MAP({len(IN_B_MAP)}) OK")
     sys.exit(0)

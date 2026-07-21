@@ -11,7 +11,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 # Make wsl_scoring_engine importable from sys.path regardless of OS
 # or where this file is launched from. This used to be a hardcoded
@@ -20,8 +20,14 @@ from urllib.parse import urlparse
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-from wsl_scoring_engine import LaneScoring, CrossLaneScoring
+from wsl_scoring_engine import LaneScoring, CrossLaneScoring, mask_to_standing
 from state_store import save_lanes, load_lanes, get_save_status
+from lane_fx_protocol import LaneFxPublisher
+# Machine/Equipment diagnostics domain — this server is the SINGLE
+# OWNER of machine_cycles/machine_events (scope doc §2); wsl_api is a
+# pure proxy. Storage + validation live in machine_store; the HTTP
+# surface is registered in HttpHandler below.
+import machine_store
 
 from websockets.asyncio.server import serve
 
@@ -57,6 +63,21 @@ clients = {}
 client_metadata = {}  # node_id -> {"lanes": [...], "protocol_version": N, "connected_at": float, "last_heartbeat": float}
 main_loop = None
 SERVER_START_TIME = time.time()
+# Cosmetic events leave the hardware-control process over one-way,
+# nonblocking loopback UDP. The separate gateway owns subscriber sockets,
+# replay, and backpressure; a failed renderer must never stall this process.
+fx_publisher = LaneFxPublisher()
+
+
+def _emit_fx_event(payload):
+    """No-throw boundary for every cosmetic event tap."""
+    try:
+        return fx_publisher.emit(payload)
+    except Exception as exc:
+        log.warning("Lane FX publish failed (authoritative path unaffected): %s",
+                    exc)
+        return False
+
 
 def get_or_create_lane(lane_id, bowlers=None):
     if lane_id not in lane_scoring:
@@ -69,6 +90,68 @@ def get_or_create_lane(lane_id, bowlers=None):
     return lane_scoring[lane_id]
 
 PIN_MASK_CYCLE = [0b0000011111, 0, 0, 0b0001111111, 0b0000001111, 0]
+
+
+def _strike_streak(frames):
+    """Count consecutive strike deliveries, including 10th-frame fills."""
+    streak = 0
+    for frame in reversed(frames):
+        for bowl in reversed(frame.bowls):
+            if bowl.display != 'X':
+                return streak
+            streak += 1
+    return streak
+
+
+def _build_ball_fx_payload(lane, bowl, pin_mask, foul, thrower_snapshot,
+                           frame_before, frames_before, mode, next_bowler):
+    """Build an immutable cosmetic event after record_ball returns.
+
+    LaneScoring immediately resets BowlerGame objects when the final ball
+    ends a game. The caller therefore snapshots scalar bowler/game fields and
+    the old frame objects before recording. This preserves the actual final
+    ball instead of accidentally describing the newly-started game.
+    """
+    if bowl is None or frame_before is None or thrower_snapshot is None:
+        return None
+    standing = mask_to_standing(pin_mask & 0x3FF)
+    running_total = next(
+        (frame.score for frame in reversed(frames_before)
+         if frame.score is not None), 0)
+    split_converted = bool(
+        bowl.num == 2
+        and frame_before.is_spare
+        and frame_before.bowls
+        and frame_before.bowls[0].split)
+    game_over = bool(frame_before.number == 10 and frame_before.is_complete)
+    return {
+        "type": "ball",
+        "lane": lane,
+        "bowler": thrower_snapshot,
+        "ball_in_frame": bowl.num,
+        "frame_number": frame_before.number,
+        "display": bowl.display,
+        # Scored pinfall for this delivery (zero on a foul), not the total
+        # number absent from the deck after a second ball.
+        "pins_down": bowl.pins_down,
+        "pin_mask": pin_mask & 0x3FF,
+        "standing": standing,
+        "foul": bool(foul),
+        # The engine stores split as a bool; standing identifies the leave.
+        "split": bool(bowl.split),
+        "split_converted": split_converted,
+        "is_strike": bool(frame_before.is_strike),
+        "is_spare": bool(frame_before.is_spare),
+        "frame_complete": bool(frame_before.is_complete),
+        "strike_streak": _strike_streak(frames_before),
+        "frame_score": frame_before.score,
+        "running_total": running_total,
+        "game_over": game_over,
+        "game_number": thrower_snapshot["game_number"],
+        "mode": mode,
+        "next_bowler": next_bowler,
+        "test": False,
+    }
 
 
 def _process_ball_event(lane, pin_mask=None):
@@ -91,20 +174,55 @@ def _process_ball_event(lane, pin_mask=None):
     auto-create a phantom 'TEST' game. Only the open / open-league
     endpoints create lane state.
 
-    Returns (bowl, pin_mask, foul) — caller can use these for logging
-    or HTTP response payloads. bowl is None when the lane isn't open.
+    Returns (bowl, pin_mask, foul, fx_payload). The caller publishes the
+    cosmetic payload only after the current logical CYCLE reply is complete.
+    In Track A the OEM controller owns physical cycle and this server reply is
+    not an authorized machine driver.
+    bowl is None when the lane isn't open.
     """
+    fx_payload = None
+    thrower_name = None
     with state_lock:
         ls = lane_scoring.get(lane)
         if ls is None or not getattr(ls, 'is_active', False):
             log.warning(f"Lane {lane}: ball event ignored — lane not open "
                         f"(no active scoring state)")
-            return None, pin_mask, False
+            return None, pin_mask, False, None
         n = ball_counters.get(lane, 0)
         if pin_mask is None:
             pin_mask = PIN_MASK_CYCLE[n % len(PIN_MASK_CYCLE)]
         ball_counters[lane] = n + 1
         foul = pending_foul.pop(lane, False)
+        # Snapshot the actual thrower before record_ball. After a completed
+        # frame the scorer advances to the next bowler; after a completed game
+        # it immediately reinitializes this BowlerGame for the next game.
+        try:
+            if hasattr(ls, 'record_ball_for_lane'):
+                thrower = ls.current_bowler_for_lane(lane)
+                mode = 'cross_lane'
+            else:
+                thrower = ls.current_bowler
+                mode = 'single_lane'
+            frame_before = (thrower.frames[thrower.current_frame_idx]
+                            if thrower is not None else None)
+            frames_before = (tuple(thrower.frames)
+                             if thrower is not None else ())
+            thrower_snapshot = ({
+                "name": thrower.name,
+                "number": thrower.number,
+                "hdcp": thrower.hdcp,
+                "game_number": thrower.game_number,
+            } if thrower is not None else None)
+            thrower_name = thrower.name if thrower is not None else None
+        except Exception as exc:
+            # FX metadata is cosmetic. A future engine-shape change must not
+            # prevent scoring or the caller's subsequent CYCLE command.
+            log.warning("Lane %s: FX pre-ball snapshot failed (scoring "
+                        "continues): %s", lane, exc)
+            thrower_snapshot = None
+            frame_before = None
+            frames_before = ()
+            mode = 'unknown'
         # Route by physical lane when the scorer is CrossLaneScoring —
         # otherwise CrossLaneScoring.record_ball() always falls back to
         # lane_left, which means a score posted to /api/lane/22/score
@@ -112,17 +230,26 @@ def _process_ball_event(lane, pin_mask=None):
         # LaneScoring (single-lane) has no record_ball_for_lane method.
         if hasattr(ls, 'record_ball_for_lane'):
             bowl = ls.record_ball_for_lane(lane, pin_mask, foul=foul)
-            current_for_log = ls.current_bowler_for_lane(lane)
+            current_after = ls.current_bowler_for_lane(lane)
         else:
             bowl = ls.record_ball(pin_mask, foul=foul)
-            current_for_log = ls.current_bowler
+            current_after = ls.current_bowler
         save_lanes(lane_scoring, ball_counters)
+        try:
+            fx_payload = _build_ball_fx_payload(
+                lane, bowl, pin_mask, foul, thrower_snapshot, frame_before,
+                frames_before, mode,
+                current_after.name if current_after else None)
+        except Exception as exc:
+            log.warning("Lane %s: FX payload build failed (scoring saved): %s",
+                        lane, exc)
+            fx_payload = None
     if bowl:
         pd = 10 - bin(pin_mask).count("1")
         foul_marker = " [FOUL]" if foul else ""
-        log.info(f"Lane {lane}: {current_for_log.name if current_for_log else '?'}"
+        log.info(f"Lane {lane}: {thrower_name or '?'}"
                  f" → {bowl.display} ({pd} pins, mask={pin_mask:#012b}){foul_marker}")
-    return bowl, pin_mask, foul
+    return bowl, pin_mask, foul, fx_payload
 
 # Bump this whenever a message type's shape changes incompatibly.
 # Compared against the node's PROTOCOL_VERSION on HELLO; mismatch logs
@@ -316,13 +443,21 @@ async def handle_node(websocket):
                 #                  POST /api/lane/<N>/score with real pins.
                 #                  Otherwise we'd score bogus PIN_MASK_CYCLE
                 #                  values on every real ball.
+                fx_payload = None
                 if awaiting_manual or pin_mask is None:
                     log.info(f"Lane {lane}: BALL detected (manual mode — "
-                             f"awaiting /score POST from desk). Cycling pinsetter.")
+                             "awaiting /score POST from desk). Sending logical "
+                             "CYCLE reply; Track-A physical cycle is OEM-owned.")
                 else:
-                    _process_ball_event(lane, pin_mask=pin_mask)
+                    _, _, _, fx_payload = _process_ball_event(
+                        lane, pin_mask=pin_mask)
 
                 await websocket.send(encode(Msg.CYCLE, lane=lane))
+                # Cosmetic publication is deliberately after the current
+                # logical CYCLE reply. In Track A the OEM independently owns
+                # physical cycle; FX serialization/transport delays neither.
+                if fx_payload is not None:
+                    _emit_fx_event(fx_payload)
 
             elif mt == Msg.FOUL_EVENT:
                 lane = msg.get("lane")
@@ -622,6 +757,43 @@ class HttpHandler(BaseHTTPRequestHandler):
                                   json.dumps({"ok": True, "lane": lane, "open": False,
                                               "players": []}).encode('utf-8'))
             self._send(200, 'application/json', json.dumps(resp).encode('utf-8'))
+        elif path_only.startswith('/api/lane/') and path_only.endswith('/diagnostics'):
+            # /api/lane/<N>/diagnostics — machine-domain view for one lane:
+            # unresolved faults + last N events (?events=N, default 50) +
+            # latest cycle intervals + baseline summary. Read-only, so it
+            # stays open like the other GETs (LAN-internal posture).
+            parts = path_only.strip('/').split('/')
+            if len(parts) != 4:
+                return self._send(404, 'application/json', b'{"error":"not found"}')
+            try:
+                lane = int(parts[2])
+            except ValueError:
+                return self._send(400, 'application/json', b'{"error":"bad lane"}')
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                events_limit = int((query.get('events') or ['50'])[0])
+            except ValueError:
+                events_limit = 50
+            try:
+                payload = machine_store.lane_diagnostics(
+                    lane, events_limit=events_limit)
+            except Exception as e:
+                log.warning(f"lane_diagnostics({lane}) failed: {e}")
+                return self._send(500, 'application/json',
+                                  b'{"error":"diagnostics unavailable"}')
+            self._send(200, 'application/json',
+                       json.dumps(payload).encode('utf-8'))
+        elif path_only == '/api/machine/health':
+            # Bulk per-lane machine rollup — the ONE endpoint wsl_api polls
+            # (idle-machine faults must surface without a per-lane fanout).
+            try:
+                payload = machine_store.machine_health()
+            except Exception as e:
+                log.warning(f"machine_health failed: {e}")
+                return self._send(500, 'application/json',
+                                  b'{"error":"machine health unavailable"}')
+            self._send(200, 'application/json',
+                       json.dumps(payload).encode('utf-8'))
         elif self.path == '/api/state':
             with state_lock:
                 snap = {str(l): ls.to_scoring_response() for l, ls in lane_scoring.items()}
@@ -648,6 +820,10 @@ class HttpHandler(BaseHTTPRequestHandler):
                 nodes_connected = len(clients)
                 nodes_meta = {nid: dict(meta)
                               for nid, meta in client_metadata.items()}
+            try:
+                machine_section = machine_store.health_counts()
+            except Exception as e:
+                machine_section = {"ok": False, "error": str(e)}
             health = {
                 "ok": True,
                 "uptime_sec": round(uptime_sec, 1),
@@ -670,6 +846,12 @@ class HttpHandler(BaseHTTPRequestHandler):
                 "pending_fouls": pending_fouls,
                 "state_db": str(__import__('state_store').DB_PATH),
                 "state_save": get_save_status(),
+                "lane_fx": fx_publisher.status(),
+                # Counts only (scope task 3) — the full rollup lives at
+                # /api/machine/health. health_counts() catches its own
+                # DB errors; the extra guard keeps /api/health alive
+                # even if machine_store itself is broken.
+                "machine": machine_section,
             }
             self._send(200, 'application/json',
                        json.dumps(health, indent=2).encode('utf-8'))
@@ -692,10 +874,200 @@ class HttpHandler(BaseHTTPRequestHandler):
                    b'{"error":"unauthorized: X-Lane-Token header required"}')
         return False
 
+    def _read_json_body(self, max_bytes, required=True):
+        """Read + parse the JSON request body for the machine endpoints.
+        Returns (obj, None) on success or (None, error_bytes) — the
+        caller sends the 400 itself. required=False returns ({}, None)
+        on an empty body."""
+        content_length = int(self.headers.get('Content-Length', 0) or 0)
+        if content_length <= 0:
+            if required:
+                return None, b'{"error":"JSON body required"}'
+            return {}, None
+        if content_length > max_bytes:
+            return None, (f'{{"error":"body too large (max {max_bytes} '
+                          f'bytes)"}}').encode('utf-8')
+        try:
+            return (json.loads(self.rfile.read(content_length)
+                               .decode('utf-8')), None)
+        except (ValueError, UnicodeDecodeError):
+            return None, b'{"error":"invalid JSON body"}'
+
+    def _handle_machine_post(self, path_only):
+        """POST surface of the machine-diagnostics domain:
+          /api/machine/events            — batch ingest (list of events)
+          /api/machine/cycles            — single cycle row
+          /api/machine/events/<id>/ack   — desk ack (body: {acknowledged_by:
+                                           <staff id|null>} — the wsl_api
+                                           bridge contract — or {by: ...})
+          /api/machine/events/<id>/resolve
+        Behind the same X-Lane-Token gate as every other POST. Ingest is
+        additionally gated by the WSL_MACHINE_DIAG kill-switch (503 when
+        off); ack/resolve act on already-stored rows and stay available."""
+        parts = path_only.strip('/').split('/')
+
+        if parts == ['api', 'machine', 'events']:
+            body, err = self._read_json_body(1_000_000)
+            if err:
+                return self._send(400, 'application/json', err)
+            # Accept a bare JSON array or {"events": [...]}.
+            events = body.get('events') if isinstance(body, dict) else body
+            if not isinstance(events, list) or not events:
+                return self._send(400, 'application/json',
+                                  b'{"error":"body must be a JSON array of '
+                                  b'events (or {\\"events\\": [...]})"}')
+            if len(events) > machine_store.MAX_EVENT_BATCH:
+                return self._send(400, 'application/json',
+                                  json.dumps({
+                                      "error": "batch too large",
+                                      "max": machine_store.MAX_EVENT_BATCH,
+                                  }).encode('utf-8'))
+            rows = []
+            for i, ev in enumerate(events):
+                try:
+                    rows.append(machine_store.validate_event(ev))
+                except ValueError as e:
+                    return self._send(400, 'application/json',
+                                      json.dumps({"error": str(e),
+                                                  "index": i}).encode('utf-8'))
+            try:
+                ids = machine_store.insert_events(rows)
+            except machine_store.StoreDisabled:
+                return self._send(503, 'application/json',
+                                  b'{"ok":false,"error":"machine diagnostics '
+                                  b'disabled (WSL_MACHINE_DIAG)"}')
+            except Exception as e:
+                log.warning(f"machine events insert failed: {e}")
+                return self._send(500, 'application/json',
+                                  b'{"error":"insert failed"}')
+            return self._send(200, 'application/json',
+                              json.dumps({"ok": True, "inserted": len(ids),
+                                          "ids": ids}).encode('utf-8'))
+
+        if parts == ['api', 'machine', 'cycles']:
+            body, err = self._read_json_body(65536)
+            if err:
+                return self._send(400, 'application/json', err)
+            try:
+                row = machine_store.validate_cycle(body)
+            except ValueError as e:
+                return self._send(400, 'application/json',
+                                  json.dumps({"error": str(e)}).encode('utf-8'))
+            try:
+                cycle_id = machine_store.insert_cycle(row)
+            except machine_store.StoreDisabled:
+                return self._send(503, 'application/json',
+                                  b'{"ok":false,"error":"machine diagnostics '
+                                  b'disabled (WSL_MACHINE_DIAG)"}')
+            except Exception as e:
+                log.warning(f"machine cycle insert failed: {e}")
+                return self._send(500, 'application/json',
+                                  b'{"error":"insert failed"}')
+            return self._send(200, 'application/json',
+                              json.dumps({"ok": True,
+                                          "id": cycle_id}).encode('utf-8'))
+
+        if (len(parts) == 5 and parts[:3] == ['api', 'machine', 'events']
+                and parts[4] in ('ack', 'resolve')):
+            try:
+                event_id = int(parts[3])
+            except ValueError:
+                return self._send(400, 'application/json',
+                                  b'{"error":"bad event id"}')
+            try:
+                if parts[4] == 'ack':
+                    body, err = self._read_json_body(4096)
+                    if err:
+                        return self._send(400, 'application/json', err)
+                    # 2026-07-19 review: wsl_api's proxy sends
+                    # {'acknowledged_by': <staff id|null>} (the pinned bridge
+                    # contract in tests/test_phase8_bridge_contract.py);
+                    # accepting only {'by': int} 400'd every desk ack. Accept
+                    # both spellings; null is allowed (a staff actor without
+                    # a staff_id) and stores NULL — the id is an OPAQUE
+                    # wsl.db reference either way.
+                    if not isinstance(body, dict) or not (
+                            'by' in body or 'acknowledged_by' in body):
+                        return self._send(400, 'application/json',
+                                          b'{"error":"by or acknowledged_by '
+                                          b'(staff id, integer or null) '
+                                          b'required"}')
+                    by = (body.get('by') if 'by' in body
+                          else body.get('acknowledged_by'))
+                    if by is not None and (isinstance(by, bool)
+                                           or not isinstance(by, int)):
+                        return self._send(400, 'application/json',
+                                          b'{"error":"by or acknowledged_by '
+                                          b'(staff id, integer or null) '
+                                          b'required"}')
+                    row = machine_store.ack_event(event_id, by)
+                else:
+                    body, err = self._read_json_body(4096, required=False)
+                    if err:
+                        return self._send(400, 'application/json', err)
+                    row = machine_store.resolve_event(event_id)
+            except Exception as e:
+                log.warning(f"machine event {parts[4]} failed: {e}")
+                return self._send(500, 'application/json',
+                                  b'{"error":"update failed"}')
+            if row is None:
+                return self._send(404, 'application/json',
+                                  b'{"error":"event not found"}')
+            return self._send(200, 'application/json',
+                              json.dumps({"ok": True,
+                                          "event": row}).encode('utf-8'))
+
+        return self._send(404, 'application/json', b'{"error":"not found"}')
+
     def do_POST(self):
         # /api/lane/{N}/{open|close|reset|power-on|power-off|trigger-ball|score}
         if not self._check_auth():
             return
+        path_only = urlparse(self.path).path
+        if path_only.startswith('/api/machine/'):
+            return self._handle_machine_post(path_only)
+        if path_only == '/api/fx/test':
+            # Cosmetic-only test fire. Unlike trigger-ball, this does not
+            # mutate scoring state and cannot send a command to a lane node.
+            content_length = int(self.headers.get('Content-Length', 0) or 0)
+            if content_length <= 0 or content_length > 4096:
+                return self._send(
+                    400, 'application/json',
+                    b'{"error":"body required (max 4096 bytes): {lane,event}"}')
+            try:
+                body = json.loads(
+                    self.rfile.read(content_length).decode('utf-8'))
+                lane = int(body.get('lane'))
+            except (ValueError, TypeError, UnicodeDecodeError):
+                return self._send(400, 'application/json',
+                                  b'{"error":"lane must be an integer"}')
+            event = body.get('event')
+            allowed = {
+                'strike', 'spare', 'split', 'split_converted', 'gutter',
+                'foul', 'game_over', 'lane_open', 'lane_close',
+            }
+            if lane < 1 or lane > 128:
+                return self._send(400, 'application/json',
+                                  b'{"error":"lane out of range"}')
+            if event not in allowed:
+                return self._send(
+                    400, 'application/json',
+                    json.dumps({"error": "unsupported event",
+                                "allowed": sorted(allowed)}).encode('utf-8'))
+            accepted = _emit_fx_event({
+                "type": "test", "lane": lane, "event": event,
+                "test": True,
+            })
+            code = 202 if accepted else 503
+            return self._send(
+                code, 'application/json',
+                json.dumps({
+                    "ok": accepted,
+                    "accepted": accepted,
+                    "lane": lane,
+                    "event": event,
+                    "lane_fx": fx_publisher.status(),
+                }).encode('utf-8'))
         parts = self.path.strip('/').split('/')
         if len(parts) == 4 and parts[0] == 'api' and parts[1] == 'lane':
             try:
@@ -762,8 +1134,10 @@ class HttpHandler(BaseHTTPRequestHandler):
                     with state_lock:
                         pending_foul.pop(lane, None)
 
-                bowl, pin_mask, foul = _process_ball_event(lane,
-                                                           pin_mask=pin_mask_in)
+                bowl, pin_mask, foul, fx_payload = _process_ball_event(
+                    lane, pin_mask=pin_mask_in)
+                if fx_payload is not None:
+                    _emit_fx_event(fx_payload)
                 payload = {
                     "lane": lane,
                     "pin_mask": pin_mask,
@@ -830,6 +1204,7 @@ class HttpHandler(BaseHTTPRequestHandler):
                 log.info(f"Lane {lane}: correction by desk — "
                          f"bowler_idx={bowler_idx} frame_idx={frame_idx} "
                          f"bowls={bowls}")
+                _emit_fx_event({"type": "correction", "lane": lane})
                 return self._send(200, 'application/json',
                                   json.dumps(result).encode('utf-8'))
 
@@ -874,12 +1249,15 @@ class HttpHandler(BaseHTTPRequestHandler):
                     with state_lock:
                         pending_foul[lane] = True
 
-                bowl, pin_mask, foul = _process_ball_event(lane,
-                                                           pin_mask=pin_mask_in)
-                # Send CYCLE to the Pi so its relay clicks like a real bowl —
-                # routed to the node that owns this lane, not broadcast.
+                bowl, pin_mask, foul, fx_payload = _process_ball_event(
+                    lane, pin_mask=pin_mask_in)
+                # Send the existing bench/simulator CYCLE message to the owning
+                # node, not broadcast. This endpoint is never an FX test path;
+                # Track-A physical cycle remains OEM-owned.
                 cycle_msg = encode(Msg.CYCLE, lane=lane)
                 sent = send_to_lane(lane, cycle_msg)
+                if fx_payload is not None:
+                    _emit_fx_event(fx_payload)
                 payload = {
                     "sent_to": sent,
                     "lane": lane,
@@ -957,6 +1335,7 @@ class HttpHandler(BaseHTTPRequestHandler):
                         pending_foul.pop(lid, None)
                     get_or_create_lane(lane, bowlers=bowlers_in)
                     save_lanes(lane_scoring, ball_counters)  # persist reset
+                    opened_names = [b.name for b in lane_scoring[lane].bowlers]
                 log.info(f"OPEN_LANE: reset scoring for lane {lane} "
                          f"(cleared {sorted(stale_lanes)}) "
                          f"with bowlers={bowlers_in or '[TEST]'}")
@@ -990,6 +1369,17 @@ class HttpHandler(BaseHTTPRequestHandler):
             else:
                 sent = 0
                 log.info(f"→ {action.upper()} lane {lane}: state-only, hardware command suppressed")
+            if msg_type == Msg.OPEN_LANE and send_hardware_command:
+                _emit_fx_event({
+                    "type": "lane_open",
+                    "lane": lane,
+                    "bowlers": opened_names,
+                    "mode": "single_lane",
+                })
+            elif msg_type == Msg.CLOSE_LANE:
+                for cleared_lane in cleared:
+                    _emit_fx_event({
+                        "type": "lane_close", "lane": cleared_lane})
             self._send(200, 'application/json',
                        json.dumps({
                            "sent_to": sent,
@@ -1105,6 +1495,20 @@ class HttpHandler(BaseHTTPRequestHandler):
                         Msg.OPEN_LANE, lane=lid,
                         bowlers=[b.name for b in cls.bowlers]))
 
+            if send_open_command:
+                _emit_fx_event({
+                    "type": "league_open",
+                    "lanes": [lane_left, lane_right],
+                    "mode": "cross_lane",
+                    "teams": {
+                        str(lane_left): t1_name,
+                        str(lane_right): t2_name,
+                    },
+                    "bowlers": {
+                        str(lane_left): t1_names,
+                        str(lane_right): t2_names,
+                    },
+                })
             return self._send(200, 'application/json',
                               json.dumps({
                                   "ok": True,
@@ -1159,6 +1563,18 @@ async def main():
                  f"(delivery-dedup backstop; the authoritative window is "
                  f"WSL_LANE_BALL_LOCKOUT_S on the nodes)")
     threading.Thread(target=http_thread, daemon=True).start()
+    # Machine-diagnostics retention: startup prune + daily loop, on a
+    # daemon thread (never blocks startup; never raises — see
+    # machine_store._retention_loop).
+    try:
+        machine_store.start_retention_thread()
+        log.info(f"Machine diagnostics: store {machine_store.DB_PATH} "
+                 f"(enabled={machine_store.enabled()}, retention "
+                 f"{machine_store.retention_days()}d via "
+                 f"{machine_store.RETENTION_ENV})")
+    except Exception as exc:
+        log.warning(f"Machine diagnostics retention thread failed to "
+                    f"start: {exc}")
     log.info("HTTP display + desk simulator: http://0.0.0.0:8766")
     log.info("WebSocket: ws://0.0.0.0:8765")
     async with serve(handle_node, "0.0.0.0", 8765):

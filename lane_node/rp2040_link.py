@@ -51,6 +51,16 @@ Concurrency: the serial reader runs on a background thread and only UPDATES stat
 drains them via apply_events(controller) so the (non-thread-safe) FSM is only ever
 touched from one thread — call it right before controller.poll().
 
+2026-07-19 diagnostics campaign (scope §5 Phase 1.1) — firmware timestamps:
+  The firmware stamps every cam/ball line with "t" (ms, uint32, since firmware
+  boot — the same timebase as hb "up"). Queue entries carry it: every entry is
+  (kind, ident, t_fw_ms, t_pi_mono) — t_fw_ms None on v0.1.0 lines without "t".
+  FwClock (below) estimates the fw-ms <-> Pi-monotonic offset (EWMA, resynced on
+  any firmware reboot) so pure-edge intervals can be measured at the firmware's
+  1 ms resolution instead of the daemon's ~20 ms tick. Mixed-clock intervals
+  (fw edge <-> Pi-issued command) get NO precision claim — see the daemon's
+  _edge_observer for the call-site notes.
+
 SAFETY: this is the software half. RP2040_OK is a HARDWARE rail line driven by the
 firmware; a dead/!ok RP2040 drops the rail in hardware regardless of this module.
 Here we additionally surface health so the daemon can fault the FSM + drop ARM.
@@ -83,6 +93,69 @@ SENT_MAXLEN = 256    # `sent` is a test/bench record, not an unbounded log
 SEND_FAIL_LIMIT = 3  # consecutive serial-write failures => health_ok() False
 REBOOT_FAULT = "fw_reboot"  # synthetic fault latched on firmware-reboot detection
 RUN_RESYNC_RETRIES = 3  # hb run-mask mismatch: re-sends per motor per episode
+
+
+class FwClock:
+    """EWMA offset estimator between the firmware's millisecond clock (cam/ball
+    "t" + hb "up" — one uint32 ms timebase, restarts at 0 on every firmware
+    boot) and the Pi's monotonic clock.
+
+    offset = t_pi_seconds - t_fw_ms/1000, smoothed with an EWMA so per-line
+    UART jitter averages out (the constant transport latency folds into the
+    offset and cancels in any fw-vs-fw interval). resync() forgets the offset —
+    call it on every firmware (re)boot; a sample that jumps more than
+    RESYNC_JUMP_S from the current estimate also hard-resyncs (missed boot line
+    / uint32 wrap at ~49.7 days).
+
+    est_pi_time(t_fw_ms) -> Pi-monotonic seconds, or None before the first
+    sample (callers fall back to the Pi receive time). Thread-safe: updated
+    from the serial reader thread, read from the daemon tick."""
+
+    ALPHA = 0.1            # EWMA smoothing factor
+    RESYNC_JUMP_S = 5.0    # |sample - estimate| beyond this = hard resync
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._offset = None      # pi_seconds - fw_ms/1000.0
+        self.samples = 0
+        self.resyncs = 0
+
+    def update(self, t_fw_ms, t_pi_s):
+        """Fold one (fw ms, Pi monotonic seconds) observation into the offset."""
+        try:
+            sample = float(t_pi_s) - float(t_fw_ms) / 1000.0
+        except Exception:
+            return
+        with self._lock:
+            if self._offset is None or abs(sample - self._offset) > self.RESYNC_JUMP_S:
+                if self._offset is not None:
+                    self.resyncs += 1
+                self._offset = sample
+            else:
+                self._offset += self.ALPHA * (sample - self._offset)
+            self.samples += 1
+
+    def est_pi_time(self, t_fw_ms):
+        """Map a firmware ms timestamp onto the Pi monotonic scale, or None if
+        no offset has been learned yet (v0.1.0 firmware / pre-first-sample)."""
+        with self._lock:
+            if self._offset is None or t_fw_ms is None:
+                return None
+            try:
+                return self._offset + float(t_fw_ms) / 1000.0
+            except Exception:
+                return None
+
+    def offset(self):
+        with self._lock:
+            return self._offset
+
+    def resync(self):
+        """Forget the offset (firmware rebooted — its ms clock restarted at 0)."""
+        with self._lock:
+            if self._offset is not None:
+                self.resyncs += 1
+            self._offset = None
 
 
 def _fsm_max_motion_s():
@@ -151,7 +224,7 @@ class RP2040Link:
         self._sc_danger = False
         self._tb_danger = False
         self._rp_ok = False
-        self._last_hb = 0.0
+        self._last_hb = None     # None until the first line (0.0 is a valid fake-clock time)
         self._fault = ""
         self._send_fails = 0     # consecutive serial-write failures (health gate)
         # v0.2.0 telemetry (None until a firmware that sends it is heard)
@@ -165,6 +238,10 @@ class RP2040Link:
         self._cmd_run = {}       # motor -> bool: RUN/STOP state WE last commanded
         self._resync_tries = {}  # motor -> re-sends this mismatch episode
         self._run_mismatch = ()  # motors mismatched as of the last hb "run" mask
+        # diagnostics campaign (2026-07-19): fw timestamp clock + boot facts
+        self.fw_clock = FwClock()   # fw-ms <-> Pi-monotonic offset (resynced on reboot)
+        self._fw_version = None     # boot "fw" string (None until a boot is heard)
+        self._boot_wdt = False      # last boot event carried wdt_reset (hw watchdog fired)
 
         # queued cam/ball events, drained by apply_events()
         self._evlock = threading.Lock()
@@ -247,6 +324,12 @@ class RP2040Link:
         if kind == "cam":
             cid = ev.get("id")
             trip = (ev.get("e") == self._trip)
+            # fw timestamp: every fw-stamped line feeds the FwClock (more
+            # samples = tighter offset), queued entries carry it (Phase 1.1).
+            t_fw = self._num(ev, "t")
+            t_pi = self.now()
+            if t_fw is not None:
+                self.fw_clock.update(t_fw, t_pi)
             if cid in INTERLOCK_CAMS:
                 # Edge tracking kept for immediacy + v0.1.0 firmware; on v0.2.0
                 # the hb "in" mask resyncs these every ~250 ms (self-healing).
@@ -257,10 +340,14 @@ class RP2040Link:
                         self._tb_danger = trip
             elif trip and cid in CAM_DISPATCH:
                 with self._evlock:
-                    self._events.append(("cam", cid))
+                    self._events.append(("cam", cid, t_fw, t_pi))
         elif kind == "ball":
+            t_fw = self._num(ev, "t")
+            t_pi = self.now()
+            if t_fw is not None:
+                self.fw_clock.update(t_fw, t_pi)
             with self._evlock:
-                self._events.append(("ball", ev.get("src")))
+                self._events.append(("ball", ev.get("src"), t_fw, t_pi))
         elif kind in ("hb", "boot", "rp_ok", "flt", "ack"):
             notes = []   # (log_fn, msg, args) — emitted AFTER the lock is released
             resends = []  # run-state resync commands — sent AFTER the lock is released
@@ -314,6 +401,13 @@ class RP2040Link:
         rebooted = self._last_up is not None    # we had heartbeats before this boot
         self._last_up = None                    # fresh uptime/drp baselines
         self._last_drp = None
+        # fw ms clock restarted at 0 -> the learned offset is garbage. Resync on
+        # EVERY boot event (first boot included: offset may predate a missed boot).
+        self.fw_clock.resync()
+        fw = ev.get("fw")
+        if isinstance(fw, str) and fw.strip():
+            self._fw_version = fw.strip()[:80]
+        self._boot_wdt = bool(ev.get("wdt_reset"))
         # Fresh firmware = motors all stopped; let the run-mask reconciliation
         # start a fresh episode (it re-sends RUN for anything still commanded).
         #
@@ -395,6 +489,11 @@ class RP2040Link:
             self._last_drp = drp
         up = self._num(ev, "up")
         if up is not None:
+            if self._last_up is None or up >= self._last_up:
+                # hb "up" shares the fw event timebase — free FwClock samples at
+                # the ~4 Hz hb rate even on quiet lanes. Skipped on a regression
+                # (the resync below must happen first).
+                self.fw_clock.update(up, self.now())
             if self._last_up is not None and up < self._last_up:
                 # Uptime went BACKWARDS => the firmware rebooted and we missed the
                 # boot line. Same safety trip as a boot event. Applied LAST so this
@@ -403,6 +502,7 @@ class RP2040Link:
                 # trip is in the SAFE direction (nuisance PBZ) and is accepted.
                 self._fault = REBOOT_FAULT
                 self._rp_ok = False
+                self.fw_clock.resync()     # fw ms clock restarted; offset is garbage
                 notes.append((log.error,
                               "RP2040 uptime regressed %s -> %s ms: firmware REBOOTED "
                               "(boot line missed) — safe-state relatch; operator "
@@ -457,17 +557,30 @@ class RP2040Link:
         self._run_mismatch = tuple(mismatched)
 
     # ---- FSM bridge --------------------------------------------------------
-    def apply_events(self, controller):
+    def apply_events(self, controller, observer=None):
         """Drain queued cam/ball events into the FSM. Call from the daemon's main
-        loop only (keeps FSM access single-threaded). Returns the count applied."""
+        loop only (keeps FSM access single-threaded). Returns the count applied.
+
+        Queue entries are (kind, ident, t_fw_ms, t_pi_mono): t_fw_ms is the
+        firmware's 1 ms edge timestamp (None on v0.1.0 lines without "t"),
+        t_pi_mono the Pi-monotonic receive time. `observer`, when given, is
+        called AFTER each event is dispatched with exactly those four fields —
+        the daemon uses it to timestamp cam-timing telemetry off the firmware
+        clock (via fw_clock.est_pi_time). Observer exceptions are swallowed:
+        this runs inside the 50 Hz tick and must never raise or block."""
         with self._evlock:
             evs = list(self._events)
             self._events.clear()
-        for kind, payload in evs:
+        for kind, ident, t_fw, t_pi in evs:
             if kind == "cam":
-                dispatch_cam(controller, payload)
+                dispatch_cam(controller, ident)
             elif kind == "ball":
                 controller.on_ball()
+            if observer is not None:
+                try:
+                    observer(kind, ident, t_fw, t_pi)
+                except Exception:
+                    log.debug("apply_events observer swallowed", exc_info=True)
         return len(evs)
 
     # ---- queries -----------------------------------------------------------
@@ -484,7 +597,8 @@ class RP2040Link:
 
     def is_alive(self):
         with self._lock:
-            return bool(self._last_hb) and (self.now() - self._last_hb) <= self._hb_timeout
+            return (self._last_hb is not None
+                    and (self.now() - self._last_hb) <= self._hb_timeout)
 
     def health_ok(self):
         """True only if the RP2040 is heartbeating, reports rail-permit OK, has no
@@ -492,7 +606,8 @@ class RP2040Link:
         rp_ok:0) => not healthy; >= SEND_FAIL_LIMIT consecutive write failures (our
         RUN/STOP may not be reaching the firmware) => not healthy."""
         with self._lock:
-            alive = bool(self._last_hb) and (self.now() - self._last_hb) <= self._hb_timeout
+            alive = (self._last_hb is not None
+                     and (self.now() - self._last_hb) <= self._hb_timeout)
             return (alive and self._rp_ok and not self._fault
                     and self._send_fails < SEND_FAIL_LIMIT)
 
@@ -527,6 +642,19 @@ class RP2040Link:
         concern (today it is exposure-only — no automatic trip)."""
         with self._lock:
             return self._run_mismatch
+
+    def fw_version(self):
+        """The boot event's "fw" string, or None if no boot has been heard.
+        (Trustworthy only as a label — see v11_posture() for what's ARMED.)"""
+        with self._lock:
+            return self._fw_version
+
+    def boot_wdt_reset(self):
+        """True when the LAST boot event carried wdt_reset (the RP2040's 250 ms
+        hardware watchdog fired -> chip reset). The diagnostics campaign emits
+        this as the distinct 'rp2040_wdt_reset' code vs a generic fw_reboot."""
+        with self._lock:
+            return self._boot_wdt
 
     def v11_posture(self):
         """The firmware's v1.1 enforcement posture from the boot event

@@ -39,9 +39,13 @@ dispatch — no new event source.
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
+import queue
+import threading
+import time
 from collections import deque
 
 log = logging.getLogger("cam_telemetry")
@@ -50,6 +54,14 @@ log = logging.getLogger("cam_telemetry")
 # silenced independently if they prove noisy during early soak (alarm-only off).
 DISABLE_ENV = "WSL_CAM_TELEMETRY"
 DRIFT_ALARM_DISABLE_ENV = "WSL_CAM_TELEMETRY_ALARM"
+# Baseline persistence (2026-07-19 diagnostics scope, Phase 1.7): drift alarms
+# need 30 samples and used to reset blind on every restart. Opt-in per instance
+# (the daemon passes persist=True); PERSIST_ENV is the env kill-switch on top.
+PERSIST_ENV = "WSL_CAM_TELEMETRY_PERSIST"          # default ON when persist=True
+PERSIST_EVERY_ENV = "WSL_CAM_TELEMETRY_PERSIST_EVERY"  # save every N sampled cycles
+PERSIST_DIR_ENV = "WSL_DIAG_DIR"                   # shared with diag_events
+DEFAULT_PERSIST_DIR = "./diag_logs"
+DEFAULT_PERSIST_EVERY = 25
 
 _FALSEY = ("0", "false", "no", "off", "")
 
@@ -121,6 +133,26 @@ class _Running:
         self.vmin = x if self.vmin is None else min(self.vmin, x)
         self.vmax = x if self.vmax is None else max(self.vmax, x)
 
+    # -- persistence (Phase 1.7): the O(1) aggregate round-trips exactly; the
+    #    bounded recent window is deliberately NOT persisted (trend detail only).
+    def to_state(self):
+        return {"n": self.n, "mean": self.mean, "m2": self._m2,
+                "min": self.vmin, "max": self.vmax}
+
+    def restore(self, st):
+        """Load a to_state() dict. Raises on garbage (caller catches — one bad
+        interval must not poison the others)."""
+        n = int(st["n"])
+        mean = float(st["mean"])
+        m2 = float(st["m2"])
+        if n < 0 or m2 < 0 or not math.isfinite(mean) or not math.isfinite(m2):
+            raise ValueError(f"implausible baseline state {st!r}")
+        self.n = n
+        self.mean = mean
+        self._m2 = m2
+        self.vmin = None if st.get("min") is None else float(st["min"])
+        self.vmax = None if st.get("max") is None else float(st["max"])
+
     @property
     def variance(self):
         return self._m2 / (self.n - 1) if self.n > 1 else 0.0
@@ -145,17 +177,71 @@ class CamTelemetry:
       drift_sigma: stddev multiplier for the drift alarm. Default DEFAULT_DRIFT_SIGMA.
       enabled:     None -> env kill-switch (default ON); True/False forces.
       now:         unused for timing (timestamps are passed in) — kept for symmetry.
+      diag_emit:   optional callable(severity, event_type, code, detail) offered
+                   each drift alarm (event_type 'drift_alarm'). ⚠️ Runs inline at
+                   end_cycle() — i.e. inside the daemon tick — so it MUST be
+                   non-blocking (enqueue-only; the daemon passes its
+                   suppression-aware DiagQueue emitter). Wrapped fail-safe.
+      persist:     True -> baselines survive restarts (Phase 1.7): loaded from
+                   <persist_dir>/cam_baselines_<lane>.json at construction, saved
+                   atomically by maybe_persist()/stop(). Default False so bare
+                   constructions (tests, tools) never touch the filesystem.
+                   PERSIST_ENV ('WSL_CAM_TELEMETRY_PERSIST', default on) is the
+                   env kill-switch on top. ⚠️ end_cycle() never writes the file —
+                   maybe_persist() is the write point and must be called OFF the
+                   tick (the daemon's platform-health thread pumps it).
+      persist_dir / persist_every: override the WSL_DIAG_DIR / N-sampled-cycles
+                   save cadence (env PERSIST_EVERY_ENV, default 25).
+
+    TIMESTAMP DOMAINS (2026-07-19 fw-timestamp replumb): on_event timestamps are
+    Pi-monotonic SECONDS. The daemon feeds cam-edge events at the firmware's 1 ms
+    edge time mapped through rp2040_link.FwClock (pure-edge intervals ss_to_guard
+    / ta2_to_sa / sa_to_ta1zero gain ~1 ms resolution); command-anchored events
+    (table_start, bs) stay Pi tick time — intervals mixing the two clocks
+    (guard_to_table, table_to_ta2, bs_to_ta1zero) carry NO precision claim.
     """
 
     def __init__(self, lane, *, intervals=None, recorder=None, sink=None,
-                 drift_sigma=DEFAULT_DRIFT_SIGMA, enabled=None, now=None):
+                 drift_sigma=DEFAULT_DRIFT_SIGMA, enabled=None, now=None,
+                 diag_emit=None, persist=False, persist_dir=None,
+                 persist_every=None):
         self.lane = lane
         self.enabled = _enabled(DISABLE_ENV) if enabled is None else bool(enabled)
         self.alarm_enabled = _enabled(DRIFT_ALARM_DISABLE_ENV)
         self._recorder = recorder
         self._sink = sink
+        self._diag_emit = diag_emit
         self.drift_sigma = float(drift_sigma) if drift_sigma else DEFAULT_DRIFT_SIGMA
         self._intervals = tuple(intervals) if intervals else DEFAULT_INTERVALS
+        # baseline persistence (Phase 1.7) — opt-in + env-killable, fail-safe
+        self.persist = bool(persist) and _enabled(PERSIST_ENV)
+        self._persist_dir = (persist_dir
+                             or os.environ.get(PERSIST_DIR_ENV, "").strip()
+                             or DEFAULT_PERSIST_DIR)
+        try:
+            self._persist_every = max(1, int(
+                persist_every
+                or os.environ.get(PERSIST_EVERY_ENV, "").strip()
+                or DEFAULT_PERSIST_EVERY))
+        except Exception:
+            self._persist_every = DEFAULT_PERSIST_EVERY
+        self._samples_since_save = 0
+        self.persist_errors = 0
+        self.persist_saves = 0
+        # Persistence races (2026-07-19 review): save_baselines can be called
+        # from BOTH the platform-health thread (maybe_persist) and the
+        # shutdown paths (run() finally + PlatformHealth exit both call
+        # stop()) while the tick thread is still folding samples via
+        # end_cycle. _persist_lock serializes writers (two threads sharing
+        # one .tmp path collided — on Windows os.replace of an open file
+        # fails and the session's final save could be lost); _state_lock
+        # makes the snapshot consistent vs add() (a save landing between the
+        # n+=1 and _m2+= lines of _Running.add persisted a torn Welford
+        # triple that restore() cannot detect). add() only ever holds
+        # _state_lock for O(µs) arithmetic — file I/O happens strictly
+        # outside it, so the tick can never block on the SD card.
+        self._persist_lock = threading.Lock()
+        self._state_lock = threading.Lock()
 
         # name -> _Running baseline (constant per-interval memory)
         self._base = {name: _Running() for (name, _s, _e) in self._intervals}
@@ -169,10 +255,14 @@ class CamTelemetry:
         self._reset_cycle()
         self.cycle_index = 0
 
+        if self.enabled and self.persist:
+            self._load_baselines()
+
         if self.enabled:
-            log.info("CamTelemetry L%s: armed (%d intervals, drift>%.1f sigma%s)",
+            log.info("CamTelemetry L%s: armed (%d intervals, drift>%.1f sigma%s%s)",
                      self.lane, len(self._intervals), self.drift_sigma,
-                     "" if self.alarm_enabled else ", ALARM OFF")
+                     "" if self.alarm_enabled else ", ALARM OFF",
+                     ", persisted" if self.persist else "")
 
     # ---- per-cycle state --------------------------------------------------
     def _reset_cycle(self):
@@ -232,10 +322,12 @@ class CamTelemetry:
                     continue
                 # drift check uses the baseline BEFORE this sample is folded in.
                 self._check_drift(name, dt, base)
-                base.add(dt)
+                with self._state_lock:   # consistent vs save_baselines snapshot
+                    base.add(dt)
 
             if durations:
                 self._emit(self.cycle_index, durations)
+                self._samples_since_save += 1   # persistence dirt; NO file I/O here
             self._reset_cycle()
             return durations
         except Exception:
@@ -282,6 +374,20 @@ class CamTelemetry:
                                             "sd": round(sd, 4), "n": base.n})
                 except Exception:
                     pass
+            if self._diag_emit is not None:
+                # route the alarm into the diagnostics event pipe ('drift_alarm',
+                # scope §3.1). The callable must be enqueue-only (tick context);
+                # a broken emitter is swallowed — telemetry never raises.
+                try:
+                    self._diag_emit("warn", "drift_alarm", f"drift:{name}",
+                                    {"interval": name, "dt_s": round(dt, 4),
+                                     "mean_s": round(base.mean, 4),
+                                     "sd_s": round(sd, 4), "n": base.n,
+                                     "sigma": round(dev / sd, 1),
+                                     "pct": round(pct, 1)})
+                except Exception:
+                    log.debug("CamTelemetry L%s: diag_emit swallowed", self.lane,
+                              exc_info=True)
 
     def _emit(self, cycle_index, durations):
         rounded = {k: round(v, 4) for k, v in durations.items()}
@@ -296,6 +402,96 @@ class CamTelemetry:
             except Exception:
                 log.debug("CamTelemetry L%s: sink raised (swallowed)", self.lane,
                           exc_info=True)
+
+    # ---- baseline persistence (Phase 1.7) ---------------------------------
+    def _baseline_path(self):
+        return os.path.join(self._persist_dir, f"cam_baselines_{self.lane}.json")
+
+    def _load_baselines(self):
+        """Restore saved baselines at construction. Stale/corrupt/missing files
+        are tolerated (log + fresh start) — never raises. Only interval names in
+        the CURRENT interval set are restored; per-interval garbage is skipped
+        without poisoning the others."""
+        path = self._baseline_path()
+        try:
+            with open(path, encoding="utf-8") as f:
+                doc = json.load(f)
+            saved = doc.get("baselines")
+            if not isinstance(saved, dict):
+                raise ValueError("no baselines dict")
+            loaded = 0
+            for name, st in saved.items():
+                base = self._base.get(name)
+                if base is None or not isinstance(st, dict):
+                    continue
+                try:
+                    base.restore(st)
+                    loaded += 1
+                except Exception:
+                    log.warning("CamTelemetry L%s: skipping corrupt persisted "
+                                "baseline %r", self.lane, name)
+            self.cycle_index = max(self.cycle_index,
+                                   int(doc.get("cycle_index", 0) or 0))
+            if loaded:
+                log.info("CamTelemetry L%s: restored %d persisted baselines "
+                         "from %s (saved_at=%s)", self.lane, loaded, path,
+                         doc.get("saved_at"))
+        except FileNotFoundError:
+            pass
+        except Exception:
+            self.persist_errors += 1
+            log.warning("CamTelemetry L%s: persisted baselines unusable (%s) — "
+                        "starting fresh", self.lane, path, exc_info=True)
+
+    def save_baselines(self):
+        """Atomically write the baselines (tmp + os.replace — a crash mid-write
+        can never leave a torn file). Thread-safe: concurrent savers are
+        serialized on _persist_lock and the baseline snapshot is taken under
+        _state_lock so it can never capture a half-updated Welford aggregate
+        (see the __init__ note). ⚠️ FILE I/O — call OFF the tick only
+        (maybe_persist from a background thread, or stop()). Never raises;
+        returns True on a successful write."""
+        if not (self.enabled and self.persist):
+            return False
+        try:
+            with self._persist_lock:
+                with self._state_lock:
+                    states = {name: b.to_state()
+                              for name, b in self._base.items()}
+                doc = {
+                    "lane": self.lane,
+                    "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "cycle_index": self.cycle_index,
+                    "baselines": states,
+                }
+                os.makedirs(self._persist_dir, exist_ok=True)
+                path = self._baseline_path()
+                tmp = path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(doc, f, separators=(",", ":"))
+                os.replace(tmp, path)
+                self._samples_since_save = 0
+                self.persist_saves += 1
+                return True
+        except Exception:
+            self.persist_errors += 1
+            log.debug("CamTelemetry L%s: save_baselines swallowed", self.lane,
+                      exc_info=True)
+            return False
+
+    def maybe_persist(self):
+        """Save iff >= persist_every sampled cycles accumulated since the last
+        save. The daemon's platform-health thread pumps this (off-tick); safe to
+        call from anywhere EXCEPT the tick. Never raises."""
+        if self.persist and self._samples_since_save >= self._persist_every:
+            return self.save_baselines()
+        return False
+
+    def stop(self):
+        """Final save on shutdown (anything dirty). Never raises."""
+        if self.persist and self._samples_since_save:
+            return self.save_baselines()
+        return False
 
     # ---- queries (for a trend endpoint / soak acceptance) -----------------
     def baselines(self):
@@ -314,6 +510,93 @@ class CamTelemetry:
         except Exception:
             pass
         return out
+
+
+class CycleShipper:
+    """Bounded queue + background thread shipping per-cycle machine_cycles rows
+    via a post_cycle callable (diag_events.HttpSink.post_cycle). The tick thread
+    only ever offer()s (put_nowait — never blocks, never raises); ALL HTTP
+    happens on this thread, per the scope §3 'never from the tick thread' rule.
+
+    Overflow drops the row and counts it (.drops — the honesty metric); a
+    post_cycle failure is counted (.errors) and the row is dropped, never
+    retried into an unbounded backlog (HttpSink already retries internally)."""
+
+    def __init__(self, post_cycle, *, maxsize=64, poll_s=0.25):
+        self._post = post_cycle
+        self._q = queue.Queue(maxsize=max(1, int(maxsize)))
+        self.poll_s = float(poll_s)
+        self.drops = 0
+        self.shipped = 0
+        self.errors = 0
+        self._stop = threading.Event()
+        self._thread = None
+
+    def offer(self, row):
+        """Enqueue one row. Returns True if queued; False (counted) if dropped."""
+        try:
+            self._q.put_nowait(row)
+            return True
+        except Exception:
+            self.drops += 1
+            return False
+
+    def start(self):
+        if self._thread is not None and self._thread.is_alive():
+            return True
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="cycle-shipper",
+                                        daemon=True)
+        self._thread.start()
+        return True
+
+    def stop(self, timeout=5.0):
+        """Signal + join; anything still queued is shipped synchronously
+        (bounded by the queue cap). Never raises."""
+        try:
+            self._stop.set()
+            t = self._thread
+            if t is not None and t.is_alive():
+                t.join(timeout)
+            if t is None or not t.is_alive():
+                self._drain()
+        except Exception:
+            log.debug("CycleShipper.stop swallowed", exc_info=True)
+
+    def _ship(self, row):
+        try:
+            ok = self._post(row)
+            if ok:
+                self.shipped += 1
+            else:
+                self.errors += 1
+        except Exception:
+            self.errors += 1
+            log.debug("CycleShipper: post_cycle swallowed", exc_info=True)
+
+    def _drain(self):
+        for _ in range(self._q.maxsize + 8):
+            try:
+                row = self._q.get_nowait()
+            except Exception:
+                break
+            self._ship(row)
+
+    def _run(self):
+        try:
+            while True:
+                try:
+                    row = self._q.get(timeout=self.poll_s)
+                except Exception:
+                    row = None
+                if row is not None:
+                    self._ship(row)
+                if self._stop.is_set() and self._q.empty():
+                    break
+        except Exception:
+            log.warning("CycleShipper thread swallowed an exception", exc_info=True)
+        finally:
+            self._drain()
 
 
 if __name__ == "__main__":

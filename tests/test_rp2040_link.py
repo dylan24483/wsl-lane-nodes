@@ -337,6 +337,62 @@ link.feed_line('{"ev":"hb","ok":1,"up":1100}')        # v0.1.0-style hb mid-stre
 link.feed_line('{"ev":"hb","ok":1,"up":1350,"drp":4}')
 check(any("dropped 1 TX" in m for m in cap.msgs()), "drp tracking survives a no-drp hb")
 
+# [J] fw timestamps (2026-07-19 scope Phase 1.1): queue entries carry (kind,
+#     ident, t_fw_ms, t_pi_mono); FwClock learns the offset + resyncs on reboot
+print("[J] fw timestamps / FwClock")
+from rp2040_link import FwClock
+
+link = mklink()
+link.feed_line('{"ev":"cam","id":"TA2","e":"f","t":5000}')
+link.feed_line('{"ev":"ball","src":"L"}')                    # v0.1.0-style: no "t"
+with link._evlock:
+    entries = list(link._events)
+check(entries[0] == ("cam", "TA2", 5000, clk["t"]),
+      "cam entry carries (kind, id, t_fw, t_pi)")
+check(entries[1] == ("ball", "L", None, clk["t"]),
+      "no-'t' line queues t_fw=None (v0.1.0 compatible)")
+seen = []
+fsm = StubFSM()
+n = link.apply_events(fsm, observer=lambda *a: seen.append(a))
+check(n == 2 and fsm.calls == ["TA2", "ball"], "dispatch unchanged with observer")
+check(seen == entries, "observer receives the full 4-tuples, in order")
+def _raising_obs(*a):
+    raise RuntimeError("observer bug")
+link.feed_line('{"ev":"ball","src":"L"}')
+try:
+    check(link.apply_events(fsm, observer=_raising_obs) == 1,
+          "a raising observer is swallowed (tick safety)")
+except Exception as e:
+    check(False, f"apply_events raised through the observer: {e}")
+
+check(link.fw_clock.est_pi_time(1000) is not None, "cam 't' trained the FwClock")
+link.feed_line('{"ev":"boot","fw":"phase8b-rp2040 v1.1.1","wdt_reset":0,"rp_ok":0}')
+check(link.fw_clock.offset() is None, "boot event resyncs the FwClock")
+check(link.fw_version() == "phase8b-rp2040 v1.1.1", "boot fw string stored")
+check(link.boot_wdt_reset() is False, "wdt_reset:0 -> boot_wdt_reset() False")
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":250}')
+check(link.fw_clock.offset() is not None, "hb 'up' also trains the FwClock")
+off1 = link.fw_clock.offset()
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":10}')        # regression = reboot
+check(link.fault() == REBOOT_FAULT, "(setup) regression latched fw_reboot")
+check(link.fw_clock.offset() is None and off1 is not None,
+      "uptime-regression reboot resyncs the FwClock (regressed 'up' not folded)")
+c = FwClock()
+c.update(1000, 101.0)
+check(abs(c.est_pi_time(3000) - 103.0) < 1e-9, "FwClock maps fw ms -> Pi seconds")
+c.update(2000, 102.010)
+check(102.0 < c.est_pi_time(2000) < 102.005, "EWMA smooths per-line jitter")
+c.update(500, 900.0)                                          # > RESYNC_JUMP_S
+check(c.resyncs == 1 and abs(c.offset() - 899.5) < 1e-9,
+      "a >5s offset jump hard-resyncs (missed boot / uint32 wrap)")
+
+# a fresh link with a mid-session wdt boot exposes the distinct code
+link = mklink()
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":10000}')
+link.feed_line('{"ev":"boot","fw":"x","wdt_reset":1,"rp_ok":0}')
+check(link.boot_wdt_reset() is True and link.fault() == REBOOT_FAULT,
+      "wdt boot: fw_reboot fault + boot_wdt_reset() True (distinct-code source)")
+
 print(f"\n{checks['n'] - checks['fail']}/{checks['n']} checks passed"
       + ("  <<< FAILURES" if checks["fail"] else ""))
 sys.exit(1 if checks["fail"] else 0)
