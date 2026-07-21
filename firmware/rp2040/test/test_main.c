@@ -298,7 +298,7 @@ int main(void) {
      * NONE of them ever latches a fault. The ENABLED behavior is proven in test_v11.c, built
      * with the flags -D'd on. */
     printf("[J] v1.1 supervision off-by-default is inert\n");
-    CHECK(FW_VERSION[0] != 0 && strstr(FW_VERSION, "v1.1") != NULL, "FW_VERSION bumped to v1.1");
+    CHECK(FW_VERSION[0] != 0 && strstr(FW_VERSION, "v1.2") != NULL, "FW_VERSION bumped to v1.2");
     CHECK(CAM_SA_STOP_ENABLED == 0 && CAM_TA1_STOP_ENABLED == 0
           && INTERLOCK_ECHO_ENABLED == 0 && MOTION_NO_RUN_ENABLED == 0,
           "all v1.1 enforcement flags default OFF");

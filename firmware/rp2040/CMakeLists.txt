@@ -24,6 +24,7 @@ target_link_libraries(wsl_phase8b_rp2040
     hardware_uart
     hardware_gpio
     hardware_watchdog
+    hardware_adc        # v1.2: VCC_5V sense on GP26/ADC0
 )
 
 # The Pi link uses uart0 DIRECTLY (not stdio). Keep stdio OFF uart0 so it can't

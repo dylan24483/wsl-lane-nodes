@@ -54,6 +54,8 @@
 #include "hardware/uart.h"
 #include "hardware/gpio.h"
 #include "hardware/watchdog.h"
+#include "hardware/adc.h"       /* v1.2: VCC_5V sense on GP26/ADC0            */
+#include "hardware/sync.h"      /* v1.2: IRQ-safe tap-ring snapshot/clear     */
 
 #include "config.h"
 
@@ -74,7 +76,7 @@ static inline uint32_t now_ms(void) { return to_ms_since_boot(get_absolute_time(
 /* ====================================================================== */
 /*  Non-blocking UART TX ring  (telemetry must never stall the safety loop)*/
 /* ====================================================================== */
-#define TXR_SZ 512
+#define TXR_SZ 1024   /* v1.2: 512 -> 1024 (hb line grew; TXR_HEADROOM grew in lockstep) */
 static uint8_t  txr[TXR_SZ];
 static uint16_t txr_head = 0, txr_tail = 0;
 static uint32_t txr_drops = 0;     /* whole lines dropped because the ring was full */
@@ -103,12 +105,14 @@ static void txr_drain(void) {
  *   emit()     — critical lines (boot/hb/flt/rp_ok/ack): may fill the ring.
  *   emit_evt() — cam/ball telemetry: only enqueued while TXR_HEADROOM bytes
  *                stay free, so an event flood can never starve hb/flt/rp_ok. */
-/* SIZE BUDGET (pre-flash review 2026-07-07): the longest single line is the boot
- * event = 141 B stock / 147 B worst-case (10-digit maxrun_ms + both postures "off").
- * Headroom is only ~13 B — if you ADD A BOOT FIELD, re-count the worst case or the
- * whole boot line silently drops (visible only as txr_drops) and the Pi loses
- * maxrun_ms + v11 posture. Grow fmtbuf with the line, never trust it silently. */
-static char fmtbuf[160];
+/* SIZE BUDGET (re-counted for v1.2, 2026-07-21): the longest single lines are
+ *   boot = ~147 B v1.1.1 worst + 36 B tap{} block            = ~183 B worst
+ *   hb   = ~110 B v1.1.1 worst + ~64 B tap/rd/ep/v5* fields  = ~174 B worst
+ * fmtbuf grew 160 -> 256 with them (~70 B margin). If you ADD A FIELD, re-count
+ * the worst case or the whole line silently drops (visible only as txr_drops)
+ * and the Pi loses it. Grow fmtbuf with the line, never trust it silently.
+ * TXR_HEADROOM (288) must stay >= the worst flt+rp_ok+hb burst — re-check it too. */
+static char fmtbuf[256];
 static void emit_v(bool lowprio, const char *fmt, va_list ap) {
     int n = vsnprintf(fmtbuf, sizeof(fmtbuf), fmt, ap);
     if (n <= 0) return;
@@ -446,8 +450,328 @@ static void supervise(void) {
 }
 
 /* ====================================================================== */
+/*  v1.2 rev-D diagnostic taps (GP16-19) + VCC_5V ADC (GP26) — spec R3    */
+/* ====================================================================== */
+/* Read config.h's v1.2 block first. Summary of the contract:
+ *   - GP16-19 are INPUT-ONLY as an ENFORCED invariant: tap_init() is the single
+ *     choke-point that configures them; tap_assert_input_only() reads back the
+ *     SIO OE + IO-bank function registers each heartbeat tick and latch_fault()s
+ *     (fail-safe: RP_OK drops) on drift. NOTHING else may touch these pins —
+ *     the host test (test/test_v12.c) fails on any output-direction/write call.
+ *   - All four taps are INVERTED by the 2N7002 stage; tap_read() is the ONE
+ *     inversion point. Everything on the wire is observed-net truth.
+ *   - Both-edge IRQs feed a 1 ms-timestamped ring in noinit RAM that survives
+ *     reboot (magic pair + epoch). Cleared only by TAPCLR, never by boot.
+ *   - Telemetry only: nothing here permits motion, feeds the watchdog, or
+ *     bypasses a fault. Every failure direction is latch_fault or lost telemetry. */
+
+static const uint  tap_pins[]  = { PIN_TAP_555, PIN_TAP_KICK, PIN_TAP_ARM, PIN_TAP_RPOK };
+static const char *tap_names[] = { "555", "KICK", "ARM", "RPOK" };
+#define N_TAPS 4u
+enum { TAP_555 = 0, TAP_KICK = 1, TAP_ARM = 2, TAP_RPOK = 3 };
+#define TAP_IRQ_EDGES (GPIO_IRQ_EDGE_FALL | GPIO_IRQ_EDGE_RISE)
+
+/* THE single inversion point (R3.1): raw pad LOW = FET on = observed net HIGH. */
+static inline bool tap_read(uint idx) { return gpio_get(tap_pins[idx]) == 0; }
+
+/* Observed-net levels as a bitmask for the hb line (bit order = tap index). */
+static unsigned tap_mask(void) {
+    unsigned v = 0;
+    for (uint i = 0; i < N_TAPS; i++)
+        if (tap_read(i)) v |= (1u << i);
+    return v;
+}
+
+/* ---- rail-drop edge ring, noinit (survives reboot; R3.3) --------------- */
+typedef struct {
+    uint32_t t_ms;      /* 1 ms-resolution timestamp (ms since that epoch's boot) */
+    uint8_t  pin_idx;   /* tap index 0-3 (555/KICK/ARM/RPOK)                      */
+    uint8_t  level;     /* observed-net LOGICAL level AFTER the edge (1 = high)   */
+    uint16_t epoch;     /* low 16 bits of the boot epoch that captured it         */
+} tap_edge_t;
+
+typedef struct {
+    uint32_t   magic;               /* TAP_RING_MAGIC when valid                  */
+    uint32_t   epoch;               /* increments each boot that ADOPTS the ring  */
+    uint32_t   widx;                /* next write slot                            */
+    uint32_t   count;               /* valid entries (saturates at TAP_RING_SZ)   */
+    tap_edge_t ring[TAP_RING_SZ];
+    uint32_t   magic2;              /* TAP_RING_MAGIC2 tail guard                 */
+} tap_ring_t;
+
+/* noinit: the crt0 zero-fill skips this section, so contents survive a watchdog
+ * or soft reboot. A true power-up leaves garbage -> the magic pair fails -> zeroed. */
+static tap_ring_t __uninitialized_ram(tap_ring);
+
+static bool    tap_ring_preserved = false;  /* this boot ADOPTED a valid prior ring    */
+static uint8_t tap_boot_reason    = 0;      /* 0=power/cold, 1=soft reboot, 2=watchdog */
+
+/* IRQ storm guard state (see config.h TAP_IRQ_*) */
+static uint32_t tap_irq_win_start[N_TAPS];
+static uint16_t tap_irq_win_count[N_TAPS];
+static uint8_t  tap_irq_muted = 0;          /* bitmask; reported in the tapdump header */
+static uint32_t tap_irq_mute_ms[N_TAPS];
+
+/* Called from IRQ context — must stay light. Records one edge. */
+static void tap_ring_push(uint8_t idx, uint8_t level) {
+    tap_edge_t *e = &tap_ring.ring[tap_ring.widx];
+    e->t_ms    = now_ms();
+    e->pin_idx = idx;
+    e->level   = level;
+    e->epoch   = (uint16_t)tap_ring.epoch;
+    tap_ring.widx = (tap_ring.widx + 1u) % TAP_RING_SZ;
+    if (tap_ring.count < TAP_RING_SZ) tap_ring.count++;
+}
+
+static void tap_irq_handler(uint gpio, uint32_t events) {
+    int idx = -1;
+    for (uint i = 0; i < N_TAPS; i++)
+        if (tap_pins[i] == gpio) { idx = (int)i; break; }
+    if (idx < 0) return;
+
+    /* storm guard: over budget in one window -> mute THIS tap's IRQ, cooldown in
+     * tap_service(). Telemetry-only loss; the safety loop never depends on taps. */
+    uint32_t m = now_ms();
+    if ((uint32_t)(m - tap_irq_win_start[idx]) >= TAP_IRQ_WINDOW_MS) {
+        tap_irq_win_start[idx] = m;
+        tap_irq_win_count[idx] = 0;
+    }
+    if (++tap_irq_win_count[idx] > TAP_IRQ_BUDGET) {
+        gpio_set_irq_enabled(gpio, TAP_IRQ_EDGES, false);
+        tap_irq_muted |= (uint8_t)(1u << idx);
+        tap_irq_mute_ms[idx] = m;
+        return;
+    }
+
+    uint8_t level;
+    if ((events & GPIO_IRQ_EDGE_FALL) && (events & GPIO_IRQ_EDGE_RISE))
+        level = tap_read((uint)idx) ? 1u : 0u;   /* coalesced double edge: current truth */
+    else
+        level = (events & GPIO_IRQ_EDGE_FALL) ? 1u : 0u;  /* raw fall = observed RISE (inverted) */
+    tap_ring_push((uint8_t)idx, level);
+}
+
+/* Adopt or zero the noinit ring. MUST run before tap IRQs are enabled. */
+static void tap_boot_init(bool wdt_reboot) {
+    bool valid = (tap_ring.magic  == TAP_RING_MAGIC &&
+                  tap_ring.magic2 == TAP_RING_MAGIC2 &&
+                  tap_ring.widx   <  TAP_RING_SZ &&
+                  tap_ring.count  <= TAP_RING_SZ);
+    if (valid) {
+        tap_ring.epoch++;                        /* pre- vs post-reboot edges distinguishable */
+        tap_ring_preserved = true;
+    } else {
+        memset(&tap_ring, 0, sizeof tap_ring);
+        tap_ring.magic  = TAP_RING_MAGIC;
+        tap_ring.magic2 = TAP_RING_MAGIC2;
+        tap_ring.epoch  = 1;
+        tap_ring_preserved = false;
+    }
+    tap_boot_reason = wdt_reboot ? 2u : (tap_ring_preserved ? 1u : 0u);
+    tap_irq_muted = 0;
+    for (uint i = 0; i < N_TAPS; i++) { tap_irq_win_start[i] = 0; tap_irq_win_count[i] = 0; tap_irq_mute_ms[i] = 0; }
+}
+
+/* THE choke point (R3.2): the ONLY code that configures GP16-19 + GP26. Input,
+ * Schmitt on (pad default — set explicitly anyway), pulls off (the board's 10k
+ * drain pull-up defines the level, R1.3). GP26 goes to the ADC (digital pad off). */
+static void tap_init(void) {
+    for (uint i = 0; i < N_TAPS; i++) {
+        uint p = tap_pins[i];
+        gpio_init(p);                              /* SIO function, input, output disabled */
+        gpio_set_dir(p, GPIO_IN);
+        gpio_disable_pulls(p);
+        gpio_set_input_hysteresis_enabled(p, true);
+    }
+    adc_init();
+    adc_gpio_init(PIN_ADC_VCC5);                   /* function NULL, digital pad disabled  */
+    adc_select_input(ADC_VCC5_INPUT);
+    /* both-edge IRQ capture (R3.3); one shared callback for all four taps */
+    gpio_set_irq_enabled_with_callback(tap_pins[0], TAP_IRQ_EDGES, true, &tap_irq_handler);
+    for (uint i = 1; i < N_TAPS; i++)
+        gpio_set_irq_enabled(tap_pins[i], TAP_IRQ_EDGES, true);
+}
+
+/* The ENFORCED half of the invariant (R3.2): read BACK the hardware registers —
+ * SIO OE via gpio_get_dir(), IO-bank FUNCSEL via gpio_get_function() — and hard-
+ * fault if any tap pin is output-enabled or off the SIO function (GP26 must stay
+ * on the null/ADC function). latch_fault() drops RP_OK via supervise(): a board
+ * whose tap pins can drive is REFUSED motion permission. Called at the end of
+ * init and every heartbeat tick (4+1 register-read pairs — negligible).         */
+static bool tap_assert_input_only(void) {
+    for (uint i = 0; i < N_TAPS; i++) {
+        uint p = tap_pins[i];
+        if (gpio_get_dir(p) != GPIO_IN || gpio_get_function(p) != GPIO_FUNC_SIO) {
+            latch_fault("tap_dir", tap_names[i]);
+            return false;
+        }
+    }
+    if (gpio_get_dir(PIN_ADC_VCC5) != GPIO_IN || gpio_get_function(PIN_ADC_VCC5) != GPIO_FUNC_NULL) {
+        latch_fault("tap_dir", "ADC");
+        return false;
+    }
+    return true;
+}
+
+/* ---- VCC_5V ADC (R3.4) ------------------------------------------------- */
+static uint16_t adc_v5_mv = 0, adc_v5_min = 0, adc_v5_max = 0;
+static bool     adc_v5_have = false;
+
+static void adc_vcc5_sample(void) {
+    uint16_t raw = adc_read();                          /* 12-bit, 3.30 V nominal ref */
+    uint32_t mv  = ((uint32_t)raw * 6600u + 2047u) / 4095u;   /* x2 board divider -> mV */
+    adc_v5_mv = (uint16_t)mv;
+    if (!adc_v5_have) { adc_v5_min = adc_v5_max = adc_v5_mv; adc_v5_have = true; }
+    else {
+        if (adc_v5_mv < adc_v5_min) adc_v5_min = adc_v5_mv;
+        if (adc_v5_mv > adc_v5_max) adc_v5_max = adc_v5_mv;
+    }
+}
+
+/* hb interval min/max window reset — called by the MAIN-LOOP hb tick only (a
+ * PING-triggered hb reports the same window; it does not reset it). */
+static void adc_v5_window_reset(void) { adc_v5_min = adc_v5_max = adc_v5_mv; }
+
+/* ---- rail-drop cause classifier (ADVISORY — R3.3 reason codes) ---------- */
+/* Operates on an oldest->newest snapshot. Falling edges (level 0 after the
+ * edge) of 555/ARM/RPOK within TAP_CAUSE_CLUSTER_MS of the most recent one form
+ * the drop cluster; the EARLIEST faller in the cluster is the initiator:
+ *   ARM  first -> "arm_drop"        (Pi deliberately/accidentally dropped ARM_PERMIT)
+ *   RPOK first -> "self_health"     (our own GP2 went low first)
+ *   555  first -> "kick_starvation" if no kick edge in the TAP_KICK_STARVE_MS
+ *                 before it, else "555_drop" (555 fell despite a live kick train)
+ * Epochs are deliberately ignored (advisory; the Pi gets the raw ring + epochs). */
+static const char *tap_classify(const tap_edge_t *e, uint32_t n) {
+    bool     have555 = false, haveArm = false, haveRpok = false, haveKick = false;
+    uint32_t t555 = 0, tArm = 0, tRpok = 0, tKick = 0;
+    /* kick state AS OF the 555 fall (entries are chronological, so when the 555
+     * fall is scanned, tKick holds the latest kick edge BEFORE it — a kick train
+     * that resumes after a Pi reboot must not mask the starvation that caused it) */
+    bool     haveKickAt555 = false;
+    uint32_t tKickAt555 = 0;
+    for (uint32_t k = 0; k < n; k++) {
+        if (e[k].pin_idx == TAP_KICK) { haveKick = true; tKick = e[k].t_ms; continue; }
+        if (e[k].level != 0) continue;              /* only falling edges classify */
+        switch (e[k].pin_idx) {
+            case TAP_555:  have555  = true; t555  = e[k].t_ms;
+                           haveKickAt555 = haveKick; tKickAt555 = tKick; break;
+            case TAP_ARM:  haveArm  = true; tArm  = e[k].t_ms; break;
+            case TAP_RPOK: haveRpok = true; tRpok = e[k].t_ms; break;
+            default: break;
+        }
+    }
+    (void)haveKick;
+    if (!have555 && !haveArm && !haveRpok) return "none";
+    uint32_t T = 0;
+    if (have555  && t555  > T) T = t555;
+    if (haveArm  && tArm  > T) T = tArm;
+    if (haveRpok && tRpok > T) T = tRpok;
+    /* earliest faller within the cluster window ending at T */
+    uint32_t best_t = T + 1u; int initiator = -1;
+    if (have555  && (uint32_t)(T - t555)  <= TAP_CAUSE_CLUSTER_MS && t555  < best_t) { best_t = t555;  initiator = TAP_555;  }
+    if (haveRpok && (uint32_t)(T - tRpok) <= TAP_CAUSE_CLUSTER_MS && tRpok < best_t) { best_t = tRpok; initiator = TAP_RPOK; }
+    if (haveArm  && (uint32_t)(T - tArm)  <= TAP_CAUSE_CLUSTER_MS && tArm  <= best_t) { best_t = tArm; initiator = TAP_ARM;  }
+    if (initiator == TAP_ARM)  return "arm_drop";
+    if (initiator == TAP_RPOK) return "self_health";
+    if (initiator == TAP_555) {
+        if (!haveKickAt555 || (uint32_t)(t555 - tKickAt555) > TAP_KICK_STARVE_MS)
+            return "kick_starvation";
+        return "555_drop";
+    }
+    return "none";   /* unreachable */
+}
+
+/* ---- TAPDUMP: drip the ring out without ever starving critical lines ---- */
+#define TAPE_LINE_MAX 64u   /* worst {"ev":"tape",...} line is ~56 B */
+static tap_edge_t dump_buf[TAP_RING_SZ];
+static uint32_t   dump_n = 0, dump_pos = 0, dump_ep = 0;
+static bool       dump_end_pending = false;
+
+static void tap_dump_start(void) {
+    uint32_t save = save_and_disable_interrupts();      /* consistent snapshot vs IRQ pushes */
+    uint32_t n = tap_ring.count, w = tap_ring.widx;
+    for (uint32_t k = 0; k < n; k++) {                  /* unroll oldest -> newest */
+        uint32_t src = (n < TAP_RING_SZ) ? k : (w + k) % TAP_RING_SZ;
+        dump_buf[k] = tap_ring.ring[src];
+    }
+    dump_ep = tap_ring.epoch;
+    restore_interrupts(save);
+    dump_n = n; dump_pos = 0; dump_end_pending = true;
+    emit("{\"ev\":\"tapdump\",\"n\":%lu,\"ep\":%lu,\"br\":%u,\"mut\":%u,\"cause\":\"%s\",\"t\":%lu}\n",
+         (unsigned long)dump_n, (unsigned long)dump_ep, tap_boot_reason, tap_irq_muted,
+         tap_classify(dump_buf, dump_n), (unsigned long)now_ms());
+}
+
+/* Explicit clear (the ONLY thing that empties the ring — R3.3). Keeps magic+epoch. */
+static void tap_ring_clear(void) {
+    uint32_t save = save_and_disable_interrupts();
+    tap_ring.widx = 0;
+    tap_ring.count = 0;
+    restore_interrupts(save);
+}
+
+/* Main-loop service: (a) un-mute storm-guarded tap IRQs after their cooldown,
+ * (b) drip queued TAPDUMP entries into the TX ring — each entry only when
+ * TAPE_LINE_MAX + TXR_HEADROOM stays free, so a dump can NEVER starve hb/flt. */
+static void tap_service(void) {
+    if (tap_irq_muted) {
+        uint32_t m = now_ms();
+        for (uint i = 0; i < N_TAPS; i++) {
+            uint8_t bit = (uint8_t)(1u << i);
+            if ((tap_irq_muted & bit) && (uint32_t)(m - tap_irq_mute_ms[i]) >= TAP_IRQ_MUTE_MS) {
+                tap_irq_win_start[i] = m;
+                tap_irq_win_count[i] = 0;
+                tap_irq_muted &= (uint8_t)~bit;
+                gpio_set_irq_enabled(tap_pins[i], TAP_IRQ_EDGES, true);
+            }
+        }
+    }
+    while (dump_pos < dump_n || dump_end_pending) {
+        if (txr_free() < (uint16_t)(TAPE_LINE_MAX + TXR_HEADROOM)) return;   /* next pass */
+        if (dump_pos < dump_n) {
+            const tap_edge_t *e = &dump_buf[dump_pos];
+            emit("{\"ev\":\"tape\",\"i\":%lu,\"t\":%lu,\"p\":%u,\"l\":%u,\"ep\":%u}\n",
+                 (unsigned long)dump_pos, (unsigned long)e->t_ms, e->pin_idx, e->level, e->epoch);
+            dump_pos++;
+        } else {
+            emit("{\"ev\":\"tapdump_end\",\"n\":%lu}\n", (unsigned long)dump_n);
+            dump_end_pending = false;
+        }
+    }
+}
+
+/* ---- GP19 vs GP2 self-observation cross-check (R3.1) -------------------- */
+static uint8_t  rpok_mism_strikes = 0;
+static uint32_t last_tapwarn_ms = 0;
+static bool     tapwarn_ever = false;
+
+/* Heartbeat-tick tap work: re-assert the direction invariant, then the RPOK
+ * cross-check. Mismatch persisting TAP_RPOK_MISM_STRIKES ticks -> rate-limited
+ * "tapwarn" line; escalation to a latched fault is compiled OFF by default. */
+static void tap_hb_tick(void) {
+    if (!tap_assert_input_only()) return;    /* latched; supervise() drops RP_OK */
+    if (tap_read(TAP_RPOK) != rp_ok_state) {
+        if (rpok_mism_strikes < 255u) rpok_mism_strikes++;
+        if (rpok_mism_strikes >= TAP_RPOK_MISM_STRIKES) {
+#if TAP_RPOK_FAULT_ENABLED
+            latch_fault("tap_rpok", "RPOK");
+#else
+            uint32_t m = now_ms();
+            if (!tapwarn_ever || (uint32_t)(m - last_tapwarn_ms) >= TAPWARN_MIN_INTERVAL_MS) {
+                tapwarn_ever = true;
+                last_tapwarn_ms = m;
+                emit_evt("{\"ev\":\"tapwarn\",\"code\":\"rpok_mism\",\"t\":%lu}\n", (unsigned long)m);
+            }
+#endif
+        }
+    } else {
+        rpok_mism_strikes = 0;
+    }
+}
+
+/* ====================================================================== */
 /*  Pi -> RP2040 command line protocol                                    */
-/*    RUN <m>   STOP <m|*>   CLEAR   PING                                  */
+/*    RUN <m>   STOP <m|*>   CLEAR   PING   TAPDUMP   TAPCLR (v1.2)        */
 /* ====================================================================== */
 static void emit_hb(void);
 
@@ -475,6 +799,13 @@ static void handle_line(char *s) {
         emit("{\"ev\":\"ack\",\"cmd\":\"CLEAR\",\"t\":%lu}\n", (unsigned long)now_ms());
     } else if (strcmp(s, "PING") == 0) {
         emit_hb();
+    } else if (strcmp(s, "TAPDUMP") == 0) {
+        /* v1.2: snapshot + header now; entries drip out via tap_service() */
+        tap_dump_start();
+    } else if (strcmp(s, "TAPCLR") == 0) {
+        /* v1.2: the ONLY thing that empties the tap ring (reboot never does) */
+        tap_ring_clear();
+        emit("{\"ev\":\"ack\",\"cmd\":\"TAPCLR\",\"t\":%lu}\n", (unsigned long)now_ms());
     }
     /* unknown lines are ignored (forward-compatible) */
 }
@@ -526,12 +857,19 @@ static unsigned run_mask(void) {
 }
 
 static void emit_hb(void) {
-    emit("{\"ev\":\"hb\",\"ok\":%d,\"flt\":\"%s\",\"up\":%lu,\"drp\":%lu,\"in\":%u,\"run\":%u}\n",
+    /* v1.2 additive fields (R3.3/R3.4 — older Pi parsers ignore unknown keys):
+     * tap = observed-net levels (bit 0..3 = 555,KICK,ARM,RPOK — POST-inversion),
+     * rd = tap-ring depth, ep = ring epoch, v5/v5n/v5x = VCC_5V latest/min/max mV
+     * over the current hb window. Re-count the fmtbuf SIZE BUDGET if you add more. */
+    emit("{\"ev\":\"hb\",\"ok\":%d,\"flt\":\"%s\",\"up\":%lu,\"drp\":%lu,\"in\":%u,\"run\":%u,"
+         "\"tap\":%u,\"rd\":%lu,\"ep\":%lu,\"v5\":%u,\"v5n\":%u,\"v5x\":%u}\n",
          rp_ok_state ? 1 : 0,
          fault_latched ? fault_code : "",
          (unsigned long)now_ms(),
          (unsigned long)txr_drops,
-         input_mask(), run_mask());
+         input_mask(), run_mask(),
+         tap_mask(), (unsigned long)tap_ring.count, (unsigned long)tap_ring.epoch,
+         adc_v5_mv, adc_v5_min, adc_v5_max);
 }
 
 /* v1.1 posture string for the boot event: "off" when the per-cam enable is 0, else
@@ -550,10 +888,21 @@ int main(void) {
     stdio_init_all();   /* USB-CDC only (uart stdio disabled in CMake) */
 #endif
 
-    /* RP_OK LOW first, before anything else — fail-safe (rail stays dead during init). */
+    /* RP_OK LOW first, before anything else — fail-safe (rail stays dead during init).
+     * This is the ONE deliberate exception to R3.2's "tap_init before any other GPIO
+     * configuration": the fail-safe RP_OK drive is the stronger invariant, GP2 is not
+     * a tap pin, and the taps are input-only from reset anyway (RP2040 pads reset with
+     * output disabled) — tap_init() only ever NARROWS their configuration. */
     gpio_init(PIN_RP_OK);
     gpio_set_dir(PIN_RP_OK, GPIO_OUT);
     gpio_put(PIN_RP_OK, 0);
+
+    /* v1.2: adopt/zero the noinit tap ring BEFORE tap IRQs can write it, then the
+     * tap choke-point init — ahead of every other GPIO configuration (R3.2). */
+    bool wdt_reboot = watchdog_caused_reboot();
+    tap_boot_init(wdt_reboot);
+    tap_init();
+    tap_assert_input_only();    /* enforced from the first moment (latches on drift) */
 
     /* uart0 to the Pi (protocol transport; NOT stdio). */
     uart_init(UART_ID, UART_BAUD);
@@ -567,38 +916,54 @@ int main(void) {
     init_camstops();        /* v1.1: resolve cam-stop descriptor motor pointers + disarm */
     boot_ms = now_ms();
 
-    bool wdt_reboot = watchdog_caused_reboot();
     /* maxrun_ms: the Pi must verify its MAX_MOTION_S does not exceed this at
      * link-up (the firmware backstop is an independent compile-time copy).
      * dbg: 1 = DEBUG_USB build, so a debug image at the lane is visible.
      * v11 (v1.1.1): the v1.1 enforcement posture — an ARMED build must be
      * on-the-wire distinguishable from a stock build (FW_VERSION is identical
      * for both). sa/ta1 = "off" | the trip edge ("f"/"r"/"?"); echo/nrun =
-     * INTERLOCK_ECHO_ENABLED / MOTION_NO_RUN_ENABLED. Additive field: older
-     * Pi-side parsers ignore unknown keys. */
+     * INTERLOCK_ECHO_ENABLED / MOTION_NO_RUN_ENABLED.
+     * tap (v1.2): noinit-ring boot semantics (R3.3) — ep = epoch, pre = 1 if a
+     * valid pre-reboot ring was ADOPTED (0 = zeroed: power loss/first boot),
+     * n = preserved entry count. wdt_reset (v0.2.0) is the boot-reason capture.
+     * All additive fields: older Pi-side parsers ignore unknown keys. */
     char sa_p[4], ta1_p[4];
     camstop_posture_str(sa_p,  (bool)CAM_SA_STOP_ENABLED,  CAM_SA_TRIP);
     camstop_posture_str(ta1_p, (bool)CAM_TA1_STOP_ENABLED, CAM_TA1_TRIP);
     emit("{\"ev\":\"boot\",\"fw\":\"%s\",\"wdt_reset\":%d,\"rp_ok\":0,\"maxrun_ms\":%lu,\"dbg\":%d,"
-         "\"v11\":{\"sa\":\"%s\",\"ta1\":\"%s\",\"echo\":%d,\"nrun\":%d}}\n",
+         "\"v11\":{\"sa\":\"%s\",\"ta1\":\"%s\",\"echo\":%d,\"nrun\":%d},"
+         "\"tap\":{\"ep\":%lu,\"pre\":%d,\"n\":%lu}}\n",
          FW_VERSION, wdt_reboot ? 1 : 0, (unsigned long)MAX_MOTION_MS, DEBUG_USB ? 1 : 0,
-         sa_p, ta1_p, INTERLOCK_ECHO_ENABLED ? 1 : 0, MOTION_NO_RUN_ENABLED ? 1 : 0);
+         sa_p, ta1_p, INTERLOCK_ECHO_ENABLED ? 1 : 0, MOTION_NO_RUN_ENABLED ? 1 : 0,
+         (unsigned long)tap_ring.epoch, tap_ring_preserved ? 1 : 0,
+         (unsigned long)tap_ring.count);
 
     /* RP2040 hardware watchdog: if the loop ever hangs, the chip resets -> GP2 goes
      * Hi-Z -> external 100k pulldown holds the rail DEAD -> motion stops. */
     watchdog_enable(WDT_TIMEOUT_MS, 1);
 
     uint32_t last_hb = now_ms();
+    uint32_t last_adc = last_hb;
 
     for (;;) {
         watchdog_update();      /* keep the chip alive only while the loop runs */
         scan_inputs();          /* debounce + push cam/ball events             */
-        poll_uart();            /* RUN/STOP/CLEAR/PING from the Pi             */
+        poll_uart();            /* RUN/STOP/CLEAR/PING/TAPDUMP/TAPCLR from Pi  */
         supervise();            /* compute + drive RP_OK (fail-safe)           */
         txr_drain();            /* push queued telemetry, non-blocking         */
+        tap_service();          /* v1.2: IRQ un-mute + drip tap-ring dump      */
 
         uint32_t m = now_ms();
-        if ((uint32_t)(m - last_hb) >= HB_INTERVAL_MS) { last_hb = m; emit_hb(); }
+        if ((uint32_t)(m - last_adc) >= ADC_VCC5_SAMPLE_MS) {   /* v1.2: 10 Hz VCC_5V */
+            last_adc = m;
+            adc_vcc5_sample();
+        }
+        if ((uint32_t)(m - last_hb) >= HB_INTERVAL_MS) {
+            last_hb = m;
+            tap_hb_tick();      /* v1.2: direction invariant + RPOK cross-check */
+            emit_hb();
+            adc_v5_window_reset();
+        }
     }
     /* not reached */
 }

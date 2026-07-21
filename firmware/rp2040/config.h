@@ -17,10 +17,15 @@
 #ifndef WSL_PHASE8B_RP2040_CONFIG_H
 #define WSL_PHASE8B_RP2040_CONFIG_H
 
-/* v1.1.1 (2026-07-06 review fixes, NOT yet flashed): boot event gains "v11" posture,
- * cam-stop grace arms on FIRST trip only, chatter guard is a true sliding window.
- * All v1.1 enforcement flags still DEFAULT OFF — a default build adds no enforcement. */
-#define FW_VERSION "phase8b-rp2040 v1.1.1"
+/* v1.2.0 (2026-07-21, rev-D remediation R3 — closes Codex finding C2, NOT yet flashed):
+ * GP16-19 rev-D diagnostic taps get an ENFORCED input-only init (tap_init choke point +
+ * tap_assert_input_only register readback each heartbeat), inverted-tap decode (2N7002
+ * common-source stage: raw pad 0 = observed net HIGH), a 1 ms-timestamped rail-drop edge
+ * ring in noinit RAM (survives reboot; validity magic + epoch), and VCC_5V ADC sampling
+ * on GP26. ALL ADDITIVE: v1.1 line formats unchanged, v1.1 enforcement flags still
+ * DEFAULT OFF — a default build adds no NEW enforcement beyond the tap direction
+ * invariant (which can only ever latch_fault, i.e. fail-safe). See CHANGELOG.md. */
+#define FW_VERSION "phase8b-rp2040 v1.2.0"
 
 /* ---- UART (uart0) link to the Pi -------------------------------------------------------- */
 #define UART_BAUD     115200
@@ -39,6 +44,78 @@
 #define PIN_TB       11   /* GP11, Pico pin 15 : table-sweep interference interlock (105-255)  */
 #define PIN_DIELL_L  12   /* GP12, Pico pin 16 : ball detect, left beam  (cushion SS trigger)  */
 #define PIN_DIELL_R  13   /* GP13, Pico pin 17 : ball detect, right beam                       */
+
+/* ---- v1.2 rev-D diagnostic taps (remediation spec R3, 2026-07-21) ----------------------- */
+/* AUTHORITATIVE SOURCE: docs/phase8_revD_remediation_spec_2026-07-21.md §R3 (the binding
+ * firmware contract) + generate_kicad_netlist_revD.py block_diag() (rev-D board only —
+ * on a rev-B/rev-C board GP16-19/GP26 are UNCONNECTED and these read as floating noise;
+ * the IRQ storm guard below keeps that harmless, but tap telemetry is meaningless there).
+ *
+ * Electrical sense (R1.2 tap front-end): each tap is a 2N7002 common-source inverter —
+ * observed net HIGH -> FET on -> GPIO reads LOW. ALL FOUR TAPS ARE INVERTED. The
+ * inversion happens in exactly ONE place in code (tap_read() in main.c, per R3.1); every
+ * reported tap state on the wire is the post-inversion OBSERVED-NET truth.
+ *
+ * Direction is an ENFORCED invariant, not a convention (C2's exact complaint was that
+ * "never outputs" was accidental non-use): tap_init() is the single choke-point that
+ * configures these pins (input, Schmitt, no pulls — the board provides the 10k drain
+ * pull-up, R1.3), and tap_assert_input_only() reads BACK the SIO OE + IO-bank function
+ * registers each heartbeat tick and latch_fault()s (fail-safe: drops RP_OK) on any
+ * drift. The host test (test/test_v12.c) fails the build if any code path ever puts
+ * GP16-19 in an output direction or writes them.                                        */
+#define PIN_TAP_555    16   /* GP16, Pico pin 21 : TAP_NE555_OUT   (INVERTED: raw 0 = 555 out HIGH) */
+#define PIN_TAP_KICK   17   /* GP17, Pico pin 22 : TAP_WDOG_KICK   (INVERTED)                       */
+#define PIN_TAP_ARM    18   /* GP18, Pico pin 24 : TAP_ARM_PERMIT  (INVERTED)                       */
+#define PIN_TAP_RPOK   19   /* GP19, Pico pin 25 : TAP_RP2040_OK   (INVERTED; cross-checked vs GP2) */
+#define PIN_ADC_VCC5   26   /* GP26/ADC0, Pico pin 31 : ADC_VCC5_SENSE = VCC_5V/2 (10k/10k divider) */
+#define ADC_VCC5_INPUT  0   /* ADC mux input for GP26 */
+
+/* VCC_5V sampling cadence (R3.4): 10 Hz; the heartbeat carries latest + min/max over the
+ * hb interval so 250 ms sag events (6-coil inrush) stay visible. mV conversion assumes
+ * the nominal 3.30 V ADC reference and the exact /2 divider — first-article calibrates
+ * against a DMM at TP1 (±3 % gate, change spec §D).                                     */
+#define ADC_VCC5_SAMPLE_MS  100u
+
+/* Rail-drop edge ring (R3.3): both-edge GPIO IRQs on the four taps, timestamped at 1 ms
+ * resolution, in a noinit RAM section that SURVIVES a Pico reboot (validity magic pair +
+ * epoch counter; a true power loss zeroes it). 128 entries x 8 B = 1 KB — at the kick
+ * pulse rate that is seconds of history around a drop, and edge ORDER (the diagnostic
+ * payload) is preserved regardless. Cleared ONLY by the TAPCLR command, never by reboot. */
+#define TAP_RING_SZ      128u
+#define TAP_RING_MAGIC   0x54415052u   /* "TAPR" — noinit header validity */
+#define TAP_RING_MAGIC2  0x52444E45u   /* "ENDR" — tail guard (torn-struct detection) */
+
+/* IRQ storm guard: a floating/oscillating tap pin (e.g. this firmware flashed on a
+ * rev-B/rev-C board where GP16-19 are unconnected) must never be able to starve the
+ * safety loop with edge IRQs. Over budget inside one window -> that ONE tap's IRQ is
+ * muted for the cooldown, then re-enabled. Telemetry-only degradation; the safety loop
+ * and the other taps are unaffected. Budget 64 edges/100 ms = 640 Hz sustained — far
+ * above any legitimate tap signal (the kick train is ~tens of Hz), far below a floating
+ * CMOS input's oscillation.                                                              */
+#define TAP_IRQ_WINDOW_MS   100u
+#define TAP_IRQ_BUDGET       64u
+#define TAP_IRQ_MUTE_MS    1000u
+
+/* Rail-drop cause classification (R3.3 reason codes — ADVISORY; the Pi always gets the
+ * raw ring too). Falling edges of 555/ARM/RPOK within CLUSTER_MS of the most recent one
+ * form "the drop"; the earliest faller is the initiator. A 555 fall with no kick edge in
+ * the preceding KICK_STARVE_MS = kick starvation.
+ * TAP_KICK_STARVE_MS: VERIFY against the measured NE555 watchdog window at first
+ * article (R1.9 step 5) — placeholder consistent with the ~250 ms Pi kick cadence.      */
+#define TAP_CAUSE_CLUSTER_MS  1000u
+#define TAP_KICK_STARVE_MS     300u
+
+/* GP19 self-observation cross-check (R3.1): the tap's view of RP2040_OK vs our own GP2
+ * output register. Mismatch persisting TAP_RPOK_MISM_STRIKES consecutive heartbeat ticks
+ * (>= 500 ms — the tap analog path settles in ~45 us, R1.5) emits a rate-limited
+ * "tapwarn" line. Escalating the mismatch to a latched fault is COMPILED OFF by default
+ * (same posture as the v1.1 flags: a default build adds no new enforcement; also keeps a
+ * rev-C board with floating GP19 from nuisance-faulting).                                */
+#ifndef TAP_RPOK_FAULT_ENABLED
+#define TAP_RPOK_FAULT_ENABLED 0
+#endif
+#define TAP_RPOK_MISM_STRIKES    2u
+#define TAPWARN_MIN_INTERVAL_MS  5000u
 
 /* ---- Debounce + timing ----------------------------------------------------------------- */
 #define DEBOUNCE_CAM_US     2000u   /* cams: mechanical microswitches, 12 RPM machine -> 2ms ample */
@@ -62,8 +139,11 @@
 /* ---- UART robustness ---------------------------------------------------------------------- */
 /* TX ring bytes reserved for the critical lines (boot/hb/flt/rp_ok/ack): cam/ball telemetry    */
 /* is only enqueued while at least this much stays free, so an input flood can never starve the */
-/* heartbeat or a fault report.                                                                  */
-#define TXR_HEADROOM        128u
+/* heartbeat or a fault report. v1.2: raised 128 -> 288 (and TXR_SZ 512 -> 1024 in main.c)      */
+/* because the hb line grew tap/ring/ADC fields — 288 covers the worst flt+rp_ok+hb burst       */
+/* (~60+40+170 B) that the old 128 only partially reserved for. Tap-ring dump lines use an      */
+/* EXPLICIT free-space check on top of this headroom, so a dump can never starve hb/flt either. */
+#define TXR_HEADROOM        288u
 /* Chatter guard: more than chatter_max DEBOUNCED edges from one input inside ANY window of     */
 /* this length latches a "chatter" fault naming the input (fail-safe: drops RP_OK). v1.1.1:     */
 /* implemented as a TRUE SLIDING window (per-input edge-timestamp ring in main.c) — the old     */

@@ -1,9 +1,8 @@
 # WSL Phase 8b — RP2040 lane-controller firmware
 
-**v1.1.1 — DRAFT, bench-bring-up gated. Not for a live machine until validated per `docs/phase8b_pcb_revB_spec.md` §12.9.**
-*(v1.1.1, 2026-07-06 review fixes (findings 37/56/58) — **NOT yet flashed; owner review pending**: boot event gains the `v11` enforcement-posture field (armed vs stock now wire-distinguishable); cam-stop grace window arms on the FIRST trip only (bounce can no longer extend the STOP deadline); chatter guard is a true sliding window (a boundary-straddling burst latches at 1× the budget, not 2×). **All v1.1 enforcement flags still default OFF** — a default build adds no enforcement. Pin map, pin assignments, and command grammar UNCHANGED; the boot `v11` field is additive.)*
-*(v1.1.0, 2026-06-10: the deferred v1.1 SAFETY supervision — (1) cam-stop OVERRUN, (2) SC/TB collision-interlock echo, (3) motion-without-RUN. **All three default OFF** behind `#ifndef`-overridable config flags + per-cam UNCONFIRMED trip edges, so a stock build is byte-for-byte the same enforcement as v0.2.0; they only ever `latch_fault()`/drop RP_OK, never permit motion, never feed the watchdog. They arm per-cam as the §3.2 cam-polarity field capture is confirmed. Pin map, pin assignments, command grammar, and watchdog-feed placement UNCHANGED.)*
-*(v0.2.0, 2026-06-10 audit hardening: RX overrun whole-line discard, duplicate-RUN timer guard, boot-settle latch across the uint32 ms wrap, per-input chatter fault, TX headroom for critical lines, oversized-emit whole-line drop, hb `in`/`run` masks, boot `maxrun_ms`/`dbg`. Pin map, pin assignments, and command grammar UNCHANGED.)*
+**v1.2.0 — DRAFT, bench-bring-up gated. Not for a live machine until validated per `docs/phase8b_pcb_revB_spec.md` §12.9. Full version history: `CHANGELOG.md`.**
+*(v1.2.0, 2026-07-21 — rev-D remediation R3, closes Codex C2 — **NOT yet flashed**: GP16-19 rev-D diagnostic taps get an ENFORCED input-only invariant (choke-point init + register readback each heartbeat + a host direction-invariant test that fails the build if any code path drives them), the INVERTED tap decode (2N7002 stage: raw 0 = observed HIGH, one `tap_read()` inversion point), a 1 ms-timestamped rail-drop edge ring in noinit RAM that survives reboot (magic + epoch; `TAPDUMP`/`TAPCLR`), and VCC_5V ADC sampling on GP26 folded into the heartbeat. **All additive**: v1.1 line formats + command grammar unchanged, all v1.1 enforcement flags still default OFF, safety-critical paths byte-for-byte logic-identical. Rev-D board only — on rev-B/rev-C these pins are unconnected (an IRQ storm guard keeps floating-pin noise harmless). Binding contract: `docs/phase8_revD_remediation_spec_2026-07-21.md` §R3.)*
+*(v1.1.1, 2026-07-06 review fixes (findings 37/56/58): boot `v11` enforcement-posture field; cam-stop grace arms on FIRST trip only; sliding chatter window. v1.1.0, 2026-06-10: cam-stop OVERRUN / SC-TB echo / motion-without-RUN, all default OFF. v0.2.0, 2026-06-10: audit hardening. See CHANGELOG.md.)*
 
 > ⛔ **BENCH-CONFIRM BEFORE ENABLING the v1.1 flags.** `config.h` ships every v1.1 enforcement flag OFF and every per-cam trip edge as `'?'` (UNCONFIRMED). Confirm the per-cam edge→angle polarity on the spare cabinet (`docs/phase8_trackB_controller_cutover_runbook.md` §3.2) FIRST, then set `CAM_*_TRIP` + flip the matching `*_ENABLED` cam-by-cam and re-flash. Enabling with wrong polarity nuisance-trips the rail (safe direction) or, for the SC/TB echo, fails to add its backstop. ⚠️ **The hardware J_SAFETY loop does NOT exist yet as designed** — the 2026-06-27 metering proved SC+TB is a series interlock at one node with no isolatable dry NC pair (design OPEN, `docs/phase8_interlock_redesign.md`); until a redesigned loop is landed, the software echo is the ONLY controller-side interlock guard. Never enable blind.
 
@@ -45,8 +44,13 @@ Source of truth: `scripts/generate_kicad_netlist_revB.py` → `block_rp2040()` (
 | GP11 | 15 | TB (table interlock cam) | in | `FAST_TB` | table-sweep interference 105–255 |
 | GP12 | 16 | DIELL-L (ball) | in | `FAST_DIELL_L` | active-low opto; cushion SS trigger |
 | GP13 | 17 | DIELL-R (ball) | in | `FAST_DIELL_R` | active-low opto |
+| GP16 | 21 | tap: NE555 out (v1.2, **rev-D only**) | in (ENFORCED) | `TAP_NE555_OUT` | 2N7002 stage **INVERTS**: raw 0 = observed HIGH |
+| GP17 | 22 | tap: watchdog kick (v1.2, rev-D) | in (ENFORCED) | `TAP_WDOG_KICK` | inverted |
+| GP18 | 24 | tap: ARM permit (v1.2, rev-D) | in (ENFORCED) | `TAP_ARM_PERMIT` | inverted |
+| GP19 | 25 | tap: RP2040_OK echo (v1.2, rev-D) | in (ENFORCED) | `TAP_RP2040_OK` | inverted; cross-checked vs our own GP2 |
+| GP26 | 31 | VCC_5V sense (v1.2, rev-D) | ADC0 | `ADC_VCC5_SENSE` | VCC_5V/2 via 10k/10k divider |
 
-All inputs are **active-low** at the Pico (machine contact closed → GPIO LOW); on-board 10k pull-up to 3V3, internal pull-up also enabled.
+All fast inputs are **active-low** at the Pico (machine contact closed → GPIO LOW); on-board 10k pull-up to 3V3, internal pull-up also enabled. The v1.2 tap pins (rev-D netlist `generate_kicad_netlist_revD.py block_diag()`) are configured in exactly ONE place (`tap_init()`), input-only with pulls OFF (the board's 10k drain pull-up defines the level), and the direction is an ENFORCED invariant: `tap_assert_input_only()` reads back the OE/function registers every heartbeat and latches a fail-safe `tap_dir` fault on drift; the host test fails the build if any code path ever drives them.
 
 ## Build
 
@@ -70,19 +74,23 @@ The pure logic (TX ring, debounce/edges, ball lockout, UART protocol, the RP_OK 
 # from firmware/rp2040/  (gcc or a MinGW clang; plain clang on Windows needs the Windows SDK for libc headers)
 
 # (a) default build — v1.1 enforcement flags OFF (what ships); also pins the off-by-default inertness
-gcc -std=c11 -Wall -Wextra -I test -I test/stubs test/test_main.c -o test/test_main.exe
+gcc -std=c11 -Wall -Wextra -Werror -I test -I test/stubs test/test_main.c -o test/test_main.exe
 ./test/test_main.exe        # exit 0 = all checks pass
 
 # (b) v1.1 SAFETY paths — SAME firmware, enforcement flags forced ON with test polarities ('f')
-gcc -std=c11 -Wall -Wextra -I test -I test/stubs \
+gcc -std=c11 -Wall -Wextra -Werror -I test -I test/stubs \
   -DCAM_SA_STOP_ENABLED=1 -DCAM_SA_TRIP="'f'" -DCAM_SA_GRACE_MS=150u \
   -DCAM_TA1_STOP_ENABLED=1 -DCAM_TA1_TRIP="'f'" -DCAM_TA1_GRACE_MS=150u \
   -DINTERLOCK_ECHO_ENABLED=1 -DMOTION_NO_RUN_ENABLED=1 \
   test/test_v11.c -o test/test_v11.exe
 ./test/test_v11.exe         # exit 0 = all checks pass
+
+# (c) v1.2 tap/ring/ADC + THE C2 DIRECTION-INVARIANT GATE (rev-D remediation)
+gcc -std=c11 -Wall -Wextra -Werror -I test -I test/stubs test/test_v12.c -o test/test_v12.exe
+./test/test_v12.exe         # exit 0 = all checks pass
 ```
 
-Last run: **61/61** (`test_main`) + **28/28** (`test_v11`) checks passed (2026-06-10, gcc 16.1.0), both clean under `-Wall -Wextra -Werror` + the `printf`-format attribute (so the event format strings are compiler-verified too). The two binaries share `test/mock_impl.h` (one mock-SDK implementation) so they can never drift. Sections F–I pin the v0.2.0 hardened semantics (UART fuzz/overrun-discard, duplicate-RUN, uint32 ms-wrap boot-settle latch, chatter guard + TX headroom, hb `in`/`run` masks); Section J pins that the v1.1 checks are **inert when the flags are OFF** (a default build = v0.2.0 enforcement); `test_v11.c` pins that each v1.1 fault path fires fail-safe when enabled (overrun latch + timely-STOP-cancels + per-motor disarm, SC∧TB echo, motion-without-RUN, and the non-trip-edge-is-inert guard).
+Last run: **64/64** (`test_main`) + **32/32** (`test_v11`) + **70/70** (`test_v12`) checks passed (2026-07-21, gcc 16.1.0), all clean under `-Wall -Wextra -Werror` + the `printf`-format attribute (so the event format strings are compiler-verified too). The binaries share `test/mock_impl.h` (one mock-SDK implementation) so they can never drift. Sections F–I of `test_main` pin the v0.2.0 hardened semantics (UART fuzz/overrun-discard, duplicate-RUN, uint32 ms-wrap boot-settle latch, chatter guard + TX headroom, hb `in`/`run` masks); Section J pins that the v1.1 checks are **inert when the flags are OFF** (a default build = v0.2.0 enforcement); `test_v11.c` pins that each v1.1 fault path fires fail-safe when enabled (overrun latch + timely-STOP-cancels + per-motor disarm, SC∧TB echo, motion-without-RUN, and the non-trip-edge-is-inert guard). `test_v12.c` is the **C2 gate**: the mock SDK records every output-direction/write call per pin and the test FAILS if GP16-19/GP26 ever appear in one across init + operation + every fault path; it also tampers the mock OE register to prove `tap_assert_input_only()` trips, and covers the inverted decode, ring capture/wrap, reboot-persistence + epoch semantics, power-loss zeroing, TAPDUMP/TAPCLR + cause classification, ADC window, IRQ storm guard, and the RPOK cross-check (warn-only by default).
 
 > ⚠️ **Bench-only gates (the host test CANNOT prove these):** watchdog timing (the 250 ms WDT vs real loop latency — the mock watchdog is a no-op), boot ordering (GP2 LOW before init), GPIO drive polarity/levels on real silicon, UART electricals/baud, and the DEBUG_USB stdio path. These are §12.9 bench bring-up items — a green host test is necessary, not sufficient.
 
@@ -95,7 +103,7 @@ Last run: **61/61** (`test_main`) + **28/28** (`test_v11`) checks passed (2026-0
 
 ### RP2040 → Pi (events)
 ```
-{"ev":"boot","fw":"phase8b-rp2040 v1.1.1","wdt_reset":0,"rp_ok":0,"maxrun_ms":8000,"dbg":0,"v11":{"sa":"off","ta1":"off","echo":0,"nrun":0}}
+{"ev":"boot","fw":"phase8b-rp2040 v1.2.0","wdt_reset":0,"rp_ok":0,"maxrun_ms":8000,"dbg":0,"v11":{"sa":"off","ta1":"off","echo":0,"nrun":0},"tap":{"ep":1,"pre":0,"n":0}}
 {"ev":"cam","id":"SA","e":"f","t":12345}        # e: f=asserted(fall), r=released(rise)
 {"ev":"ball","src":"L","t":12350}               # one event per ball (lockout-deduped)
 {"ev":"rp_ok","v":1,"t":12360}                  # rail permission changed
@@ -104,8 +112,13 @@ Last run: **61/61** (`test_main`) + **28/28** (`test_v11`) checks passed (2026-0
 {"ev":"flt","code":"cam_overrun","m":"SA","t":20000}          # v1.1, when enabled: stop cam tripped, motor not STOPped in grace
 {"ev":"flt","code":"interlock_collision","m":"SCTB","t":20000} # v1.1, when enabled: SC+TB both asserted while a motor runs
 {"ev":"flt","code":"motion_no_run","m":"SA","t":20000}        # v1.1, when enabled: stop-cam trip with no motor commanded
-{"ev":"hb","ok":1,"flt":"","up":12500,"drp":0,"in":0,"run":0}  # ~4 Hz; ok=rp_ok, drp=dropped TX lines
+{"ev":"flt","code":"tap_dir","m":"KICK","t":20000}            # v1.2: tap pin OE/function register drift (enforced invariant)
+{"ev":"hb","ok":1,"flt":"","up":12500,"drp":0,"in":0,"run":0,"tap":0,"rd":0,"ep":1,"v5":4810,"v5n":4650,"v5x":4885}
 {"ev":"ack","cmd":"CLEAR","t":21000}
+{"ev":"tapdump","n":17,"ep":2,"br":2,"mut":0,"cause":"kick_starvation","t":30000}  # v1.2: TAPDUMP header
+{"ev":"tape","i":0,"t":29450,"p":1,"l":0,"ep":1}   # v1.2: one ring entry (p: 0=555,1=KICK,2=ARM,3=RPOK; l=post-inversion level AFTER the edge)
+{"ev":"tapdump_end","n":17}                        # v1.2: dump complete
+{"ev":"tapwarn","code":"rpok_mism","t":30500}      # v1.2: GP19 tap disagrees with our GP2 drive (warn-only by default)
 ```
 
 v1.1 fault codes (`cam_overrun`/`interlock_collision`/`motion_no_run`) appear ONLY on a build with the matching `config.h` flag enabled; a stock (default) firmware never emits them. They are ordinary `flt` events — the Pi side already treats any `flt` as not-healthy (`rp2040_link._handle`), so **no Pi-side change is required to react to them**. A `CLEAR` (issued from a known-safe state) clears them like any other latched fault.
@@ -126,7 +139,11 @@ RUN <m>      # mark motor running: m ∈ {S,T,SP,M2,M1,BE,M}  (BE/M not max-run-
 STOP <m>     # mark motor stopped;  STOP *  = all
 CLEAR        # clear a latched fault (Pi issues ONLY from a known-safe zero/ready state)
 PING         # → immediate heartbeat
+TAPDUMP      # v1.2: emit the tapdump header + drip the full edge ring (tape lines) + end marker
+TAPCLR       # v1.2: empty the edge ring (the ONLY thing that does — reboot never clears it) → ack
 ```
+
+v1.2 tap fields: hb `tap` = post-inversion observed-net levels (bit 0..3 = 555, KICK, ARM, RPOK), `rd` = ring depth, `ep` = ring epoch, `v5`/`v5n`/`v5x` = VCC_5V latest/min/max mV over the hb window. Boot `tap.ep` = epoch, `tap.pre` = 1 if a valid pre-reboot ring was ADOPTED (0 = zeroed: power loss/first boot), `tap.n` = preserved entries. `tapdump.br` = boot reason (0 cold, 1 soft reboot, 2 watchdog), `mut` = storm-guard-muted tap mask, `cause` = ADVISORY drop classification (`kick_starvation` / `arm_drop` / `self_health` / `555_drop` / `none`) — the Pi always gets the raw ring + per-entry epochs to judge for itself. All fields additive; `rp2040_link.py` verified to ignore them and the new event kinds cleanly (no Pi-side change required).
 
 ### Pi-side integration — implemented in `lane_node/rp2040_link.py`
 `RP2040Link` + `dispatch_cam()` implement this contract (host test **29/29**, 2026-06-03), and `controller_io.MachineIO`/`RecordingIO` now accept `rp2040=link` for the SC/TB interlock echo + RUN/STOP (resolving the old `interlock_ok()` TODO). The per-board reader does all of:
@@ -164,17 +181,20 @@ PING         # → immediate heartbeat
 6. **Then** integrate with the rail/relay section per spec §12.9 (each relay with a dummy load, arm drop, interlock drop) before any machine harness.
 
 ## Files
-- `config.h` — pin map (authoritative, cites the netlist), timing, protocol tokens, **v1.1 per-cam stop descriptors + enforcement flags (all default OFF/UNCONFIRMED)**.
-- `main.c` — inputs/debounce, UART protocol + TX ring, safety supervisor (incl. the v1.1 cam-stop / SC-TB-echo / motion-without-RUN paths), main loop.
-- `test/mock_pico.h` / `test/mock_impl.h` — host-test mock SDK surface (declarations / one shared implementation).
+- `config.h` — pin map (authoritative, cites the netlist), timing, protocol tokens, **v1.1 per-cam stop descriptors + enforcement flags (all default OFF/UNCONFIRMED)**, **v1.2 tap/ring/ADC constants** (binding contract: remediation spec §R3).
+- `main.c` — inputs/debounce, UART protocol + TX ring, safety supervisor (incl. the v1.1 cam-stop / SC-TB-echo / motion-without-RUN paths), **v1.2 tap section** (choke-point init, enforced direction invariant, edge ring + persistence, TAPDUMP/TAPCLR, ADC, storm guard), main loop.
+- `CHANGELOG.md` — full version history (v0.1.0 → v1.2.0) with per-version flash status.
+- `test/mock_pico.h` / `test/mock_impl.h` — host-test mock SDK surface (declarations / one shared implementation; v1.2 adds per-pin direction/write recording + IRQ/ADC/sync mocks).
 - `test/test_main.c` — default host test (flags OFF) + Section J off-by-default inertness.
 - `test/test_v11.c` — v1.1 host test (flags forced ON via `-D`): each new fault path fires fail-safe.
-- `CMakeLists.txt`, `pico_sdk_import.cmake` — Pico SDK build.
+- `test/test_v12.c` — **v1.2 host test = the C2 direction-invariant gate** + tap decode/ring/persistence/dump/ADC/storm-guard/cross-check coverage.
+- `CMakeLists.txt`, `pico_sdk_import.cmake` — Pico SDK build (v1.2 links `hardware_adc`).
 
 ## Status / next
 - v1 written + **verified 2026-06-03**; **clean-room rebuild re-verified 2026-06-04** (full from-scratch ARM cross-build 88/88 + host test 24/24, both **0-warning** under `-Wall -Wextra`; `.uf2` = 40 KB, 24 KB flash / 2.6 KB RAM): host logic test 24/24 + clean ARM cross-build → `.uf2`; Pi-side reader/daemon done and Codex-audited (fixes applied).
 - **v0.2.0 audit hardening 2026-06-10** (fable-audit P3 items): host test **55/55** + clean ARM cross-build re-verified (`.uf2` = 41.5 KB), both 0-warning. **NOT yet flashed/bench-run** — needs: re-flash, hb `in`/`run` masks observed on the wire, chatter fault provoked with a function generator or relay buzzer, and the Pi-side resync/maxrun-check TODOs in `rp2040_link.py` (see Pi-side integration above).
 - **v1.1.0 SAFETY supervision written 2026-06-10** (fable-audit novel idea #13): cam-stop OVERRUN + SC/TB collision echo + motion-without-RUN, all default OFF behind per-cam config flags. Host tests **61/61** (`test_main`, incl. off-by-default inertness) + **28/28** (`test_v11`, flags forced on), both 0-warning under `-Wall -Wextra -Werror`; clean ARM cross-build re-verified (`.uf2` = 43.5 KB). **NOT yet flashed/bench-run; all v1.1 flags ship OFF** — so on-the-wire behavior is still exactly v0.2.0 until a board is armed cam-by-cam.
 - **v1.1.1 review fixes 2026-07-06** (phase8 fable review findings 37/56/58 + Pi-side 38): boot `v11` posture field, arm-once cam-stop grace, sliding chatter window; `rp2040_link.py` gains hb `run`-mask reconciliation (bounded re-sends + `run_mismatch()`) and `v11_posture()`. Host tests **64/64** (`test_main`) + **32/32** (`test_v11`), Pi-side self-tests green. **NOT yet flashed — owner review + re-flash pending; all v1.1 flags still ship OFF.**
+- **v1.2.0 rev-D tap telemetry 2026-07-21** (remediation spec R3 — closes Codex C2): enforced input-only invariant on GP16-19 (choke-point init + register readback + host direction-invariant test), inverted tap decode, noinit rail-drop edge ring with reboot persistence + `TAPDUMP`/`TAPCLR`, VCC_5V ADC in the heartbeat. Host tests **64/64 + 32/32 + 70/70** (new `test_v12`), all `-Werror`-clean; ARM cross-build verified (`.uf2` = 56 KB, 32.7 KB flash / 5.4 KB RAM; `.map` confirms `tap_ring` in `.uninitialized_data`, outside crt0 zero-fill). `rp2040_link.py` verified compatible unmodified (38/38 + v1.2-line feed check). **NOT yet flashed.** Bench gates: real-silicon reboot persistence, ADC-vs-DMM, `TAP_KICK_STARVE_MS` vs measured NE555 window, and the R1.9 fault-injection procedure (the FI-1 bench build is a separate, not-yet-written target — excluded from release by definition).
 - ⚠️ **NOT cutover-ready.** "Done" = host-logic + build only. The cutover runbook's **G3 cam-stop rail-drop gate** now has its firmware *logic*, but the **enforcement is gated OFF** pending the per-cam edge→angle polarity field capture (runbook §3.2). A stock build still provides only health + the motion **max-run backstop**.
 - Next: build/flash, bench bring-up steps 1–4 (above), wire the Pi-side reader (contract above), then **bench step 5**: capture cam polarity (§3.2), set `CAM_*_TRIP` + flip `*_ENABLED` cam-by-cam, re-flash, and run the G3 cam-stop drop sub-test per cam.

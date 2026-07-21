@@ -20,14 +20,46 @@ char     mock_rx[1024];
 int      mock_rx_head = 0, mock_rx_tail = 0;
 char     mock_tx[8192];
 int      mock_tx_len = 0;
+/* v1.2 */
+int      mock_gpio_dir[40];
+int      mock_gpio_funcsel[40];
+int      mock_dir_out_calls[40];
+int      mock_put_calls[40];
+uint32_t mock_irq_mask[40];
+gpio_irq_callback_t mock_irq_cb = 0;
+uint16_t mock_adc_raw = 0;
+int      mock_adc_selected = -1;
+int      mock_adc_inited = 0;
 
 /* ---- mock bodies --------------------------------------------------------- */
-void gpio_init(uint pin)                 { (void)pin; }
-void gpio_set_dir(uint pin, bool out)    { (void)pin; (void)out; }
+/* v1.2: direction + function are now RECORDED (the C2 direction-invariant test
+ * asserts the tap pins never see an output call), matching real-SDK semantics:
+ * gpio_init() = SIO function, input, output disabled.                          */
+void gpio_init(uint pin)                 { mock_gpio_dir[pin] = GPIO_IN; mock_gpio_funcsel[pin] = GPIO_FUNC_SIO; }
+void gpio_set_dir(uint pin, bool out)    { mock_gpio_dir[pin] = out ? 1 : 0; if (out) mock_dir_out_calls[pin]++; }
 void gpio_pull_up(uint pin)              { (void)pin; }
 bool gpio_get(uint pin)                  { return mock_gpio_in[pin] != 0; }
-void gpio_put(uint pin, bool v)          { mock_gpio_out[pin] = v ? 1 : 0; }
-void gpio_set_function(uint pin, int fn) { (void)pin; (void)fn; }
+void gpio_put(uint pin, bool v)          { mock_gpio_out[pin] = v ? 1 : 0; mock_put_calls[pin]++; }
+void gpio_set_function(uint pin, int fn) { mock_gpio_funcsel[pin] = fn; }
+/* v1.2 tap surface */
+uint gpio_get_dir(uint pin)              { return (uint)mock_gpio_dir[pin]; }
+uint gpio_get_function(uint pin)         { return (uint)mock_gpio_funcsel[pin]; }
+void gpio_disable_pulls(uint pin)        { (void)pin; }
+void gpio_set_input_hysteresis_enabled(uint pin, bool enabled) { (void)pin; (void)enabled; }
+void gpio_set_irq_enabled(uint pin, uint32_t events, bool enabled) {
+    mock_irq_mask[pin] = enabled ? events : 0u;
+}
+void gpio_set_irq_enabled_with_callback(uint pin, uint32_t events, bool enabled,
+                                        gpio_irq_callback_t cb) {
+    mock_irq_cb = cb;
+    gpio_set_irq_enabled(pin, events, enabled);
+}
+void     adc_init(void)                  { mock_adc_inited = 1; }
+void     adc_gpio_init(uint pin)         { mock_gpio_funcsel[pin] = GPIO_FUNC_NULL; mock_gpio_dir[pin] = GPIO_IN; }
+void     adc_select_input(uint input)    { mock_adc_selected = (int)input; }
+uint16_t adc_read(void)                  { return mock_adc_raw; }
+uint32_t save_and_disable_interrupts(void) { return 0; }
+void     restore_interrupts(uint32_t status) { (void)status; }
 
 uint uart_init(uart_inst_t *u, uint b)                                  { (void)u; return b; }
 void uart_set_hw_flow(uart_inst_t *u, bool c, bool r)                   { (void)u; (void)c; (void)r; }

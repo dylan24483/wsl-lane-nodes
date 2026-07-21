@@ -397,3 +397,34 @@ The routed-section entry above silently reinterpreted G8. The record, straight:
   sha256 and pin `MACHINE_CONTRACT_SHA256` in
   `WSL Systems/tests/test_phase8_bridge_contract.py` (currently `None` = warn-only),
   and re-run both repos' suites against the same file.**
+
+### FW-1 — firmware v1.2.0 written + verified (the C2 firmware half; R3 contract)
+
+- **What (2026-07-21):** `firmware/rp2040/` v1.1.1 → **v1.2.0** implementing remediation
+  spec §R3 verbatim: (1) GP16-19 input-only as an ENFORCED invariant — `tap_init()`
+  single choke point (input, Schmitt, pulls off) + `tap_assert_input_only()` OE/FUNCSEL
+  register readback at init and every heartbeat tick, drift ⇒ fail-safe `tap_dir` latch
+  (RP_OK refused); (2) inverted-tap decode (one `tap_read()` inversion point — raw 0 =
+  observed HIGH per the R1.2 2N7002 stage); (3) 1 ms-timestamped rail-drop edge ring
+  (128 × {t_ms,pin,level,epoch}) in `__uninitialized_ram`, magic-pair validity + epoch,
+  adopted across reboot / zeroed on power loss, cleared ONLY by the new `TAPCLR`;
+  `TAPDUMP` drips the ring + an ADVISORY cause code (`kick_starvation`/`arm_drop`/
+  `self_health`/`555_drop`) without ever starving critical UART lines; (4) VCC_5V ADC on
+  GP26 at 10 Hz, hb carries latest+min/max mV. Additive-only wire changes; safety paths
+  (max-run, chatter, RP_OK semantics, v1.1 flags all still OFF) logic-identical.
+- **C2 gate evidence:** new host test `test/test_v12.c` — mock SDK records every
+  output-direction/write per pin; the test FAILS if GP16-19/GP26 ever appear in one
+  across init + operation + every fault path (70/70), and a register-tamper case proves
+  the readback trips. Suites: **64/64 + 32/32 + 70/70**, all `-Wall -Wextra -Werror`
+  clean (gcc 16.1.0). ARM cross-build via `build.ps1` (pico-sdk, xpack gcc): `.uf2` 56 KB,
+  32.7 KB flash / 5.4 KB RAM; `.elf.map` confirms `.uninitialized_data.tap_ring` (outside
+  crt0 zero-fill — the persistence claim is structural, not assumed). `rp2040_link.py`
+  UNMODIFIED and verified compatible (self-test 38/38 + a v1.2-line feed check: all new
+  fields/kinds ignored cleanly).
+- **NOT flashed.** Bench gates recorded in `firmware/rp2040/CHANGELOG.md`: real-silicon
+  reboot persistence, ADC vs DMM (±3 %, spec §D), `TAP_KICK_STARVE_MS` (placeholder
+  300 ms) vs the measured NE555 window, and the R1.9 procedure. **FI-1** (the bench-only
+  fault-injection build that drives GP16-19 output-high) is NOT part of v1.2 — it is a
+  separate future target for the first-article task, necessarily built with the invariant
+  bypassed behind its physical jumper, and excluded from any release artifact.
+- **Sacred check:** revC snapshot MANIFEST re-verified after this batch — **189/189 OK**.
