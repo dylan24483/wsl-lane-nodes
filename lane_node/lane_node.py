@@ -258,6 +258,15 @@ async def _settle_capture_emit(lane_id):
             log.info(f"lane {lane_id}: camera pin_mask=0x{pin_mask:03x} "
                      f"(standing={[p for p in range(1,11) if pin_mask & (1<<(p-1))]})")
             msg = encode(Msg.BALL_EVENT, lane=lane_id, pin_mask=pin_mask)
+            if pin_mask == 0:
+                # All pins down: the upcoming post-sweep window is the
+                # known-empty moment — schedule the (throttled) empty-ref
+                # self-check (R2-14). Fire-and-forget; it guards itself.
+                try:
+                    asyncio.get_running_loop().create_task(
+                        _maybe_camera_selfcheck(lane_id))
+                except Exception:
+                    pass
 
         if event_queue:
             await event_queue.put(msg)
@@ -720,6 +729,143 @@ async def _run_connection(ws):
     raise ConnectionError("websocket closed by server")
 
 
+# ---------------------------------------------------------------------------
+# R2-14 (Codex round-2, 2026-07-21): camera self-checks IN the production
+# daemon path. camera.frame_health / self_check_empty existed but nothing
+# scheduled them — a dead/frozen/dark/blurred camera only surfaced as balls
+# quietly falling back to awaiting_manual. A periodic health poll + a
+# throttled post-strike empty-reference check now emit typed diag events
+# ('camera_health' / 'camera_ref_drift') through the same diag_events pipe
+# (JSONL outbox -> :8766 machine_events). ALL of it: off the scoring path
+# (asyncio.to_thread, skipped while a scoring capture is in flight),
+# alert-only, bounded, env-killable, never raises.
+# ---------------------------------------------------------------------------
+from diag_events import DiagWriter as _DiagWriter, make_event as _make_event
+
+CAM_HEALTH_ENV = "WSL_CAM_HEALTH"                # default ON in camera mode
+CAM_HEALTH_POLL_ENV = "WSL_CAM_HEALTH_POLL_S"    # poll cadence (default 300 s)
+CAM_SELFCHECK_MIN_ENV = "WSL_CAM_SELFCHECK_MIN_S"  # min gap between empty-ref checks
+_FALSEY_ENV = ("0", "false", "no", "off", "")
+
+_DIAG_WRITER = None          # started in main() (camera mode only)
+_cam_selfcheck_last = 0.0    # monotonic time of the last empty-ref self-check
+_cam_health_warned = False
+
+
+def _cam_env_on(name, default="1"):
+    return os.environ.get(name, default).strip().lower() not in _FALSEY_ENV
+
+
+def _cam_env_float(name, default):
+    try:
+        return float(os.environ.get(name, "").strip() or default)
+    except ValueError:
+        return float(default)
+
+
+def _diag_emit(severity, event_type, code=None, detail=None):
+    """Enqueue one diag event (never raises, no-op without a writer)."""
+    w = _DIAG_WRITER
+    if w is None:
+        return
+    try:
+        w.emit(_make_event(min(LANES), severity, event_type, code=code,
+                           detail=detail))
+    except Exception:
+        log.debug("camera diag emit swallowed", exc_info=True)
+
+
+def _classify_camera_health(h):
+    """Map a frame_health dict onto the catalog's dead/frozen/dark/blur
+    classes for the event code."""
+    if not h.get('grabbed'):
+        return 'dead'
+    if h.get('stale'):
+        return 'frozen'
+    reasons = " ".join(h.get('reasons') or []).lower()
+    if 'dark' in reasons or 'bright' in reasons or 'mean' in reasons:
+        return 'dark'
+    if 'focus' in reasons or 'blur' in reasons or 'variance' in reasons:
+        return 'blur'
+    return 'unhealthy'
+
+
+async def camera_health_loop():
+    """Periodic camera health poll (camera mode only). One 'camera_health'
+    warn per unhealthy episode; recovery emits 'recovered' info. Runs the
+    blocking capture in a worker thread and skips any poll that would race
+    a scoring capture."""
+    global _cam_health_warned
+    if SCORING_MODE != "camera" or not _cam_env_on(CAM_HEALTH_ENV):
+        return
+    poll_s = max(10.0, _cam_env_float(CAM_HEALTH_POLL_ENV, 300.0))
+    log.info(f"camera health: polling every {poll_s:.0f}s "
+             f"(disable: {CAM_HEALTH_ENV}=0)")
+    while True:
+        await asyncio.sleep(poll_s)
+        try:
+            cam = _PAIR_CAMERA
+            if cam is None:
+                if not _cam_health_warned:
+                    _cam_health_warned = True
+                    _diag_emit("warn", "camera_health", code="dead",
+                               detail={"reason": "camera mode but no camera "
+                                                 "object (init failed)"})
+                continue
+            if any(_capture_in_flight.values()):
+                continue        # never race a scoring capture
+            h = await asyncio.to_thread(cam.frame_health)
+            ok = bool(h.get('ok'))
+            if not ok and not _cam_health_warned:
+                _cam_health_warned = True
+                _diag_emit("warn", "camera_health",
+                           code=_classify_camera_health(h),
+                           detail={k: h.get(k) for k in
+                                   ("mean", "variance", "focus", "grabbed",
+                                    "stale", "reasons")})
+            elif ok and _cam_health_warned:
+                _cam_health_warned = False
+                _diag_emit("info", "recovered", code="camera_health")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.debug("camera_health_loop swallowed", exc_info=True)
+
+
+async def _maybe_camera_selfcheck(lane_id):
+    """Throttled empty-reference self-check after an all-pins-down camera
+    read (the deck is empty between the sweep finishing and the fresh rack
+    spotting — the closest thing Track A has to a known-empty window; the
+    check itself re-verifies emptiness against the reference and is flag-only
+    unless WSL_CAM_AUTO_RECAL is deliberately enabled)."""
+    global _cam_selfcheck_last
+    try:
+        min_s = _cam_env_float(CAM_SELFCHECK_MIN_ENV, 3600.0)
+        now = time.monotonic()
+        if now - _cam_selfcheck_last < min_s:
+            return
+        _cam_selfcheck_last = now
+        await asyncio.sleep(4.0)          # sweep-finished, pre-spot window
+        cam = _PAIR_CAMERA
+        if cam is None or any(_capture_in_flight.values()):
+            return
+        v = await asyncio.to_thread(cam.self_check_empty)
+        if not v.get('grabbed') or v.get('stale'):
+            _diag_emit("warn", "camera_health",
+                       code='dead' if not v.get('grabbed') else 'frozen',
+                       detail={"during": "self_check_empty",
+                               "reason": v.get('reason')})
+        elif v.get('flagged'):
+            _diag_emit("warn", "camera_ref_drift", code="empty_ref",
+                       detail={k: v.get(k) for k in
+                               ("max_divergence", "max_spot_divergence",
+                                "empty_confirmed", "recalibrated", "reason")})
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.debug("_maybe_camera_selfcheck swallowed", exc_info=True)
+
+
 def _init_camera():
     """Construct the PairCamera in camera mode. Failure is non-fatal: we log and
     leave _PAIR_CAMERA None, so detect_current_pins() returns None and every ball
@@ -744,10 +890,21 @@ def _init_camera():
 
 
 async def main():
-    global event_queue, main_loop
+    global event_queue, main_loop, _DIAG_WRITER
     main_loop = asyncio.get_running_loop()
     event_queue = asyncio.Queue()
     _init_camera()
+    # Camera-health diag pipe (R2-14): JSONL always, HTTP outbox when
+    # WSL_DIAG_SERVER_URL is provisioned (systemd env file). Camera mode
+    # only — manual/disabled nodes have nothing to report here.
+    if SCORING_MODE == "camera" and _cam_env_on(CAM_HEALTH_ENV):
+        try:
+            _DIAG_WRITER = _DiagWriter()
+            _DIAG_WRITER.start()
+        except Exception:
+            log.warning("camera diag writer failed to start (health events "
+                        "will be log-only)", exc_info=True)
+            _DIAG_WRITER = None
 
     # SIGTERM is systemd's default stop signal. Without a handler, Python
     # exits without running atexit, and BCM2711 retains the GPIO output
@@ -779,9 +936,15 @@ async def main():
         await asyncio.gather(
             watchdog_kick_loop(),
             connection_manager(),
+            camera_health_loop(),      # R2-14: no-op unless camera mode + on
         )
     finally:
         _cleanup_gpio()
+        if _DIAG_WRITER is not None:
+            try:
+                _DIAG_WRITER.stop()
+            except Exception:
+                pass
 
 if __name__ == '__main__':
     try:

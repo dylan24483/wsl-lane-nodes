@@ -125,3 +125,44 @@ This controller pin plan **overlaps that set on GPIO 5, 6, 12, 13, 16, 20, 23, 2
 - The end state is a **unified scoring+control node** (the `TODO(server)` in `controller_daemon.py`): once the board reads DIELL/foul through the RP2040/opto front-ends and the controller drives cycle/power through the relays, `lane_node.py`'s **direct-GPIO machine I/O retires entirely**, freeing those pins. Until that unification is built, treat the controller pin plan as **bench-Pi-only**.
 
 > **Correction (2026-06-04, Codex audit):** earlier drafts of this doc called the plan "deconflicted" and said Track-A scoring inputs could "stay" on the same Pi. That was wrong — the scoring input pins collide too. The plan is deconflicted *internally*, not against the live Track-A node.
+
+## 8. Per-Pi environment file — `/etc/wsl-lane-node.env` (R2-9, 2026-07-21)
+
+Both units load `EnvironmentFile=-/etc/wsl-lane-node.env`. **The default
+deployment ships the HTTP diagnostics leg configured — JSONL-only is a
+degraded mode, not the norm** (Codex round-2 R2-9): without
+`WSL_DIAG_SERVER_URL` + `LANE_NODE_TOKEN` every diagnostics event stays on
+the SD card and nothing reaches the :8766 machine_events store, the desk, or
+mechanic SMS.
+
+```bash
+sudo cp systemd/wsl-lane-node.env.example /etc/wsl-lane-node.env
+sudo chmod 600 /etc/wsl-lane-node.env    # it carries the lane token
+sudo nano /etc/wsl-lane-node.env         # set at minimum:
+#   WSL_DIAG_SERVER_URL=http://192.168.4.103:8766
+#   LANE_NODE_TOKEN=<the server's token>
+#   WSL_DIAG_SOURCE_ID=<stable device id, e.g. pi-lane21-22>
+#   WSL_BOARD_REVS=21=revC,22=revC       # R2-6: REQUIRED for the controller
+sudo systemctl daemon-reload
+sudo systemctl restart lane-node         # or lane-node-controller
+```
+
+Verify after restart:
+
+```bash
+journalctl -u lane-node-controller -n 20   # expect "board_rev=revC" per lane,
+                                           # NOT "UNPROVISIONED (will be refused)"
+ls ~/wsl-lane-nodes/diag_logs/outbox_cursor.json   # outbox cursor advancing
+curl -s http://192.168.4.103:8766/api/machine/health | head   # events landing
+```
+
+**R2-6 note:** the controller daemon has **no default board revision** — a
+lane without `WSL_BOARD_REVS` (or `--board-revs`) is refused at startup and
+skipped fail-safe (never ticked, NE555 never kicked, rail stays down). This
+is deliberate: a silent `revC` default would swallow every AUX4-11 role on a
+rev-D board with zero log lines.
+
+**R2-12 note:** events ship via the JSONL outbox (`diag_events.OutboxReplayer`)
+with a persisted cursor advanced only on a 2xx ack; the server dedupes on
+`(source_id, boot_id, seq)`, so outages/drops replay idempotently. Keep
+`WSL_DIAG_SOURCE_ID` stable across re-images.

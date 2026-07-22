@@ -10,6 +10,13 @@ User=pi
 Group=pi
 WorkingDirectory=/home/pi/wsl-lane-nodes
 
+# R2-9 (2026-07-21): shared per-Pi provisioning env — WSL_DIAG_SERVER_URL +
+# LANE_NODE_TOKEN (camera-health diag events ship over the same outbox leg
+# as the controller daemon's). Template: systemd/wsl-lane-node.env.example;
+# install per docs/phase8_pi_provisioning.md §8. '-' = optional on a bench
+# Pi; production installs MUST create it.
+EnvironmentFile=-/etc/wsl-lane-node.env
+
 # Run lane_node.py via the venv's python so we get gpiozero + websockets.
 ExecStart=/home/pi/wsl-lane-nodes/.venv/bin/python3 lane_node/lane_node.py
 

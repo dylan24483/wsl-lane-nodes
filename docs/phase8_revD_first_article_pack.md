@@ -10,6 +10,7 @@
 > - `kicad/wsl-phase8b-revD.net` — `ce52ed7fcdd145a3…`
 > - `kicad/revD/wsl-phase8b-revD.kicad_pcb` — `c2743ea2534b54e7…`
 > - `kicad/revD/netlist_diff_revC_to_revD.txt` (REFDES_SHIFT cross-reference)
+> - `firmware/rp2040/config.h` FW_VERSION — `phase8b-rp2040 v1.2.1` (every firmware reference below)
 >
 > Companion: `docs/phase8_revD_first_article_refdes_map.csv` — the complete
 > 262-row refdes → function → value → location map (same generation run).
@@ -91,22 +92,22 @@ R106 is now a lamp resistor).
 
 | TP | Net | Location (x, y) mm | Band |
 |---|---|---|---|
-| TP1 |  | (100, 229) | LOGIC |
-| TP2 |  | (110, 229) | LOGIC |
-| TP3 |  | (120, 229) | LOGIC |
-| TP4 |  | (22, 229) | FIELD |
-| TP5 |  | (34, 229) | FIELD |
-| TP6 |  | (130, 229) | LOGIC |
-| TP7 |  | (140, 229) | LOGIC |
-| TP8 |  | (150, 229) | LOGIC |
-| TP9 |  | (100, 236) | LOGIC |
-| TP10 |  | (110, 236) | LOGIC |
-| TP11 |  | (120, 236) | LOGIC |
-| TP12 |  | (128, 236) | LOGIC |
-| TP13 |  | (136, 236) | LOGIC |
-| TP14 |  | (144, 236) | LOGIC |
-| TP15 |  | (152, 236) | LOGIC |
-| TP16 |  | (160, 236) | LOGIC |
+| TP1 | VCC_5V | (100, 229) | LOGIC |
+| TP2 | GND | (110, 229) | LOGIC |
+| TP3 | VCC_3V3 | (120, 229) | LOGIC |
+| TP4 | FIELD_WET_V | (22, 229) | FIELD |
+| TP5 | FIELD_GND | (34, 229) | FIELD |
+| TP6 | I2C_SDA | (130, 229) | LOGIC |
+| TP7 | I2C_SCL | (140, 229) | LOGIC |
+| TP8 | WDOG_KICK | (150, 229) | LOGIC |
+| TP9 | WDOG_TIMING_NODE | (100, 236) | LOGIC |
+| TP10 | NE555_TRIG | (110, 236) | LOGIC |
+| TP11 | NE555_OUT | (120, 236) | LOGIC |
+| TP12 | WDOG_OK_PULLDOWN | (128, 236) | LOGIC |
+| TP13 | ARM_PERMIT | (136, 236) | LOGIC |
+| TP14 | RP2040_OK | (144, 236) | LOGIC |
+| TP15 | SAFE_STOP_RETURN | (152, 236) | LOGIC |
+| TP16 | RELAY_ENABLE_RAIL | (160, 236) | LOGIC |
 
 ## 3. Key functional groups (positions from the routed board)
 
@@ -230,7 +231,7 @@ Watch the ADC trend during the 6-coil energize (feeds FA-6 step 3).
 
 ### FA-4 — USB / flash (item B)
 Ordinary unmodified micro-B cable fully seats with the J1 ribbon MATED; BOOTSEL
-reachable; UF2 drag-drop flash of firmware v1.2 succeeds WITHOUT a shaved cable.
+reachable; UF2 drag-drop flash of firmware `phase8b-rp2040 v1.2.1` succeeds WITHOUT a shaved cable.
 
 ### FA-5 — GPB bank poke (item C — AUX4-11 on MCP_IN_B 0x21 port B)
 
@@ -252,15 +253,16 @@ reachable; UF2 drag-drop flash of firmware v1.2 succeeds WITHOUT a shaved cable.
    `board_rev` never reads port B; that is a config error, not a board fault.
 
 ### FA-6 — VCC_5V ADC (item D)
-1. GP26/ADC0 reads VCC_5V/2 via R129/R130; firmware v1.2 heartbeat carries
-   `adc_vcc5` latest + min/max mV.
+1. GP26/ADC0 reads VCC_5V/2 via R129/R130; the `phase8b-rp2040 v1.2.1` heartbeat carries
+   VCC_5V as `v5` (latest) / `v5n` (window min) / `v5x` (window max), all mV
+   (R2-5: the old `adc_vcc5` name here matched NOTHING the firmware emits).
 2. Compare against the TP1 DMM value: **±3 % gate** (remediation spec R3.4).
-3. Energize all 6 coils (FA-3) — the sag must be visible in the heartbeat min field.
+3. Energize all 6 coils (FA-3) — the sag must be visible in the heartbeat `v5n` field.
 
 ### FA-7 — Rail-tap fault injection (remediation spec **R1.9 governs**; discharges OG-4)
 
 Equipment: bench PSU, scope, heat gun + **thermocouple**, clip leads, Pi-emulator rig,
-firmware v1.2 (release build) + the bench-only **FI-1** build (drives GP16–19
+firmware `phase8b-rp2040 v1.2.1` (release build) + the bench-only **FI-1** build (drives GP16–19
 output-high on command; refuses to run without its physical jumper; prints its identity
 on the UART banner; NEVER a release artifact).
 
@@ -284,7 +286,7 @@ on the UART banner; NEVER a release artifact).
    must neither arm nor hold, and a deliberate ARM_PERMIT disarm (driven low,
    push-pull — never tristated) must still drop the rail. Photograph thermocouple
    readings for the run log.
-5. **Edge-order proof (firmware v1.2):** force (a) Pi-death (kill the emulator) and
+5. **Edge-order proof (firmware `phase8b-rp2040 v1.2.1`):** force (a) Pi-death (kill the emulator) and
    (b) kick-starvation (emulator holds ARM high, stops kicking). The 1 ms tap ring
    (`TAPDUMP`) must show the documented edge order and advisory cause for each
    (`arm_drop` / `kick_starvation`), and the record must **survive a Pico reboot**
@@ -323,11 +325,9 @@ Before reflowing/soldering the remaining six MCV headers, install and solder ONE
 (recommend J14, 4-pos) on the 1.4 mm `_D1.4` drills: verify insertion force is normal
 and solder fill is complete. Then proceed with the rest.
 
-### FA-11 — Firmware v1.2 posture assert (refuses the first-article pass if absent)
-1. Boot banner shows v1.2.1 (or later v1.2.x) and `tap:{ep,pre,n}` state.
-   *(v1.2.1, 2026-07-21: `TAP_KICK_STARVE_MS` corrected 300 → 2000 ms — the real Pi
-   kick cadence is 1 Hz, not the "~250 ms" the v1.2.0 placeholder assumed. First-article
-   VERIFY bounds: measured NE555 window ≫ 2 s AND observed kick edge spacing < 2 s.)*
+### FA-11 — Firmware posture assert (refuses the first-article pass if absent)
+1. Boot banner shows `phase8b-rp2040 v1.2.1` (config.h FW_VERSION at pack generation — a
+   different banner means the wrong image is flashed) and `tap:{ep,pre,n}` state.
 2. `tap_assert_input_only()` is active (heartbeat-tick OE/FUNCSEL readback); simulate
    nothing here — the host suite already proves the trip path; on-silicon just confirm
    no `tap_dir` fault is latched with the release build.
@@ -351,4 +351,4 @@ and solder fill is complete. Then proceed with the rest.
 | FA-8 sacrificial pair + 4-way refusal | | |
 | FA-9 V_CE ≤ 0.3 V ×3 channels | | |
 | FA-10 MCV insertion/solder fill | | |
-| FA-11 firmware v1.2 posture | | |
+| FA-11 firmware `phase8b-rp2040 v1.2.1` posture | | |

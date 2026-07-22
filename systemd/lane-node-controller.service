@@ -32,6 +32,16 @@ User=pi
 Group=pi
 WorkingDirectory=/home/pi/wsl-lane-nodes
 
+# R2-9 (Codex round-2, 2026-07-21): the default deployment ships the HTTP
+# diagnostics leg CONFIGURED, not JSONL-only. /etc/wsl-lane-node.env carries
+# WSL_DIAG_SERVER_URL + LANE_NODE_TOKEN + WSL_BOARD_REVS (R2-6 — this daemon
+# REFUSES a board whose PCB revision is unprovisioned) — template:
+# systemd/wsl-lane-node.env.example; install per docs/phase8_pi_provisioning.md
+# §8. The leading '-' keeps a bench Pi bootable without the file, but a
+# production install MUST create it (the daemon then runs JSONL-only and
+# skips every board — loud, fail-safe).
+EnvironmentFile=-/etc/wsl-lane-node.env
+
 # The controller daemon: RP2040 link (cam/ball events + RP_OK) + MCP23017 relays
 # + the cycle FSM + the per-board arm/watchdog GPIOs. It runs a tight synchronous
 # control loop and kicks the NE555 from INSIDE that loop, so a stalled loop stops

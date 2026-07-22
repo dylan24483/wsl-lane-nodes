@@ -436,3 +436,72 @@ anywhere in the campaign; every rev-C artifact still carries its revB filename.
   lockstep; diff CLEAN with whitelists; WVR-ERC-1 baseline unchanged (1 error +
   40 warnings — no new waiver needed).
 - Explicit per-file staging on every commit; **nothing pushed** from either repo.
+
+---
+
+## 6. Round-2 addendum (2026-07-21 PM) — LANE-NODE SOFTWARE slice
+
+Codex re-audited the remediated package under a fabrication-readiness bar; the
+lane-node software findings below are now CLOSED in this repo (fw v1.2.2 items
+ride the firmware task; PCB/fab items ride the CAD task):
+
+- **R2-5 (partial — generator):** `scripts/generate_first_article_docs_revD.py`
+  pad-net parser accepts the KiCad-10 `(net "NAME")` form (the old int-id regex
+  matched nothing → every TP row shipped BLANK); generation now **fails closed**
+  on any blank TP net. FA-6 heartbeat fields corrected `adc_vcc5` → `v5`/`v5n`/
+  `v5x` (the names the firmware actually emits); every firmware reference in the
+  pack is generated from `config.h` FW_VERSION (`phase8b-rp2040 v1.2.1` at this
+  regeneration) instead of a hand-typed version. Pack + CSV regenerated.
+- **R2-6:** `BoardConfig.board_rev` has **no default** — provisioning is
+  explicit (`--board-revs` / `WSL_BOARD_REVS` in `/etc/wsl-lane-node.env` /
+  per-config), an unprovisioned board is refused at construction and skipped
+  fail-safe, and AUX roles unsupported by the declared revision are rejected
+  loudly at startup (`controller_daemon.py`).
+- **R2-8 (lane slice):** `/api/health` carries `git_hash` + a `build` object
+  (git hash, machine-contract sha256, start time) for deploy.ps1's build-hash
+  compare.
+- **R2-9:** both systemd units load `EnvironmentFile=-/etc/wsl-lane-node.env`;
+  template `systemd/wsl-lane-node.env.example`; provisioning doc §8. Default
+  deployment ships the HTTP diagnostics leg configured — JSONL-only is a
+  degraded mode.
+- **R2-11:** `rp2040_link.py` consumes ALL v1.2.x records — hb `tap`/`rd`/`ep`/
+  `v5`/`v5n`/`v5x`, boot `tap{ep,pre,n}`, `tapdump`/`tape`/`tapdump_end`/
+  `tapwarn` — into typed records the daemon promotes to machine events
+  (`tapdump`, `tap_warn`, `uart_drops`, `v5_out_of_range`). **Epoch-aware:**
+  ring entries whose epoch ≠ the current ring epoch are flagged stale and
+  excluded from fresh diagnosis (unknown epoch ⇒ stale, fail-toward-exclusion).
+  A boot that advertises a preserved pre-reboot ring triggers ONE bounded
+  TAPDUMP read-back per epoch.
+- **R2-12:** JSONL-as-outbox delivery — every event/cycle record stamped with
+  `(source_id, boot_id, seq)` (`diag_events.stamp_delivery`); the daily JSONL
+  IS the outbox, shipped by `OutboxReplayer` with a persisted cursor advanced
+  only on 2xx (cursor-ack replay after any drop/outage); server dedupes on a
+  UNIQUE partial index via INSERT OR IGNORE (additive migration in
+  `machine_store`; ingest ack reports `duplicates`). ONE write path, no second
+  Pi DB. Bank health promoted: `bank_unavailable` (IN-B read failures),
+  `configured_role_missing`, `stale_channel` (pulse-role silent across N
+  cycles); `run_mismatch`, UART drops, DiagQueue drops, HTTP/outbox drops,
+  restart loops (`service_restart_loop`) and `fw_config_mismatch` (maxrun
+  desync) are structured faults now, not log lines.
+- **R2-14:** camera self-checks scheduled in the production daemon path
+  (`lane_node.py`): periodic `frame_health` poll (dead/frozen/dark/blur →
+  `camera_health`), throttled post-strike `self_check_empty` (→
+  `camera_ref_drift`), all off the scoring path and skipped while a capture is
+  in flight. GS-vs-camera per-pin disagreement counter wired server-side at
+  cycle ingest (`gs_camera_disagree`, quiet-period throttled). Pi health beyond
+  undervoltage on the PlatformHealth thread: disk-free + read-only-FS write
+  probe, SoC thermal, wall-vs-monotonic clock-step, restart-loop detection,
+  diag-storage retention (size-capped pruning, `diag_storage_pruned`).
+- **R2-16 (software slice):** `field_wet_ok` role implemented now (AUX11
+  loopback; jumper is a harness item): supply loss emits ONE `field_wet_lost`
+  fault and suppresses the dependent field-input rules (no alert cascade);
+  restore re-baselines and emits `field_wet_restored`. AUX role framework is a
+  registry (`register_aux_role`) — extensible beyond the built-in four without
+  editing the dispatch.
+
+Verification: full lane suite green — pytest-native **199 passed** (this
+slice adds 32 new tests across `test_r2_link_v12` / `test_r2_outbox` /
+`test_r2_daemon` / `test_r2_server`) plus every standalone (`test_rp2040_link` 93/93, `controller_daemon --selftest`
+30/30, `test_flight_recorder` 71/71, safety-rail/FSM/scoring standalones all
+pass); rev-C sacred snapshot re-verified 189/189 after the batch. Contract
+rev 1.2 sha `a51b95e2…` pinned in lockstep in both repos.

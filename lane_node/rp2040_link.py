@@ -94,6 +94,19 @@ SEND_FAIL_LIMIT = 3  # consecutive serial-write failures => health_ok() False
 REBOOT_FAULT = "fw_reboot"  # synthetic fault latched on firmware-reboot detection
 RUN_RESYNC_RETRIES = 3  # hb run-mask mismatch: re-sends per motor per episode
 
+# v1.2.x tap telemetry (Codex round-2 R2-11, 2026-07-21). The firmware's hb
+# "tap" mask + tapdump "p" field use this bit/pin order (README "v1.2 tap
+# fields": bit 0..3 = 555, KICK, ARM, RPOK; levels are POST-inversion
+# observed-net levels — the 2N7002 stage inversion is already undone fw-side).
+TAP_BITS = ("NE555", "KICK", "ARM", "RPOK")
+# Bounded typed-record queue drained by the daemon (drain_diag_records) —
+# every v1.2.x record (tapdump ring, tapwarn, uart drop increases, boot
+# facts) becomes a typed dict here instead of being silently ignored.
+DIAG_RECORDS_MAX = 512
+# A tapdump from the firmware ring is at most TAP_RING_N entries (config.h
+# TAP_RING_N = 64); anything past this bound in one dump is discarded+counted.
+TAPDUMP_ENTRIES_MAX = 128
+
 
 class FwClock:
     """EWMA offset estimator between the firmware's millisecond clock (cam/ball
@@ -242,6 +255,16 @@ class RP2040Link:
         self.fw_clock = FwClock()   # fw-ms <-> Pi-monotonic offset (resynced on reboot)
         self._fw_version = None     # boot "fw" string (None until a boot is heard)
         self._boot_wdt = False      # last boot event carried wdt_reset (hw watchdog fired)
+        # v1.2.x telemetry (R2-11; None until a v1.2 firmware is heard)
+        self._tap_mask = None       # last hb "tap" (post-inversion net levels)
+        self._ring_depth = None     # last hb "rd" (tap edge-ring depth)
+        self._ring_epoch = None     # CURRENT ring epoch (boot tap.ep / hb "ep")
+        self._v5 = None             # (v5, v5n, v5x) mV from the last hb window
+        self._tapdump = None        # open tapdump collection (header + entries)
+        # typed diag records for the daemon (bounded; drained off-lock)
+        self._dr_lock = threading.Lock()
+        self._diag_records = deque(maxlen=DIAG_RECORDS_MAX)
+        self.diag_record_drops = 0  # records lost to the deque cap
 
         # queued cam/ball events, drained by apply_events()
         self._evlock = threading.Lock()
@@ -304,6 +327,12 @@ class RP2040Link:
 
     def ping(self):         self._send("PING")
 
+    def request_tapdump(self):
+        """Ask a v1.2+ firmware to drip its rail-drop edge ring (telemetry
+        read-back only — TAPDUMP never actuates and never clears; TAPCLR is
+        the only clear and is deliberately NOT wrapped here)."""
+        self._send("TAPDUMP")
+
     # ---- inbound parsing ---------------------------------------------------
     def feed_line(self, line):
         """Parse one received protocol line. Safe to call from the reader thread."""
@@ -351,6 +380,7 @@ class RP2040Link:
         elif kind in ("hb", "boot", "rp_ok", "flt", "ack"):
             notes = []   # (log_fn, msg, args) — emitted AFTER the lock is released
             resends = []  # run-state resync commands — sent AFTER the lock is released
+            records = []  # typed diag records — pushed AFTER the lock is released
             with self._lock:
                 self._last_hb = self.now()
                 if kind == "flt":
@@ -369,15 +399,23 @@ class RP2040Link:
                     if "flt" in ev:
                         self._fault = ev.get("flt", "")
                     if kind == "boot":
-                        self._on_boot(ev, notes)
+                        self._on_boot(ev, notes, records)
                     elif kind == "hb":
-                        self._on_hb(ev, notes, resends)
+                        self._on_hb(ev, notes, resends, records)
             for log_fn, msg, args in notes:
                 log_fn(msg, *args)
             for line in resends:   # _send takes the lock itself; must run unlocked
                 self._send(line)
+            self._push_records(records)
             if self.on_health:
                 self.on_health(ev)
+        elif kind in ("tapdump", "tape", "tapdump_end", "tapwarn"):
+            # v1.2.x tap telemetry (R2-11): consume the rail-drop edge ring +
+            # warnings into typed records instead of silently ignoring them.
+            records = []
+            with self._lock:
+                self._on_tap_event(kind, ev, records)
+            self._push_records(records)
 
     # ---- v0.2.0 telemetry (helpers called with self._lock HELD; they log via
     # `notes` so no logging handler can ever block under the lock) -------------
@@ -397,7 +435,7 @@ class RP2040Link:
         lvl = bool(mask & bit)
         return lvl if self._trip == "f" else not lvl
 
-    def _on_boot(self, ev, notes):
+    def _on_boot(self, ev, notes, records=None):
         rebooted = self._last_up is not None    # we had heartbeats before this boot
         self._last_up = None                    # fresh uptime/drp baselines
         self._last_drp = None
@@ -408,6 +446,23 @@ class RP2040Link:
         if isinstance(fw, str) and fw.strip():
             self._fw_version = fw.strip()[:80]
         self._boot_wdt = bool(ev.get("wdt_reset"))
+        # v1.2 boot tap facts: ring epoch + preservation state (R2-11). The
+        # epoch is the staleness anchor — tape entries from an EARLIER epoch
+        # are pre-reboot edges and must never read as fresh diagnosis.
+        tap = ev.get("tap")
+        if isinstance(tap, dict):
+            ep = self._num(tap, "ep")
+            if ep is not None:
+                self._ring_epoch = int(ep)
+            if records is not None:
+                records.append({
+                    "kind": "fw_boot", "t_pi": self.now(),
+                    "fw": self._fw_version, "wdt_reset": self._boot_wdt,
+                    "ring_epoch": self._ring_epoch,
+                    "ring_preserved": bool(self._num(tap, "pre")),
+                    "ring_entries": self._num(tap, "n"),
+                    "rebooted": rebooted,
+                })
         # Fresh firmware = motors all stopped; let the run-mask reconciliation
         # start a fresh episode (it re-sends RUN for anything still commanded).
         #
@@ -461,7 +516,23 @@ class RP2040Link:
                           "RP2040 firmware REBOOTED mid-session (boot event %r) — "
                           "safe-state relatch; operator re-arm required", (ev,)))
 
-    def _on_hb(self, ev, notes, resends):
+    def _on_hb(self, ev, notes, resends, records=None):
+        # v1.2 hb fields (R2-11): tap levels, ring depth/epoch, VCC_5V window
+        # extrema. Store-only at ~4 Hz — thresholding/alerting is the daemon's
+        # job (v5_stats/tap_levels/ring_epoch accessors), so the hb path stays
+        # allocation-light and no event floods at heartbeat rate.
+        tapm = self._num(ev, "tap")
+        if tapm is not None:
+            self._tap_mask = int(tapm)
+        rd = self._num(ev, "rd")
+        if rd is not None:
+            self._ring_depth = int(rd)
+        ep = self._num(ev, "ep")
+        if ep is not None:
+            self._ring_epoch = int(ep)
+        v5 = self._num(ev, "v5")
+        if v5 is not None:
+            self._v5 = (int(v5), self._num(ev, "v5n"), self._num(ev, "v5x"))
         m = self._num(ev, "in")
         if m is not None:
             m = int(m)
@@ -486,6 +557,13 @@ class RP2040Link:
                               "RP2040 dropped %d TX line(s) (drp %d -> %d) — UART "
                               "congested; cam/ball events may have been lost",
                               (drp - self._last_drp, self._last_drp, drp)))
+                if records is not None:
+                    # R2-12: UART drops become a structured fault stream, not
+                    # just a log line — the daemon promotes this record to a
+                    # 'uart_drops' machine event.
+                    records.append({"kind": "uart_drops", "t_pi": self.now(),
+                                    "lost": int(drp - self._last_drp),
+                                    "total": int(drp)})
             self._last_drp = drp
         up = self._num(ev, "up")
         if up is not None:
@@ -555,6 +633,100 @@ class RP2040Link:
                               "desynced for this motor",
                               (name, RUN_RESYNC_RETRIES)))
         self._run_mismatch = tuple(mismatched)
+
+    # ---- v1.2.x tap ring / warnings (R2-11; called with self._lock HELD) ----
+    def _on_tap_event(self, kind, ev, records):
+        """Consume tapdump/tape/tapdump_end/tapwarn lines. The full ring is
+        collected between the tapdump header and tapdump_end, then emitted as
+        ONE typed 'tapdump' record with per-entry epoch staleness already
+        judged (entry.ep != the dump's epoch => stale pre-reboot edge —
+        excluded from fresh diagnosis, reported separately). Bounded:
+        TAPDUMP_ENTRIES_MAX entries per dump, overflow counted."""
+        if kind == "tapwarn":
+            records.append({"kind": "tap_warn", "t_pi": self.now(),
+                            "code": str(ev.get("code", ""))[:80],
+                            "t_fw": self._num(ev, "t")})
+            return
+        if kind == "tapdump":
+            ep = self._num(ev, "ep")
+            if ep is not None:
+                self._ring_epoch = int(ep)
+            self._tapdump = {
+                "n": self._num(ev, "n"),
+                "epoch": self._ring_epoch,
+                "boot_reason": self._num(ev, "br"),
+                "muted_mask": self._num(ev, "mut"),
+                "cause": str(ev.get("cause", ""))[:40] or None,
+                "t_fw": self._num(ev, "t"),
+                "entries": [],
+                "discarded": 0,
+            }
+            return
+        if kind == "tape":
+            dump = self._tapdump
+            if dump is None:
+                # missed header (dropped line): collect into an implicit dump
+                # so the entries still surface rather than vanish.
+                dump = self._tapdump = {
+                    "n": None, "epoch": self._ring_epoch, "boot_reason": None,
+                    "muted_mask": None, "cause": None, "t_fw": None,
+                    "entries": [], "discarded": 0, "headerless": True,
+                }
+            if len(dump["entries"]) >= TAPDUMP_ENTRIES_MAX:
+                dump["discarded"] += 1
+                return
+            p = self._num(ev, "p")
+            entry_ep = self._num(ev, "ep")
+            cur_ep = dump["epoch"]
+            dump["entries"].append({
+                "i": self._num(ev, "i"),
+                "t_fw": self._num(ev, "t"),
+                "pin": (TAP_BITS[int(p)] if p is not None
+                        and 0 <= int(p) < len(TAP_BITS) else f"?{p}"),
+                "level": self._num(ev, "l"),
+                "epoch": entry_ep,
+                # Epoch-aware staleness (R2-11): a pre-reboot edge must never
+                # influence fresh diagnosis. Unknown epochs are treated STALE
+                # (fail toward exclusion).
+                "stale": (entry_ep is None or cur_ep is None
+                          or int(entry_ep) != int(cur_ep)),
+            })
+            return
+        if kind == "tapdump_end":
+            dump, self._tapdump = self._tapdump, None
+            if dump is None:
+                return
+            entries = dump.pop("entries")
+            fresh = [e for e in entries if not e["stale"]]
+            records.append({
+                "kind": "tapdump", "t_pi": self.now(),
+                "meta": dump,
+                "entries": entries,
+                "fresh_n": len(fresh),
+                "stale_n": len(entries) - len(fresh),
+                "end_n": self._num(ev, "n"),
+            })
+
+    def _push_records(self, records):
+        """Append typed records to the bounded drain queue. Never raises."""
+        if not records:
+            return
+        try:
+            with self._dr_lock:
+                for r in records:
+                    if len(self._diag_records) == self._diag_records.maxlen:
+                        self.diag_record_drops += 1
+                    self._diag_records.append(r)
+        except Exception:
+            log.debug("_push_records swallowed", exc_info=True)
+
+    def drain_diag_records(self):
+        """Drain the typed v1.2.x record queue (daemon tick side — the
+        consumer turns these into DiagEvents; enqueue-only downstream)."""
+        with self._dr_lock:
+            out = list(self._diag_records)
+            self._diag_records.clear()
+        return out
 
     # ---- FSM bridge --------------------------------------------------------
     def apply_events(self, controller, observer=None):
@@ -663,6 +835,34 @@ class RP2040Link:
         image is flashed instead of trusting the FW_VERSION string (finding 37)."""
         with self._lock:
             return dict(self._v11) if self._v11 else None
+
+    def tap_levels(self):
+        """{net: observed level} decoded from the last hb "tap" mask (v1.2+
+        firmware, rev-D board), or None if never sent. Levels are the
+        POST-inversion observed-net levels (firmware already undid the
+        2N7002 stage inversion)."""
+        with self._lock:
+            m = self._tap_mask
+        if m is None:
+            return None
+        return {n: bool(m & (1 << i)) for i, n in enumerate(TAP_BITS)}
+
+    def v5_stats(self):
+        """(latest, min, max) VCC_5V millivolts over the last hb window
+        (v1.2+ firmware), or None if never sent."""
+        with self._lock:
+            return self._v5
+
+    def ring_epoch(self):
+        """Current tap edge-ring epoch (v1.2+), or None. Entries from an
+        earlier epoch are pre-reboot edges (stale)."""
+        with self._lock:
+            return self._ring_epoch
+
+    def ring_depth(self):
+        """Last hb "rd" tap edge-ring depth (v1.2+), or None."""
+        with self._lock:
+            return self._ring_depth
 
     def maxrun_ms(self):
         """Firmware max-run ceiling advertised in the boot event (v0.2.0+), or None

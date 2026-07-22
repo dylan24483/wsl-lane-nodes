@@ -32,3 +32,9 @@ backups/
 
 # place_components_revD.py --force reruns save the prior board as .bak (intermediate, never commit)
 kicad/revD/*.bak
+
+# Runtime stores + diag artifacts (created by local test runs / the Pi daemons;
+# the production DBs live on the deployed hosts, never in git)
+machine_diag.db
+lane_state.db
+diag_logs/

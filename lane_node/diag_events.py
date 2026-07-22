@@ -49,8 +49,10 @@ import json
 import logging
 import os
 import queue
+import socket
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 
 log = logging.getLogger("diag_events")
@@ -67,6 +69,25 @@ SERVER_URL_ENV = "WSL_DIAG_SERVER_URL"   # HttpSink base URL (unset = no HTTP)
 # production posture), so a token-less HttpSink would get 401 on every batch
 # and silently drop it (2026-07-19 review). Unset = current open behavior.
 TOKEN_ENV = "LANE_NODE_TOKEN"
+# R2-12 (Codex round-2, 2026-07-21) — JSONL-as-outbox delivery semantics:
+#   WSL_DIAG_SOURCE_ID   stable per-device id (default: hostname). Combined
+#                        with the per-process boot_id + a monotonic seq, every
+#                        record gets a delivery identity (source_id, boot_id,
+#                        seq) the server dedupes on (UNIQUE index, INSERT OR
+#                        IGNORE) — replays after drops are idempotent.
+#   WSL_DIAG_OUTBOX      default '1'. When the HTTP leg is configured
+#                        (WSL_DIAG_SERVER_URL), events ship via the
+#                        OutboxReplayer: ONE write path (the JSONL file IS the
+#                        outbox), a persisted cursor advanced only on 2xx
+#                        (cursor-ack), replay resumes after any drop/outage.
+#                        Set '0' to fall back to the legacy live HttpSink leg.
+#   WSL_DIAG_OUTBOX_POLL_S  replay poll cadence (default 10 s).
+SOURCE_ID_ENV = "WSL_DIAG_SOURCE_ID"
+OUTBOX_ENV = "WSL_DIAG_OUTBOX"
+OUTBOX_POLL_ENV = "WSL_DIAG_OUTBOX_POLL_S"
+DEFAULT_OUTBOX_POLL_S = 10.0
+OUTBOX_BATCH_MAX = 200          # lines read + POSTed per replay pass segment
+CURSOR_FILENAME = "outbox_cursor.json"
 
 DEFAULT_QUEUE_MAX = 1000
 DEFAULT_DIR = "./diag_logs"
@@ -98,6 +119,62 @@ def _int_env(name, default):
         return v if v > 0 else default
     except Exception:
         return default
+
+
+def _env_on_default(name, default="1"):
+    """True unless the env var is explicitly falsey (WSL_* house pattern)."""
+    return os.environ.get(name, default).strip().lower() not in _FALSEY
+
+
+def _float_env(name, default):
+    try:
+        return float(os.environ.get(name, "").strip() or default)
+    except Exception:
+        return float(default)
+
+
+# ---- delivery identity (R2-12: source_id / boot_id / monotonic seq) ------------
+# boot_id is PER PROCESS START (uuid4): two daemons on one Pi, or a restart of
+# the same daemon, can never collide on (source_id, boot_id, seq). seq is a
+# process-wide monotonic counter shared by every writer instance in the process.
+_BOOT_ID = uuid.uuid4().hex
+_seq_lock = threading.Lock()
+_seq_counter = 0
+
+
+def source_id():
+    """Stable per-device source id: WSL_DIAG_SOURCE_ID, else hostname."""
+    sid = os.environ.get(SOURCE_ID_ENV, "").strip()
+    if sid:
+        return sid[:120]
+    try:
+        return (socket.gethostname() or "unknown")[:120]
+    except Exception:
+        return "unknown"
+
+
+def boot_id():
+    return _BOOT_ID
+
+
+def next_seq():
+    """Process-wide monotonic sequence number (delivery identity)."""
+    global _seq_counter
+    with _seq_lock:
+        _seq_counter += 1
+        return _seq_counter
+
+
+def stamp_delivery(row):
+    """Stamp delivery-identity fields onto a row dict IN PLACE (idempotent —
+    existing identity fields are never overwritten). Never raises."""
+    try:
+        row.setdefault("source_id", source_id())
+        row.setdefault("boot_id", _BOOT_ID)
+        row.setdefault("seq", next_seq())
+    except Exception:
+        pass
+    return row
 
 
 # ---- JSON-safety coercion (bounded; mirrors flight_recorder._jsonable) ---------
@@ -338,10 +415,15 @@ class HttpSink:
 
     def __init__(self, base_url=None, *, timeout=DEFAULT_HTTP_TIMEOUT_S,
                  retries=DEFAULT_HTTP_RETRIES, flush_n=DEFAULT_FLUSH_N,
-                 flush_s=DEFAULT_FLUSH_S, post=None, now=None, token=None):
+                 flush_s=DEFAULT_FLUSH_S, post=None, now=None, token=None,
+                 events_enabled=True):
         raw = base_url if base_url is not None else os.environ.get(SERVER_URL_ENV, "")
         self.base_url = str(raw).strip().rstrip("/")
         self.enabled = bool(self.base_url)
+        # R2-12: when the OutboxReplayer owns event delivery (JSONL-as-outbox,
+        # ONE write path), this sink stays alive for post_cycle() only —
+        # emit()/flush() become no-ops so events are never double-shipped live.
+        self.events_enabled = bool(events_enabled)
         # X-Lane-Token on every POST when the deployment is token-armed
         # (LANE_NODE_TOKEN — same env as lane_node.py / the wsl_api bridge).
         tok = token if token is not None else os.environ.get(TOKEN_ENV, "")
@@ -359,7 +441,7 @@ class HttpSink:
         self.post_errors = 0   # individual failed POST attempts
 
     def emit(self, row):
-        if not self.enabled:
+        if not self.enabled or not self.events_enabled:
             return
         try:
             self._buf.append(row)
@@ -392,6 +474,10 @@ class HttpSink:
         if not self.enabled:
             return False
         try:
+            # NOTE (R2-12): delivery identity on cycle rows is stamped by the
+            # PRODUCER (controller_daemon._ship_cycle), not here — post_cycle
+            # must emit exactly the row it is given (the contract fixture
+            # roundtrip pins that byte-level wire shape).
             payload = {"cycle": _json_safe(dict(row))}
         except Exception:
             self.post_errors += 1
@@ -425,6 +511,205 @@ class HttpSink:
                 raise RuntimeError(f"HTTP {status} from {url}")
 
 
+# ---- the JSONL-outbox replayer (R2-12) -----------------------------------------
+class OutboxReplayer:
+    """Ships diag JSONL rows to the :8766 machine-events ingest with
+    cursor-ack semantics (Codex round-2 R2-12): the daily JSONL files ARE the
+    outbox (ONE write path, no second Pi DB). A persisted cursor
+    ({file, pos}, atomic JSON) advances ONLY after a 2xx POST — an HTTP
+    outage, a crash between write and ship, or a dropped batch simply leaves
+    the cursor behind and the next pass replays from it. The server's
+    UNIQUE(source_id, boot_id, seq) INSERT-OR-IGNORE makes any replay overlap
+    idempotent.
+
+    Rules of the house: own daemon thread, bounded batches, never raises,
+    env-killable (WSL_DIAG_OUTBOX=0 falls back to the legacy live HttpSink).
+    Rows WITHOUT delivery identity (pre-upgrade lines in an existing file)
+    are skipped — they were shipped by the legacy live leg and cannot be
+    deduped server-side."""
+
+    def __init__(self, dir_path, base_url, *, post=None, token=None,
+                 poll_s=None, timeout=DEFAULT_HTTP_TIMEOUT_S,
+                 cursor_path=None):
+        self.dir = dir_path or DEFAULT_DIR
+        self.base_url = str(base_url or "").strip().rstrip("/")
+        tok = token if token is not None else os.environ.get(TOKEN_ENV, "")
+        self.token = str(tok).strip()
+        self.timeout = float(timeout)
+        self.poll_s = float(poll_s if poll_s is not None
+                            else _float_env(OUTBOX_POLL_ENV,
+                                            DEFAULT_OUTBOX_POLL_S))
+        self.cursor_path = cursor_path or os.path.join(self.dir,
+                                                       CURSOR_FILENAME)
+        self._post = post or self._urllib_post
+        self.shipped = 0        # rows POSTed + acked (cursor advanced past)
+        self.skipped = 0        # rows without delivery identity (not replayable)
+        self.post_errors = 0    # failed POST attempts (cursor NOT advanced)
+        self.errors = 0         # swallowed internal errors
+        self._stop_ev = threading.Event()
+        self._wake = threading.Event()
+        self._thread = None
+
+    # -- cursor ------------------------------------------------------------
+    def _load_cursor(self):
+        try:
+            with open(self.cursor_path, encoding="utf-8") as f:
+                c = json.load(f)
+            if isinstance(c, dict) and isinstance(c.get("file"), str):
+                return {"file": c["file"], "pos": int(c.get("pos", 0))}
+        except Exception:
+            pass
+        return None
+
+    def _save_cursor(self, cur):
+        try:
+            os.makedirs(self.dir, exist_ok=True)
+            tmp = self.cursor_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cur, f)
+            os.replace(tmp, self.cursor_path)
+        except Exception:
+            self.errors += 1
+
+    def _outbox_files(self):
+        """Sorted diag-*.jsonl names (dates sort lexically). Never raises."""
+        try:
+            return sorted(n for n in os.listdir(self.dir)
+                          if n.startswith(JsonlSink.FILE_PREFIX)
+                          and n.endswith(JsonlSink.FILE_SUFFIX))
+        except Exception:
+            return []
+
+    # -- one replay pass ---------------------------------------------------
+    def replay_once(self):
+        """Ship at most one batch segment per file position. Returns the
+        number of rows acked this pass. Never raises."""
+        acked = 0
+        try:
+            files = self._outbox_files()
+            if not files:
+                return 0
+            cur = self._load_cursor()
+            if cur is None or cur["file"] not in files:
+                # First run (or the cursor's file was pruned): start at the
+                # NEWEST file from its current position 0 — identity-less
+                # legacy lines inside are skipped, so nothing double-ships.
+                cur = {"file": files[-1], "pos": 0}
+            while True:
+                rows, new_pos, eof = self._read_batch(cur["file"], cur["pos"])
+                if rows:
+                    if not self._post_batch(rows):
+                        self.post_errors += 1
+                        return acked          # cursor stays; retry next pass
+                    self.shipped += len(rows)
+                    acked += len(rows)
+                cur = {"file": cur["file"], "pos": new_pos}
+                self._save_cursor(cur)
+                if not eof:
+                    continue                  # more in this file
+                # at EOF: roll to the next file if one exists, else done
+                idx = files.index(cur["file"])
+                if idx + 1 < len(files):
+                    cur = {"file": files[idx + 1], "pos": 0}
+                    self._save_cursor(cur)
+                    continue
+                return acked
+        except Exception:
+            self.errors += 1
+            log.debug("OutboxReplayer.replay_once swallowed", exc_info=True)
+            return acked
+
+    def _read_batch(self, name, pos):
+        """Read up to OUTBOX_BATCH_MAX replayable rows from `name` starting at
+        byte `pos`. Returns (rows, new_pos, eof). Partial trailing lines (a
+        flush in progress) are left for the next pass."""
+        rows = []
+        path = os.path.join(self.dir, name)
+        try:
+            with open(path, "rb") as f:
+                f.seek(pos)
+                while len(rows) < OUTBOX_BATCH_MAX:
+                    line = f.readline()
+                    if not line:
+                        return rows, pos, True
+                    if not line.endswith(b"\n"):
+                        return rows, pos, True      # partial write — wait
+                    pos = f.tell()
+                    try:
+                        row = json.loads(line.decode("utf-8"))
+                    except Exception:
+                        continue                    # corrupt line: skip
+                    if (isinstance(row, dict) and row.get("source_id")
+                            and row.get("boot_id")
+                            and row.get("seq") is not None):
+                        rows.append(row)
+                    else:
+                        self.skipped += 1
+                return rows, pos, False
+        except FileNotFoundError:
+            return rows, pos, True
+        except Exception:
+            self.errors += 1
+            return rows, pos, True
+
+    def _post_batch(self, rows):
+        try:
+            self._post(self.base_url + HttpSink.EVENTS_PATH, {"events": rows})
+            return True
+        except Exception:
+            return False
+
+    def _urllib_post(self, url, payload):
+        import urllib.request
+        data = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["X-Lane-Token"] = self.token
+        req = urllib.request.Request(url, data=data, method="POST",
+                                     headers=headers)
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            resp.read(1024)
+            status = int(getattr(resp, "status", 200) or 200)
+            if status >= 300:
+                raise RuntimeError(f"HTTP {status} from {url}")
+
+    # -- lifecycle ---------------------------------------------------------
+    def start(self):
+        if self._thread is not None and self._thread.is_alive():
+            return True
+        self._stop_ev.clear()
+        self._thread = threading.Thread(target=self._run,
+                                        name="diag-outbox", daemon=True)
+        self._thread.start()
+        return True
+
+    def kick(self):
+        """Wake the replay thread early (e.g. right after a flush)."""
+        self._wake.set()
+
+    def stop(self, timeout=5.0):
+        try:
+            self._stop_ev.set()
+            self._wake.set()
+            t = self._thread
+            if t is not None and t.is_alive():
+                t.join(timeout)
+            # final best-effort pass so a clean shutdown ships the tail
+            self.replay_once()
+        except Exception:
+            self.errors += 1
+
+    def _run(self):
+        while not self._stop_ev.is_set():
+            self.replay_once()
+            self._wake.wait(self.poll_s)
+            self._wake.clear()
+
+    def stats(self):
+        return {"shipped": self.shipped, "skipped": self.skipped,
+                "post_errors": self.post_errors, "errors": self.errors}
+
+
 # ---- the writer thread ---------------------------------------------------------
 class DiagWriter:
     """Single daemon background thread draining the DiagQueue into every sink.
@@ -441,20 +726,32 @@ class DiagWriter:
     def __init__(self, *, queue=None, sinks=None, enabled=None, poll_s=0.25):
         self.enabled = _enabled_from_env() if enabled is None else bool(enabled)
         self.queue = queue or DiagQueue()
+        self.outbox = None      # OutboxReplayer when the outbox HTTP leg is on
         if sinks is None:
-            sinks = [JsonlSink()]
+            jsonl = JsonlSink()
+            sinks = [jsonl]
             url = os.environ.get(SERVER_URL_ENV, "").strip()
             if url:
-                sinks.append(HttpSink(url))
+                if _env_on_default(OUTBOX_ENV, "1"):
+                    # R2-12: JSONL-as-outbox is the ONE event write path — the
+                    # HttpSink stays for post_cycle only (events_enabled=False)
+                    # and the replayer tails the JSONL with a persisted,
+                    # ack-advanced cursor (idempotent server inserts make
+                    # replay overlap safe).
+                    sinks.append(HttpSink(url, events_enabled=False))
+                    self.outbox = OutboxReplayer(jsonl.dir, url)
+                else:
+                    sinks.append(HttpSink(url))
         self.sinks = list(sinks)
         self.poll_s = float(poll_s)
         self.sink_errors = 0
         self._stop = threading.Event()
         self._thread = None
         if self.enabled:
-            log.info("DiagWriter: enabled (queue_max=%d, sinks=%s)",
+            log.info("DiagWriter: enabled (queue_max=%d, sinks=%s, outbox=%s)",
                      self.queue.maxsize,
-                     [type(s).__name__ for s in self.sinks])
+                     [type(s).__name__ for s in self.sinks],
+                     bool(self.outbox))
 
     # -- producer side (never blocks, never raises) --------------------------
     def emit(self, event):
@@ -474,6 +771,8 @@ class DiagWriter:
         self._thread = threading.Thread(target=self._run, name="diag-writer",
                                         daemon=True)
         self._thread.start()
+        if self.outbox is not None:
+            self.outbox.start()
         return True
 
     def stop(self, timeout=5.0):
@@ -489,6 +788,8 @@ class DiagWriter:
                 # thread finished (its finally flushed) OR never ran: make sure
                 # anything still queued reaches the sinks.
                 self._drain_and_flush()
+            if self.outbox is not None:
+                self.outbox.stop(timeout)   # ship the flushed tail (cursor-ack)
         except Exception:
             log.debug("DiagWriter.stop swallowed", exc_info=True)
 
@@ -496,6 +797,10 @@ class DiagWriter:
     def _dispatch(self, event):
         try:
             row = event.to_dict() if hasattr(event, "to_dict") else dict(event)
+            # R2-12 delivery identity: every record that reaches ANY sink (the
+            # JSONL outbox included) carries (source_id, boot_id, seq), so the
+            # server can dedupe replays after drops.
+            stamp_delivery(row)
         except Exception:
             self.sink_errors += 1
             return
@@ -558,6 +863,8 @@ class DiagWriter:
                 ("written", "write_errors", "posted", "dropped", "post_errors")
                 if hasattr(s, k)
             }
+        if self.outbox is not None:
+            d["outbox"] = self.outbox.stats()
         return d
 
 

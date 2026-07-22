@@ -68,7 +68,7 @@ from controller_io import MachineIO, RecordingIO, ShadowIO
 from rp2040_link import RP2040Link, REBOOT_FAULT
 from flight_recorder import FlightRecorder
 from cam_telemetry import CamTelemetry, CycleShipper
-from diag_events import DiagWriter, HttpSink, make_event
+from diag_events import DiagWriter, HttpSink, make_event, stamp_delivery
 
 log = logging.getLogger("controller_daemon")
 
@@ -121,6 +121,31 @@ DIST_GAP_S_ENV = "WSL_DIAG_DIST_GAP_S"        # dist-index pulse gap during a cy
 PLATFORM_ENV = "WSL_DIAG_PLATFORM"            # platform-health background thread
 PLATFORM_POLL_S_ENV = "WSL_DIAG_PLATFORM_POLL_S"
 AUX_ROLES_ENV = "WSL_DIAG_AUX_ROLES"          # e.g. "aux1=be_current,aux2=exit_beam,aux3=dist_index"
+# Codex round-2 (2026-07-21) knobs:
+BOARD_REVS_ENV = "WSL_BOARD_REVS"             # R2-6: EXPLICIT per-lane PCB rev, e.g. "revC" or "21=revC,22=revD"
+V5_MIN_ENV = "WSL_DIAG_V5_MIN_MV"             # R2-11: VCC_5V hb-window min alert floor (mV)
+V5_MAX_ENV = "WSL_DIAG_V5_MAX_MV"             # R2-11: VCC_5V hb-window max alert ceiling (mV)
+STALE_CYCLES_ENV = "WSL_DIAG_STALE_CHANNEL_CYCLES"  # R2-12: cycles w/o a pulse on a pulse-role channel
+BANK_FAIL_N_ENV = "WSL_DIAG_BANK_FAIL_N"      # R2-12: consecutive IN-B read failures before bank_unavailable
+RUN_MISMATCH_S_ENV = "WSL_DIAG_RUN_MISMATCH_S"  # R2-12: persistence before run_mismatch promotes to a fault
+DEFAULT_V5_MIN_MV = 4500.0
+DEFAULT_V5_MAX_MV = 5400.0
+DEFAULT_STALE_CYCLES = 20
+DEFAULT_BANK_FAIL_N = 25
+DEFAULT_RUN_MISMATCH_S = 3.0
+# R2-14 Pi platform-health probe knobs (PlatformHealth thread, off-tick):
+TEMP_MAX_ENV = "WSL_DIAG_TEMP_MAX_C"          # SoC temp warn threshold (°C)
+DISK_MIN_ENV = "WSL_DIAG_DISK_MIN_MB"         # free-disk warn floor (MB)
+CLOCK_DRIFT_ENV = "WSL_DIAG_CLOCK_DRIFT_S"    # wall-vs-monotonic step threshold (s)
+RESTART_LOOP_N_ENV = "WSL_DIAG_RESTART_LOOP_N"      # starts within the window = loop
+RESTART_LOOP_MIN_ENV = "WSL_DIAG_RESTART_LOOP_MIN"  # the window (minutes)
+DIR_MAX_MB_ENV = "WSL_DIAG_DIR_MAX_MB"        # diag-dir size cap before pruning
+DEFAULT_TEMP_MAX_C = 75.0
+DEFAULT_DISK_MIN_MB = 500.0
+DEFAULT_CLOCK_DRIFT_S = 5.0
+DEFAULT_RESTART_LOOP_N = 3
+DEFAULT_RESTART_LOOP_MIN = 10.0
+DEFAULT_DIR_MAX_MB = 512.0
 # Stable-time debounce (H3, Codex audit 2026-07-21): a slow-input LEVEL is
 # accepted only after N consecutive identical samples at the 50 Hz tick cadence
 # (N*20 ms of stability). Two independent knobs:
@@ -167,10 +192,33 @@ MANUAL_INPUT_NAMES = ("MAN_T", "MAN_S", "MAN_SWS", "MAN_SWSR", "TENTH", "PBC")
 STUCK_EXEMPT = ("BS", "MAN_T", "MAN_S", "MAN_SWS", "MAN_SWSR") \
     + tuple(f"AUX{i}" for i in range(1, 12))
 
-AUX_ROLE_VALID = ("be_current", "exit_beam", "dist_index")
+# ---------------------------------------------------------------------------
+# AUX role registry (R2-16, Codex round-2 2026-07-21): roles are REGISTERED,
+# not hardwired into a whitelist chain — a new sensor role is one register_
+# aux_role() call plus its handler, no edits to the dispatch. Handlers are
+# called per tick as handler(diag, t, name, level, in_motion=..., rising=...)
+# with the debounced level for the mapped input; they follow every LaneDiag
+# rule (enqueue-only, bounded state, never raise — the dispatcher guards).
+# Built-in roles are registered below the LaneDiag class body.
+# ---------------------------------------------------------------------------
+AUX_ROLE_HANDLERS = {}
+
+
+def register_aux_role(role, handler):
+    """Register (or override) an AUX sensor role handler. Returns handler so
+    it can be used as a decorator: @register_aux_role_named('x')."""
+    AUX_ROLE_HANDLERS[str(role).strip().lower()] = handler
+    return handler
+
+
+def aux_roles_valid():
+    return tuple(sorted(AUX_ROLE_HANDLERS))
+
+
 # aux1-aux3 = rev-B/C spare channels (GPA); aux4-aux11 = the rev-D GPB bank.
-# On a rev-B/C board a mapped aux4+ role simply never sees a level (the
-# channel is absent from that board's IN-B map) — dormant, not an error.
+# A role mapped onto a channel the board's DECLARED revision does not carry
+# is REJECTED at startup (R2-6 — no revC default silently swallowing the
+# AUX4-11 roles; see BoardController.__init__).
 _AUX_KEY_TO_INPUT = {f"aux{i}": f"AUX{i}" for i in range(1, 12)}
 
 
@@ -241,11 +289,32 @@ def _parse_aux_roles(spec):
             continue
         name = _AUX_KEY_TO_INPUT.get(k.strip().lower())
         role = v.strip().lower()
-        if name is None or role not in AUX_ROLE_VALID:
-            log.warning("aux role %r=%r not recognized — skipped", k, v)
+        if name is None or role not in AUX_ROLE_HANDLERS:
+            log.warning("aux role %r=%r not recognized — skipped "
+                        "(known roles: %s)", k, v, aux_roles_valid())
             continue
         roles[name] = role
     return roles
+
+
+def _parse_board_revs(spec):
+    """R2-6: parse WSL_BOARD_REVS / --board-revs. Accepts a single rev for
+    every lane ('revC') or per-lane pairs ('21=revC,22=revD'). Returns
+    (default_rev_or_None, {lane: rev}). Raises ValueError on garbage —
+    a typo must never silently run a board with the wrong channel map."""
+    default = None
+    per_lane = {}
+    if spec is None or not str(spec).strip():
+        return None, {}
+    for tok in str(spec).replace(",", " ").split():
+        if "=" in tok:
+            lane_s, rev = tok.split("=", 1)
+            per_lane[int(lane_s)] = rev.strip()
+        else:
+            if default is not None:
+                raise ValueError(f"multiple default revs in {spec!r}")
+            default = tok.strip()
+    return default, per_lane
 
 
 # One-board bench mode (readiness item D3). WSL_LANES env / --lanes CLI select a
@@ -368,9 +437,13 @@ class BoardConfig:
     aux_roles: dict = field(default=None)
     # PCB revision driving this lane — selects the IN-B channel map
     # (controller_io.IN_B_MAPS): rev-B/C = 8 GPA channels; rev-D adds the
-    # AUX4-11 GPB bank. EXPLICIT per board (H3): the pilot rev-C board on
-    # machine 22 and a future rev-D board can coexist in one daemon.
-    board_rev: str = "revC"
+    # AUX4-11 GPB bank. R2-6 (Codex round-2, 2026-07-21): NO default. The
+    # revision MUST be provisioned explicitly — per-config, --board-revs, or
+    # WSL_BOARD_REVS (systemd env file) — because a silent revC default
+    # swallows every AUX4-11 role on a rev-D board without a single log
+    # line. BoardController REFUSES to construct when this is still None
+    # (the board is skipped fail-safe: never ticked, NE555 never kicked).
+    board_rev: str = None
 
 
 # Per-pair Pi pin plan.  Source of truth: docs/phase8_channel_allocation.md §4
@@ -566,6 +639,18 @@ class LaneDiag:
         self._be_stuck_warned = False
         self._dist_last_pulse = None
         self._dist_warned_cycle = False
+        # R2-16 field_wet_ok loopback role (AUX11 jumper = harness item; the
+        # software side lands now and stays dormant until the role is mapped)
+        self._field_wet_input = next(
+            (n for n, r in self.aux_roles.items() if r == "field_wet_ok"),
+            None)
+        self._field_wet_lost = False     # True while the wetting supply is down
+        self._field_wet_lost_t = None
+        self._field_wet_seen = False     # first-sample baseline taken
+        # R2-12 stale-channel + role-missing bookkeeping
+        self._cycles_since_pulse = {}    # pulse-role input -> completed cycles
+        self._stale_warned = set()
+        self._role_missing_warned = set()
 
     # ---- emission (enqueue-only; suppression-aware) ------------------------
     def emit_event(self, severity, event_type, code=None, detail=None, *, t=None):
@@ -616,9 +701,24 @@ class LaneDiag:
 
     def note_cycle_complete(self, t):
         """Cycle finished -> READY. Opens the be_no_current watch window (the
-        intentional ~30 s post-cycle BE run should show current inside it)."""
+        intentional ~30 s post-cycle BE run should show current inside it) and
+        advances the stale-channel counters (R2-12): a pulse-role channel
+        (exit_beam / dist_index) that stays silent while cycles keep completing
+        is a dead sensor, wire, or opto — not a quiet machine."""
         if "be_current" in self.aux_roles.values():
             self._be_deadline = t + _env_float(BE_WINDOW_S_ENV, DEFAULT_BE_WINDOW_S)
+        thr = int(_env_float(STALE_CYCLES_ENV, DEFAULT_STALE_CYCLES))
+        for name, role in self.aux_roles.items():
+            if role not in ("exit_beam", "dist_index"):
+                continue
+            n = self._cycles_since_pulse.get(name, 0) + 1
+            self._cycles_since_pulse[name] = n
+            if thr > 0 and n >= thr and name not in self._stale_warned:
+                self._stale_warned.add(name)
+                self.emit_event("warn", "stale_channel", code=f"aux:{name}",
+                                detail={"input": name, "role": role,
+                                        "cycles_without_pulse": n,
+                                        "threshold": thr}, t=t)
 
     # ---- per-tick rule evaluation (enqueue-only, never raises) --------------
     def poll(self, t, *, ready, in_motion, slow_levels=None, inb_levels=None,
@@ -627,6 +727,13 @@ class LaneDiag:
             return
         try:
             edges = self._track_levels(t, slow_levels, inb_levels)
+            # R2-16 FIELD_WET loopback FIRST: when the field wetting supply is
+            # down, every field-side input reads deasserted at once — the
+            # cascade of stuck/beam/aux alerts would bury the one real root
+            # cause. One field_wet_lost fault, dependents suppressed.
+            self._field_wet_rule(t, inb_levels)
+            if self._field_wet_lost:
+                return
             self._manual_rule(t, edges, slow_levels, inb_levels)
             self._stuck_rule(t, ready, slow_levels, inb_levels)
             self._beam_rule(t, ready, diell_levels)
@@ -634,6 +741,49 @@ class LaneDiag:
         except Exception:
             self.drops += 1
             log.debug("L%s LaneDiag.poll swallowed", self.lane, exc_info=True)
+
+    def _field_wet_rule(self, t, inb_levels):
+        """R2-16: AUX11 FIELD_WET loopback (a harness jumper wired straight
+        from FIELD_WET_V through the AUX11 opto). Asserted == supply up.
+        Dormant unless the 'field_wet_ok' role is mapped. Deassertion emits
+        ONE 'field_wet_lost' fault and suppresses the dependent field-input
+        rules until the supply returns ('field_wet_restored', rule state
+        re-baselined so the outage can't fake stuck/beam alerts)."""
+        name = self._field_wet_input
+        if name is None or not _env_on(AUX_RULE_ENV):
+            return
+        if inb_levels is None or name not in inb_levels:
+            return                      # bank unreadable: judged elsewhere
+        level = bool(inb_levels[name])
+        if not self._field_wet_seen:
+            self._field_wet_seen = True
+            if not level:
+                # Supply already down at startup — root-cause alert, flagged
+                # as a baseline observation (no edge was seen).
+                self._field_wet_lost = True
+                self._field_wet_lost_t = t
+                self.emit_event("fault", "field_wet_lost", code=f"aux:{name}",
+                                detail={"input": name, "at_startup": True},
+                                t=t)
+            return
+        if level and self._field_wet_lost:
+            outage = None if self._field_wet_lost_t is None \
+                else round(t - self._field_wet_lost_t, 1)
+            self._field_wet_lost = False
+            self._field_wet_lost_t = None
+            # Re-baseline the input rules: every field input deasserted during
+            # the outage; their re-assertion must not read as fresh edges or
+            # stale asserts.
+            self._assert_since.clear()
+            self._stuck_warned.clear()
+            self._beam_warned.clear()
+            self.emit_event("info", "field_wet_restored", code=f"aux:{name}",
+                            detail={"input": name, "outage_s": outage}, t=t)
+        elif not level and not self._field_wet_lost:
+            self._field_wet_lost = True
+            self._field_wet_lost_t = t
+            self.emit_event("fault", "field_wet_lost", code=f"aux:{name}",
+                            detail={"input": name, "at_startup": False}, t=t)
 
     def _track_levels(self, t, slow_levels, inb_levels):
         """Merge the tick's level reads, update assert-since bookkeeping, and
@@ -752,23 +902,39 @@ class LaneDiag:
                                         "threshold_s": thr}, t=t)
 
     def _aux_rules(self, t, in_motion, rising, inb_levels):
-        """Config-driven AUX sensor rules — fully dormant for unmapped roles."""
+        """Config-driven AUX sensor rules — fully dormant for unmapped roles.
+        Dispatch is the AUX_ROLE_HANDLERS registry (R2-16): new roles register
+        a handler instead of growing this chain. Each handler call is guarded
+        so one buggy role degrades to a counted no-op."""
         if not _env_on(AUX_RULE_ENV) or not self.aux_roles:
             return
         levels = inb_levels or {}
         for name, role in self.aux_roles.items():
-            level = bool(levels.get(name, False))
-            if role == "be_current":
-                self._be_rule(t, name, level)
-            elif role == "exit_beam":
-                if name in rising and self.ball_tracker is not None:
-                    self.ball_tracker.on_exit_pulse(t)
-            elif role == "dist_index":
-                if name in rising:
-                    self._dist_last_pulse = t
-                self._dist_rule(t, in_motion)
+            handler = AUX_ROLE_HANDLERS.get(role)
+            if handler is None:
+                continue
+            # R2-12 configured_role_missing: the bank READ but this channel
+            # never appears in it — a config/map mismatch, once per input.
+            if (inb_levels is not None and name not in inb_levels
+                    and name not in self._role_missing_warned):
+                self._role_missing_warned.add(name)
+                self.emit_event("warn", "configured_role_missing",
+                                code=f"aux:{name}",
+                                detail={"input": name, "role": role}, t=t)
+            try:
+                handler(self, t, name, bool(levels.get(name, False)),
+                        in_motion=in_motion, rising=rising)
+            except Exception:
+                self.drops += 1
+                log.debug("L%s AUX role %s handler swallowed", self.lane,
+                          role, exc_info=True)
         if self.ball_tracker is not None:
             self.ball_tracker.poll(t)
+
+    def _note_pulse(self, name, t):
+        """A pulse-role channel fired: reset its stale-channel episode."""
+        self._cycles_since_pulse[name] = 0
+        self._stale_warned.discard(name)
 
     def _be_rule(self, t, name, level):
         if level:
@@ -811,6 +977,41 @@ class LaneDiag:
                                     "threshold_s": gap}, t=t)
 
 
+# ---- built-in AUX role handlers (R2-16 registry) ------------------------------
+def _role_be_current(diag, t, name, level, *, in_motion, rising):
+    diag._be_rule(t, name, level)
+
+
+def _role_exit_beam(diag, t, name, level, *, in_motion, rising):
+    if name in rising:
+        diag._note_pulse(name, t)
+        if diag.ball_tracker is not None:
+            diag.ball_tracker.on_exit_pulse(t)
+
+
+def _role_dist_index(diag, t, name, level, *, in_motion, rising):
+    if name in rising:
+        diag._note_pulse(name, t)
+        diag._dist_last_pulse = t
+    diag._dist_rule(t, in_motion)
+
+
+def _role_field_wet(diag, t, name, level, *, in_motion, rising):
+    # The field_wet rule runs FIRST in poll() (it gates the other rules), so
+    # the registry handler is a no-op — registration exists so the role name
+    # validates and maps like any other.
+    return
+
+
+register_aux_role("be_current", _role_be_current)
+register_aux_role("exit_beam", _role_exit_beam)
+register_aux_role("dist_index", _role_dist_index)
+register_aux_role("field_wet_ok", _role_field_wet)
+
+# Back-compat alias: some tests/docs referenced the old whitelist tuple.
+AUX_ROLE_VALID = aux_roles_valid()
+
+
 class PlatformHealth(threading.Thread):
     """Background platform-health emitter (scope Phase 1.6) + the off-tick pump
     for cam-telemetry baseline persistence. ALL file/subprocess I/O lives on
@@ -832,6 +1033,15 @@ class PlatformHealth(threading.Thread):
         self._vcgencmd_missing = False
         self._last_throttled = 0
         self.errors = 0
+        # R2-14 probe state (episode latches + baselines)
+        self._thermal_missing = False
+        self._thermal_warned = False
+        self._disk_warned = False
+        self._readonly_warned = False
+        self._clock_base = None       # time.time() - time.monotonic() baseline
+        # R2-12: writer-stats promotion baselines (diag/http drop counters)
+        self._prev_queue_drops = 0
+        self._prev_http_drops = 0
 
     def _emit(self, severity, event_type, code=None, detail=None):
         try:
@@ -856,10 +1066,13 @@ class PlatformHealth(threading.Thread):
             self.errors += 1
             log.debug("PlatformHealth service-start count swallowed", exc_info=True)
         while not self._stop_ev.is_set():
-            try:
-                self._poll_throttled()
-            except Exception:
-                self.errors += 1
+            for probe in (self._poll_throttled, self._poll_thermal,
+                          self._poll_disk, self._poll_clock_drift,
+                          self._poll_writer_drops, self._poll_dir_retention):
+                try:
+                    probe()
+                except Exception:
+                    self.errors += 1
             for b in self.boards:
                 try:
                     b.telemetry.maybe_persist()
@@ -876,26 +1089,190 @@ class PlatformHealth(threading.Thread):
     def _count_service_start(self):
         """Increment the service-start counter file + emit 'service_restart'.
         Both past field incidents (missing watchdog kick, not-enabled systemd
-        unit) would have shown up here first (scope §1 platform row)."""
+        unit) would have shown up here first (scope §1 platform row).
+        R2-14: also keeps a bounded recent-start list and emits ONE
+        'service_restart_loop' fault when N starts land within the window —
+        systemd's StartLimitBurst latches the unit silently; this makes the
+        crash loop visible on the desk before that."""
         path = os.path.join(self.dir, "service_starts.json")
-        count = 0
+        count, recent = 0, []
         try:
             with open(path, encoding="utf-8") as f:
-                count = int(json.load(f).get("count", 0))
+                data = json.load(f)
+            count = int(data.get("count", 0))
+            recent = [float(x) for x in data.get("recent", [])][-20:]
         except Exception:
-            count = 0
+            count, recent = 0, []
         count += 1
+        now_epoch = time.time()
+        recent.append(now_epoch)
+        recent = recent[-20:]
         self.start_count = count
         try:
             os.makedirs(self.dir, exist_ok=True)
             tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"count": count, "last_start": _utc_now_iso()}, f)
+                json.dump({"count": count, "last_start": _utc_now_iso(),
+                           "recent": recent}, f)
             os.replace(tmp, path)
         except Exception:
             self.errors += 1
         self._emit("info", "service_restart", code="daemon_start",
                    detail={"count": count})
+        loop_n = int(_env_float(RESTART_LOOP_N_ENV, DEFAULT_RESTART_LOOP_N))
+        window_s = _env_float(RESTART_LOOP_MIN_ENV,
+                              DEFAULT_RESTART_LOOP_MIN) * 60.0
+        in_window = [x for x in recent if now_epoch - x <= window_s]
+        if loop_n > 0 and len(in_window) >= loop_n:
+            self._emit("fault", "service_restart_loop", code="daemon_start",
+                       detail={"starts_in_window": len(in_window),
+                               "window_min": round(window_s / 60.0, 1),
+                               "threshold": loop_n})
+
+    def _poll_thermal(self):
+        """R2-14: SoC temperature via sysfs (millidegrees C). Warn once per
+        over-threshold episode; 5 °C hysteresis re-arms. Absent path (non-Pi
+        host) disables the probe after one info log."""
+        if self._thermal_missing:
+            return
+        path = "/sys/class/thermal/thermal_zone0/temp"
+        try:
+            with open(path) as f:
+                temp_c = int(f.read().strip()) / 1000.0
+        except FileNotFoundError:
+            self._thermal_missing = True
+            log.info("PlatformHealth: %s not present (non-Pi host) — thermal "
+                     "probe disabled", path)
+            return
+        except Exception:
+            self.errors += 1
+            return
+        thr = _env_float(TEMP_MAX_ENV, DEFAULT_TEMP_MAX_C)
+        if temp_c >= thr and not self._thermal_warned:
+            self._thermal_warned = True
+            self._emit("warn", "pi_thermal", code="soc_temp",
+                       detail={"temp_c": round(temp_c, 1),
+                               "threshold_c": thr})
+        elif temp_c < thr - 5.0:
+            self._thermal_warned = False
+
+    def _poll_disk(self):
+        """R2-14: free space on the diag volume + a read-only-filesystem
+        write probe (the classic SD-card end-of-life mode: the card silently
+        remounts ro and every 'successful' write vanishes)."""
+        import shutil
+        try:
+            os.makedirs(self.dir, exist_ok=True)
+            free_mb = shutil.disk_usage(self.dir).free / (1024.0 * 1024.0)
+            floor = _env_float(DISK_MIN_ENV, DEFAULT_DISK_MIN_MB)
+            if free_mb < floor and not self._disk_warned:
+                self._disk_warned = True
+                self._emit("warn", "pi_disk_low", code="diag_volume",
+                           detail={"free_mb": round(free_mb, 1),
+                                   "floor_mb": floor})
+            elif free_mb >= floor * 1.2:
+                self._disk_warned = False
+        except Exception:
+            self.errors += 1
+        try:
+            probe = os.path.join(self.dir, ".diag_write_probe")
+            with open(probe, "w") as f:
+                f.write("ok")
+            os.remove(probe)
+            self._readonly_warned = False
+        except Exception:
+            if not self._readonly_warned:
+                self._readonly_warned = True
+                self._emit("fault", "pi_fs_readonly", code="diag_volume",
+                           detail={"dir": self.dir})
+
+    def _poll_clock_drift(self):
+        """R2-14: wall-clock vs monotonic step detection. A big jump in
+        (time.time() - time.monotonic()) is an NTP step / RTC-less cold boot
+        correction — every UTC-stamped record around it is suspect. Warn per
+        step, then re-baseline."""
+        cur = time.time() - time.monotonic()
+        if self._clock_base is None:
+            self._clock_base = cur
+            return
+        thr = _env_float(CLOCK_DRIFT_ENV, DEFAULT_CLOCK_DRIFT_S)
+        delta = cur - self._clock_base
+        if abs(delta) >= thr:
+            self._emit("warn", "pi_clock_drift", code="wall_step",
+                       detail={"step_s": round(delta, 3),
+                               "threshold_s": thr})
+            self._clock_base = cur
+
+    def _poll_writer_drops(self):
+        """R2-12: promote DiagQueue overflow drops + HTTP/outbox delivery
+        drops to structured events (they were counters nobody read). Emits
+        the DELTA once per poll; the event itself rides the same pipe, so a
+        totally dead pipe is caught by the server-side lease going OFFLINE
+        (R2-10), not by this."""
+        w = self.writer
+        if w is None or not hasattr(w, "stats"):
+            return
+        s = w.stats()
+        qd = int(s.get("queue_drops", 0) or 0)
+        if qd > self._prev_queue_drops:
+            self._emit("warn", "diag_drops", code="queue_overflow",
+                       detail={"new_drops": qd - self._prev_queue_drops,
+                               "total": qd})
+            self._prev_queue_drops = qd
+        http_dropped = 0
+        for name, sink in (s.get("sinks") or {}).items():
+            http_dropped += int(sink.get("dropped", 0) or 0)
+        ob = s.get("outbox") or {}
+        http_dropped += int(ob.get("post_errors", 0) or 0)
+        if http_dropped > self._prev_http_drops:
+            self._emit("warn", "http_sink_drops", code="delivery",
+                       detail={"new": http_dropped - self._prev_http_drops,
+                               "total": http_dropped,
+                               "outbox": ob or None})
+            self._prev_http_drops = http_dropped
+
+    def _poll_dir_retention(self):
+        """R2-14: bound the diag dir (JSONL outbox + blackboxes live here).
+        Above the size cap, prune the OLDEST daily JSONL files (never
+        today's) and emit ONE 'diag_storage_pruned' info with what went."""
+        cap_mb = _env_float(DIR_MAX_MB_ENV, DEFAULT_DIR_MAX_MB)
+        if cap_mb <= 0:
+            return
+        try:
+            names = sorted(n for n in os.listdir(self.dir)
+                           if n.startswith("diag-") and n.endswith(".jsonl"))
+        except Exception:
+            return
+        try:
+            sizes = {}
+            total = 0
+            for n in names:
+                try:
+                    sz = os.path.getsize(os.path.join(self.dir, n))
+                except OSError:
+                    sz = 0
+                sizes[n] = sz
+                total += sz
+            cap = cap_mb * 1024.0 * 1024.0
+            if total <= cap or len(names) <= 1:
+                return
+            pruned, freed = [], 0
+            for n in names[:-1]:            # never today's (newest) file
+                if total - freed <= cap:
+                    break
+                try:
+                    os.remove(os.path.join(self.dir, n))
+                    freed += sizes[n]
+                    pruned.append(n)
+                except OSError:
+                    pass
+            if pruned:
+                self._emit("info", "diag_storage_pruned", code="jsonl",
+                           detail={"pruned": pruned,
+                                   "freed_mb": round(freed / 1048576.0, 1),
+                                   "cap_mb": cap_mb})
+        except Exception:
+            self.errors += 1
 
     def _poll_throttled(self):
         """`vcgencmd get_throttled` -> 'pi_undervoltage' warn on a nonzero,
@@ -934,6 +1311,16 @@ class BoardController:
                  aux_roles=None, slow_debounce_n=None, fsm_debounce_n=None):
         self.cfg = cfg
         self.sim = sim
+        # R2-6: the PCB revision is load-bearing config (it selects the IN-B
+        # channel map). REFUSE to construct without an explicit one — the
+        # board is then skipped by _build_boards (fail-safe: never ticked,
+        # NE555 never kicked, rail stays down) with a loud log.
+        if not cfg.board_rev:
+            raise ValueError(
+                f"L{cfg.lane}: board_rev is UNPROVISIONED — set it explicitly "
+                f"(--board-revs '21=revC,22=revD' / {BOARD_REVS_ENV} in the "
+                f"systemd env file / BoardConfig.board_rev). A silent revC "
+                f"default would swallow AUX4-11 roles on a rev-D board.")
         self._wdog = None
         self._arm_led = None
         self.shadow = _shadow_enabled() if shadow is None else bool(shadow)
@@ -979,6 +1366,21 @@ class BoardController:
         if roles is None:
             roles = cfg.aux_roles if cfg.aux_roles is not None \
                 else _parse_aux_roles(os.environ.get(AUX_ROLES_ENV))
+        # R2-6: reject roles the DECLARED revision cannot carry — loudly, at
+        # startup. On a rev-B/C board an aux4-11 role would otherwise be
+        # silently dormant forever (the exact Codex finding: a wrong/defaulted
+        # revision swallows the role with zero log lines).
+        in_b_map = getattr(self.io, "in_b_map", None)
+        if in_b_map is None:               # ShadowIO wrapper: ask the map for the rev
+            from controller_io import in_b_map_for
+            in_b_map = in_b_map_for(cfg.board_rev)
+        unsupported = sorted(n for n in roles if n not in in_b_map)
+        if unsupported:
+            raise ValueError(
+                f"L{cfg.lane}: AUX role(s) on channel(s) {unsupported} are "
+                f"not carried by board_rev={cfg.board_rev!r} (IN-B map has "
+                f"{sorted(k for k in in_b_map if k.startswith('AUX'))}) "
+                f"— fix {AUX_ROLES_ENV}/aux_roles or the declared revision")
         self.diag = LaneDiag(cfg.lane, writer=diag_writer, aux_roles=roles)
         self.shipper = cycle_shipper       # CycleShipper (or None): machine_cycles rows
 
@@ -1056,6 +1458,13 @@ class BoardController:
         self._cycle_ball = None
         self.failed = False        # set by run() when TICK_ERROR_BUDGET is exhausted
         self.tick_errors = 0       # consecutive tick() exceptions (reset on success)
+        # R2-12 promotion state (all edge-triggered, once per episode)
+        self._bank_fail_n = 0      # consecutive IN-B read failures
+        self._bank_warned = False
+        self._run_mm_since = None  # first t the link reported a run mismatch
+        self._run_mm_warned = False
+        self._v5_warned = False
+        self._tapdump_requested_ep = None  # one TAPDUMP request per boot epoch
 
     # ---- real-hardware GPIO callbacks -------------------------------------
     def _kick_wdog(self):
@@ -1112,6 +1521,7 @@ class BoardController:
             self.link.apply_events(self.fsm, self._edge_observer)  # drain; FSM ignores when not READY
             self.fsm.poll()                   # keep kicking the NE555 (the Pi itself is alive)
             self._observe()                   # instrumentation (idea #10/#15): never affects control
+            self._consume_link_records()      # R2-11: tapdumps arrive EXACTLY when unhealthy
             return
 
         if not self._was_healthy:
@@ -1134,9 +1544,19 @@ class BoardController:
                 log.error("L%s: REFUSING to arm — firmware maxrun_ms=%s is below the "
                           "FSM's MAX_MOTION_S (constants desynchronized; reconcile + "
                           "reflash before arming)", self.cfg.lane, self.link.maxrun_ms())
+                # R2-12: a firmware/config constant desync is a structured
+                # fault, not just a log line — desk + SMS must see it.
+                self.diag.emit_event(
+                    "fault", "fw_config_mismatch", code="maxrun_desync",
+                    detail={"fw_maxrun_ms": self.link.maxrun_ms(),
+                            "fw_version": self.link.fw_version()},
+                    t=self.io.now())
             elif mr_ok and self._maxrun_refused:
                 log.info("L%s: max-run ceiling reconciled — arm no longer refused",
                          self.cfg.lane)
+                self.diag.emit_event("info", "recovered",
+                                     code="fw_config_mismatch",
+                                     t=self.io.now())
             self._maxrun_refused = not mr_ok
             want_arm = mr_ok
         reason = None
@@ -1255,6 +1675,9 @@ class BoardController:
                 row["fw_version"] = fw
             for name, secs in (durations or {}).items():
                 row[f"{name}_ms"] = int(round(secs * 1000.0))
+            # R2-12: delivery identity at the PRODUCER — a re-POST after a
+            # lost ack dedupes server-side instead of duplicating the cycle.
+            stamp_delivery(row)
             self.shipper.offer(row)
         except Exception:
             log.debug("L%s _ship_cycle swallowed", self.cfg.lane, exc_info=True)
@@ -1301,6 +1724,7 @@ class BoardController:
         firmware heartbeat and feed a 30 s-threshold rule, so they are used
         as-is."""
         try:
+            t = self.io.now()
             inb = None
             reader = getattr(self.io, "read_inputs_b", None)
             if reader is not None:
@@ -1309,18 +1733,134 @@ class BoardController:
                 except Exception:
                     log.debug("L%s IN-B read failed (diagnostics skipped)",
                               self.cfg.lane, exc_info=True)
+            self._bank_health(t, reader is not None, inb is not None)
             diell = None
             lv = self.link.input_levels()
             if lv:
                 diell = {k: lv[k] for k in ("DIELL_L", "DIELL_R") if k in lv}
-            self.diag.poll(self.io.now(),
+            self.diag.poll(t,
                            ready=self.fsm.state is State.READY,
                            in_motion=self.fsm.state in MOTION_STATES,
                            slow_levels=self._debounce_for_diag(slow_levels),
                            inb_levels=self._debounce_for_diag(inb),
                            diell_levels=diell)
+            # R2-11/R2-12 promotions (all enqueue-only, edge-triggered):
+            self._consume_link_records()
+            self._v5_rule(t)
+            self._run_mismatch_rule(t)
         except Exception:
             log.debug("L%s _diag_poll swallowed", self.cfg.lane, exc_info=True)
+
+    def _bank_health(self, t, have_reader, read_ok):
+        """R2-12 bank_unavailable: the IN-B expander stops answering (I²C
+        failure class) — one warn per dead episode, 'recovered' info when the
+        bank answers again. Threshold = N consecutive failed reads (~N*20 ms)
+        so a single transient NAK stays a debug line."""
+        if not have_reader:
+            return
+        if read_ok:
+            if self._bank_warned:
+                self.diag.emit_event("info", "recovered",
+                                     code="bank_unavailable",
+                                     detail={"failed_reads": self._bank_fail_n},
+                                     t=t)
+            self._bank_fail_n = 0
+            self._bank_warned = False
+            return
+        self._bank_fail_n += 1
+        thr = int(_env_float(BANK_FAIL_N_ENV, DEFAULT_BANK_FAIL_N))
+        if self._bank_fail_n >= thr and not self._bank_warned:
+            self._bank_warned = True
+            self.diag.emit_event(
+                "warn", "bank_unavailable", code="in_b",
+                detail={"consecutive_failures": self._bank_fail_n,
+                        "threshold": thr}, t=t)
+
+    def _v5_rule(self, t):
+        """R2-11: VCC_5V hb-window extrema out of the allowed window (v1.2
+        firmware, rev-D ADC). Edge-triggered once per excursion episode."""
+        stats = self.link.v5_stats()
+        if stats is None:
+            return
+        v5, v5n, v5x = stats
+        lo = _env_float(V5_MIN_ENV, DEFAULT_V5_MIN_MV)
+        hi = _env_float(V5_MAX_ENV, DEFAULT_V5_MAX_MV)
+        bad = ((v5n is not None and v5n < lo) or
+               (v5x is not None and v5x > hi))
+        if bad and not self._v5_warned:
+            self._v5_warned = True
+            self.diag.emit_event(
+                "warn", "v5_out_of_range", code="adc_vcc5",
+                detail={"v5_mv": v5, "v5_min_mv": v5n, "v5_max_mv": v5x,
+                        "floor_mv": lo, "ceiling_mv": hi}, t=t)
+        elif not bad:
+            self._v5_warned = False
+
+    def _run_mismatch_rule(self, t):
+        """R2-12: promote a PERSISTING firmware/commanded run-state desync to
+        a structured fault (the link already re-sends bounded; a mismatch
+        that outlives the retries means the UART is eating lines and the
+        firmware max-run backstop may be desynced for those motors)."""
+        mm = self.link.run_mismatch()
+        if not mm:
+            if self._run_mm_warned:
+                self.diag.emit_event("info", "recovered", code="run_mismatch",
+                                     t=t)
+            self._run_mm_since = None
+            self._run_mm_warned = False
+            return
+        if self._run_mm_since is None:
+            self._run_mm_since = t
+            return
+        hold = _env_float(RUN_MISMATCH_S_ENV, DEFAULT_RUN_MISMATCH_S)
+        if (t - self._run_mm_since) >= hold and not self._run_mm_warned:
+            self._run_mm_warned = True
+            self.diag.emit_event(
+                "fault", "run_mismatch", code=",".join(mm),
+                detail={"motors": list(mm),
+                        "held_s": round(t - self._run_mm_since, 1)}, t=t)
+
+    def _consume_link_records(self):
+        """R2-11: drain the link's typed v1.2.x records into DiagEvents.
+        Enqueue-only; every record kind maps to a machine_events type. A
+        preserved pre-reboot ring advertised in a boot record triggers ONE
+        bounded TAPDUMP request (telemetry read-back, not an actuation) so
+        the black-box evidence reaches the store without an operator."""
+        try:
+            for rec in self.link.drain_diag_records():
+                kind = rec.get("kind")
+                t = rec.get("t_pi")
+                if kind == "uart_drops":
+                    self.diag.emit_event(
+                        "warn", "uart_drops", code="fw_tx",
+                        detail={"lost": rec.get("lost"),
+                                "total": rec.get("total")}, t=t)
+                elif kind == "tap_warn":
+                    self.diag.emit_event(
+                        "warn", "tap_warn", code=rec.get("code") or None,
+                        detail={"t_fw_ms": rec.get("t_fw")}, t=t)
+                elif kind == "tapdump":
+                    meta = rec.get("meta") or {}
+                    self.diag.emit_event(
+                        "warn", "tapdump",
+                        code=meta.get("cause") or "ring",
+                        detail={"meta": meta,
+                                "fresh_n": rec.get("fresh_n"),
+                                "stale_n": rec.get("stale_n"),
+                                # fresh entries ONLY drive diagnosis; stale
+                                # (pre-reboot epoch) entries ride along
+                                # explicitly flagged (R2-11 epoch rule).
+                                "entries": rec.get("entries")}, t=t)
+                elif kind == "fw_boot":
+                    if rec.get("ring_preserved") and (rec.get("ring_entries")
+                                                      or 0) > 0:
+                        ep = rec.get("ring_epoch")
+                        if ep != self._tapdump_requested_ep:
+                            self._tapdump_requested_ep = ep
+                            self.link.request_tapdump()
+        except Exception:
+            log.debug("L%s _consume_link_records swallowed", self.cfg.lane,
+                      exc_info=True)
 
     def _on_fsm_diag(self, event):
         """Wave-1 FSM on_diag hook. Runs INSIDE the tick (synchronous from the
@@ -1538,6 +2078,10 @@ def main(argv=None):
     ap.add_argument("--lanes", default=None,
                     help=f"comma-separated lane subset (e.g. '21'); overrides {LANES_ENV}; "
                          "default = all of DEFAULT_BOARDS")
+    ap.add_argument("--board-revs", default=None,
+                    help=f"R2-6: EXPLICIT per-lane PCB revision — 'revC' (all) or "
+                         f"'21=revC,22=revD'; overrides {BOARD_REVS_ENV}. A board "
+                         "without a provisioned revision is REFUSED (fail-safe skip)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
@@ -1566,6 +2110,27 @@ def main(argv=None):
     except ValueError as e:
         log.error("bad lane selection %r: %s", spec, e)
         return 1
+
+    # R2-6: apply the EXPLICIT per-lane board-revision provisioning (CLI beats
+    # env; systemd installs the env via /etc/wsl-lane-node.env). A config left
+    # unprovisioned is refused at BoardController construction and skipped
+    # fail-safe by _build_boards with a loud log.
+    rev_spec = (args.board_revs if args.board_revs is not None
+                else os.environ.get(BOARD_REVS_ENV))
+    try:
+        default_rev, per_lane_rev = _parse_board_revs(rev_spec)
+    except (ValueError, TypeError) as e:
+        log.error("bad board-rev spec %r: %s", rev_spec, e)
+        return 1
+    for cfg in configs:
+        rev = per_lane_rev.get(cfg.lane, default_rev)
+        if rev:
+            if cfg.board_rev and cfg.board_rev != rev:
+                log.warning("L%s: board_rev %r overridden to %r by provisioning",
+                            cfg.lane, cfg.board_rev, rev)
+            cfg.board_rev = rev
+        log.info("L%s: board_rev=%s", cfg.lane,
+                 cfg.board_rev or "UNPROVISIONED (will be refused)")
 
     # Diagnostics stack (2026-07-19 scope §3): one shared DiagWriter thread
     # (JSONL always; HTTP when WSL_DIAG_SERVER_URL is set), a CycleShipper for
@@ -1625,7 +2190,7 @@ def _selftest():
             n["f"] += 1
 
     print("== controller_daemon self-test (sim) ==")
-    bc = BoardController(BoardConfig(21, 1, "sim", 0, 0), sim=True)
+    bc = BoardController(BoardConfig(21, 1, "sim", 0, 0, board_rev="revC"), sim=True)
     chk(bc.fsm.state is State.MANUAL_INTERVENTION, "boots into MANUAL_INTERVENTION (power-down rule)")
 
     bc.link.feed_line('{"ev":"hb","ok":1}')              # RP2040 healthy
@@ -1698,7 +2263,7 @@ def _selftest():
     chk(bc.fsm.state is State.READY and bc.io.armed is True, "second PBZ -> READY + armed")
 
     # --- review #30: a KNOWN firmware/FSM max-run desync must REFUSE to arm ---
-    bc2 = BoardController(BoardConfig(21, 1, "sim", 0, 0), sim=True)
+    bc2 = BoardController(BoardConfig(21, 1, "sim", 0, 0, board_rev="revC"), sim=True)
     bc2.link.feed_line('{"ev":"boot","fw":"test","maxrun_ms":1000}')   # << MAX_MOTION_S
     bc2.link.feed_line('{"ev":"hb","ok":1}')
     bc2.io.slow["PBZ"] = True; bc2.tick(); bc2.io.slow["PBZ"] = False

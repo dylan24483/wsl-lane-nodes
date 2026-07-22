@@ -105,6 +105,83 @@ def _contract_sha256():
 
 GIT_HASH = _build_identity()
 CONTRACT_SHA256 = _contract_sha256()
+
+# ---------------------------------------------------------------------------
+# R2-14 (Codex round-2, 2026-07-21): GS-vs-camera disagreement counter.
+# The camera (Track A scoring) and the gripper switches (Track B cycle rows'
+# gs_mask) are independent standing-pin sensors; per the target-conditions
+# catalog (§ gripper rows) their per-pin disagreement is the cross-evidence
+# for a dead/stuck GS contact or a drifted camera. The two arrive on
+# different paths (WS ball events vs machine-cycle POSTs), so the server is
+# the only place both masks exist. Heuristic time-window matching, ALERT-
+# ONLY: a disagreement increments a counter and emits ONE 'gs_camera_
+# disagree' machine event per lane per quiet period. Component attribution
+# stays human (catalog rule).
+# ---------------------------------------------------------------------------
+GS_CAM_WINDOW_ENV = "WSL_GS_CAM_WINDOW_S"     # max age of the camera mask (0=off)
+GS_CAM_QUIET_ENV = "WSL_GS_CAM_QUIET_S"       # min gap between events per lane
+_gs_cam_lock = threading.Lock()
+_last_camera_mask = {}      # lane -> (mask, epoch_time)
+_gs_cam_counts = {}         # lane -> total disagreements observed
+_gs_cam_last_event = {}     # lane -> epoch_time of the last emitted event
+
+
+def _note_camera_mask(lane, mask):
+    """Record the newest CAMERA standing-pin mask for a lane. Never raises."""
+    try:
+        with _gs_cam_lock:
+            _last_camera_mask[int(lane)] = (int(mask) & 0x3FF, time.time())
+    except Exception:
+        pass
+
+
+def _gs_camera_check(cycle_row):
+    """Compare a just-ingested cycle row's gs_mask against the lane's most
+    recent camera mask (within the window). Alert-only; never raises."""
+    try:
+        window = float(os.environ.get(GS_CAM_WINDOW_ENV, "").strip() or 120.0)
+    except ValueError:
+        window = 120.0
+    if window <= 0:
+        return
+    try:
+        gs = cycle_row.get('gs_mask')
+        lane = cycle_row.get('lane_id')
+        if gs is None or lane is None or cycle_row.get('shadow'):
+            return
+        with _gs_cam_lock:
+            cam = _last_camera_mask.get(lane)
+            if cam is None or (time.time() - cam[1]) > window:
+                return
+            cam_mask = cam[0]
+            if cam_mask == (gs & 0x3FF):
+                return
+            n = _gs_cam_counts.get(lane, 0) + 1
+            _gs_cam_counts[lane] = n
+            try:
+                quiet = float(os.environ.get(GS_CAM_QUIET_ENV, "").strip()
+                              or 300.0)
+            except ValueError:
+                quiet = 300.0
+            last = _gs_cam_last_event.get(lane, 0.0)
+            emit = (time.time() - last) >= quiet
+            if emit:
+                _gs_cam_last_event[lane] = time.time()
+        if not emit:
+            return
+        xor = (gs ^ cam_mask) & 0x3FF
+        pins = [p for p in range(1, 11) if xor & (1 << (p - 1))]
+        row = machine_store.validate_event({
+            'lane_id': lane, 'severity': 'warn',
+            'event_type': 'gs_camera_disagree', 'code': 'per_pin',
+            'detail': {'gs_mask': gs, 'camera_mask': cam_mask,
+                       'disagree_pins': pins, 'age_s': round(
+                           time.time() - cam[1], 1),
+                       'count': n},
+        })
+        machine_store.insert_events([row])
+    except Exception as e:
+        log.debug(f"gs_camera_check swallowed: {e}")
 # Cosmetic events leave the hardware-control process over one-way,
 # nonblocking loopback UDP. The separate gateway owns subscriber sockets,
 # replay, and backpressure; a failed renderer must never stall this process.
@@ -224,6 +301,11 @@ def _process_ball_event(lane, pin_mask=None):
     """
     fx_payload = None
     thrower_name = None
+    if pin_mask is not None:
+        # A REAL sensed mask (camera path) — feed the GS-vs-camera
+        # disagreement counter (R2-14). Sim fallback masks (pin_mask None
+        # here, synthesized below) are never recorded.
+        _note_camera_mask(lane, pin_mask)
     with state_lock:
         ls = lane_scoring.get(lane)
         if ls is None or not getattr(ls, 'is_active', False):
@@ -1040,6 +1122,7 @@ class HttpHandler(BaseHTTPRequestHandler):
                 log.warning(f"machine cycle insert failed: {e}")
                 return self._send(500, 'application/json',
                                   b'{"error":"insert failed"}')
+            _gs_camera_check(row)   # R2-14: alert-only, never raises
             return self._send(200, 'application/json',
                               json.dumps({"ok": True,
                                           "id": cycle_id}).encode('utf-8'))

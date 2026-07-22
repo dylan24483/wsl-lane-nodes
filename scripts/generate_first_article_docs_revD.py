@@ -68,7 +68,15 @@ def parse_netlist() -> dict[str, dict[str, str]]:
 
 
 def parse_board() -> dict[str, dict[str, object]]:
-    """ref -> {x, y, rot, side, net_of_pad1(for TPs)} from the routed board text."""
+    """ref -> {x, y, rot, side, net_of_pad1(for TPs)} from the routed board text.
+
+    Net format note (Codex round-2 R2-5, 2026-07-21): KiCad 10 writes pad nets
+    as `(net "NAME")` — the old `(net <int> "NAME")` regex matched NOTHING in
+    this board file, so every TP row in the pack rendered with a BLANK net and
+    a technician had no way to know what a pad probes. Both spellings are
+    accepted now, and main() FAILS generation outright if any TP still
+    resolves to a blank net (silent blanks are exactly the M6 hazard class).
+    """
     text = BOARD.read_text(encoding="utf-8")
     out = {}
     for block in text.split("\n\t(footprint ")[1:]:
@@ -81,10 +89,22 @@ def parse_board() -> dict[str, dict[str, object]]:
         rot = float(mat.group(3) or 0)
         mlayer = re.search(r'\(layer "([^"]+)"\)', block)
         side = "top" if (mlayer and mlayer.group(1) == "F.Cu") else "bottom"
-        mnet = re.search(r'\(net \d+ "([^"]+)"\)', block)
+        mnet = re.search(r'\(net (?:\d+\s+)?"([^"]+)"\)', block)
         out[ref] = {"x": x, "y": y, "rot": rot, "side": side,
                     "pad_net": mnet.group(1) if mnet else ""}
     return out
+
+
+def firmware_version() -> str:
+    """FW_VERSION from firmware/rp2040/config.h — the pack's firmware
+    references must agree with the shippable image (R2-5 version-output
+    agreement; the pack said 'v1.2.0' while config.h was already v1.2.1)."""
+    cfg = ROOT / "firmware" / "rp2040" / "config.h"
+    m = re.search(r'#define\s+FW_VERSION\s+"([^"]+)"',
+                  cfg.read_text(encoding="utf-8"))
+    if not m:
+        raise SystemExit(f"FW_VERSION not found in {cfg}")
+    return m.group(1)
 
 
 def band_of(x: float) -> str:
@@ -157,9 +177,19 @@ def main() -> int:
     hdr = ["Ref", "Function (tag)", "Value", "Location (x, y) mm", "Band", "DNP"]
 
     tp_rows = []
+    blank_tps = []
     for ref in sorted((r for r in board if r.startswith("TP")), key=natural_ref_key):
         b = board[ref]
+        if not str(b["pad_net"]).strip():
+            blank_tps.append(ref)
         tp_rows.append([ref, b["pad_net"], f"({b['x']:.0f}, {b['y']:.0f})", band_of(b["x"])])
+    if blank_tps:
+        # R2-5: a TP row without a net name is a probing hazard, not a
+        # cosmetic gap — refuse to generate the pack.
+        raise SystemExit(f"TP net resolution FAILED for {blank_tps} — the "
+                         f"board pad-net parser found no net (format drift?). "
+                         f"Fix parse_board(); a blank-net TP table must never "
+                         f"ship.")
 
     shift_rows = [[tag, old, new,
                    parts.get(new, {}).get("value", "?"),
@@ -176,6 +206,7 @@ def main() -> int:
     today = date.today().isoformat()
     net_hash = sha256(NETLIST)
     brd_hash = sha256(BOARD)
+    fw_ver = firmware_version()   # R2-5: pack must agree with config.h
 
     doc = f"""# Phase 8 Rev-D — First-Article / Bench Pack (GENERATED — do not hand-edit)
 
@@ -189,6 +220,7 @@ def main() -> int:
 > - `kicad/wsl-phase8b-revD.net` — `{net_hash[:16]}…`
 > - `kicad/revD/wsl-phase8b-revD.kicad_pcb` — `{brd_hash[:16]}…`
 > - `kicad/revD/netlist_diff_revC_to_revD.txt` (REFDES_SHIFT cross-reference)
+> - `firmware/rp2040/config.h` FW_VERSION — `{fw_ver}` (every firmware reference below)
 >
 > Companion: `docs/phase8_revD_first_article_refdes_map.csv` — the complete
 > 262-row refdes → function → value → location map (same generation run).
@@ -276,7 +308,7 @@ Watch the ADC trend during the 6-coil energize (feeds FA-6 step 3).
 
 ### FA-4 — USB / flash (item B)
 Ordinary unmodified micro-B cable fully seats with the J1 ribbon MATED; BOOTSEL
-reachable; UF2 drag-drop flash of firmware v1.2 succeeds WITHOUT a shaved cable.
+reachable; UF2 drag-drop flash of firmware `{fw_ver}` succeeds WITHOUT a shaved cable.
 
 ### FA-5 — GPB bank poke (item C — AUX4-11 on MCP_IN_B 0x21 port B)
 
@@ -289,15 +321,16 @@ reachable; UF2 drag-drop flash of firmware v1.2 succeeds WITHOUT a shaved cable.
    `board_rev` never reads port B; that is a config error, not a board fault.
 
 ### FA-6 — VCC_5V ADC (item D)
-1. GP26/ADC0 reads VCC_5V/2 via R129/R130; firmware v1.2 heartbeat carries
-   `adc_vcc5` latest + min/max mV.
+1. GP26/ADC0 reads VCC_5V/2 via R129/R130; the `{fw_ver}` heartbeat carries
+   VCC_5V as `v5` (latest) / `v5n` (window min) / `v5x` (window max), all mV
+   (R2-5: the old `adc_vcc5` name here matched NOTHING the firmware emits).
 2. Compare against the TP1 DMM value: **±3 % gate** (remediation spec R3.4).
-3. Energize all 6 coils (FA-3) — the sag must be visible in the heartbeat min field.
+3. Energize all 6 coils (FA-3) — the sag must be visible in the heartbeat `v5n` field.
 
 ### FA-7 — Rail-tap fault injection (remediation spec **R1.9 governs**; discharges OG-4)
 
 Equipment: bench PSU, scope, heat gun + **thermocouple**, clip leads, Pi-emulator rig,
-firmware v1.2 (release build) + the bench-only **FI-1** build (drives GP16–19
+firmware `{fw_ver}` (release build) + the bench-only **FI-1** build (drives GP16–19
 output-high on command; refuses to run without its physical jumper; prints its identity
 on the UART banner; NEVER a release artifact).
 
@@ -321,7 +354,7 @@ on the UART banner; NEVER a release artifact).
    must neither arm nor hold, and a deliberate ARM_PERMIT disarm (driven low,
    push-pull — never tristated) must still drop the rail. Photograph thermocouple
    readings for the run log.
-5. **Edge-order proof (firmware v1.2):** force (a) Pi-death (kill the emulator) and
+5. **Edge-order proof (firmware `{fw_ver}`):** force (a) Pi-death (kill the emulator) and
    (b) kick-starvation (emulator holds ARM high, stops kicking). The 1 ms tap ring
    (`TAPDUMP`) must show the documented edge order and advisory cause for each
    (`arm_drop` / `kick_starvation`), and the record must **survive a Pico reboot**
@@ -360,8 +393,9 @@ Before reflowing/soldering the remaining six MCV headers, install and solder ONE
 (recommend J14, 4-pos) on the 1.4 mm `_D1.4` drills: verify insertion force is normal
 and solder fill is complete. Then proceed with the rest.
 
-### FA-11 — Firmware v1.2 posture assert (refuses the first-article pass if absent)
-1. Boot banner shows v1.2.0 and `tap:{{ep,pre,n}}` state.
+### FA-11 — Firmware posture assert (refuses the first-article pass if absent)
+1. Boot banner shows `{fw_ver}` (config.h FW_VERSION at pack generation — a
+   different banner means the wrong image is flashed) and `tap:{{ep,pre,n}}` state.
 2. `tap_assert_input_only()` is active (heartbeat-tick OE/FUNCSEL readback); simulate
    nothing here — the host suite already proves the trip path; on-silicon just confirm
    no `tap_dir` fault is latched with the release build.
@@ -385,7 +419,7 @@ and solder fill is complete. Then proceed with the rest.
 | FA-8 sacrificial pair + 4-way refusal | | |
 | FA-9 V_CE ≤ 0.3 V ×3 channels | | |
 | FA-10 MCV insertion/solder fill | | |
-| FA-11 firmware v1.2 posture | | |
+| FA-11 firmware `{fw_ver}` posture | | |
 """
 
     OUT_MD.write_text(doc, encoding="utf-8")
