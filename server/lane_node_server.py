@@ -6,9 +6,11 @@ import hmac
 import json
 import logging
 import os
+import subprocess
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -63,6 +65,46 @@ clients = {}
 client_metadata = {}  # node_id -> {"lanes": [...], "protocol_version": N, "connected_at": float, "last_heartbeat": float}
 main_loop = None
 SERVER_START_TIME = time.time()
+
+
+def _build_identity():
+    """Resolve the deployed code identity ONCE at startup: short git hash
+    of this checkout, falling back to a VERSION file, else None. Exposed
+    at /api/health as 'git_hash' (Codex R2-8, 2026-07-21) so deploy.ps1
+    on WSL-SRV can record + compare the lane-node build across deploys —
+    the schtasks-orphan incident class is 'green deploy, stale code'."""
+    repo_root = Path(__file__).resolve().parent.parent
+    try:
+        out = subprocess.run(
+            ['git', '-C', str(repo_root), 'rev-parse', '--short', 'HEAD'],
+            capture_output=True, text=True, timeout=5)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:
+        pass
+    try:
+        text = (repo_root / 'VERSION').read_text(encoding='utf-8').strip()
+        if text:
+            return text
+    except OSError:
+        pass
+    return None
+
+
+def _contract_sha256():
+    """sha256 recorded for the machine contract (server/machine_contract
+    .sha256 sidecar) — part of the R2-8 build identity so a deploy can
+    verify which cross-repo contract this server was shipped with."""
+    try:
+        sidecar = Path(__file__).resolve().parent / 'machine_contract.sha256'
+        text = sidecar.read_text(encoding='utf-8').split()
+        return text[0].strip() if text else None
+    except Exception:
+        return None
+
+
+GIT_HASH = _build_identity()
+CONTRACT_SHA256 = _contract_sha256()
 # Cosmetic events leave the hardware-control process over one-way,
 # nonblocking loopback UDP. The separate gateway owns subscriber sockets,
 # replay, and backpressure; a failed renderer must never stall this process.
@@ -391,6 +433,9 @@ async def handle_node(websocket):
                         "connected_at": now,
                         "last_heartbeat": now,
                     }
+                # R2-10 lease: a registered node with claimed lanes is a
+                # live board-side daemon. touch_lanes never raises.
+                machine_store.touch_lanes(node_lanes)
                 if node_version != PROTOCOL_VERSION:
                     log.warning(
                         f"Node {node_id!r} protocol version mismatch: "
@@ -485,10 +530,16 @@ async def handle_node(websocket):
                 # Track liveness so send_to_* can tell "delivered to a node
                 # that's actually responding" from "buffered to a zombie".
                 hb_node = msg.get("node") or node_id
+                hb_lanes = None
                 with clients_lock:
                     meta = client_metadata.get(hb_node)
                     if meta is not None:
                         meta["last_heartbeat"] = time.time()
+                        hb_lanes = list(meta.get("lanes") or [])
+                # R2-10 lease: heartbeats (~5 s) are the primary liveness
+                # signal — diag events are sparse on a healthy machine.
+                if hb_lanes:
+                    machine_store.touch_lanes(hb_lanes)
     except Exception as e:
         log.warning(f"Handler error: {e}")
     finally:
@@ -829,6 +880,17 @@ class HttpHandler(BaseHTTPRequestHandler):
                 "uptime_sec": round(uptime_sec, 1),
                 "uptime_human": f"{int(uptime_sec // 3600)}h {int((uptime_sec % 3600) // 60)}m {int(uptime_sec % 60)}s",
                 "protocol_version": PROTOCOL_VERSION,
+                # Deployed-code identity (R2-8): deploy.ps1 records +
+                # compares this across deploys. None when neither git nor
+                # a VERSION file could resolve a hash at startup.
+                "git_hash": GIT_HASH,
+                "build": {
+                    "git_hash": GIT_HASH,
+                    "contract_sha256": CONTRACT_SHA256,
+                    "started_at": datetime.fromtimestamp(
+                        SERVER_START_TIME,
+                        timezone.utc).isoformat(timespec='seconds'),
+                },
                 "auth_enabled": bool(AUTH_TOKEN),
                 "nodes_connected": nodes_connected,
                 "nodes": [
@@ -940,9 +1002,15 @@ class HttpHandler(BaseHTTPRequestHandler):
                 log.warning(f"machine events insert failed: {e}")
                 return self._send(500, 'application/json',
                                   b'{"error":"insert failed"}')
+            # 'duplicates' (R2-12): rows the delivery-identity UNIQUE index
+            # deduped — an outbox replay overlapping a prior ack. The 2xx is
+            # the cursor-ack either way.
             return self._send(200, 'application/json',
-                              json.dumps({"ok": True, "inserted": len(ids),
-                                          "ids": ids}).encode('utf-8'))
+                              json.dumps({
+                                  "ok": True, "inserted": len(ids),
+                                  "duplicates":
+                                      machine_store.last_insert_duplicates(),
+                                  "ids": ids}).encode('utf-8'))
 
         if parts == ['api', 'machine', 'cycles']:
             body, err = self._read_json_body(65536)
@@ -975,6 +1043,37 @@ class HttpHandler(BaseHTTPRequestHandler):
             return self._send(200, 'application/json',
                               json.dumps({"ok": True,
                                           "id": cycle_id}).encode('utf-8'))
+
+        if (len(parts) == 5 and parts[:3] == ['api', 'machine', 'lane']
+                and parts[4] == 'maintenance'):
+            # R2-10: mechanic maintenance flag — state MAINTENANCE wins
+            # over lease/fault derivation and suppresses WSL-side SMS.
+            try:
+                lane = int(parts[3])
+            except ValueError:
+                return self._send(400, 'application/json',
+                                  b'{"error":"bad lane id"}')
+            body, err = self._read_json_body(4096)
+            if err:
+                return self._send(400, 'application/json', err)
+            if not isinstance(body, dict) or not isinstance(body.get('on'), bool):
+                return self._send(400, 'application/json',
+                                  b'{"error":"body must be {\\"on\\": bool, '
+                                  b'\\"note\\": str?}"}')
+            try:
+                row = machine_store.set_maintenance(
+                    lane, body['on'], body.get('note'))
+            except ValueError as e:
+                return self._send(400, 'application/json',
+                                  json.dumps({"error": str(e)}).encode('utf-8'))
+            except Exception as e:
+                log.warning(f"set_maintenance({lane}) failed: {e}")
+                return self._send(500, 'application/json',
+                                  b'{"error":"maintenance update failed"}')
+            return self._send(200, 'application/json',
+                              json.dumps({"ok": True, "lane": lane,
+                                          "maintenance": bool(row.get('maintenance'))
+                                          }).encode('utf-8'))
 
         if (len(parts) == 5 and parts[:3] == ['api', 'machine', 'events']
                 and parts[4] in ('ack', 'resolve')):

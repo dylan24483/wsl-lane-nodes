@@ -1,6 +1,11 @@
 {
   "contract": "wsl-phase8-machine-diagnostics",
   "contract_version": 1,
+  "contract_revision": "1.2 (2026-07-21 PM: R2-10 board lease/state fields + maintenance endpoint; R2-8 /api/health build identity; R2-12 delivery identity source_id/boot_id/seq + idempotent ingest + duplicates ack field)",
+  "delivery_identity": {
+    "fields": ["source_id", "boot_id", "seq"],
+    "semantics": "R2-12 (2026-07-21): the Pi stamps every event + cycle record with a delivery identity — source_id (stable device id, default hostname; env WSL_DIAG_SOURCE_ID), boot_id (fresh uuid per daemon process start) and seq (process-wide monotonic counter). The daily diag JSONL file is the outbox: lane_node/diag_events.OutboxReplayer tails it with a persisted cursor advanced ONLY on a 2xx (cursor-ack). The server dedupes on UNIQUE(source_id, boot_id, seq) via INSERT OR IGNORE, so replay overlap after a drop or lost ack is idempotent. All-or-nothing per record: a record with only part of the identity is a 400; a record with none inserts as before (legacy live-sink era)."
+  },
   "updated": "2026-07-21",
   "description": "SINGLE SOURCE OF TRUTH for the machine-diagnostics HTTP contract between the Pi lane-node daemon (client: lane_node/diag_events.py HttpSink), the :8766 lane-node server (server/lane_node_server.py + server/machine_store.py), and the WSL Systems bridge (wsl_phase8_bridge.py). Established closing Codex NO-GO audit finding H4 (2026-07-21): the cycle POST wrapper mismatch survived because each side's tests validated against their own fake. BOTH repos' test suites load this file and verify their side against it; change it only with a matching change on every consumer plus the recorded sha256 (server/machine_contract.sha256).",
   "auth": {
@@ -17,9 +22,9 @@
       "bare_body_tolerated": true,
       "max_batch": 500,
       "event_required_fields": ["lane_id", "severity", "event_type"],
-      "event_optional_fields": ["code", "cycle_id", "detail", "detail_json", "blackbox_file", "incident_id", "created_at", "ts_utc"],
+      "event_optional_fields": ["code", "cycle_id", "detail", "detail_json", "blackbox_file", "incident_id", "created_at", "ts_utc", "source_id", "boot_id", "seq"],
       "event_timestamp_precedence": ["created_at", "ts_utc", "server-receive-time"],
-      "response_ok_fields": ["ok", "inserted", "ids"]
+      "response_ok_fields": ["ok", "inserted", "duplicates", "ids"]
     },
     "cycles_post": {
       "method": "POST",
@@ -28,7 +33,7 @@
       "request_wrapper_kind": "object",
       "bare_body_tolerated": true,
       "cycle_required_fields": ["lane_id", "final_state"],
-      "cycle_optional_fields": ["started_at", "ended_at", "cycle_type", "ball", "aborted", "ss_to_guard_ms", "guard_to_table_ms", "table_to_ta2_ms", "ta2_to_sa_ms", "sa_to_ta1zero_ms", "bs_to_ta1zero_ms", "gs_mask", "cam_mask", "fw_version", "shadow"],
+      "cycle_optional_fields": ["started_at", "ended_at", "cycle_type", "ball", "aborted", "ss_to_guard_ms", "guard_to_table_ms", "table_to_ta2_ms", "ta2_to_sa_ms", "sa_to_ta1zero_ms", "bs_to_ta1zero_ms", "gs_mask", "cam_mask", "fw_version", "shadow", "source_id", "boot_id", "seq"],
       "response_ok_fields": ["ok", "id"]
     },
     "event_ack_post": {
@@ -48,8 +53,23 @@
       "method": "GET",
       "path": "/api/machine/health",
       "response_top_fields": ["ok", "generated_at", "lanes"],
-      "lane_entry_bridge_keys": ["fault", "code", "since", "acked", "event_id", "severity"],
-      "lane_entry_bridge_keys_note": "the keys wsl_phase8_bridge._parse_machine_health whitelists and wsl_machine_alerts.observe_health consumes; fault-latch fields come from the NEWEST OPEN fault event, never last_event_*"
+      "lane_entry_bridge_keys": ["fault", "code", "since", "acked", "event_id", "severity", "state", "last_seen", "age_s"],
+      "lane_entry_bridge_keys_note": "the keys wsl_phase8_bridge._parse_machine_health whitelists and wsl_machine_alerts.observe_health consumes; fault-latch fields come from the NEWEST OPEN fault event, never last_event_*",
+      "lane_entry_state_note": "R2-10 (2026-07-21): every configured machine lane (env WSL_MACHINE_LANES, default 21,22) ALWAYS appears with an explicit state from vocab.states — a board the store never heard from is UNKNOWN, never omitted. Lease: last_seen is the newest daemon-heard-from timestamp (WS HELLO/HEARTBEAT + machine ingest, EXCLUDING code deploy_marker:*); age_s = seconds since last_seen (null when never seen). Derivation precedence: MAINTENANCE > (no lease -> UNKNOWN) > (age_s > WSL_MACHINE_LEASE_S, default 90 -> OFFLINE) > (open fault -> FAULT) > HEALTHY. The WSL bridge degrades any snapshot it cannot refresh past its stale bound to UNKNOWN with the snapshot age."
+    },
+    "maintenance_post": {
+      "method": "POST",
+      "path_template": "/api/machine/lane/<N>/maintenance",
+      "body_required_fields": ["on"],
+      "body_optional_fields": ["note"],
+      "response_ok_fields": ["ok", "lane", "maintenance"],
+      "note": "mechanic flag; while on, the lane's health state is MAINTENANCE and WSL-side SMS alerting is suppressed"
+    },
+    "health_get_identity": {
+      "method": "GET",
+      "path": "/api/health",
+      "identity_fields": ["git_hash", "protocol_version"],
+      "note": "R2-8 (2026-07-21): /api/health carries the deployed lane-node short git hash (null when unresolvable). deploy.ps1 on WSL-SRV records + compares it across deploys; only the identity fields are contract-pinned, the rest of /api/health is server-internal."
     },
     "lane_diagnostics_get": {
       "method": "GET",
@@ -61,29 +81,51 @@
     "severities": ["info", "warn", "fault"],
     "event_types": [
       "ball_return_missing",
+      "bank_unavailable",
       "be_no_current",
       "be_stuck_running",
       "beam_blocked",
+      "camera_health",
+      "camera_ref_drift",
       "chatter",
+      "configured_role_missing",
+      "diag_drops",
+      "diag_storage_pruned",
       "dist_index_stall",
       "drift_alarm",
+      "field_wet_lost",
+      "field_wet_restored",
       "fsm_fault",
+      "fw_config_mismatch",
       "fw_fault",
       "fw_reboot",
       "gripper_disagree",
+      "gs_camera_disagree",
+      "http_sink_drops",
       "link_lost",
       "manual_override",
+      "pi_clock_drift",
+      "pi_disk_low",
+      "pi_fs_readonly",
+      "pi_thermal",
       "pi_undervoltage",
       "rail_drop",
       "recovered",
       "rp2040_wdt_reset",
       "run_mismatch",
       "service_restart",
+      "service_restart_loop",
       "short_rack",
+      "stale_channel",
       "stuck_input",
-      "unexpected_edge"
+      "tap_warn",
+      "tapdump",
+      "uart_drops",
+      "unexpected_edge",
+      "v5_out_of_range"
     ],
     "cycle_types": ["ball", "manual", "power_on", "reset", "test"],
+    "states": ["HEALTHY", "FAULT", "OFFLINE", "UNKNOWN", "MAINTENANCE"],
     "final_states": ["FAULT", "MANUAL_INTERVENTION", "READY"],
     "interval_columns": ["ss_to_guard_ms", "guard_to_table_ms", "table_to_ta2_ms", "ta2_to_sa_ms", "sa_to_ta1zero_ms", "bs_to_ta1zero_ms"],
     "lane_id_range": [1, 32],
@@ -106,7 +148,10 @@
           "last_event_type": "fsm_fault",
           "last_event_code": "motion_timeout:S",
           "last_cycle_at": "2026-07-21T17:54:50.000+00:00",
-          "last_cycle_final_state": "FAULT"
+          "last_cycle_final_state": "FAULT",
+          "state": "FAULT",
+          "last_seen": "2026-07-21T17:59:58.000+00:00",
+          "age_s": 2.4
         },
         "22": {
           "open_faults": 0,
@@ -118,7 +163,10 @@
           "last_event_type": "service_restart",
           "last_event_code": "daemon_start",
           "last_cycle_at": "2026-07-21T17:41:00.000+00:00",
-          "last_cycle_final_state": "READY"
+          "last_cycle_final_state": "READY",
+          "state": "HEALTHY",
+          "last_seen": "2026-07-21T17:59:57.000+00:00",
+          "age_s": 3.1
         }
       }
     },

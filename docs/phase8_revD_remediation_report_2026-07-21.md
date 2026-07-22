@@ -191,6 +191,18 @@ v1.2.1) → `97ba04c` (r2 mirror record) → the FINALIZE commits (this report).
   ∈ [2.320, 2.330) mm** — all ≥ rule minima and ≥ the 2.5/3.2 as-fabbed requirement after
   worst-case etch loss (arithmetic re-derived and confirmed). Straddler 3.580, relay rows
   3.559, opto rows and J15 region ≥ 6.
+- **Fab-tolerance citation (added 2026-07-21, Codex R2-16):** the ±20 % figure is JLCPCB's
+  **published** capability limit — "Minimum trace width/spacing tolerance: ±20 %" for
+  standard 1–2 layer/multilayer outer copper (JLCPCB *PCB Manufacturing Capabilities*
+  page, jlcpcb.com/capabilities, as read 2026-07-21) — not an in-house assumption. The
+  0.11 mm worst-case gap-loss arithmetic derives from that published bound at the routed
+  geometry; re-derive against the chosen fab's current published numbers on any re-order.
+- **PROTOTYPE-ONLY WAIVER (explicit, for Dylan to sign):** the 2.65 / 3.35 / 1.6 mm rule
+  values embed the JLC ±20 % allowance for **this prototype run only**. This is NOT a
+  certified-creepage claim under IPC-2221B pollution-degree/material assumptions beyond
+  the derivation recorded above, and it does NOT transfer to a different fab, a different
+  layer stack, or a production respin — any of those re-opens the H2 derivation from the
+  working voltages up. Accepted for first-article/prototype use: ☐ Dylan DeYoung (date).
 
 ### H3 — AUX4–11 unreadable (GPA-only read), rev-B drift pin, no debounce — CLOSED
 

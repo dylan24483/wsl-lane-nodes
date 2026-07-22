@@ -86,6 +86,21 @@ EVENT_TYPES = {
     'be_stuck_running', 'be_no_current',     # AUX be_current rules
     'ball_return_missing',                   # AUX exit_beam rule (catalog §1.2)
     'dist_index_stall',                      # AUX dist_index rule
+    # 2026-07-21 Codex round-2 additions:
+    # R2-11 — firmware v1.2.x record consumption (tap ring / warns / VCC_5V):
+    'tapdump',                               # aggregated rail-drop edge ring
+    'tap_warn',                              # fw tapwarn (e.g. rpok_mism)
+    'v5_out_of_range',                       # VCC_5V hb extrema out of window
+    # R2-12 — bank health + promoted infrastructure faults:
+    'bank_unavailable', 'stale_channel', 'configured_role_missing',
+    'uart_drops', 'diag_drops', 'http_sink_drops',
+    'service_restart_loop', 'fw_config_mismatch',
+    # R2-16 — FIELD_WET loopback role (AUX11):
+    'field_wet_lost', 'field_wet_restored',
+    # R2-14 — camera + Pi platform health:
+    'camera_health', 'camera_ref_drift', 'gs_camera_disagree',
+    'pi_disk_low', 'pi_fs_readonly', 'pi_thermal', 'pi_clock_drift',
+    'diag_storage_pruned',
 }
 SEVERITIES = ('info', 'warn', 'fault')  # the ONLY CHECK enum
 CYCLE_TYPES = {'ball', 'reset', 'power_on', 'manual', 'test'}
@@ -94,6 +109,63 @@ FINAL_STATES = {'READY', 'FAULT', 'MANUAL_INTERVENTION'}
 # The six CamTelemetry intervals (scope §2 schema), integer ms.
 INTERVAL_COLUMNS = ('ss_to_guard_ms', 'guard_to_table_ms', 'table_to_ta2_ms',
                     'ta2_to_sa_ms', 'sa_to_ta1zero_ms', 'bs_to_ta1zero_ms')
+
+# ------------------------------------------------------------------
+# Board liveness leases (Codex R2-10, 2026-07-21). Every configured
+# machine lane carries an EXPLICIT state in the /api/machine/health
+# rollup — a dead board must never look healthy by omission:
+#   MAINTENANCE  mechanic flagged the machine (suppresses alerting)
+#   OFFLINE      lease expired: nothing heard within the lease window
+#   UNKNOWN      never heard from this board (no lease recorded)
+#   FAULT        lease fresh + an open fault event latched
+#   HEALTHY      lease fresh, no open fault
+# Precedence is exactly that order. The lease is touched by the WS
+# HELLO/HEARTBEAT path (the Pi daemon's live link, ~5 s cadence) and by
+# machine event/cycle ingest — EXCEPT synthetic deploy markers
+# (code 'deploy_marker:*'), which are posted by deploy.ps1 on WSL-SRV
+# and must not fake board liveness.
+# ------------------------------------------------------------------
+MACHINE_STATES = ('HEALTHY', 'FAULT', 'OFFLINE', 'UNKNOWN', 'MAINTENANCE')
+LEASE_WINDOW_ENV = "WSL_MACHINE_LEASE_S"
+DEFAULT_LEASE_WINDOW_S = 90.0
+MACHINE_LANES_ENV = "WSL_MACHINE_LANES"
+DEFAULT_MACHINE_LANES = "21,22"   # PHASE_8_PAIRS; grows with the rollout
+
+
+def lease_window_s():
+    raw = os.environ.get(LEASE_WINDOW_ENV, "").strip()
+    if not raw:
+        return DEFAULT_LEASE_WINDOW_S
+    try:
+        val = float(raw)
+        if val <= 0:
+            raise ValueError(raw)
+        return val
+    except ValueError:
+        _warn_once('lease_window', f"Bad {LEASE_WINDOW_ENV}={raw!r} — "
+                                   f"using {DEFAULT_LEASE_WINDOW_S}")
+        return DEFAULT_LEASE_WINDOW_S
+
+
+def configured_lanes():
+    """Machine lanes that must ALWAYS appear in the health rollup (with
+    state UNKNOWN when never heard from). Env WSL_MACHINE_LANES, comma
+    separated, default the Phase 8 pilot pair."""
+    raw = os.environ.get(MACHINE_LANES_ENV, "").strip() or DEFAULT_MACHINE_LANES
+    lanes = []
+    for part in raw.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            lane = int(part)
+        except ValueError:
+            _warn_once('machine_lanes',
+                       f"Bad {MACHINE_LANES_ENV}={raw!r} entry {part!r} — skipped")
+            continue
+        if 1 <= lane <= 32 and lane not in lanes:
+            lanes.append(lane)
+    return lanes
 
 # Bound on one POST /api/machine/events batch (the Pi ships bounded
 # queues; anything bigger than this is a bug, not a backlog).
@@ -110,6 +182,7 @@ _db_lock = threading.Lock()
 
 _err_lock = threading.Lock()
 _error_count = 0
+_last_dup_count = 0   # R2-12: identity-deduped rows in the last insert_events
 
 _warned = set()
 
@@ -135,6 +208,13 @@ def _bump_error():
 def error_count():
     with _err_lock:
         return _error_count
+
+
+def last_insert_duplicates():
+    """Identity-deduped row count from the most recent insert_events call
+    (the ingest handler reports it as 'duplicates' — replay honesty)."""
+    with _err_lock:
+        return _last_dup_count
 
 
 def _warn_once(key, msg):
@@ -280,12 +360,55 @@ CREATE INDEX IF NOT EXISTS idx_me_open_fault
   WHERE severity = 'fault' AND resolved_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_mc_lane_started
   ON machine_cycles(lane_id, started_at, id);
+
+-- Board liveness leases (R2-10). One row per machine lane; last_seen is
+-- the newest 'the board's daemon was heard from' timestamp. maintenance
+-- is a mechanic-set flag that overrides state derivation (and gates
+-- alerting on the WSL side). Additive table — no migration needed.
+CREATE TABLE IF NOT EXISTS machine_leases (
+  lane_id       INTEGER PRIMARY KEY CHECK(lane_id BETWEEN 1 AND 32),
+  last_seen     TEXT,
+  maintenance   INTEGER NOT NULL DEFAULT 0,
+  maintenance_note TEXT,
+  maintenance_changed_at TEXT
+);
 """
+
+
+# R2-12 (Codex round-2, 2026-07-21): delivery identity for the Pi's
+# JSONL-as-outbox shipping. Additive ALTER TABLE (SQLite house rule) +
+# partial UNIQUE indexes so a replayed batch after a drop / lost ack is
+# an idempotent INSERT OR IGNORE no-op instead of a duplicate row.
+# Rows without identity (legacy live-sink era) stay insertable as before.
+_IDENTITY_COLUMNS = (('source_id', 'TEXT'), ('boot_id', 'TEXT'),
+                     ('seq', 'INTEGER'))
+_IDENTITY_INDEXES = """
+CREATE UNIQUE INDEX IF NOT EXISTS uq_me_delivery
+  ON machine_events(source_id, boot_id, seq)
+  WHERE source_id IS NOT NULL AND boot_id IS NOT NULL AND seq IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mc_delivery
+  ON machine_cycles(source_id, boot_id, seq)
+  WHERE source_id IS NOT NULL AND boot_id IS NOT NULL AND seq IS NOT NULL;
+"""
+
+
+def _migrate_identity(conn):
+    """Additive migration: identity columns on both tables + the UNIQUE
+    partial indexes. Safe to run on every connect (ALTER failures on
+    already-present columns are swallowed)."""
+    for table in ('machine_events', 'machine_cycles'):
+        have = {r['name'] for r in
+                conn.execute(f"PRAGMA table_info({table})")}
+        for col, ctype in _IDENTITY_COLUMNS:
+            if col not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ctype}")
+    conn.executescript(_IDENTITY_INDEXES)
 
 
 def _ensure_schema(conn):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
+    _migrate_identity(conn)
 
 
 def _connect():
@@ -387,7 +510,26 @@ def validate_event(ev):
         ts = ev.get('ts_utc')
     row['created_at'] = _timestamp(ts, 'created_at', default_now=True)
     row['business_date'] = business_date_for(row['created_at'])
+    _validate_identity(ev, row)
     return row
+
+
+def _validate_identity(src, row):
+    """R2-12 delivery identity (optional; all-or-nothing). A row carrying
+    (source_id, boot_id, seq) is deduped by the UNIQUE partial index —
+    replays after drops become idempotent no-ops."""
+    sid = _opt_str(src.get('source_id'), 'source_id', max_len=120)
+    bid = _opt_str(src.get('boot_id'), 'boot_id', max_len=80)
+    seq = _opt_int(src.get('seq'), 'seq')
+    if seq is not None and seq < 0:
+        raise ValueError("seq must be a non-negative integer")
+    present = [v is not None for v in (sid, bid, seq)]
+    if any(present) and not all(present):
+        raise ValueError("delivery identity requires all of "
+                         "source_id, boot_id, seq (or none)")
+    row['source_id'] = sid
+    row['boot_id'] = bid
+    row['seq'] = seq
 
 
 def validate_cycle(c):
@@ -428,6 +570,7 @@ def validate_cycle(c):
     row['fw_version'] = _opt_str(c.get('fw_version'), 'fw_version', max_len=100)
     row['shadow'] = 1 if c.get('shadow') else 0
     row['business_date'] = business_date_for(row['started_at'])
+    _validate_identity(c, row)
     return row
 
 
@@ -437,44 +580,129 @@ def validate_cycle(c):
 
 _EVENT_COLS = ('lane_id', 'business_date', 'created_at', 'severity',
                'event_type', 'code', 'cycle_id', 'detail_json',
-               'blackbox_file', 'incident_id')
+               'blackbox_file', 'incident_id',
+               'source_id', 'boot_id', 'seq')
 
 _CYCLE_COLS = ('lane_id', 'business_date', 'started_at', 'ended_at',
                'cycle_type', 'ball', 'final_state', 'aborted',
                'ss_to_guard_ms', 'guard_to_table_ms', 'table_to_ta2_ms',
                'ta2_to_sa_ms', 'sa_to_ta1zero_ms', 'bs_to_ta1zero_ms',
-               'gs_mask', 'cam_mask', 'fw_version', 'shadow')
+               'gs_mask', 'cam_mask', 'fw_version', 'shadow',
+               'source_id', 'boot_id', 'seq')
+
+
+_LEASE_UPSERT = ("INSERT INTO machine_leases (lane_id, last_seen) "
+                 "VALUES (?, ?) ON CONFLICT(lane_id) DO UPDATE SET "
+                 "last_seen = excluded.last_seen "
+                 "WHERE excluded.last_seen > COALESCE(machine_leases.last_seen, '')")
+
+
+def touch_lanes(lane_ids, when=None):
+    """Record 'the machine-side daemon was heard from' for these lanes
+    (WS HELLO/HEARTBEAT + machine ingest call this). NEVER raises — it
+    runs on the asyncio WS thread and liveness bookkeeping must not take
+    down scoring. Deliberately NOT gated on WSL_MACHINE_DIAG: switching
+    diagnostics ingest off must not make live boards read OFFLINE."""
+    try:
+        ids = sorted({int(l) for l in (lane_ids or [])
+                      if isinstance(l, (int, float)) and 1 <= int(l) <= 32})
+    except Exception:
+        ids = []
+    if not ids:
+        return
+    try:
+        ts = _normalize_utc_iso(when) if when is not None else _utc_now_iso()
+        with _db_lock:
+            with closing(_connect()) as conn:
+                for lid in ids:
+                    conn.execute(_LEASE_UPSERT, (lid, ts))
+                conn.commit()
+    except Exception as e:
+        _bump_error()
+        _warn_once('lease_touch', f"machine lease touch failed: {e}")
+
+
+def set_maintenance(lane_id, on, note=None):
+    """Mechanic maintenance flag for one lane (state MAINTENANCE wins
+    over everything and suppresses WSL-side alerting). Returns the lease
+    row as a dict. Raises ValueError on a bad lane id."""
+    lane_id = _lane_id(lane_id)
+    note = _opt_str(note, 'maintenance_note', max_len=500)
+    now = _utc_now_iso()
+    with _db_lock:
+        with closing(_connect()) as conn:
+            conn.execute(
+                "INSERT INTO machine_leases (lane_id, maintenance, "
+                "maintenance_note, maintenance_changed_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(lane_id) DO UPDATE SET maintenance = ?, "
+                "maintenance_note = ?, maintenance_changed_at = ?",
+                (lane_id, 1 if on else 0, note, now,
+                 1 if on else 0, note, now))
+            conn.commit()
+            row = conn.execute("SELECT * FROM machine_leases WHERE lane_id = ?",
+                               (lane_id,)).fetchone()
+    return dict(row) if row is not None else {'lane_id': lane_id}
 
 
 def insert_events(rows):
-    """Insert validated event rows in one transaction. Returns new ids.
-    Raises StoreDisabled when the kill-switch is off."""
+    """Insert validated event rows in one transaction. Returns the new ids
+    (rows deduped by delivery identity are SKIPPED, not re-inserted — the
+    R2-12 idempotent-replay semantics: INSERT OR IGNORE rides the
+    uq_me_delivery partial UNIQUE index). Duplicate counts are exposed via
+    last_insert_duplicates(). Raises StoreDisabled when the kill-switch
+    is off."""
+    global _last_dup_count
     if not enabled():
         raise StoreDisabled(f"{DISABLE_ENV} is off")
-    sql = (f"INSERT INTO machine_events ({', '.join(_EVENT_COLS)}) "
+    sql = (f"INSERT OR IGNORE INTO machine_events ({', '.join(_EVENT_COLS)}) "
            f"VALUES ({', '.join('?' * len(_EVENT_COLS))})")
+    dups = 0
     with _db_lock:
         with closing(_connect()) as conn:
             ids = []
             for row in rows:
                 cur = conn.execute(sql, tuple(row[c] for c in _EVENT_COLS))
-                ids.append(cur.lastrowid)
+                if cur.rowcount == 0:
+                    dups += 1          # identity already stored: replay no-op
+                else:
+                    ids.append(cur.lastrowid)
             conn.commit()
+    with _err_lock:
+        _last_dup_count = dups
+    # Ingest proves the board-side pipeline is alive — EXCEPT synthetic
+    # deploy markers, which deploy.ps1 posts from WSL-SRV (R2-8 smoke)
+    # and must not fake liveness for a dark board.
+    touch_lanes([row['lane_id'] for row in rows
+                 if not str(row.get('code') or '').startswith('deploy_marker')])
     return ids
 
 
 def insert_cycle(row):
-    """Insert one validated cycle row; returns the new id.
-    Raises StoreDisabled when the kill-switch is off."""
+    """Insert one validated cycle row; returns the row id. Idempotent on
+    delivery identity (R2-12): a replayed cycle POST after a lost ack
+    resolves to the ALREADY-stored row's id via the uq_mc_delivery index
+    instead of inserting a duplicate. Raises StoreDisabled when the
+    kill-switch is off."""
     if not enabled():
         raise StoreDisabled(f"{DISABLE_ENV} is off")
-    sql = (f"INSERT INTO machine_cycles ({', '.join(_CYCLE_COLS)}) "
+    sql = (f"INSERT OR IGNORE INTO machine_cycles ({', '.join(_CYCLE_COLS)}) "
            f"VALUES ({', '.join('?' * len(_CYCLE_COLS))})")
     with _db_lock:
         with closing(_connect()) as conn:
             cur = conn.execute(sql, tuple(row[c] for c in _CYCLE_COLS))
-            conn.commit()
-            return cur.lastrowid
+            if cur.rowcount == 0 and row.get('source_id') is not None:
+                existing = conn.execute(
+                    "SELECT id FROM machine_cycles WHERE source_id = ? "
+                    "AND boot_id = ? AND seq = ?",
+                    (row['source_id'], row['boot_id'],
+                     row['seq'])).fetchone()
+                conn.commit()
+                cycle_id = existing['id'] if existing is not None else None
+            else:
+                conn.commit()
+                cycle_id = cur.lastrowid
+    touch_lanes([row['lane_id']])
+    return cycle_id
 
 
 def ack_event(event_id, by):
@@ -589,6 +817,11 @@ def _empty_lane_rollup():
         'last_event_code': None,
         'last_cycle_at': None,
         'last_cycle_final_state': None,
+        # R2-10 lease/state fields — recomputed for every entry in
+        # machine_health(); UNKNOWN is the fail-honest default.
+        'state': 'UNKNOWN',
+        'last_seen': None,
+        'age_s': None,
     }
 
 
@@ -658,6 +891,38 @@ def machine_health():
                     d = lanes.setdefault(str(lane_id), _empty_lane_rollup())
                     d['last_cycle_at'] = c['started_at']
                     d['last_cycle_final_state'] = c['final_state']
+            lease_rows = {r['lane_id']: dict(r) for r in conn.execute(
+                "SELECT * FROM machine_leases")}
+    # R2-10: every configured machine lane gets an explicit board state —
+    # a lane the store has never heard from must appear as UNKNOWN, not
+    # be omitted (omission is exactly how a dead board looks healthy).
+    now_dt = datetime.now(timezone.utc)
+    window = lease_window_s()
+    lane_ids = set(configured_lanes()) | {int(k) for k in lanes}
+    for lane_id in sorted(lane_ids):
+        entry = lanes.setdefault(str(lane_id), _empty_lane_rollup())
+        lease = lease_rows.get(lane_id) or {}
+        last_seen = lease.get('last_seen')
+        age_s = None
+        if last_seen:
+            try:
+                age_s = max(0.0, round(
+                    (now_dt - datetime.fromisoformat(last_seen)).total_seconds(), 1))
+            except ValueError:
+                last_seen, age_s = None, None
+        if lease.get('maintenance'):
+            state = 'MAINTENANCE'
+        elif last_seen is None:
+            state = 'UNKNOWN'
+        elif age_s > window:
+            state = 'OFFLINE'
+        elif entry['fault']:
+            state = 'FAULT'
+        else:
+            state = 'HEALTHY'
+        entry['state'] = state
+        entry['last_seen'] = last_seen
+        entry['age_s'] = age_s
     return {
         'ok': True,
         'generated_at': _utc_now_iso(),

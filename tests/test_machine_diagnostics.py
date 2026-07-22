@@ -835,6 +835,104 @@ def test_machine_health_carries_bridge_contract_keys():
                   "example top-level keys match declared response fields")
 
 
+# ---------------------------------------------------------------
+# R2-10 (Codex round-2, 2026-07-21): board lease / explicit state
+# ---------------------------------------------------------------
+def test_machine_health_lease_states_and_maintenance():
+    with fresh_db():
+        # Never heard from -> configured lanes (default 21,22) appear as
+        # UNKNOWN — never omitted (omission is how a dead board looks OK).
+        _, health = http('GET', '/api/machine/health')
+        for lane in ('21', '22'):
+            entry = health['lanes'][lane]
+            assert_eq(entry['state'], 'UNKNOWN', f"lane {lane} starts UNKNOWN")
+            assert_eq(entry['last_seen'], None, f"lane {lane} no lease yet")
+            assert_eq(entry['age_s'], None, f"lane {lane} no age yet")
+
+        # Real ingest touches the lease -> fresh + no fault = HEALTHY.
+        http('POST', '/api/machine/cycles',
+             {'cycle': {'lane_id': 22, 'final_state': 'READY'}})
+        _, health = http('GET', '/api/machine/health')
+        e22 = health['lanes']['22']
+        assert_eq(e22['state'], 'HEALTHY', "fresh lease + no fault = HEALTHY")
+        assert_true(e22['last_seen'], "lease recorded")
+        assert_true(e22['age_s'] is not None and e22['age_s'] < 30,
+                    "age_s is fresh")
+        assert_eq(health['lanes']['21']['state'], 'UNKNOWN',
+                  "other lane unaffected")
+
+        # Fresh lease + open fault = FAULT.
+        http('POST', '/api/machine/events', [make_event(lane=22)])
+        _, health = http('GET', '/api/machine/health')
+        assert_eq(health['lanes']['22']['state'], 'FAULT',
+                  "open fault on a fresh lease = FAULT")
+
+        # Synthetic deploy markers (deploy.ps1 R2-8 smoke) must NOT fake
+        # liveness for a board nobody has heard from.
+        http('POST', '/api/machine/events', [
+            make_event(lane=21, severity='info', event_type='service_restart',
+                       code='deploy_marker:abc1234')])
+        _, health = http('GET', '/api/machine/health')
+        assert_eq(health['lanes']['21']['state'], 'UNKNOWN',
+                  "deploy marker does not touch the lease")
+
+        # Expired lease -> OFFLINE (backdate the lease row directly).
+        old = (datetime.now(timezone.utc)
+               - timedelta(seconds=machine_store.lease_window_s() + 60))
+        conn = sqlite3.connect(machine_store.DB_PATH)
+        conn.execute("UPDATE machine_leases SET last_seen = ? WHERE lane_id = 22",
+                     (machine_store._normalize_utc_iso(old),))
+        conn.commit(); conn.close()
+        _, health = http('GET', '/api/machine/health')
+        e22 = health['lanes']['22']
+        assert_eq(e22['state'], 'OFFLINE', "expired lease = OFFLINE (not FAULT)")
+        assert_true(e22['age_s'] > machine_store.lease_window_s(),
+                    "age_s reports the staleness")
+        assert_eq(e22['fault'], True,
+                  "fault fields stay visible alongside OFFLINE")
+
+        # MAINTENANCE wins over everything; off restores derivation.
+        status, body = http('POST', '/api/machine/lane/22/maintenance',
+                            {'on': True, 'note': 'greasing the table'})
+        assert_eq(status, 200, "maintenance on accepted")
+        assert_eq(body['maintenance'], True, "maintenance echoed")
+        _, health = http('GET', '/api/machine/health')
+        assert_eq(health['lanes']['22']['state'], 'MAINTENANCE',
+                  "maintenance overrides OFFLINE/FAULT")
+        http('POST', '/api/machine/lane/22/maintenance', {'on': False})
+        _, health = http('GET', '/api/machine/health')
+        assert_eq(health['lanes']['22']['state'], 'OFFLINE',
+                  "maintenance off restores derived state")
+
+        # Validation: non-bool 'on' and bad lane are 400s.
+        status, _ = http('POST', '/api/machine/lane/22/maintenance',
+                         {'on': 'yes'})
+        assert_eq(status, 400, "non-bool maintenance body rejected")
+        status, _ = http('POST', '/api/machine/lane/99/maintenance',
+                         {'on': True})
+        assert_eq(status, 400, "out-of-range lane rejected")
+
+        # Contract lockstep: states vocabulary + bridge keys carry the
+        # lease fields.
+        c = _contract()
+        assert_eq(list(machine_store.MACHINE_STATES), c['vocab']['states'],
+                  "states vocab in lockstep")
+        for k in ('state', 'last_seen', 'age_s'):
+            assert_true(
+                k in c['endpoints']['machine_health_get']['lane_entry_bridge_keys'],
+                f"contract bridge keys include {k!r}")
+
+
+def test_api_health_carries_build_identity():
+    # R2-8: /api/health must expose the deployed git hash so deploy.ps1
+    # can record + compare it (None only when git AND VERSION both fail —
+    # this checkout has git, so expect a real short hash).
+    _, body = http('GET', '/api/health')
+    assert_true('git_hash' in body, "git_hash key present in /api/health")
+    assert_true(isinstance(body['git_hash'], str) and body['git_hash'],
+                "git identity resolved for a git checkout")
+
+
 TESTS = [
     test_schema_check_on_severity_only_plus_indexes,
     test_post_events_batch_and_diagnostics_readback,
@@ -854,6 +952,8 @@ TESTS = [
     test_cycle_post_accepts_canonical_wrapped_shape,
     test_contract_file_pins_server_vocab_and_shapes,
     test_machine_health_carries_bridge_contract_keys,
+    test_machine_health_lease_states_and_maintenance,
+    test_api_health_carries_build_identity,
 ]
 
 

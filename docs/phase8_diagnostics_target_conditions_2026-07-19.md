@@ -1,6 +1,6 @@
-# Phase 8 — Diagnostics Target-Conditions Catalog (2026-07-19)
+# Phase 8 — Diagnostics Target-Conditions Catalog **v1.1** (2026-07-19, rev. 2026-07-21)
 
-> **Status: SCOPING — companion to `phase8_diagnostics_scope_2026-07-19.md` (the scope doc). Nothing implemented.**
+> **Status: v1.1 — companion to `phase8_diagnostics_scope_2026-07-19.md` (the scope doc). Banner corrected 2026-07-21 (Codex R2-16): Phases 1+2 of the scope are BUILT AND COMMITTED (FSM fault codes, diag sinks, machine_store on :8766, board lease/state model, /api/lanes machine key, default-OFF SMS incl. offline class). §§1–4 below remain the design-intent condition inventory; §5–6 (added in v1.1) catalog the diagnostic-SYSTEM and round-2 machine conditions.**
 > Provenance: 3-agent deep dive (82-70 failure-mode mining from the full AMF service/operation manual text extracts · rev-D delta grounded in the netlist generator · machine-sensor survey) → synthesis → adversarial critic. The critic's 10 findings are **integrated** below (notably: a rev-D item that would have loaded RELAY_ENABLE_RAIL was removed; rudder/lift attribution was inverted and is fixed; foul-detector, shorted-cycle-button, and welded-M-relay failure modes were missing and are added; coverage arithmetic recounted).
 > Ground truth follows the scope doc throughout: zero ADC on rev-C · motor current never crosses the PCB · SC+TB series interlock on C2A-U (no per-cam attribution, permanent on this chassis) · cam polarity unmeasured for all six cams until the powered session · AUX1-3 = the only spare populated inputs · GP11 vacant but contested · camera pin-mask + GS map field-validated · safety rail observe-only.
 
@@ -261,3 +261,49 @@ Basis: **64 mechanical failure modes** across §1.1-1.14 (5+5+7+6+8+4+2+4+3+2+9+
 **Honesty flags:** (a) ~⅓ of "today"/"Phase 0-3" rows are weak-attribution timeout expressions, not named diagnoses; (b) every cam-sequence number assumes the Phase-0 polarity capture succeeds; (c) machine-22 baselines are optimistic priors, not fleet thresholds; (d) all Layer 2/3 detections are alert-only — trip authority stays with the existing Layer-1 backstops; (e) analog-signature rows (slip-vs-jam, centrifugal, load creep) are USB-ADC-dependent — a threshold switch alone does not deliver them.
 
 **Known source disagreements:** 24VAC-sense "footprints" are a manual-population *option*, not placed copper (refines scope:124); FIELD_WET_V unloaded float is ~14 V per the change list vs ~11 V measured on board #1 — no source reconciles them; use per-board measurement.
+
+**SC/TB reconciliation note (added v1.1, Codex R2-16).** Two records describe the SC+TB interlock in apparently contradictory terms: the 2026-06-27 at-machine metering ("SC + TB in **SERIES** at one node, C2A-U/TSG-1; TB never isolates; no dry NC pair to land") and the 2026-07-07 interlock-redesign §4 results ("SC+TB **parallel closed-when-SAFE** contacts in the S/T coil circuits; danger = both levers back kills both coils"). These are NOT in conflict: they are the same physical protection observed at two vantage points — the 2026-06-27 measurement is the **harness-level** ground truth (what a wire can land on: one shared live-ladder node, nothing isolatable) and **supersedes all older "TB + SC in PARALLEL harness pair" claims**; the 2026-07-07 result characterizes the **ladder-level** protective behavior that Candidate C formally delegates to. The code already encodes the shared fact: `interlock_ok()` is echo-only and can never assert as wired (scope §cross-cutting; `phase8_interlock_redesign.md` §7), and no software path treats the echo as a fault signal. Any doc still citing a landable TB/SC dry pair is stale — measure, don't trust.
+
+---
+
+## 5. Diagnostic-SYSTEM conditions — P0 (added v1.1, Codex R2-16)
+
+The §1 catalog watches the *machine*; nothing watched the *watcher*. These conditions are about the diagnostics/control chain itself and are **P0 — the monitoring system must fail visible, never silent**. Status keys: `shipped` = live in the 2026-07-19→21 campaign code · `queued` = software work scheduled on existing signals · `blocked` = needs hardware/bench work first.
+
+| # | Condition | Detection / surfacing | Status |
+|---|---|---|---|
+| P0-1 | **Board OFFLINE / UNKNOWN** (Pi daemon or :8766 store dark; dead board must not look healthy by omission) | machine_leases (last_seen + WSL_MACHINE_LEASE_S window) → explicit per-board state HEALTHY/FAULT/OFFLINE/UNKNOWN/MAINTENANCE in `/api/machine/health`; WSL bridge degrades an unrefreshable snapshot to UNKNOWN-with-age; `/api/lanes` always carries state for Phase 8 lanes; SMS offline class (`machine_offline`, own throttle) | **shipped** (R2-10) |
+| P0-2 | **Telemetry loss / duplication / reordering** (dropped diag records, replay double-counts, out-of-order arrival corrupting baselines) | Delivery identity `source_id/boot_id/seq` on every record; JSONL-as-outbox with cursor-ack replay; server dedupe on UNIQUE(source_id,boot_id,seq); drop counters promoted to structured events (`diag_drops`, `http_sink_drops`, `uart_drops`) | **shipped** (R2-12) |
+| P0-3 | **Interlock failed-or-bypassed** (TB/SC protection jumpered/failed with no detection — the predicted field escape) | ALERT-ONLY: needs final-member sensing (coil-circuit observation or the G3/Stage-6b per-cutover coil-drop proof as the procedural gate); no compliant continuous sensor exists on this chassis today — recorded as a standing gap, per-cutover proof REQUIRED | **blocked** (procedural backstop only) |
+| P0-4 | **Motion while permission false** (cam/ball edges arriving while the FSM asserts no motion should occur) | FSM else-branch unexpected-edge counting → `unexpected_edge` events; epoch-aware classifier (fw v1.2.2, R2-13) excludes stale pre-reboot edges | **shipped** (events) / **queued** (fw v1.2.2 epoch rule — NOT flashed) |
+| P0-5 | **Output-chain per-stage mismatch** (commanded relay vs RP_OK vs rail vs observed motion disagreeing at a specific stage) | `run_mismatch` promotion (commanded-vs-sensed), rail-drop ring + tap state consumption (v1.2.x records → typed events), per-stage attribution as the v1.2.x link consumption lands | **queued** (R2-11) |
+| P0-6 | **Identity / cross-lane mismatch** (board thinks it's lane 21 while wired to 22; config/firmware/contract hash drift) | REV_ID strap + firmware identity line (PCB rev, unique id, build hash, config hash — R2-6); BoardConfig requires an explicit per-lane board revision, rejects unsupported roles loudly; `fw_config_mismatch` events; deploy-time git-hash record/compare (R2-8) | **queued** (fw/daemon R2-6) / **shipped** (deploy hash compare) |
+| P0-7 | **Per-sensor open / short / stale / out-of-range / supply-lost** | Startup + mid-session stuck-input rules (shipped); SlowDebounce diagnostics path (shipped); FIELD_WET loopback role = supply-lost detection for the field bank (AUX11, software now — see §6 AUX priority); `bank_unavailable` / `stale_channel` / `configured_role_missing` MCP/GPB read-failure events | **shipped** (stuck/debounce, bank events) / **queued** (FIELD_WET harness jumper) |
+
+## 6. Machine conditions — P1 additions (v1.1) + AUX role priority
+
+P1 machine-side conditions surfaced by the round-2 review, extending §1 (not double-counted in the §4 arithmetic — v1.1 does not re-baseline the 67):
+
+| # | Condition | Capture method | Class |
+|---|---|---|---|
+| P1-1 | Cam moves, mechanism doesn't (broken linkage downstream of a healthy cam signature) | Interval plausibility vs camera outcome (rack didn't change though cams cycled) | camera + timing-trend |
+| P1-2 | Wrong motor / wrong direction / speed out of envelope | Per-motor energized-time (H-02 fix, shipped) + interval envelope vs baseline; current signature once USB-ADC lands | firmware-rule → add-on-sensor |
+| P1-3 | Dual-DIELL asymmetry (pair-mate ball-detect rates diverging) | Cross-lane DIELL event-rate comparison over sessions | firmware-rule (server-side) |
+| P1-4 | Unsafe-state request promotion (desk/API commands arriving while the machine is in a state where acting is unsafe) | Command-vs-FSM-state gate promoted to a structured warn event instead of a silent drop | firmware-rule |
+| P1-5 | Unmatched exit object (ball-return exit event with no preceding DIELL ball) | Exit photoeye vs DIELL T0 correlation | add-on-sensor |
+| P1-6 | BE-branch-stopped (carpet/elevator pickups dead while BE runs) | BE current + elevator/carpet correlation (pickup class of §1.7/1.10) | add-on-sensor |
+| P1-7 | Distributor pin-spacing drift (pins too close/far on the belt; AMF `24_8270.txt:2666`) | Distributor prox pulse-interval trending | add-on-sensor |
+| P1-8 | Rack-quality metrics (off-spot tendency, lean, rack-to-rack repeatability) | Camera standing/full-rack mask statistics per rack | camera (trend) |
+| P1-9 | Predictive electrical trends (motor current creep, start-cap degradation signatures) | USB-ADC CT baselines, Welford drift | add-on-sensor (trend) |
+| P1-10 | Facility/environment (ambient temp, humidity near electronics, supply sag) | Cheap I²C env sensor in enclosure + 24VAC sense option | add-on-sensor (option) |
+| P1-11 | Cushion-SS-as-passive-observer OPTION (SS retired from the read path — re-admit as observe-only edge counter, never a control input) | AUX role, observe-only, stuck-exempt | firmware-rule (option) |
+
+**AUX4–11 role priority list (recorded per R2-16; roles are dormant until `WSL_DIAG_AUX_ROLES` maps them — seed-flag lesson applies: query the env before re-reading the logic):**
+
+1. **`field_wet_ok` (AUX11) — FIRST.** Loopback of the field wetting supply through a spare input: kills the whole false-alarm class where every field input "opens" at once because the wetting rail died. **Software (role + suppression semantics: while `field_wet_ok` reads lost, suppress per-input open/stuck faults and emit `field_wet_lost`; `field_wet_restored` on return) lands NOW** — the physical loopback jumper is a harness item at install. Event types are already in the store vocabulary.
+2. `s_manual` / `t_manual` dry-contact rear-panel switch observation (manual-intervention attribution — MANUAL_INTERVENTION cycles stop being blind).
+3. `klixon_aux` thermal-cutout aux contacts (if the parts-manual open item confirms they exist) — motor-protection attribution.
+4. `door_switch` guard/door interlock observation (alert-only).
+5. `ac24_sense` 24 VAC control-power presence (manual-population option row).
+6. `ss_observe` — the §6 P1-11 cushion observer option.
+7. Remainder spare / bench fault-injection (FI-1 pairing).
