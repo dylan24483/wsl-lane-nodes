@@ -1325,3 +1325,24 @@ recorded HEADs, definitive open-gates list.
 
 Working-tree note: `tmp/` scratch outputs and the `kicad/.history` editor artifacts
 remain deliberately untracked (standing practice — explicit staging only).
+
+### Mirror record — FINALIZE (round 2), appended after commit 175ac92
+
+- New external mirror `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-21_phase8_revD_round2_final\`
+  (+ `.zip` 16,237,323 bytes, `.zip.sha256` =
+  `ced5a39975805fac800375d9c74c670f93b6ff8c66851a13378d0c4407db1c09`): **228 files**
+  = the round2_hw mirror set refreshed to the finalize end-state + the full
+  `kicad/fab_revD_2026-07-21_r3/` package + `DRC-revD-round3-r1.rpt` + both fab
+  tombstones + the round-2 closing report + the round-2/3 firmware additions
+  (`fi1_bootsel.c`, `gen_build_id.cmake`, `test_fi1.*`) + the Pi-side identity-chain
+  files (`lane_node/rp2040_link.py`, `lane_node/controller_daemon.py`).
+  MANIFEST.json carries per-file sha256; every copy hash-compared at creation.
+  Source git head **`175ac92` (`fable-audit-fixes`)** — the campaign's definitive
+  pre-mirror-record HEAD (this mirror-record commit follows it). **Supersedes
+  `..._round2_hw` as the as-current record**; all older mirrors stay untouched.
+  M7's off-disk half (copy WSL_Backups to a second physical volume and hash-verify
+  against these recorded zip hashes) remains the OPEN Dylan item.
+- Rev-C sacred snapshot re-verified after the finalize commit:
+  `scripts/verify_revC_snapshot.py` -> **189/189 OK, 0 failures**.
+- WSL Systems round-2 end-state HEAD (unchanged by this finalize): `d12a09a`
+  (`fable-audit-fixes`, not pushed).
