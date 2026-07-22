@@ -754,6 +754,29 @@ kicad-cli; `py -3` for SKiDL/diff/audit-netlist).
   firmware v1.2 posture assert. Checklist §2 first item flipped to `[x]` (generated,
   with the re-run rule).
 
+### Backup mirror record (COR-4 standing rule — mirror named, contents verified)
+
+- New external mirror **`C:\Users\Dylan DeYoung\WSL_Backups\2026-07-21_phase8_revD_
+  remediation\`** (116 files, MANIFEST.json with per-file sha256, copy-verified 0
+  failures) + `2026-07-21_phase8_revD_remediation.zip` (5,884,996 bytes) +
+  `.zip.sha256` (`f343fe43183626b24cecbcb667018c39851e877d1b328c94675cb6f678bdda3b`).
+  Contents: the FULL remediation end-state — kicad/revD (routed board + sidecars +
+  remediation DRC reports + diff), `fab_revD_2026-07-21` as-ordered package, the
+  rev-D script chain (incl. the new export + first-article generators), local
+  `wsl_footprints.pretty`, firmware/rp2040 v1.2 sources, machine contract + sidecar,
+  and every rev-D doc touched by the campaign. Source git head `a6502ef`
+  (`fable-audit-fixes`).
+- Clean-checkout reproduction proven before mirroring: a detached worktree at
+  `a6502ef` re-verifies the fab package `manifest.json` **45/45 OK** including the
+  source board/netlist hashes (the `.gitattributes -text` pin + the `.gitignore`
+  log exception exist exactly so this stays true; the first commit attempt silently
+  lost 9 `*.log` files to `.gitignore` — caught by this verification, fixed in
+  `a6502ef`).
+- The two 2026-07-20 mirrors + zips remain valid and untouched. **M7's off-disk
+  half is still the OPEN Dylan item recorded above** (single physical volume on
+  this laptop; copy WSL_Backups to WSL-SRV or USB media and hash-verify at the
+  destination — this new zip's hash is listed here for that verification).
+
 ### M7 (doc-rot half) — consistency pass
 
 - Checklist G11 `[x]` with evidence; G13 reworded (BOM exists, ORDER open); §3 summary
