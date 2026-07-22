@@ -875,3 +875,14 @@ batch via the new `scripts/verify_revC_snapshot.py`).
   `test_fsm_diagnostics` 23/23 all PASS; WSL Systems bridge-contract suite ALL PASS
   (3 modes); **board chain NOT touched** (git-clean `kicad/`, no netlist/DRC/fab
   re-export needed); **rev-C 189/189 OK**.
+
+### Mirror record — post-remediation review batch (appended after commit 541dd5c)
+
+- New external mirror `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-21_phase8_revD_remediation_r2\`
+  (+ `.zip`, `.zip.sha256` = `792646194b6c95f6d3662b38d0d97c6e94ecf2813617c145e8ad631c9c8cce51`):
+  120 files, MANIFEST.json, source git head `541dd5c` (`fable-audit-fixes`). Same file
+  set as the `..._remediation` mirror plus the review-batch additions (HANDOFF.md,
+  harness build sheet, `scripts/repro_m2_getisrulearea.py`,
+  `scripts/verify_revC_snapshot.py`, `tests/test_machine_diagnostics.py`) — supersedes
+  it as the as-current record; the older mirrors stay untouched. M7's off-disk half
+  (copy WSL_Backups to a second physical volume) remains the OPEN Dylan item.
