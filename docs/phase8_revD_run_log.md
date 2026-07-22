@@ -1112,3 +1112,19 @@ Software slices (R2-8/10/11/12 etc.) landed separately (`123fb9b`, `55b2bf5`).
 Superseded-evidence note: `DRC-revD-remediation-r3.rpt` and `fab_revD_2026-07-21/`
 are the round-1 records — cite `DRC-revD-round2-r4.rpt` and
 `fab_revD_2026-07-21_r2/` from here on.
+
+### Mirror record — round-2 hardware batch (appended after commit dc56964)
+
+- New external mirror `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-21_phase8_revD_round2_hw\`
+  (+ `.zip` 11,045,518 bytes, `.zip.sha256` =
+  `e9ed71a5fc22e1a836cf4588a0908f8b9589f7a6995656848ee078a3c64b05f3`): **172 files**
+  (the r3 mirror set refreshed to the round-2 end-state + the full
+  `kicad/fab_revD_2026-07-21_r2/` package + the round-2 DRC reports),
+  MANIFEST.json with per-file sha256 (every copy hash-compared at creation),
+  source git head `dc56964` (`fable-audit-fixes`). **Supersedes
+  `..._remediation_r3` as the as-current record**; all older mirrors stay
+  untouched. M7's off-disk half (copy WSL_Backups to a second physical volume
+  and hash-verify against these recorded zip hashes) remains the OPEN Dylan
+  item — this zip's hash is listed here for that verification.
+- Rev-C sacred snapshot re-verified after the batch commit:
+  `scripts/verify_revC_snapshot.py` -> 189/189 OK, 0 failures.
