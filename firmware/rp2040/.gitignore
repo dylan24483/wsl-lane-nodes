@@ -1,6 +1,7 @@
 # build artifacts
 /build/
-/build_fi1/   # FI-1 bench variant build dir (v1.2.2 — NEVER a release artifact)
+# FI-1 bench variant build dir (v1.2.2 — NEVER a release artifact)
+/build_fi1/
 test/*.exe
 *.uf2
 *.elf
