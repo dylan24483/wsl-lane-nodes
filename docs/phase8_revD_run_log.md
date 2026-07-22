@@ -1284,3 +1284,44 @@ component classes (SRV05-4/TCA4307/polyfuse inventory identical, all LOGIC-domai
 PC817/G5LE isolation-barrier inventory untouched.
 
 Firmware flash status: **NOT flashed** (unchanged posture — fixes landed pre-flash).
+
+## FINALIZE (ROUND 2) — 2026-07-21, campaign close
+
+Closes the round-2 campaign (Codex R2-1…R2-17 + the round-3 re-review findings 1–8).
+**Closing record = `docs/phase8_revD_round2_report_2026-07-21.md`** — final per-finding
+statuses (**16 CLOSED · 1 DISPOSITIONED-WITH-EVIDENCE**), both nuanced dispositions,
+recorded HEADs, definitive open-gates list.
+
+### Residual closures in this batch (the 3 findings of the independent verify pass)
+
+- **R2-7 (was NOT DONE):** remediation spec gains **§R4-A** — threshold arithmetic made
+  exact (I_C(threshold) ≈ 0.26 mA → ≈ 3.2× at threshold, 2.5× at the stricter 0.33 mA
+  design target), explicit provenance split (130 % CTR floor = published minimum; the
+  ×0.70/×0.75/×0.70 derates = conservative typical-curve reads — Sharp publishes no
+  minimum at 1.7 mA), the NO-REDESIGN constraint stated (40+ ch × 5 mA ≈ 200+ mA ≥ the
+  TMA-0505S 200 mA wetting budget; fleet worst case 73.7 mA), and empirical closure
+  delegated to the new **FA-9 steps 2–3**: EVERY populated input channel qualified at
+  loaded-minimum FIELD_WET_V (≈ 4.5 V) AND at ≥ 70 °C case. Failures land under R4
+  reopen trigger 1.
+- **R2-5 (was PARTIAL):** first-article pack (generator-sourced) gains the **probe
+  rule** — ≥ 100 MΩ input impedance mandatory on tap GATE nodes (a 10 MΩ probe loads
+  the 1 M/10 M network and shifts the very levels under test), ALL tap probing/fault
+  insertion directed at **TP17–TP24 pads only** (FA-7 steps 1 and 3 re-pointed at the
+  pads; SOT-23 pins of Q17–Q20 are never touched), instrument identity recorded.
+- **R2-4 (was PARTIAL):** new **FA-12** — J16 SDA/SCL external-short recovery: short
+  SDA→GND, SCL→GND, both, + a > 60 s sustained wedge; controller bus (0x20/21/22) +
+  relay pattern + RELAY_ENABLE_RAIL must stay deterministic throughout; U46 TCA4307
+  must autonomously reconnect the card side on release (no power cycle); severity
+  statement (availability incident, fail-safe landing) recorded in the procedure.
+
+### Gate runs (finalize batch)
+
+| Gate | Result |
+|---|---|
+| First-article pack regeneration | `generate_first_article_docs_revD.py` → 271 rows / 24 TPs (all non-blank, fail-closed) / 46 shifts / 8 GPB rows; FA-1…**FA-12**; fw refs all `v1.2.2`; CSV byte-stable at 271 rows |
+| Docs synced | round-2 report NEW; round-1 report supersession note re-pointed; change-list ROUND-2+3+FINALIZE banner (271/223, r3 package, v1.2.2); readiness-checklist banner (closing-record pointer, FA-12, §R4-A) + the round-2 insert's split-sentence glitch repaired; spec §R4-A appended; HANDOFF finalize addendum |
+| Board/netlist/firmware files | **UNTOUCHED in this batch** (docs + generator only; the generator's board/netlist parsing unchanged — regeneration output verified against the committed 24-TP/271-row state) |
+| Rev-C sacred snapshot | **189/189 OK before the batch**; re-verified after the finalize commit (see mirror record below) |
+
+Working-tree note: `tmp/` scratch outputs and the `kicad/.history` editor artifacts
+remain deliberately untracked (standing practice — explicit staging only).

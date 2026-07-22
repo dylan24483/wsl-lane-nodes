@@ -505,6 +505,35 @@ budgets per standing rule):**
 3. A future channel is repopulated for 24 VAC-sense with a different effective I_F, or
 4. Fleet mid-life audit (year 5) finds any channel's V_CE(on) trending above 0.3 V.
 
+### R4-A. Round-2 addendum (Codex R2-7, 2026-07-21 finalize) — bounded arithmetic sharpened + empirical closure
+
+Codex round-2 re-raised M5 as **R2-7**: the derate stack above leans on conservative
+reads of TYPICAL curves, not published minima. Accepted refinements — **the disposition
+STANDS, sharpened; still NO REDESIGN:**
+
+- **Threshold condition made exact.** The MCP23017 input reads LOW once the
+  phototransistor pulls the 10 k logic pull-up below V_IL ≈ 0.2 × VDD = 0.66 V, i.e.
+  **I_C(threshold) ≈ (3.3 − 0.66) / 10 k ≈ 0.26 mA**. The 0.33 mA figure used above is
+  the dead-short current — a stricter number than the actual threshold, kept as the
+  design target. Against the worst-stack 0.83 mA of available drive the margin at the
+  true threshold is **≈ 3.2×** (0.83 / 0.26); at the stricter 0.33 mA target it is the
+  2.5× already stated.
+- **Provenance split — datasheet minimum vs. curve read.** The 130 % CTR floor is a
+  **published class minimum**. The ×0.70 I_F derate, ×0.75 temperature derate, and
+  ×0.70 aging factor are **conservative reads of typical curves** — Sharp publishes no
+  minimum CTR at 1.7 mA, so the stack is bounded-arithmetic evidence, not a datasheet
+  guarantee. Stated plainly per R2-7; the residual uncertainty is closed
+  **empirically, per channel**: first-article **FA-9 steps 2–3** now qualify EVERY
+  populated input channel at the loaded-minimum field voltage AND at ≥ 70 °C case
+  (the hot + low-I_F worst corner), on top of the 3-channel V_CE sampling.
+- **Why not raise I_F to the 5 mA datasheet point (the redesign — rejected by both
+  reviewers):** 40+ populated channels × 5 mA ≈ 200+ mA of LED current alone meets or
+  **exceeds the TMA-0505S wetting-rail budget (200 mA; §H.3 fleet worst case is
+  73.7 mA at 1.73 mA/channel)**. The low wetting current is a hard system constraint,
+  not an oversight — margin is PROVEN per channel instead of bought per channel.
+- Reopen triggers 1–4 above unchanged; any FA-9 step-2/3 per-channel failure lands
+  under trigger 1.
+
 ---
 
 ## 5. Downstream obligations created by this spec

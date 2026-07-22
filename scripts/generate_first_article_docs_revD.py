@@ -286,7 +286,7 @@ stage deliberately has none** (push-pull source, never high-Z); do not report it
 
 {md_table(hdr, rows_for(lambda r, p: r.startswith("J") or r == "A1"))}
 
-## 4. First-article procedures (FA-1 … FA-11)
+## 4. First-article procedures (FA-1 … FA-12)
 
 Run in order. Record every measurement in `phase8_revD_run_log.md` (new FA section,
 per board serial). One channel of each NEW I/O type must pass before trusting the board.
@@ -334,6 +334,16 @@ firmware `{fw_ver}` (release build) + the bench-only **FI-1** build (drives GP16
 output-high on command; refuses to run without its physical jumper; prints its identity
 on the UART banner; NEVER a release artifact).
 
+**Probe rule (R2-5 — governs EVERY tap-node measurement in this procedure):** all
+probing and fault insertion on the tap gate/drain nodes goes through the dedicated
+probe pads **TP17–TP24** (G column x=128.0, D column x=112.8; silk "TAP PROBES:
+D WEST / G EAST") — **never touch a SOT-23 pin of Q17–Q20 with a probe or clip**.
+Instrumentation on the GATE pads must present **≥ 100 MΩ input impedance** (high-Z
+DMM mode or a ≥ 100 MΩ FET probe): the tap input network is 1 M / 10 M, so a standard
+10 MΩ scope/DMM probe loads it and shifts the very levels this procedure verifies.
+Drain pads (10 k pull-up) tolerate a 10 MΩ probe, but use the high-Z instrument
+throughout if available. Record WHICH instrument was used in the run log.
+
 0. **Boot the FI-1 image (round-3 doc fix — the jumper gate vs the RP2040 bootrom):**
    BOOTSEL held at power-on is intercepted by the ROM — the chip enters the RPI-RP2
    USB bootloader and the image never runs, so a plain power cycle with the jumper
@@ -345,15 +355,17 @@ on the UART banner; NEVER a release artifact).
    `picotool reboot`; remove the jumper only after the banner. Booting without the
    jumper is the PERMANENT `fi1_nojumper` refusal — the gate working, never a reason
    to rebuild with the check stubbed.
-1. **Level survey (cold):** scope each `TAP_GATE_*` gate node and `TAP_*` drain node
-   (stage positions in §3.3) through the full signal swing. Expect gate-high ≥ 3.0 V
+1. **Level survey (cold):** measure each `TAP_GATE_*` gate node and `TAP_*` drain node
+   **at its TP17–TP24 pad** (probe rule above; stage positions in §3.3) through the
+   full signal swing. Expect gate-high ≥ 3.0 V
    typical (worst-stack floor per spec R1.5: 2.80–2.82 V). Reads are INVERTED:
    observed HIGH ⇒ GPIO pad LOW.
 2. **Unidirectionality proof (cold):** FI-1 drives each GP16–19 output-high in turn
    with J1 UNMATED (ARM_PERMIT / WDOG_KICK high-Z — the Pi-reboot state). Meter each
    observed net (TP11 = NE555_OUT, TP8 = WDOG_KICK, TP13 = ARM_PERMIT,
    TP14 = RP2040_OK): **must not move > 1 mV; the rail (TP16) must not arm.**
-3. **Fault insertion (cold):** clip-short each tap FET **drain-gate** (F3) — Q17 (555),
+3. **Fault insertion (cold):** clip-short each tap stage **drain-gate** (F3) across its
+   **TP pad pair** (G pad ↔ D pad — never the SOT-23 pins) — Q17 (555),
    Q18 (KICK), Q19 (ARM), Q20 (RPOK) — and repeat step 2 (the F4 double-fault stack).
    Then with the Pi-emulator arming the rail normally, remove the emulator drive
    (high-Z) with the short still applied — **the rail must drop within the same
@@ -393,11 +405,27 @@ The header side of the code is made by removing the coding rib at the matching p
 4. Verify silk legibility at all four: "KEYED: NOT J15" / "NOT J3" / "NOT J16" /
    "NOT J13 LAMP" (1.2 mm silk).
 
-### FA-9 — PC817 V_CE sampling (remediation spec R4 trigger condition 1)
-Measure V_CE(on) on **3 sample channels** at nominal wetting (~1.7 mA I_F) with the
-field contact closed. Gate: **V_CE(on) ≤ 0.3 V** on every sampled channel. Any channel
-above 0.3 V REOPENS the R4 disposition (forces Rin 2k2 → 1k ≈ 3.5 mA + mandatory §H.3
-wetting and §H.4 D17 budget re-runs). Record values per channel.
+### FA-9 — PC817 input-channel qualification (remediation spec R4 + round-2 R2-7)
+
+1. **V_CE sampling (R4 trigger condition 1):** measure V_CE(on) on **3 sample channels**
+   at nominal wetting (~1.7 mA I_F) with the field contact closed. Gate: **V_CE(on) ≤
+   0.3 V** on every sampled channel. Any channel above 0.3 V REOPENS the R4 disposition
+   (forces Rin 2k2 → 1k ≈ 3.5 mA + mandatory §H.3 wetting and §H.4 D17 budget re-runs).
+   Record values per channel.
+2. **Per-channel qualification at minimum field voltage (R2-7):** load the wetting rail
+   to its fleet worst case (all populated field contacts closed), confirm FIELD_WET_V at
+   TP4 sits at its loaded minimum (≈ 4.5 V — FA-1 step 3), then close each populated
+   field-input channel in turn and confirm its MCP23017 bit reads ACTIVE-LOW. This is
+   the R4 threshold condition made empirical: the phototransistor must sink
+   ≈ 0.26 mA (pull the 10 k logic pull-up below V_IL ≈ 0.66 V) at the LOWEST I_F the
+   fleet will ever supply. **Every populated channel — not a sample.**
+3. **Temperature leg (R2-7):** heat the populated PC817 input optos (§3 refdes map) to
+   **≥ 70 °C case** (thermocouple-verified — same rig as FA-7 step 4) and repeat
+   step 2 at the loaded minimum field voltage. Hot + low-I_F is the worst-case CTR
+   corner the spec R4 arithmetic bounds from typical curves; a clean per-channel pass
+   here is the empirical closure of the R2-7 disposition (spec §R4-A). Record
+   per-channel PASS + measured TP4 voltage + case temperature. Any failure lands
+   under R4 reopen trigger 1.
 
 ### FA-10 — MCV header mechanical (FR-9, first connector only)
 Before reflowing/soldering the remaining six MCV headers, install and solder ONE
@@ -414,6 +442,28 @@ and solder fill is complete. Then proceed with the rest.
    without its physical jumper.
 4. Deliberate disarm drives ARM_PERMIT low (push-pull), never tristates.
 
+### FA-12 — J16 SDA/SCL external-short recovery (round-2 R2-4)
+
+Proves the TCA4307 (U46) actually isolates the controller bus, and that a wedged J16
+is an AVAILABILITY event with a fail-safe landing — never an unsafe state. Run with the
+board operating normally: release firmware `{fw_ver}`, Pi-emulator arming the rail,
+relays exercising the FA-3 pattern.
+
+1. Short **J16 SDA (card side) → GND** at the connector. While the short is held:
+   `i2cdetect -y 1` still ACKs **0x20 / 0x21 / 0x22**, the relay pattern keeps
+   running, RELAY_ENABLE_RAIL (TP16) and every output are UNCHANGED, and no safety
+   fault latches — controller bus + safety response + output state all deterministic.
+2. Release the short: U46 must reconnect the card side on its own (~40 ms stuck
+   detect, up to 16 SCLOUT recovery pulses per the TI datasheet) — a module on J16
+   re-enumerates WITHOUT a board power cycle.
+3. Repeat steps 1–2 for **SCL → GND**, then **SDA + SCL → GND together**.
+4. Sustained wedge: repeat step 1 holding the short **> 60 s** — bus, outputs, and
+   rail state stay deterministic for the full duration (no watchdog trip, no drift).
+5. **Severity record (R2-4):** a fault that DID wedge the controller-side bus would
+   land as tick-I2C failure → `_on_safety_trip` → ARM drop → rail de-energized — an
+   availability incident with a fail-safe landing. U46 exists so a J16 module cannot
+   cause even that. Record the observed behavior against this statement.
+
 ## 5. Sign-off
 
 | Item | Result | Initials / date |
@@ -429,8 +479,10 @@ and solder fill is complete. Then proceed with the rest.
 | FA-7 step 5 edge order + reboot persistence | | |
 | FA-8 sacrificial pair + 4-way refusal | | |
 | FA-9 V_CE ≤ 0.3 V ×3 channels | | |
+| FA-9 per-channel qual @ min FIELD_WET + ≥ 70 °C (R2-7) | | |
 | FA-10 MCV insertion/solder fill | | |
 | FA-11 firmware `{fw_ver}` posture | | |
+| FA-12 J16 SDA/SCL short recovery (U46, R2-4) | | |
 """
 
     OUT_MD.write_text(doc, encoding="utf-8")

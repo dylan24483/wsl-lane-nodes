@@ -20,6 +20,25 @@
 
 ## 0. STATUS — done vs. gates remaining (2026-07-20)
 
+> **⚠⚠ ROUND-2 + ROUND-3 + FINALIZE UPDATE 2026-07-21 (Codex round-2 findings
+> R2-1…R2-17, then Codex re-review findings 1–8) — this block wins over BOTH blocks
+> below.** Closing record = **`phase8_revD_round2_report_2026-07-21.md`** (final
+> statuses 16 CLOSED · 1 DISPOSITIONED, recorded HEADs, definitive open gates).
+> Board is now **271 parts / 223 nets**, netclasses **103/4/13/82/21** (Safety_Rail
+> EXACTLY 13 unchanged): + J16 protection stack (F1 polyfuse / JP1 default-OPEN 3V3
+> link / U46 TCA4307 / U47 SRV05-4 with VP upstream of the polyfuse since round 3),
+> + REV_ID straps R144/R145 (rev-D = 0b01), + tap probe pads TP17–TP24 + TP silk
+> legend, Q17–Q20 MPN-locked to onsemi 2N7002LT1G (C16338), 10 M pinned to C26108.
+> Release DRC = `kicad/revD/DRC-revD-round3-r1.rpt` (0/0/0); as-current fab package
+> = **`kicad/fab_revD_2026-07-21_r3/`** (round-1 dir and `_r2/` tombstoned
+> in-directory — never upload from them); ERC baseline 1 waived + 39 (WVR-ERC-2).
+> Firmware = **v1.2.2** (pad-OE lock, epoch classifier + alias guard, FI-1 bench
+> build, identity line; NOT flashed). First-article pack = FA-1…**FA-12**
+> (≥ 100 MΩ probe rule, per-channel PC817B qual, J16 short recovery). PC817B
+> disposition sharpened in remediation spec **§R4-A** (no redesign — wetting-rail
+> constraint). Where the two blocks below say 262/217, `DRC-revD-remediation-r3.rpt`,
+> `fab_revD_2026-07-21/`, or v1.2.x < v1.2.2 — THIS block wins.
+
 > **⚠ REMEDIATION UPDATE 2026-07-21 (Codex NO-GO campaign; spec =
 > `phase8_revD_remediation_spec_2026-07-21.md`):** the board was REGENERATED and FULLY
 > RE-ROUTED. Where the 2026-07-20 status below says otherwise, THIS block wins:

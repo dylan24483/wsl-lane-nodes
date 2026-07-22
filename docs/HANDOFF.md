@@ -57,6 +57,12 @@
 > - **Identity chain completed (finding 3):** `rp2040_link.start()` now **sends `ID`** (the firmware only volunteers the id line at ITS boot — a daemon restart never re-learned identity), and `controller_daemon._consume_link_records` gained the missing `fw_identity` branch → machine_events: **`fi1_image` and `pcb_rev_mismatch` are FAULT severity** (declared `revC` expects strap read "unknown"). 4 new daemon tests + 2 link tests.
 > - **FI-1 boot procedure documented (finding 4):** BOOTSEL held at power-on enters the ROM bootloader — a plain power cycle can NEVER satisfy the jumper gate. Working sequences (button-through-flash, or jumper + `picotool reboot`) now in `firmware/rp2040/README.md` and first-article pack FA-7 **step 0**.
 
+> **⚡ ADDENDUM 2026-07-21 (FINALIZE) — ROUND-2 CAMPAIGN CLOSED. Read `docs/phase8_revD_round2_report_2026-07-21.md` FIRST for current state:**
+> - **Closing tally: R2-1…R2-17 = 16 CLOSED · 1 DISPOSITIONED-WITH-EVIDENCE (R2-7 PC817B — spec §R4-A: bounded arithmetic sharpened, NO redesign because 40+ ch × 5 mA breaks the 200 mA wetting rail; closure is empirical per-channel at first article).** The independent verify pass's 3 residuals (R2-7 not-done, R2-5 probe-spec/pad-text, R2-4 SDA/SCL short test) were closed in the finalize batch.
+> - **First-article pack is now FA-1…FA-12** (regenerate ONLY via the generator): ≥ 100 MΩ probe rule + TP17–TP24-pad-only tap probing (R2-5), **FA-9 per-channel PC817B qualification at loaded-minimum FIELD_WET + ≥ 70 °C** (R2-7), **FA-12 J16 SDA/SCL short recovery** (R2-4).
+> - **Open gates (full list = report §4):** Dylan — OG-1/G8/G14 sign-off, commit-chain review, H2 prototype-vs-waiver call, G7 waiver-or-session + OUT-B override; physical — first-article FA-1…FA-12 (FI-1-based FA-7 incl. ≥ 70 °C leg, FA-8 sacrificial coding pair, FA-9, FA-12), **firmware v1.2.2 bench flash** (board #1 still on v1.x), G7 powered session, characterization DC1–DC3, G12 JLC inspection (from `_r3/` ONLY), G13 harness/coding order; ops — M7 off-disk backup copy (hash-verify vs recorded zip sha256), lane push blocker (160 MB PDF), prod arming of WSL_MACHINE_DIAG/SMS + WSL Systems deploy.
+> - **Recorded HEADs:** lane `c4502b3` + finalize commits (pinned in the run-log FINALIZE-round-2 mirror record); WSL Systems `d12a09a`. Neither pushed. As-current mirror: `WSL_Backups\2026-07-21_phase8_revD_round2_final\` (+zip+sha256).
+
 ---
 
 ## 0. Cold-start orientation

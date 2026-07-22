@@ -10,9 +10,17 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > evidence, recorded repo HEADs, and the definitive open-gates list:
 > **`phase8_revD_remediation_report_2026-07-21.md`**. The gates below remain the
 > operational checklist; where wording differs, the remediation spec + report govern
+> the remediated items (taps R1.9, DRU R2, firmware R3).
 
 > **2026-07-21 (later) — ROUND-2 remediation batch (Codex R2-*) landed on top,
-> then the ROUND-3 fix batch (Codex re-review findings 1–8).**
+> then the ROUND-3 fix batch (Codex re-review findings 1–8), then the FINALIZE
+> batch. The round-2 CLOSING RECORD — final R2-1…R2-17 statuses (16 CLOSED · 1
+> DISPOSITIONED), both nuanced dispositions, recorded HEADs, and the definitive
+> open-gates list — is `phase8_revD_round2_report_2026-07-21.md`.** The
+> first-article pack is now FA-1…**FA-12** (adds the ≥ 100 MΩ tap-probe rule +
+> TP-pad-only probing, FA-9 per-channel PC817B qualification at min FIELD_WET +
+> ≥ 70 °C [R2-7], FA-12 J16 SDA/SCL short recovery [R2-4]); the PC817B
+> disposition addendum is remediation spec §R4-A.
 > Board figures anywhere below are superseded: **271 parts / 223 nets, netclasses
 > 103/4/13/82/21, 24 test pads (TP17-24 tap probe pads), ERC baseline 1+39
 > (WVR-ERC-2, pin-pair order-insensitive since round 3)**; release DRC =
@@ -22,8 +30,8 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > Q17-Q20 = onsemi 2N7002LT1G C16338, 10M = C26108, gbrjob Revision "D").
 > `fab_revD_2026-07-21/` and `..._r2/` are tombstoned in-directory
 > (`_SUPERSEDED_DO_NOT_UPLOAD.txt`) — never upload from them. Full record:
-> run-log "ROUND-2 BOARD/BOM/EXPORT BATCH" + "ROUND-3 FIX BATCH" entries.
-> the remediated items (taps R1.9, DRU R2, firmware R3).
+> run-log "ROUND-2 BOARD/BOM/EXPORT BATCH" + "ROUND-3 FIX BATCH" +
+> "FINALIZE (ROUND 2)" entries.
 
 > **⚠️ GATE SCOPE NOTE (the rev-C lesson, applied up front).** The rev-C checklist went green
 > on G1–G5 while change-list items 3/5/6–8 were unresolved, and the order shipped without

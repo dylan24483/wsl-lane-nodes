@@ -2,13 +2,15 @@
 
 > **SUPERSESSION NOTE (2026-07-21, later):** Codex re-audited this campaign under a
 > fabrication-readiness bar and issued round-2 findings (R2-1…R2-17); the 15/2/1
-> tally below is therefore the ROUND-1 closing state, not the final word. The
-> round-2 hardware slice (R2-2/R2-3/R2-4-board/R2-5-board/R2-6-straps/R2-15) is
-> recorded in the run log ("ROUND-2 BOARD/BOM/EXPORT BATCH") — board is now
-> 271/223, the as-current fab package is `kicad/fab_revD_2026-07-21_r3/` (round 3;
-`_r2/` and the round-1 dir are tombstoned in-directory), and the
-> release DRC evidence is `DRC-revD-round2-r4.rpt`. Software/firmware slices land
-> in their own commits.
+> tally below is therefore the ROUND-1 closing state, not the final word.
+> **The round-2 campaign's closing record — final R2-1…R2-17 statuses (16 CLOSED ·
+> 1 DISPOSITIONED), the round-3 fix batch, recorded HEADs, and the definitive
+> open-gates list — is `phase8_revD_round2_report_2026-07-21.md`. Read THAT for
+> current state.** Board is now 271 parts / 223 nets, the as-current fab package is
+> `kicad/fab_revD_2026-07-21_r3/` (`_r2/` and the round-1 dir are tombstoned
+> in-directory), and the release DRC evidence is `DRC-revD-round3-r1.rpt`
+> (0/0/0). §3 "OPEN GATES" and §4 mirror-table below are superseded by that
+> report's §4/§5.
 
 **Scope:** the 2026-07-21 Codex NO-GO audit against the routed rev-D lane-controller board
 and its software/release chain — 3 critical / 8 high / 7 medium findings. Dylan's
