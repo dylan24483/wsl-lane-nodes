@@ -237,11 +237,19 @@ verify the emitted refdes actually lands at J15 — SKiDL assigns by order).
   (SA/SB/SC/TA/TB/DIELL) with AUX contacts, mis-sequencing cycle control. The MC pin-asymmetry
   keying only prevents reversed insertion, not cross-mating. Harness BOM therefore carries
   **Phoenix CP-MSTB coding profiles (PN 1734634)** keyed at DIFFERENT pole positions —
-  **J3: code at pole 1; J15: code at pole 10** (insert the profile in the header groove, cut the
-  matching tab on the OTHER connector's plug per the Phoenix coding system) — plus distinct plug
-  wire-marking colors (J3 harness = white band, J15 = yellow band). Board silk warns at both
-  connectors ("KEYED: NOT J15" / "KEYED: NOT J3"). First article: verify each coded plug
-  physically REFUSES the wrong header.
+  **J3: code at pole 1; J15: code at pole 10** — plus distinct plug wire-marking colors
+  (J3 harness = white band, J15 = yellow band). Board silk warns at both connectors
+  ("KEYED: NOT J15" / "KEYED: NOT J3"). First article: verify each coded plug physically
+  REFUSES the wrong header.
+  **INSTALL PROCEDURE CORRECTED 2026-07-21 (Codex H7 — the original text here had it
+  REVERSED, "insert the profile in the header groove, cut the tab on the plug"): the
+  CP-MSTB profile fits the PLUG (or an inverted header) — it is never pressed into a
+  standard MCV G-3.5 header; the header side of the code is made by removing the coding
+  rib at the matching pole. A sacrificial-pair proof (one spare plug + one scrap header,
+  seat/refuse/no-damage verified against the Phoenix instruction sheet) is REQUIRED
+  before coding any production part — first-article pack step FA-8
+  (`docs/phase8_revD_first_article_pack.md`); harness data in
+  `docs/phase8_revD_harness_bom.csv`.**
 - New nets from the connector: 0 (all pins land on C.2 nets / FGND).
 
 ### C.4 Placement — the one real layout pressure (re-pitch the straddle column)
@@ -495,6 +503,9 @@ Phoenix MC 1,5/6-ST-3,5 = **1840405** (same PN as J13's plug — add to harness 
   band). Board silk warns at both connectors ("KEYED: NOT J16" / "KEYED: NOT J13 LAMP").
   First article: verify each coded plug physically REFUSES the wrong header. The prior
   "pin-1-vs-6 asymmetry + MC keying = polarization" claim only ever covered reversed insertion.
+  Install procedure per the corrected §C.3 rule (2026-07-21, Codex H7): profile in the PLUG,
+  never a standard header; header-side rib removed at the matching pole; sacrificial-pair
+  proof (FA-8) before coding production parts.
 
 - **Shared vs dedicated bus:** shared. Address space check: on-bus today 0x20/0x21/0x22, with
   0x23 reserved for a future OUT-B (generator comment line 529). Typical ADC modules land at
@@ -626,10 +637,11 @@ stub trap). pcbnew steps run under KiCad 10's bundled python
 1. **Netlist:** copy `scripts/generate_kicad_netlist_revB.py` → `scripts/generate_kicad_netlist_revD.py`.
    Apply §A/§C/§D/§E/§F deltas (append-only ordering per §C.2/§C.3). Update the docstring +
    silkscreen-facing rev strings to REV-D. Output to **`kicad/wsl-phase8b-revD.net`** (new
-   filename — never overwrite `wsl-phase8b.net`). Expect: **252 parts, 213 nets, 0
-   netlist-generation errors; ERC = exactly 1 waived error (WVR-ERC-1, the Pico AGND/GND
-   POWER-OUT pin-type artifact) + 40 baseline warnings — enforced fail-closed by the
-   generator's own `check_erc_waiver()`; any drift aborts** (supersedes the earlier
+   filename — never overwrite `wsl-phase8b.net`). Expect: **252 parts, 213 nets**
+   *(original items-A–G figures; **262 parts / 217 nets** after remediation spec R1.7 —
+   the implemented state)*, **0 netlist-generation errors; ERC = exactly 1 waived error
+   (WVR-ERC-1, the Pico AGND/GND POWER-OUT pin-type artifact) + 40 baseline warnings —
+   enforced fail-closed by the generator's own `check_erc_waiver()`; any drift aborts** (supersedes the earlier
    "0 SKiDL/ERC errors" wording — the rev-C generator never ran ERC, so rev-D defines the
    baseline; see gate OG-2). Confirm J15/J16 refdes landed as specified; the emitted sklib
    will be `generate_kicad_netlist_revD_sklib.py` (new file, fine).
@@ -646,12 +658,14 @@ stub trap). pcbnew steps run under KiCad 10's bundled python
    to `wsl-phase8b-revD.*` sidecar names (sidecars travel with the board; the .dru carries the
    isolation rules).
 4. **Netclasses:** copy `apply_netclasses_revB.py` → `apply_netclasses_revD.py`; add the two
-   classifier edits (§H.1); run — must print 93/4/13/82/21 with zero unknown/overlap.
+   classifier edits (§H.1); run — must print 93/4/13/82/21 *(now **97/4/13/82/21** post-R1.7)*
+   with zero unknown/overlap.
 5. **Route:** copy `manual_route_revB.py` / `export_specctra_revB.py` → revD names as needed;
    re-route (the §B region is a full re-route anyway). DRC with the carried .dru: 0 violations /
    0 unconnected / 0 footprint errors.
 6. **Audit:** new `audit_revD_board.py` (copy of the revB auditor) with expected counts
-   {93, 4, 13, 82, 21}, 213 nets, plus the carried invariants: Default==0, no N$*, rail reaches
+   {93, 4, 13, 82, 21}, 213 nets *(now {97, 4, 13, 82, 21}, 217 nets post-R1.7)*, plus the
+   carried invariants: Default==0, no N$*, rail reaches
    exactly 7 K-coils + pass-FET, no OUT_* on the Pico, GND/FIELD_GND distinct with zero shared
    nodes, SAFE_ nets present with **no new pads beyond rev-C's membership** (guards §E scope),
    M1 channel still DNP. ALL PASS required.

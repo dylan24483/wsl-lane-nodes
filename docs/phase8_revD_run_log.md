@@ -29,9 +29,12 @@ every later rev-D gate record. Append-only.
 
 ### OG-3 — Cross-mate keying parts must be ON the harness order before first article
 
-See FR-4/FR-5 below. Coding profiles CP-MSTB **1734634** (Phoenix, 6 per coding star) + the
-plug-tab cuts are harness-BOM items; first article includes a physical cross-mate refusal test
-(each coded plug must REFUSE the wrong header).
+See FR-4/FR-5 below. Coding profiles CP-MSTB **1734634** (Phoenix, 6 per coding star) are
+harness-BOM items (`docs/phase8_revD_harness_bom.csv`, 2026-07-21); first article includes a
+physical cross-mate refusal test (each coded plug must REFUSE the wrong header).
+**[2026-07-21, COR-5 below — the "plug-tab cuts" wording that stood here was based on the
+REVERSED install procedure; the profile fits the PLUG, the header side loses its coding rib.
+Sacrificial-pair proof (first-article pack FA-8) required before coding production parts.]**
 
 ---
 
@@ -652,3 +655,114 @@ kicad-cli; `py -3` for SKiDL/diff/audit-netlist).
 
 - `backups/revC_design_snapshot_2026-07-19/MANIFEST.json` re-verified against the live
   originals after the batch (post-RD-VIA-1 re-run): **189/189 OK, 0 failures**.
+
+---
+
+## RELEASE ARTIFACTS (2026-07-21, Codex NO-GO audit — H6 / H7 / H8 / M6 / M7-doc-rot)
+
+### COR-5 — Coding-profile install procedure was REVERSED (Codex H7)
+
+- The spec §C.3 / OG-3 text said "insert the profile in the header groove, cut the
+  matching tab on the OTHER connector's plug." **Wrong way around: the CP-MSTB 1734634
+  profile fits the PLUG (or an inverted header) — it is never pressed into a standard
+  MCV G-3.5 header.** The header side of the code is made by removing the coding rib at
+  the matching pole; exact cut positions are validated against the Phoenix instruction
+  sheet shipped with the parts, on a SACRIFICIAL PAIR (spare plug + scrap header: coded
+  pair must seat, coded plug must refuse an uncoded header, no adjacent-pole damage)
+  BEFORE any production part is coded — now numbered first-article step **FA-8**
+  (`docs/phase8_revD_first_article_pack.md`).
+- Corrected in: change spec §C.3 + §F, change list items C/F + STATUS, readiness
+  checklist G13 + §2, OG-3 above (bracketed pointer), harness BOM CSV rows.
+
+### COR-6 — Lane-21 build-sheet MC 1,5 termination data was wrong (Codex H7)
+
+- The build sheet specced **8 mm strip / ~0.5 N·m / 0.75–1.0 mm² insulated ferrules**
+  for MC 1,5 plug terminations. Phoenix data for the MC 1,5/..-ST-3,5 family (1840447
+  et al.): **7 mm strip; 0.22–0.25 N·m (M2 screw — 0.5 N·m is >2× rated, enough to
+  strip the screw or crack the body); insulated ferrules max 0.5 mm²** (18 AWG =
+  0.82 mm² goes bare-stranded or with an UNinsulated ferrule, which is rated to
+  1.5 mm²). The 22 AWG / 0.34 mm² insulated ferrules were always in-spec.
+- `phase8_lane21_harness_build_sheet.md` corrected with a dated banner + inline
+  strikethroughs (not silent edits); machine-readable data in
+  `docs/phase8_revD_harness_bom.csv`; MKDS blocks flagged as a different series to be
+  verified against 1715734/1715721 at build.
+
+### H6 — export_fab_revD.py written + RUN → as-ordered package (gate G11 CLOSED)
+
+- `scripts/export_fab_revD.py` (KiCad-10 bundled python): REV + out-dir parameters,
+  **refuses-if-exists** (verified live — an immediate second run refused; no rmtree
+  anywhere in the script). In-process gates before export: kicad-cli DRC **0/0/0**
+  (live remediation .kicad_dru) + `audit_revD_board.py` routed mode **ALL PASS**.
+- Output: **`kicad/fab_revD_2026-07-21/`** — Gerbers (11 layers) + Excellon + maps,
+  CPL, stats, IPC-D-356, multipage review PDF, grouped BOM + DNP audit list, JLC
+  Standard-PCBA BOM/CPL/part-lock/excluded, hand-solder BOM, harness BOM, README,
+  gerber/upload/package zips, `manifest.json` with sha256 for every file + the source
+  board/netlist hashes.
+- **Equality asserts (fail-closed):** netlist refs == board refs (TP/MK excluded) with
+  matching value+footprint per ref; DNP set == generator rule exactly; CPL refs ==
+  placed set exactly. Pinned: **262 parts / 27 DNP / 235 placed / 218 JLC-placed /
+  22 JLC lines / 17 hand-solder.** (The tasking's "252" was the pre-R1 count; R1.7
+  made it 262 — recorded, not silently adjusted.)
+- **D_PROT hard lock (FR-3):** D17 must be SS34 + D_SMA in the netlist AND board, the
+  JLC line must be **MDD SS34 / LCSC C8678 / SMA**, and any SS14 anywhere fails the run.
+- **Part-lock additions for rev-D:** 1M 0805 = UNI-ROYAL 0805W8F1004T5E **LCSC C17514**
+  (verified 2026-07-21); **10M 0805 = MATCH-AT-UPLOAD** by MPN 0805W8F1005T5E — no
+  LCSC C-number could be verified 2026-07-21 (one search hit claimed C325772, which
+  fetch-verification showed is a 22 Ω TyoHM part — hallucinated match, rejected);
+  the part-lock CSV instructs recording the matched C-number at order time. FR-6's
+  "availability re-check rides the fab-export BOM pass" obligation is discharged by
+  these two entries.
+
+### H7 — harness BOM exists; termination + coding docs corrected
+
+- `docs/phase8_revD_harness_bom.csv` (tracked; copy in the fab package): J3+J15 plugs
+  1840447, J4 1840489, J5 1840463, J13+J16 plugs 1840405, J14 1840382 (+spare note),
+  CP-MSTB 1734634 coding (J3@1 white / J15@10 yellow / J13@1 white / J16@6 blue),
+  band-color stock row, J1 IDC candidate — every row carries the CORRECTED MC 1,5
+  termination data and the corrected coding-install rule. The M7 complaint "cites a
+  J15 harness BOM that does not exist" is now false in the right direction.
+- COR-5/COR-6 above; sacrificial-pair proof = first-article FA-8.
+
+### H8 — pair-enclosure spec re-specced for 250×240 rev-D
+
+- `phase8_pair_enclosure_spec.md`: board zones 225→240, panel stack 640→**670 mm**
+  (20+240+150+240+20), MK pattern 242×217→**242×232** (bottom holes y=236; rev-C
+  panels do NOT fit rev-D), header retitled 250×240 rev-D, new **§1.1 dimensioned
+  panel table** (D1–D13 controlling dimensions incl. per-board MK hole coordinates on
+  the panel) and **§1.2 row-39 bottom-edge copper constraint** (SLOW_AUX11 at 1.28 mm
+  from the y=240 edge — ≥3 mm keep-clear for any lip/clamp/backplate feature over
+  board x≈52–92; MK standoffs the only approved contact). SCE-30P24 margin re-mathed:
+  **16 mm spare** (was 46), flagged thin-in-height.
+- `phase8_enclosure_sourcing_brief_GPT.md` REISSUED: hard requirement #1 now
+  **≥ 310 × 670 mm usable panel**; 700-mm-class candidates marked MARGINAL (report
+  TRUE usable height); board size references updated to 250×240.
+
+### M6 — first-article/bench pack GENERATED from netlist + board
+
+- `scripts/generate_first_article_docs_revD.py` (py -3; text-parses the netlist,
+  routed board, and diff file — re-run after any design change) →
+  `docs/phase8_revD_first_article_pack.md` + `docs/phase8_revD_first_article_
+  refdes_map.csv` (262 rows: ref, tag, value, footprint, x/y/rot/side, band, DNP).
+- Pack contents: 46-row REFDES_SHIFT table (from the authoritative diff), relocated
+  TP1–TP16 map with coordinates, functional-group location tables (safety chain, tap
+  stages, ADC/bleed/D_PROT, connectors, ICs/relays), and procedures FA-1…FA-11:
+  rails (TP4 bleed proof), i2cdetect, relays, USB/UF2, **GPB bank poke (J15 pin↔GPB
+  bit↔opto ref table)**, **ADC ±3 % + 6-coil sag**, **R1.9 tap fault injection
+  verbatim incl. the ≥70 °C at-temperature repeat (OG-4) and FI-1 rules**,
+  **cross-mate refusal + sacrificial-pair coding proof**, **R4 V_CE(on) ≤ 0.3 V
+  3-channel sampling**, MCV first-connector insertion/solder-fill (FR-9), and the
+  firmware v1.2 posture assert. Checklist §2 first item flipped to `[x]` (generated,
+  with the re-run rule).
+
+### M7 (doc-rot half) — consistency pass
+
+- Checklist G11 `[x]` with evidence; G13 reworded (BOM exists, ORDER open); §3 summary
+  updated. Change list: release-artifacts banner added; stale 252/213 figures in
+  historical blocks annotated; item C/F coding pointers corrected; gates-remaining
+  list updated (G11 done). Change spec §I.1/§I.4/§I.6 expected-count lines annotated
+  with the post-R1.7 numbers. The remaining "3.27 V" strings in the corpus live only
+  inside dated correction records (COR-2 here, spec §E.2 correction text, checklist
+  G1's retirement note) — historical descriptions of the retired figure, not live
+  claims. Root-level `generate_kicad_netlist_revD.erc`/`_sklib.py` (stale pre-R2.5
+  copies vs the committed scripts/ versions) staged with this batch for coherence.
+- Backup mirror: see the mirror record appended below after commit.

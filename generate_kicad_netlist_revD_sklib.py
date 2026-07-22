@@ -141,7 +141,7 @@ generate_kicad_netlist_revD = SchLib(tool=SKIDL).add_parts(*[
             Pin(num='1',name='Pin_1',func=pin_types.PASSIVE,unit=1),
             Pin(num='2',name='Pin_2',func=pin_types.PASSIVE,unit=1),
             Pin(num='3',name='Pin_3',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] }),
-        Part(**{ 'name':'Conn_01x10', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x10'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'Connector_Phoenix_MC:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical', 'keywords':'connector', 'description':'Generic connector, single row, 01x10, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
+        Part(**{ 'name':'Conn_01x10', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x10'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'wsl_footprints:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4', 'keywords':'connector', 'description':'Generic connector, single row, 01x10, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
             Pin(num='1',name='Pin_1',func=pin_types.PASSIVE,unit=1),
             Pin(num='2',name='Pin_2',func=pin_types.PASSIVE,unit=1),
             Pin(num='3',name='Pin_3',func=pin_types.PASSIVE,unit=1),
@@ -152,7 +152,7 @@ generate_kicad_netlist_revD = SchLib(tool=SKIDL).add_parts(*[
             Pin(num='8',name='Pin_8',func=pin_types.PASSIVE,unit=1),
             Pin(num='9',name='Pin_9',func=pin_types.PASSIVE,unit=1),
             Pin(num='10',name='Pin_10',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] }),
-        Part(**{ 'name':'Conn_01x14', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x14'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'Connector_Phoenix_MC:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical', 'keywords':'connector', 'description':'Generic connector, single row, 01x14, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
+        Part(**{ 'name':'Conn_01x14', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x14'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'wsl_footprints:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical_D1.4', 'keywords':'connector', 'description':'Generic connector, single row, 01x14, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
             Pin(num='1',name='Pin_1',func=pin_types.PASSIVE,unit=1),
             Pin(num='2',name='Pin_2',func=pin_types.PASSIVE,unit=1),
             Pin(num='3',name='Pin_3',func=pin_types.PASSIVE,unit=1),
@@ -167,7 +167,7 @@ generate_kicad_netlist_revD = SchLib(tool=SKIDL).add_parts(*[
             Pin(num='12',name='Pin_12',func=pin_types.PASSIVE,unit=1),
             Pin(num='13',name='Pin_13',func=pin_types.PASSIVE,unit=1),
             Pin(num='14',name='Pin_14',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] }),
-        Part(**{ 'name':'Conn_01x12', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x12'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'Connector_Phoenix_MC:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical', 'keywords':'connector', 'description':'Generic connector, single row, 01x12, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
+        Part(**{ 'name':'Conn_01x12', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x12'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'wsl_footprints:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical_D1.4', 'keywords':'connector', 'description':'Generic connector, single row, 01x12, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
             Pin(num='1',name='Pin_1',func=pin_types.PASSIVE,unit=1),
             Pin(num='2',name='Pin_2',func=pin_types.PASSIVE,unit=1),
             Pin(num='3',name='Pin_3',func=pin_types.PASSIVE,unit=1),
@@ -183,14 +183,14 @@ generate_kicad_netlist_revD = SchLib(tool=SKIDL).add_parts(*[
         Part(**{ 'name':'Conn_01x02', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x02'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal', 'keywords':'connector', 'description':'Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
             Pin(num='1',name='Pin_1',func=pin_types.PASSIVE,unit=1),
             Pin(num='2',name='Pin_2',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] }),
-        Part(**{ 'name':'Conn_01x06', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x06'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'Connector_Phoenix_MC:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical', 'keywords':'connector', 'description':'Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
+        Part(**{ 'name':'Conn_01x06', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x06'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'wsl_footprints:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4', 'keywords':'connector', 'description':'Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
             Pin(num='1',name='Pin_1',func=pin_types.PASSIVE,unit=1),
             Pin(num='2',name='Pin_2',func=pin_types.PASSIVE,unit=1),
             Pin(num='3',name='Pin_3',func=pin_types.PASSIVE,unit=1),
             Pin(num='4',name='Pin_4',func=pin_types.PASSIVE,unit=1),
             Pin(num='5',name='Pin_5',func=pin_types.PASSIVE,unit=1),
             Pin(num='6',name='Pin_6',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] }),
-        Part(**{ 'name':'Conn_01x04', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x04'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'Connector_Phoenix_MC:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical', 'keywords':'connector', 'description':'Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
+        Part(**{ 'name':'Conn_01x04', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Conn_01x04'}), 'ref_prefix':'J', 'fplist':[''], 'footprint':'wsl_footprints:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical_D1.4', 'keywords':'connector', 'description':'Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)', 'datasheet':'', 'pins':[
             Pin(num='1',name='Pin_1',func=pin_types.PASSIVE,unit=1),
             Pin(num='2',name='Pin_2',func=pin_types.PASSIVE,unit=1),
             Pin(num='3',name='Pin_3',func=pin_types.PASSIVE,unit=1),

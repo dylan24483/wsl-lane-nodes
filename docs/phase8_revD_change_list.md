@@ -43,20 +43,48 @@
 > - **M2:** `route_revD.py --check-only` now runs clean on KiCad 10.0.2
 >   (`BOARD.Delete()` fix; the GetIsRuleArea crash is gone) — the routed artifact is
 >   reproducible on the installed toolchain.
-> - The 2026-07-20 "≤ 3.27 V" divider read-bound below is obsolete twice over (first by
->   COR-2, now by R1 removing the divider entirely) — do not quote it.
+> - The 2026-07-20 "≤ 3.27 V" divider read-bound is obsolete twice over (first by
+>   COR-2, now by R1 removing the divider entirely) — do not quote it. (No live text in
+>   this file carries it anymore; this bullet is the tombstone.)
+>
+> **RELEASE-ARTIFACTS UPDATE 2026-07-21 (same campaign — closes H6/H7/H8/M6):**
+> - **H6:** `scripts/export_fab_revD.py` written + RUN → **`kicad/fab_revD_2026-07-21/`**
+>   hashed as-ordered package (refuses-if-exists verified live). Equality asserts:
+>   **262 parts / 27 DNP / 235 placed / 218 JLC / 22 JLC lines / 17 hand-solder**, every
+>   placed refdes proven in netlist+board+CPL; **D_PROT hard-locked to MDD SS34, LCSC
+>   C8678, SMA** at all three levels; no SS14 anywhere. Hand-solder BOM + **harness BOM**
+>   (`docs/phase8_revD_harness_bom.csv` — the J15/J16 mating-plug + CP-MSTB coding BOM
+>   that H6/M7 flagged as previously nonexistent) ship in the package.
+> - **H7:** coding-profile install procedure CORRECTED everywhere (the profile fits the
+>   **PLUG** or an inverted header — never pressed into a standard MCV G-3.5 header;
+>   header side = remove the coding rib at the matching pole), with a **sacrificial-pair
+>   proof** as numbered first-article step FA-8. Lane-21 build-sheet termination data
+>   corrected with a dated note (MC 1,5: **7 mm strip / 0.22–0.25 N·m / ≤ 0.5 mm²
+>   insulated ferrule** — was 8 mm / 0.5 N·m / 0.75–1.0 mm²).
+> - **H8:** `phase8_pair_enclosure_spec.md` re-specced for 250×240 (panel stack 670 mm,
+>   MK pattern 242×232, dimensioned §1.1 panel table, §1.2 row-39 bottom-edge copper
+>   constraint binding on the lip/backplate); sourcing brief hard req #1 reissued at
+>   ≥ 310×670 mm with 700-mm-class candidates flagged marginal.
+> - **M6:** rev-D first-article/bench pack GENERATED from the netlist + routed board
+>   (`scripts/generate_first_article_docs_revD.py` → `docs/phase8_revD_first_article_
+>   pack.md` + 262-row refdes-map CSV): 46-refdes-shift table, TP map, FA-1…FA-11
+>   procedures incl. the R1.9 ≥ 70 °C tap fault injection, GPB poke, ADC read,
+>   cross-mate/sacrificial-pair, R4 V_CE sampling. Rev-C bench artifacts remain WRONG
+>   for rev-D boards — use only the generated pack.
 
 **DONE (this campaign, all in new files):**
 - **Spec** — `phase8_revD_change_spec.md`, items A–G, electrical math independently re-derived
   and confirmed in the verify pass.
 - **Netlist** — `scripts/generate_kicad_netlist_revD.py` → `kicad/wsl-phase8b-revD.net`:
-  **252 parts / 213 nets**, deterministic regeneration, ERC waiver gate enforced fail-closed
+  **252 parts / 213 nets** *(2026-07-20 figures — now **262 / 217** per the remediation
+  banner)*, deterministic regeneration, ERC waiver gate enforced fail-closed
   (WVR-ERC-1: exactly 1 benign Pico-ground error + 40 baseline warnings; any drift aborts).
 - **Diff vs rev-C** — `scripts/diff_netlist_revC_to_revD.py` → CLEAN: 36 added parts, 29 added
   nets, 11 touch-point nets additions-only, 173 nets byte-unchanged, **0 removals**, sole
   changed part = D_PROT SS14→SS34 (whitelisted, run-log FR-3).
 - **Board — FULLY ROUTED (2026-07-20)** — `kicad/revD/wsl-phase8b-revD.kicad_pcb`: 250×240 mm,
-  252 parts, routed to zero by `scripts/route_revD.py` (+ `_lib`/`_logic`; deterministic,
+  252 parts *(2026-07-20; the remediation re-route carries 262)*, routed to zero by
+  `scripts/route_revD.py` (+ `_lib`/`_logic`; deterministic,
   rev-C house style re-derived for the rev-D placement). Post-route gates: kicad-cli DRC
   **0 violations / 0 unconnected / 0 footprint errors** (`DRC-revD-routed-r3.rpt`, live
   `.kicad_dru` creepage rules — proven to actually fire via a scratchpad mutation test —
@@ -100,15 +128,21 @@ owner decisions, physical/powered sessions, or export steps — no open design w
 2. **G7 — rev-C carried verify items 6–7** (per-channel front-end choice, arc-suppression
    sizing) — blocked on the powered at-machine metering session (meter tapped-lead live
    voltages BEFORE reconnecting any board); resolve or record an explicit waiver.
-3. **G11 — fab export.** `export_fab_revD.py` not yet written (new dated dir,
-   refuses-if-exists — the rmtree lesson).
-4. **G12 — manual Gerber inspection + JLC preview** (incl. the five doubled power vias).
-5. **G13 — harness/coding BOM order** (1840447/1840405 plugs + CP-MSTB 1734634 profiles)
-   ships WITH the boards; profiles fitted before first article.
-6. **First-article gate** — checklist §2: ⛔ regenerate per-board test docs for rev-D refdes
-   FIRST (46 REFDES_SHIFTs make every rev-C bench artifact wrong), then rails/GPB/ADC/tap
-   tests incl. the **at-temperature (≥70 °C) rail-tap repeat (OG-4 — cold-only does not
-   discharge it)** and the physical cross-mate refusal tests.
+3. ~~G11 — fab export~~ **DONE 2026-07-21** (`scripts/export_fab_revD.py` →
+   `kicad/fab_revD_2026-07-21/`, refuses-if-exists, equality asserts + D_PROT lock —
+   see the release-artifacts banner).
+4. **G12 — manual Gerber inspection + JLC preview** (incl. the five doubled power vias
+   and the row-39 bottom edge; review PDF is in the package's `review/` dir).
+5. **G13 — harness/coding ORDER** — the BOM now exists (`docs/phase8_revD_harness_bom.csv`,
+   1840447/1840405 plugs + CP-MSTB 1734634 profiles + band colors + corrected termination
+   data); the purchase itself still ships WITH the boards; profiles fitted before first
+   article (install per the corrected H7 rule — profile in the PLUG, sacrificial pair
+   first).
+6. **First-article gate** — checklist §2: per-board test docs for rev-D refdes are
+   GENERATED (M6: `docs/phase8_revD_first_article_pack.md`; re-run the generator if the
+   design moves), then rails/GPB/ADC/tap tests incl. the **at-temperature (≥70 °C)
+   rail-tap repeat (OG-4 — cold-only does not discharge it)**, the physical cross-mate
+   refusal tests, and the FA-8 sacrificial-pair coding proof.
 7. **Characterization session** for analog population (DC1–DC3) — CT current channels + temp
    ride the external-module path (J16 / USB-ADC); nothing analog populates on-board, ever.
 8. **G14 — Dylan's overall review** of this change list + spec + checklist + run log
@@ -160,7 +194,10 @@ owner decisions, physical/powered sessions, or export steps — no open design w
   same field edge — a swap is electrically silent but crosses cycle sensors with AUX contacts.
   Mandatory **Phoenix CP-MSTB 1734634 coding profiles** (J3 pole 1, J15 pole 10), distinct
   harness band colors (J3 white / J15 yellow), silk warnings on the board. First article
-  includes a physical cross-mate refusal test.
+  includes a physical cross-mate refusal test. **Install rule corrected 2026-07-21 (H7):
+  profile fits the PLUG, never a standard header; sacrificial-pair proof (FA-8) before
+  coding production parts; parts + corrected termination data on
+  `docs/phase8_revD_harness_bom.csv`.**
 - 25 parts, 24 new nets; +8 Logic_Signal, +16 Field_Sense; 8 new crossings of the EXISTING
   PC817 barrier class — no new `.kicad_dru` rules needed. Wetting +13.8 mA worst case.
 - **Placement consequence — the one real layout pressure:** 40 opto rows do NOT fit the
@@ -229,7 +266,8 @@ resistive-tap text that stood here through 2026-07-20):**
 - **Cross-mate hazard closed (run-log FR-5):** J16 and J13 take the SAME 1840405 plug 24 mm
   apart; a swapped lamp harness puts a resistorless LED string across 5 V→GND and wedges
   I2C while MCP_OUT_A holds its last relay state. Coding **1734634** (J13 pole 1, J16
-  pole 6), band colors (J13 white / J16 blue), silk warnings, first-article refusal test.
+  pole 6), band colors (J13 white / J16 blue), silk warnings, first-article refusal test
+  (install per the corrected H7 rule — see item C; parts on the harness BOM CSV).
 - 1 part, 0 new nets, 0 class deltas; DNP-tolerant (electrically inert unpopulated).
   Module rules: ≤100 mA from pin 1 (re-run the D17 budget before any module lands — a
   polyfuse in series with pin 1 is a recorded open option for Dylan), I2C addresses

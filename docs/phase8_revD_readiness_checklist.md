@@ -171,11 +171,24 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   stub placement severed a zone neck at (160, 83–84) and was caught and re-placed north)
   and the Safety_Rail==13 stop-ship invariant.
 
-### G11 — Fab export to a NEW dated directory  `[ ]`
-- `export_fab_revD.py` is **not yet written** (spec step I.7). Requirements: REV and
-  output-dir are parameters; writes ONLY to `kicad/fab_revD_<date>/`; **refuses to run if
-  the output dir exists** (no rmtree of anything, ever — the rev-B/rev-C rmtree incident);
-  manifest carries sha256 + generated_at + source-board name.
+### G11 — Fab export to a NEW dated directory  `[x]`  (2026-07-21, Codex H6 remediation)
+- `scripts/export_fab_revD.py` written and RUN → **`kicad/fab_revD_2026-07-21/`** (hashed
+  as-ordered package, `manifest.json` with sha256 per file + source board/netlist hashes).
+  REV and output-dir are parameters; the script **refuses to run if the output dir exists**
+  (verified live — second run refused; no rmtree anywhere).
+- In-process re-gates before exporting: kicad-cli DRC **0/0/0** with the live remediation
+  `.kicad_dru`; `audit_revD_board.py` routed mode **ALL PASS**.
+- **BOM↔CPL↔netlist equality ASSERTED** (not sampled): every placed refdes present in all
+  three with matching value+footprint; pinned counts **262 parts / 27 DNP / 235 placed /
+  218 JLC-placed / 22 JLC lines / 17 hand-solder**. (The remediation tasking's "252" was
+  the pre-R1 part count — R1.7 moved it to 262.)
+- **D_PROT hard-locked**: D17 = **MDD SS34, LCSC C8678, SMA/DO-214AC** (FR-3) asserted at
+  netlist, board, and JLC-BOM level; any SS14 anywhere fails the export.
+- 10M 0805 (R_TAPG_*) JLC line is **MATCH-AT-UPLOAD by MPN 0805W8F1005T5E** — no
+  verifiable LCSC C-number found 2026-07-21; record the matched C-number in the order
+  notes (part-lock CSV carries the instruction). 1M locked to C17514.
+- Package also carries the hand-solder BOM (rev-D refs incl. J15/J16 + the U37→U45 shift)
+  and the **harness BOM** (see G13).
 
 ### G12 — Manual Gerber inspection + JLC preview  `[ ]`  (rev-C G5 pattern)
 - On the plots: K1–K7 pad-net map regression (pads 2/5 coil, 1 COM, 3 NO, 4 NC); the 8 new
@@ -183,12 +196,12 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   J3/J15/J13/J16 legible.
 - Compare JLC's upload preview against the spec before paying — standing habit.
 
-### G13 — Harness/assembly BOM order carries every mating + coding part  `[ ]`  (OG-3; ship WITH the boards)
+### G13 — Harness/assembly BOM order carries every mating + coding part  `[ ]` ORDER still to place — **BOM itself now EXISTS** (2026-07-21: `docs/phase8_revD_harness_bom.csv`, also in the fab package assembly/ dir, with corrected MC 1,5 termination data — 7 mm strip / 0.22–0.25 N·m / ≤ 0.5 mm² insulated ferrule — and the corrected coding-install rule)  (OG-3; ship WITH the boards)
 | Item | PN | Qty note |
 |---|---|---|
 | J15 mating plug (MC 1,5/10-ST-3,5) | Phoenix **1840447** | same PN as J3's plug — coding is what tells them apart |
 | J16 mating plug (MC 1,5/6-ST-3,5) | Phoenix **1840405** | same PN as J13's plug — ditto |
-| Coding profiles | Phoenix **CP-MSTB 1734634** | 6 per coding star; code J3@pole 1, J15@pole 10, J13@pole 1, J16@pole 6; cut the matching plug tabs |
+| Coding profiles | Phoenix **CP-MSTB 1734634** | 6 per coding star; code J3@pole 1, J15@pole 10, J13@pole 1, J16@pole 6. **Install corrected 2026-07-21 (H7): profile fits the PLUG (or an inverted header), never pressed into a standard G-3.5 header; header side = remove the coding rib at the matching pole. Sacrificial-pair proof (FA-8) before coding production parts.** |
 | Harness band colors | — | J3 white · J15 yellow · J13 white · J16 blue |
 - Plus the rev-C mating set (J1 IDC socket candidate, J3/J4/J5/J13/J14 plugs) — carry the
   rev-C §3 table; the BOM gap does not get a third occurrence.
@@ -208,16 +221,16 @@ Carry the rev-C §4 gate wholesale (rails → i2cdetect → one relay → all si
 rev-D extensions. One channel of each NEW I/O type must pass before trusting the board
 (process item 11).
 
-- `[ ]` **⛔ FIRST, before ANY powered bring-up: regenerate the per-board test documents
-  for rev-D refdes.** The AUX4–11 opto-bank insertion shifted 46 refdes vs rev-C (ISO_WET
-  U37→U45, U_WDOG U36→U44, the watchdog/rail/lamp/snubber R families — e.g. R106 is now a
-  lamp LED resistor, and the rail-gate pullup is R124). **Every rev-C bench artifact (TP
-  map, board-1 bench test packet, solder/bring-up guides) names WRONG parts on a rev-D
-  board** — a technician probing U37 from the rev-C TP map lands on the AUX5 optocoupler,
-  not the isolated wetting supply, during a procedure that includes powered safety-rail
-  fault injection. `kicad/revD/netlist_diff_revC_to_revD.txt` (REFDES_SHIFT lines) is the
-  authoritative cross-reference; regenerate the docs from the rev-D netlist, never
-  hand-translate from rev-C notes.
+- `[x]` **⛔ Per-board test documents for rev-D refdes — REGENERATED (2026-07-21, Codex
+  M6):** `docs/phase8_revD_first_article_pack.md` + `docs/phase8_revD_first_article_
+  refdes_map.csv`, generated programmatically from the rev-D netlist + routed board by
+  `scripts/generate_first_article_docs_revD.py` (re-run it after ANY netlist/placement
+  change — derived docs, never hand-edit). The pack carries the 46-row REFDES_SHIFT
+  table (ISO_WET U37→U45, U_WDOG U36→U44, rail-gate pullup R106→R124 …), the relocated
+  TP map, the FA-1…FA-11 procedures (incl. the R1.9 tap fault injection with the
+  ≥ 70 °C repeat, the GPB poke, the ADC read, cross-mate refusal + sacrificial-pair
+  coding proof, and R4 V_CE sampling). **Every rev-C bench artifact still names WRONG
+  parts on a rev-D board — use ONLY the rev-D pack at the bench.**
 
 - `[ ]` Rails at TPs — **NEW: TP4 unloaded reads ≤ ~6 V** (item A landed; 11–14 V float
   gone — if TP4 still floats high the bleed is missing/open). TP4 under opto load ≥ ~4.5 V.
@@ -252,8 +265,12 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
     reboot (epoch semantics, spec R3.3).
 - `[ ]` **J16 bus check (item F):** scrap ADS1115/INA219 module on J16 → module AND
   0x20/0x21/0x22 all still ACK; bus rise-time spot-check with the module attached.
-- `[ ]` **Cross-mate refusal test (OG-3):** each coded plug physically REFUSES the wrong
-  header — J3-plug vs J15 header, J15-plug vs J3, J13-plug vs J16, J16-plug vs J13.
+- `[ ]` **Cross-mate refusal test (OG-3 / first-article pack FA-8):** FIRST the
+  **sacrificial-pair proof** (spare plug + scrap header: coded pair seats, coded plug
+  refuses an uncoded header, no adjacent-pole damage — the CP-MSTB profile fits the
+  PLUG, never a standard header; corrected 2026-07-21, H7), THEN each production coded
+  plug physically REFUSES the wrong header — J3-plug vs J15 header, J15-plug vs J3,
+  J13-plug vs J16, J16-plug vs J13.
 - `[ ]` Firmware review assert (item E binding, now fw v1.2 / remediation spec R3):
   GP16–GP19 inputs-only ENFORCED (`tap_assert_input_only()` register-readback + the
   build-failing host direction test), Schmitt enabled, inversion in exactly one
@@ -278,14 +295,19 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
    RD-VIA-1 power-via redundancy, independent 8-check verification pass) — but routed OUT
    OF ORDER while G8 was open (run-log PV-1); the artifact is conditional on Dylan's G8
    sign-off.**
-4. **Write `export_fab_revD.py` and export** to `kicad/fab_revD_<date>/` — G11; inspect
-   Gerbers + JLC preview — G12 (include the five doubled power vias in the visual pass).
-5. **Order the harness/coding parts with the boards** — G13.
+4. ~~Write `export_fab_revD.py` and export~~ **DONE 2026-07-21 (G11 `[x]`:
+   `kicad/fab_revD_2026-07-21/` hashed package, equality asserts 262/27/235/218, D_PROT
+   locked to MDD SS34 C8678)**; inspect Gerbers + JLC preview — G12 still open (include
+   the five doubled power vias + the row-39 bottom edge in the visual pass).
+5. **Order the harness/coding parts with the boards** — G13 (the BOM now exists:
+   `docs/phase8_revD_harness_bom.csv`; the order itself is still to be placed).
 6. **Final sacred-file hash re-verify + Dylan's review** — G6 (re-run) + G14.
-7. **After assembly, the §2 first-article gate** — starts with ⛔ regenerating the per-board
-   test docs for rev-D refdes, and includes the MANDATORY at-temperature (≥70 °C) rail-tap
-   repeat (OG-4). The characterization session (analog population, DC1–DC3) is scheduled
-   but not fab-blocking.
+7. **After assembly, the §2 first-article gate** — the per-board test docs are already
+   generated for rev-D refdes (M6, 2026-07-21: `docs/phase8_revD_first_article_pack.md`;
+   re-run the generator if the design moves), and the gate includes the MANDATORY
+   at-temperature (≥70 °C) rail-tap repeat (OG-4) plus the FA-8 sacrificial-pair coding
+   proof. The characterization session (analog population, DC1–DC3) is scheduled but not
+   fab-blocking.
 
 Not fab-blocking but scheduled: the **characterization session** that decides external
 analog population (CT current channels, 24 VAC sense, temp channels — all on the external

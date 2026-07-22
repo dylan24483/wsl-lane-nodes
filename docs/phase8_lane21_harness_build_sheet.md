@@ -1,5 +1,24 @@
 # Lane 21 Machine-Interface Harness — CUT-AND-CRIMP BUILD SHEET (Candidate C)
 
+> **⚠ CORRECTION 2026-07-21 (Codex NO-GO audit finding H7) — MC 1,5 termination data in
+> this sheet was WRONG vs the Phoenix data for the MC 1,5/..-ST-3,5 plug family
+> (1840447/1840489/1840463/1840405/1840382):**
+> - **Stripping length 7 mm** (this sheet said 8 mm).
+> - **Tightening torque 0.22–0.25 N·m** (M2 screw; this sheet said ~0.5 N·m — over 2×
+>   the rated maximum, enough to strip the M2 screw or crack the plug body).
+> - **Conductor with INSULATED ferrule: max 0.5 mm²** (this sheet specced 0.75/1.0 mm²
+>   insulated ferrules for the 18 AWG J14 leads — they do not meet the plug spec).
+>   18 AWG (0.82 mm²) into an MC 1,5 plug must use a **bare stranded end or an
+>   UNinsulated ferrule** (rated to 1.5 mm²). The 22 AWG / 0.34 mm² insulated ferrules
+>   for J3/J4/J5/J13 are inside the 0.5 mm² limit and stand.
+> - These figures apply to every MC 1,5 plug row below (§2.1 steps 3–4, §4 ferrule
+>   rows). MKDS fixed blocks (J2, J6–J11) are a different series — verify their
+>   termination data against Phoenix 1715734/1715721 at build; do not reuse either set
+>   of numbers across series.
+> - Machine-readable copy of the corrected data: `docs/phase8_revD_harness_bom.csv`
+>   (H6/H7 release artifact). Original text below is retained with strikethrough-style
+>   inline corrections — not silently edited.
+
 **Status: BUILDABLE — interlock decision FORMAL (Candidate C, Dylan, 2026-07-07 — `phase8_interlock_redesign.md` §7).**
 Written 2026-07-07. One lane = one board = one harness. This sheet is for the **pilot lane 21** (SS chassis + Omega-Tek, C1 34-pin + C2A 50-pin AMP edge connectors). Lane 22 is a clone — see the ×2 column in §4 — but **re-verify every machine-side landing on 22's own connectors before crimping** (same chassis type, still per-lane proof).
 
@@ -150,8 +169,12 @@ Loop topology on-board: VCC5 → **pins 1–2 (TBSC loop)** → **pins 3–4 (St
 
 1. Take **one Phoenix MC 1,5/4-ST-3,5 plug (PN 1840382)** — this IS the lane's J14 harness plug (positions 3–4 carry the Stop/CIS cut+label leads from the table above; the jumper lives on positions 1–2 of the same plug).
 2. Cut **~120 mm of 18 AWG stranded, yellow** (600 V insulation — Bundle 2 spec). Form a U.
-3. Strip both ends 8 mm, fit **0.75/1.0 mm² ferrules**, crimp.
-4. Terminate one end in **position 1**, the other in **position 2**. Torque ~0.5 Nm (small flat-blade), tug-test both ends.
+3. Strip both ends ~~8 mm~~ **7 mm (corrected 2026-07-21, H7)**; ~~fit 0.75/1.0 mm²
+   ferrules~~ **leave bare stranded or fit UNinsulated ferrules — insulated ferrules
+   above 0.5 mm² do not meet the MC 1,5 plug spec (corrected 2026-07-21, H7)**.
+4. Terminate one end in **position 1**, the other in **position 2**. Torque ~~0.5 Nm~~
+   **0.22–0.25 N·m (corrected 2026-07-21, H7 — 0.5 N·m is over 2× the M2 screw rating)**
+   (small flat-blade), tug-test both ends.
 5. Slide a printed heat-shrink flag onto the U **before** the second crimp, with this label text, verbatim:
 
    > **`TBSC JUMPER - ENGINEERED PART (Candidate C, DECIDED 2026-07-07). TB/SC collision protection is DELEGATED to the OEM 24VAC ladder (SC+TB parallel closed-when-SAFE contacts in the S/T coil circuits - proven at machine 2026-07-07). NOT a bypass: the per-lane Stage-6b/G3 coil-drop proof is REQUIRED before live motion, every cutover. See docs/phase8_interlock_redesign.md §7.`**
@@ -227,8 +250,8 @@ Plugs per `phase8_revC_readiness_checklist.md` §3 (the BOM-gap list — these s
 | Wire 18 AWG, black (output COM leads) | same | ~8 m | ~16 m |
 | Wire 18 AWG, yellow (J14 jumper + Stop/CIS + rollback bridges) | same | ~5 m | ~10 m |
 | *(alternative)* Bundle-3 multipair | **Belden 1419A** (6-pair 18 AWG) per F.2 | 1 × 1.2 m run | 2 |
-| Ferrules 0.34 mm² (22 AWG) | insulated, for MC 1,5 plugs | ~45 (buy 100-pk) | ~90 (1 pk) |
-| Ferrules 0.75–1.0 mm² (18 AWG) | insulated, for MKDS + J14 | **~31** (J2 ×3 + J6–J11 board ends ×12 + J14 ×4 + rollback bridges 6×2) — buy 100-pk | ~62 (1 pk) |
+| Ferrules 0.34 mm² (22 AWG) | insulated, for MC 1,5 plugs (≤ 0.5 mm² insulated limit ✓) | ~45 (buy 100-pk) | ~90 (1 pk) |
+| Ferrules 0.75–1.0 mm² (18 AWG) | ~~insulated, for MKDS + J14~~ **CORRECTED 2026-07-21 (H7): insulated 0.75–1.0 mm² for MKDS blocks ONLY (J2, J6–J11 — verify vs Phoenix 1715734/1715721 data at build). The J14 MC 1,5 positions take UNinsulated 0.75–1.0 mm² ferrules or bare stranded — insulated ferrules above 0.5 mm² do not meet the MC 1,5 spec** | **~31** (J2 ×3 + J6–J11 board ends ×12 + rollback bridges 6×2 insulated; J14 ×4 UNinsulated) — buy 100-pk of each | ~62 (1 pk each) |
 | IDC taps, small-gauge (sense) | 3M Scotchlok IDC class, sized to the machine sense-wire gauge (verify on site) | 16 used → buy 30 | 60 |
 | IDC taps, 18–14 AWG class (outputs) | T-tap / Scotchlok rated ≥10 A — S/T coil inrush | 12 used → buy 20 | 40 |
 | Wago 221-413 (3-port lever nuts) | fallback splice + output cut-fallback | 12 | 24 |
@@ -324,3 +347,4 @@ Order: **chassis lugs → J4 sense taps → J5 → DIELL taps → outputs → J1
 ---
 
 **Change log:** 2026-07-07 — created (Candidate-C decision formal, `phase8_interlock_redesign.md` §7). Measured values only from the 2026-06-01 bench + 2026-06-27 + 2026-07-07 at-machine sessions; everything unmeasured is CUT+LABEL-ONLY / NO-LEAD / OPEN with its closing session named.
+2026-07-21 — **H7 correction (Codex NO-GO audit):** MC 1,5 termination data corrected throughout (strip 7 mm not 8; torque 0.22–0.25 N·m not 0.5; insulated ferrules capped at 0.5 mm² — J14 18 AWG leads go bare/uninsulated). Header banner + inline strikethroughs; machine-readable data in `docs/phase8_revD_harness_bom.csv`. A rev-D lane build additionally carries J15/J16 plugs + CP-MSTB coding (profile in the PLUG, never a standard header; sacrificial-pair proof FA-8) — see `docs/phase8_revD_first_article_pack.md`.

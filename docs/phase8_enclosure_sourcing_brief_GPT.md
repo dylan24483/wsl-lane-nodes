@@ -1,5 +1,15 @@
 # Research Brief: Budget Industrial Enclosures ×16 — Find the Cheapest Compliant Option
 
+> **⚠ REISSUED 2026-07-21 (rev-D board growth, Codex H8): hard requirement #1 is now
+> ≥ 310 mm × 670 mm usable panel** (the rev-D board is 250×240, panel stack
+> 20+240+150+240+20 = 670 — see `phase8_pair_enclosure_spec.md` §1/§1.1). Any candidate
+> already evaluated against the old 640 mm figure must be re-checked. **Nominal
+> 700-mm-class panels are MARGINAL** (≤ 30 mm headroom): report the TRUE usable panel
+> height (after stud/flange intrusions), not the nominal box size, and flag anything
+> under 690 mm usable as marginal. Boards inside are 250×240 mm (the "What goes inside"
+> text below is updated accordingly), and the eventual backplate/lip design carries the
+> row-39 bottom-edge copper keep-clear (`phase8_pair_enclosure_spec.md` §1.2).
+
 ## Mission
 
 Find the lowest total-cost way to buy **16 (+2 spare) wall-mount industrial enclosures** in the
@@ -12,16 +22,19 @@ Rank everything by landed cost ×16.
 ## What goes inside (context only)
 
 Each box mounts on a wall in the equipment area behind bowling pinsetters and houses two custom
-250×225 mm control PCBs on standoffs, a Raspberry Pi 4 on DIN rail, a PoE splitter, a DIN
+250×240 mm control PCBs on standoffs, a Raspberry Pi 4 on DIN rail, a PoE splitter, a DIN
 DC-DC converter, and fuse terminal blocks. Total heat ~20 W (sealed box is fine). Total mounted
 equipment weight ~8–10 kg. Low-voltage only (48 V PoE in, 5 V logic; no mains inside the box).
 
 ## HARD requirements (a candidate failing any one is disqualified)
 
-1. **Usable flat mounting-panel area ≥ 310 mm wide × 640 mm tall** (12.2 × 25.2 in), either
-   orientation (box may hang portrait or landscape). Nominal 30×16, 30×20, 30×24-inch class
-   boxes (or metric 700×500, 800×400, 800×600) all typically satisfy this — **narrower-than-24-in
-   boxes are explicitly welcome if the panel clears 310 mm; that is a cost lever.**
+1. **Usable flat mounting-panel area ≥ 310 mm wide × 670 mm tall** (12.2 × 26.4 in), either
+   orientation (box may hang portrait or landscape). **[REISSUED 2026-07-21 — was 640 mm;
+   the rev-D board grew to 250×240.]** Nominal 30-inch-class boxes (762 mm) still satisfy
+   this; **metric 700-mm-class boxes (700×500 etc.) are now MARGINAL** — a nominal 700 box
+   often nets < 690 mm usable after flanges/studs, leaving ≤ 30 mm of headroom; report
+   TRUE usable panel height and flag them. **Narrower-than-24-in boxes are explicitly
+   welcome if the panel clears 310 mm; that is a cost lever.**
    Prefer ~60 mm of extra width beyond the 310 for wire duct, but 310–330 mm is acceptable.
 2. **Interior depth ≥ 80 mm clear above the mounting panel** (DIN gear is 62 mm proud; 6-in or
    8-in nominal depth is comfortable).

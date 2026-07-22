@@ -1,2 +1,7 @@
 server/machine_contract.json text eol=lf
 server/machine_contract.sha256 text eol=lf
+# As-ordered fab packages are hashed byte-for-byte in their manifest.json -
+# NEVER let git line-ending normalization rewrite them (H6, 2026-07-21).
+kicad/fab_revD_*/** -text
+docs/phase8_revD_harness_bom.csv -text
+docs/phase8_revD_first_article_refdes_map.csv -text
