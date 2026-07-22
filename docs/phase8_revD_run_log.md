@@ -918,3 +918,19 @@ batch via the new `scripts/verify_revC_snapshot.py`).
   commit that follows it; the r3 mirror MANIFEST pins the exact hash). Neither repo
   pushed (lane-nodes 160 MB-PDF history blocker stands; WSL Systems deploys via
   AnyDesk + server-side checkout per standing practice).
+
+### Mirror record — FINALIZE (appended after commit 00f283e)
+
+- New external mirror `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-21_phase8_revD_remediation_r3\`
+  (+ `.zip` 5,938,868 bytes, `.zip.sha256` =
+  `8467a04d3d02a8352b4b78e2f6c0ce6d413ab8dc2d407cf0a2fd48d7e35a4bab`): **121 files**
+  (the r2 set + `docs/phase8_revD_remediation_report_2026-07-21.md`), MANIFEST.json with
+  per-file sha256 (every copy hash-compared source-vs-destination at creation), source git
+  head `00f283e` (`fable-audit-fixes`). **Supersedes r2 as the as-current record**; all
+  older mirrors stay untouched. M7's off-disk half (copy WSL_Backups to a second physical
+  volume — WSL-SRV via AnyDesk or USB — and hash-verify at the destination against these
+  recorded zip hashes) remains the OPEN Dylan item.
+- Rev-C sacred snapshot re-verified after the finalize commit:
+  `scripts/verify_revC_snapshot.py` → **189/189 OK, 0 failures**.
+- This mirror-record commit is the campaign's definitive `wsl-lane-nodes` HEAD for
+  clean-clone reproduction (WSL Systems: `f1bd3266feeee6d2ed7f6ee3d39fa947a8cd47f8`).
