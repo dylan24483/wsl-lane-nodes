@@ -1,0 +1,87 @@
+AUDIT INPUT: C:\Users\Dylan DeYoung\wsl-lane-nodes\kicad\revD\wsl-phase8b-revD.kicad_pcb
+[board] 250.15 x 240.15 mm, 4 cu layers, nets=224
+[board] footprints=299
+[board] Pico ref = A1
+PASS  netlist-part footprint count = 271 (got 271)
+PASS  board extras: 24 test pads + 4 mounting holes (got 24 TP, 4 MK)
+[netclass-board] {'Logic_Signal': 103, 'Safety_Rail': 13, 'Field_Sense': 82, 'Logic_Power': 4, 'Machine_Output': 21}
+PASS  no named net fell to Default class (found 0)
+PASS  every named net (223) is in a custom class (got 223)
+PASS    board-assigned class Logic_Signal = 103 (got 103)
+PASS    board-assigned class Logic_Power = 4 (got 4)
+PASS    board-assigned class Safety_Rail = 13 (got 13)
+PASS    board-assigned class Field_Sense = 82 (got 82)
+PASS    board-assigned class Machine_Output = 21 (got 21)
+[zones] count=10
+  net='GND' layer=F.Cu filled=True area_mm2=19122025333.45 rule_area=False
+  net='' layer=undefined filled=False area_mm2=0.0 rule_area=True
+  net='' layer=undefined filled=False area_mm2=0.0 rule_area=True
+  net='' layer=undefined filled=False area_mm2=0.0 rule_area=True
+  net='' layer=undefined filled=False area_mm2=0.0 rule_area=True
+  net='' layer=undefined filled=False area_mm2=0.0 rule_area=True
+  net='' layer=undefined filled=False area_mm2=0.0 rule_area=True
+  net='' layer=undefined filled=False area_mm2=0.0 rule_area=True
+  net='' layer=undefined filled=False area_mm2=0.0 rule_area=True
+  net='' layer=undefined filled=False area_mm2=0.0 rule_area=True
+PASS  netted copper zones are filled (1)
+PASS  isolation keepout rule areas present (9)
+[dnp] count=28 ['C10', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'D10', 'D12', 'D13', 'D14', 'D2', 'D4', 'D6', 'D8', 'J12', 'JP1', 'K7', 'Q7', 'R100', 'R101', 'R102', 'R103', 'R85', 'R88', 'R91', 'R94', 'R97']
+PASS  M1 channel still DNP (>=8 DNP footprints, found 28)
+[conn] GetUnconnectedCount=0
+PASS  no anonymous N$ nets (found 0)
+[netclass] {'Logic_Signal': 103, 'Safety_Rail': 13, 'Field_Sense': 82, 'Logic_Power': 4, 'Machine_Output': 21}
+[netclass] expected {'Logic_Signal': 103, 'Logic_Power': 4, 'Safety_Rail': 13, 'Field_Sense': 82, 'Machine_Output': 21}
+PASS  no unclassifiable nets (found [])
+PASS  no overlapping-class nets (found [])
+PASS    class Logic_Signal = 103 (got 103)
+PASS    class Logic_Power = 4 (got 4)
+PASS    class Safety_Rail = 13 (got 13)
+PASS    class Field_Sense = 82 (got 82)
+PASS    class Machine_Output = 21 (got 21)
+PASS  STOP-SHIP GUARD: Safety_Rail count is EXACTLY 13 (rev-D adds zero safety copper)
+PASS  total named nets = 223 (got 223)
+[rail] RELAY_ENABLE_RAIL pads=16 relays=['K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7']
+[rail] all refs on rail: ['D1', 'D11', 'D13', 'D3', 'D5', 'D7', 'D9', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7', 'Q14', 'TP16']
+PASS  safety rail reaches 7 relay coils (got 7: ['K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7'])
+PASS  safety rail reaches a pass-FET (Q*)
+PASS  no OUT_* net touches the Pico (violations: [])
+PASS  GND and FIELD_GND both present + distinct
+[iso] GND pads=117 FIELD_GND pads=10
+[iso] refs on BOTH GND and FIELD_GND: ['U45']
+PASS  only the TMA-0505S isolation converter straddles GND/FIELD_GND (got ['U45'])
+[safety] SAFE_STOP_RETURN: [('J14', '4'), ('TP15', '1'), ('Q14', '2'), ('R124', '1')]
+[safety] SAFE_TBSC_RETURN: [('J14', '2'), ('J14', '3')]
+[safety] RAIL_GATE: [('Q14', '1'), ('Q15', '3'), ('R124', '2')]
+[safety] ARM_PERMIT: [('J1', '8'), ('R136', '1'), ('TP13', '1'), ('R125', '1')]
+[safety] RP2040_OK: [('A1', '4'), ('R139', '1'), ('J1', '13'), ('R127', '1'), ('TP14', '1')]
+PASS  SAFE_STOP_RETURN + SAFE_TBSC_RETURN + RAIL_GATE present
+PASS  SAFE_TBSC_RETURN pad membership frozen at rev-C: exactly 2 pads, both on J_SAFETY (got [('J14', '2'), ('J14', '3')])
+PASS  SAFE_STOP_RETURN pad membership frozen at rev-C board: exactly 4 pads (J_SAFETY, pass-FET, gate pullup, TP15) (got [('J14', '4'), ('TP15', '1'), ('Q14', '2'), ('R124', '1')])
+PASS  RAIL_GATE pad membership frozen at rev-C: exactly 3 pads (pass-FET gate, AND-chain collector, gate pullup) (got [('Q14', '1'), ('Q15', '3'), ('R124', '2')])
+PASS  ADC_VCC5_SENSE reaches Pico pin 31 (GP26/ADC0) (got [('A1', '31'), ('R129', '2'), ('R130', '1'), ('C15', '1')])
+PASS  TAP_NE555_OUT reaches Pico pin 21 (got [('A1', '21'), ('Q17', '3'), ('R132', '2'), ('TP18', '1')])
+PASS  TAP_WDOG_KICK reaches Pico pin 22 (got [('A1', '22'), ('R134', '2'), ('Q18', '3'), ('TP20', '1')])
+PASS  TAP_ARM_PERMIT reaches Pico pin 24 (got [('Q19', '3'), ('A1', '24'), ('TP22', '1'), ('R137', '2')])
+PASS  TAP_RP2040_OK reaches Pico pin 25 (got [('A1', '25'), ('Q20', '3'), ('R140', '2'), ('TP24', '1')])
+PASS  TAP_NE555_OUT carries exactly (FET drain, pull-up R, Pico) + 1 probe TP (got [('A1', '21'), ('Q17', '3'), ('R132', '2'), ('TP18', '1')])
+PASS  TAP_WDOG_KICK carries exactly (FET drain, pull-up R, Pico) + 1 probe TP (got [('A1', '22'), ('R134', '2'), ('Q18', '3'), ('TP20', '1')])
+PASS  TAP_ARM_PERMIT carries exactly (FET drain, pull-up R, Pico) + 1 probe TP (got [('Q19', '3'), ('A1', '24'), ('TP22', '1'), ('R137', '2')])
+PASS  TAP_RP2040_OK carries exactly (FET drain, pull-up R, Pico) + 1 probe TP (got [('A1', '25'), ('Q20', '3'), ('R140', '2'), ('TP24', '1')])
+PASS  TAP_GATE_555 carries only R_TAPIN(/R_TAPG) + FET gate + 1 probe TP, never the Pico (got [('R131', '2'), ('Q17', '1'), ('TP17', '1')])
+PASS  TAP_GATE_KICK carries only R_TAPIN(/R_TAPG) + FET gate + 1 probe TP, never the Pico (got [('R135', '1'), ('R133', '2'), ('Q18', '1'), ('TP19', '1')])
+PASS  TAP_GATE_ARM carries only R_TAPIN(/R_TAPG) + FET gate + 1 probe TP, never the Pico (got [('Q19', '1'), ('R136', '2'), ('TP21', '1'), ('R138', '1')])
+PASS  TAP_GATE_RPOK carries only R_TAPIN(/R_TAPG) + FET gate + 1 probe TP, never the Pico (got [('Q20', '1'), ('R139', '2'), ('R141', '1'), ('TP23', '1')])
+PASS  J16_5V is exactly polyfuse-out + J16.1 + ESD VP (got [('F1', '2'), ('J16', '1'), ('U47', '5')])
+PASS  J16_3V3 is exactly solder-link-out + J16.5 + ESD IO (default-OPEN pin) (got [('J16', '5'), ('JP1', '2'), ('U47', '1')])
+PASS  J16_SDA is exactly TCA4307 SDAOUT + pull-up + J16.3 + ESD IO (got [('J16', '3'), ('R142', '2'), ('U46', '7'), ('U47', '3')])
+PASS  J16_SCL is exactly TCA4307 SCLOUT + pull-up + J16.4 + ESD IO (got [('J16', '4'), ('R143', '2'), ('U46', '2'), ('U47', '6')])
+PASS  VCC_5V never touches J16 directly (protection stack bypass!) (got [])
+PASS  VCC_3V3 never touches J16 directly (protection stack bypass!) (got [])
+PASS  I2C_SDA never touches J16 directly (protection stack bypass!) (got [])
+PASS  I2C_SCL never touches J16 directly (protection stack bypass!) (got [])
+PASS  TCA4307 main-bus side is exactly SDAIN(6)/SCLIN(3) — in/out not swapped
+PASS  REV_ID0 is exactly strap R144 + Pico pin 26/GP20 (got [('A1', '26'), ('R144', '2')])
+PASS  REV_ID1 is exactly strap R145 + Pico pin 27/GP21 (got [('A1', '27'), ('R145', '2')])
+PASS  REV_ID encoding is rev-D = 0b01 (R144 pulls HIGH, R145 pulls LOW)
+
+AUDIT RESULT: ALL PASS

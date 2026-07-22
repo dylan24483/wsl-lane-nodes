@@ -30,8 +30,9 @@ NET_RULES = {
     "Machine_Output": {"width": 0.50, "via": 1.00, "drill": 0.50, "clr": 0.35},
 }
 # Remediation spec R1.7 (2026-07-21): +4 TAP_GATE_* nets -> Logic_Signal 97.
+# Round-2 remediation R2-4/R2-6 (2026-07-21): +6 (J16_*/REV_ID*) -> 103.
 NETCLASS_COUNTS = {
-    "Logic_Signal": 97,
+    "Logic_Signal": 103,
     "Logic_Power": 4,
     "Safety_Rail": 13,
     "Field_Sense": 82,

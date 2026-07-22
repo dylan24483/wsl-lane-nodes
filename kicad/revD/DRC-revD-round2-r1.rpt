@@ -1,0 +1,30 @@
+** Drc report for wsl-phase8b-revD.kicad_pcb **
+** Created on 2026-07-21T21:18:14 **
+** Report includes: Errors, Warnings, Exclusions **
+
+** Found 1 DRC violations **
+[hole_to_hole]: Drilled hole too close to other hole (board setup constraints min 0.2495 mm; actual 0.2000 mm)
+    Rule: board setup constraints; warning
+    @(113.1000 mm, 223.5000 mm): Via [VCC_3V3] on F.Cu - B.Cu
+    @(113.1000 mm, 224.1000 mm): Via [VCC_3V3] on F.Cu - B.Cu
+
+** Found 2 unconnected pads **
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(141.4375 mm, 217.2000 mm): Pad 2 [GND] of U47 on F.Cu
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - Footprint component type doesn't match footprint pads
+
+** End of Report **

@@ -1,14 +1,12 @@
+ERC ERROR: Pin conflict on net GND, POWER-OUT pin 33/AGND of RaspberryPi_Pico/A1 <==> POWER-OUT pin 3/GND of RaspberryPi_Pico/A1 (POWER-OUT connected to POWER-OUT)
 ERC WARNING: Insufficient drive current on net VCC_5V for pin POWER-IN pin 1/+Vin of TMA-0505S/U45.
 ERC WARNING: Insufficient drive current on net VCC_5V for pin POWER-IN pin 39/VSYS of RaspberryPi_Pico/A1.
 ERC WARNING: Insufficient drive current on net VCC_5V for pin POWER-IN pin 8/VCC of NE555D/U44.
-ERC ERROR: Pin conflict on net GND, POWER-OUT pin 33/AGND of RaspberryPi_Pico/A1 <==> POWER-OUT pin 3/GND of RaspberryPi_Pico/A1 (POWER-OUT connected to POWER-OUT)
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 5/GPIO3 of RaspberryPi_Pico/A1.
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 6/GPIO4 of RaspberryPi_Pico/A1.
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 7/GPIO5 of RaspberryPi_Pico/A1.
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 19/GPIO14 of RaspberryPi_Pico/A1.
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 20/GPIO15 of RaspberryPi_Pico/A1.
-ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 26/GPIO20 of RaspberryPi_Pico/A1.
-ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 27/GPIO21 of RaspberryPi_Pico/A1.
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 29/GPIO22 of RaspberryPi_Pico/A1.
 ERC WARNING: Unconnected pin: PASSIVE pin 30/RUN of RaspberryPi_Pico/A1.
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 32/GPIO27_ADC1 of RaspberryPi_Pico/A1.
@@ -39,6 +37,7 @@ ERC WARNING: Unconnected pin: PASSIVE pin 17/Pin_17 of Conn_02x10_Odd_Even/J1.
 ERC WARNING: Unconnected pin: PASSIVE pin 18/Pin_18 of Conn_02x10_Odd_Even/J1.
 ERC WARNING: Unconnected pin: PASSIVE pin 19/Pin_19 of Conn_02x10_Odd_Even/J1.
 ERC WARNING: Unconnected pin: PASSIVE pin 20/Pin_20 of Conn_02x10_Odd_Even/J1.
-ERC INFO: 40 warnings found while running ERC.
+ERC WARNING: Unconnected pin: OPEN-COLLECTOR pin 5/READY of TCA4307/U46.
+ERC INFO: 39 warnings found while running ERC.
 ERC INFO: 1 errors found while running ERC.
 

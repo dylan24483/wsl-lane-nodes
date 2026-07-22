@@ -95,6 +95,9 @@ FP_ROOT = Path(r"C:\Program Files\KiCad\10.0\share\kicad\footprints")
 LOCAL_FP_LIBS = {"wsl_footprints": KICAD_DIR / "wsl_footprints.pretty"}
 TESTPOINT_LIB = FP_ROOT / "TestPoint.pretty"
 TESTPOINT_FP = "TestPoint_Pad_1.5x1.5mm"
+# R2-5 tap probe pads (TP17-24) use the 1.0 mm pad: the 1.5 mm pad's
+# 2.59 mm courtyard does not fit the Pico-to-Q_TAP / R_TAPG-to-TP gaps.
+TESTPOINT_FP_SMALL = "TestPoint_Pad_1.0x1.0mm"
 MOUNTING_HOLE_LIB = FP_ROOT / "MountingHole.pretty"
 MOUNTING_HOLE_FP = "MountingHole_3.2mm_M3"
 
@@ -267,6 +270,26 @@ def build_board_from_netlist(components: list[Component], nets: dict[str, list[t
             net = pin_to_net.get((comp.ref, pad.GetNumber()))
             if net is not None:
                 pad.SetNet(net)
+        # R2-4 (TCA4307, VSSOP-8): the 0.65 mm-pitch package has an
+        # inherent 0.15 mm pad-to-pad gap — below the Logic_Signal 0.20 mm
+        # netclass clearance but well above JLC's 0.127 mm capability.
+        # A per-pad LOCAL clearance of 0.13 mm relaxes only the
+        # U46-internal pad pairs: KiCad resolves item-pair clearance as
+        # the MAX of the two items' effective clearances, so every pair
+        # involving any OTHER item still gets the 0.20 mm netclass value.
+        if comp.tag == "U_I2C_BUF":
+            for pad in fp.Pads():
+                pad.SetLocalClearance(pcbnew.FromMM(0.13))
+        # R2-4 (SRV05-4): pad 2 (VN/GND) is boxed in by the J16_3V3 and
+        # J16_SDA entry tracks on three sides — thermal spokes cannot reach
+        # two directions and the east zone pocket islands. A SOLID zone
+        # connection on this one pad fuses the pocket through the pad copper
+        # and needs no spokes. (Hand-rework unaffected: SOT-23-6 pin, small
+        # thermal mass.)
+        if comp.tag == "D_ESD_J16":
+            for pad in fp.Pads():
+                if pad.GetNumber() == "2":
+                    pad.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
         board.Add(fp)
 
     return board
@@ -368,6 +391,31 @@ def base_placement() -> dict[str, tuple[float, float, float]]:
         "Q_TAP_RPOK": (116, 64, 180),
         "R_TAPPU_RPOK": (120.5, 64, 180),
         "R_TAPG_RPOK": (125, 64, 0),
+
+        # Round-2 remediation (Codex R2-4, 2026-07-21): J16 protection
+        # stack in the free band BELOW the J13/J16 bodies (courtyards end
+        # y=209.54) and ABOVE the TP strip (y=229): y 215.3-222.9,
+        # x 123-150. All LOGIC band, no gutter incursion. F1 rot 270 puts
+        # pad 1 (VCC_5V) north toward the existing IN1 y=217 5V run; the
+        # TCA4307's west column (EN/SCLOUT/SCLIN/GND) faces the I2C trunks,
+        # east column (READY/SDAIN/SDAOUT/VCC) faces the loop-under feeds.
+        # D_ESD_J16 rot 180 puts VP on the west-mid pad (J16_5V approach)
+        # per the routed geometry in route_revD_logic.route_j16_protection().
+        # (F1 sits WEST of the AUX8-11 IN2 lane column x=122.9-126.4 and its
+        # lane-end vias; C16 is vertical west of the J16_SDA spine; the SCL
+        # pull-up hangs south of the cluster off the J16_SCL IN2 lane via.)
+        "F_J16_5V": (122.6, 220.5, 270),
+        "U_I2C_BUF": (130.9, 220.6, 0),
+        "C_I2C_BUF": (133.4, 216.4, 90),
+        "D_ESD_J16": (140.3, 217.2, 180),
+        "JP_J16_3V3": (144.6, 218.9, 180),
+        "R_J16_SDA_PU": (148.3, 216.0, 180),
+        "R_J16_SCL_PU": (137.7, 223.3, 0),
+
+        # Round-2 remediation (Codex R2-6): REV_ID straps below the tap
+        # cluster, east of the Pico. rot 180 puts pad 1 (rail side) east.
+        "R_REVID0": (118, 68, 180),
+        "R_REVID1": (118, 71, 180),
 
         # Watchdog and safety rail (unchanged from rev-C).
         "U_WDOG": (151, 50, 0),
@@ -477,11 +525,12 @@ def add_mounting_holes(board: pcbnew.BOARD) -> int:
     return len(positions)
 
 
-def add_test_pad(board: pcbnew.BOARD, ref: str, net_name: str, x: float, y: float) -> None:
-    fp = pcbnew.FootprintLoad(str(TESTPOINT_LIB), TESTPOINT_FP)
+def add_test_pad(board: pcbnew.BOARD, ref: str, net_name: str, x: float, y: float,
+                 fp_name: str = TESTPOINT_FP) -> None:
+    fp = pcbnew.FootprintLoad(str(TESTPOINT_LIB), fp_name)
     if fp is None:
-        raise RuntimeError(f"Could not load {TESTPOINT_FP}")
-    fp.SetFPID(pcbnew.LIB_ID("TestPoint", TESTPOINT_FP))
+        raise RuntimeError(f"Could not load {fp_name}")
+    fp.SetFPID(pcbnew.LIB_ID("TestPoint", fp_name))
     fp.SetReference(ref)
     fp.SetValue(net_name)
     fp.Reference().SetVisible(False)
@@ -520,9 +569,25 @@ def add_test_pads(board: pcbnew.BOARD) -> int:
         ("TP15", "SAFE_STOP_RETURN", 152, 236),
         ("TP16", "RELAY_ENABLE_RAIL", 160, 236),
     ]
+    # Round-2 remediation (Codex R2-5): paired probe / fault-injection pads
+    # per tap stage — one on each TAP_GATE_* net (east of the R_TAPG column,
+    # fed by an F.Cu stub from the gate tee via) and one on each TAP_*
+    # drain net (west of the Q_TAP drain via). First-article fault insertion
+    # (R1.9 step 3 / FA-7: clip-short drain-gate) uses these pads — never
+    # short SOT-23 pins directly. Rows y = 52/56/60/64 (555/KICK/ARM/RPOK).
     for ref, net, x, y in pads:
         add_test_pad(board, ref, net, x, y)
-    return len(pads)
+    small = []
+    for tp, gate_net, drain_net, y in (
+            ("17", "TAP_GATE_555", "TAP_NE555_OUT", 52.0),
+            ("19", "TAP_GATE_KICK", "TAP_WDOG_KICK", 56.0),
+            ("21", "TAP_GATE_ARM", "TAP_ARM_PERMIT", 60.0),
+            ("23", "TAP_GATE_RPOK", "TAP_RP2040_OK", 64.0)):
+        small.append((f"TP{tp}", gate_net, 128.0, y + 1.75))
+        small.append((f"TP{int(tp) + 1}", drain_net, 112.8, y))
+    for ref, net, x, y in small:
+        add_test_pad(board, ref, net, x, y, TESTPOINT_FP_SMALL)
+    return len(pads) + len(small)
 
 
 def add_rect(board: pcbnew.BOARD, x1: float, y1: float, x2: float, y2: float, layer, width=0.12) -> None:
@@ -686,6 +751,37 @@ def add_silkscreen_labels(board: pcbnew.BOARD) -> None:
     for args in labels:
         add_text(board, *args, layer=pcbnew.F_SilkS)
 
+    # Round-2 remediation (Codex R2-5): fabricated TEST-POINT LEGEND. Every
+    # TP gets a silk name so a tech never probes from memory; TP2/TP5 are
+    # the two ground references and carry explicit domain names plus
+    # DO-NOT-BRIDGE marks (bridging them defeats the TMA-0505S isolation
+    # barrier). >= 1.0 mm height enforced by add_text().
+    tp_legend = [
+        # y=229 TP row, labels below at y=231.4
+        ("TP4 WET V", 22, 231.4), ("TP5 FIELD GND", 34, 231.4),
+        ("TP1 5V", 100, 231.4), ("TP2 LOGIC GND", 110, 231.4),
+        ("TP3 3V3", 120, 231.4), ("TP6 SDA", 130, 231.4),
+        ("TP7 SCL", 140, 231.4), ("TP8 KICK", 150, 231.4),
+        # y=236 TP row, labels below at y=238.3
+        ("TP9 TMG", 100, 238.3), ("TP10 TRG", 110, 238.3),
+        ("TP11 555", 120, 238.3), ("TP12 WOK", 128, 238.3),
+        ("TP13 ARM", 136, 238.3), ("TP14 RPO", 144, 238.3),
+        ("TP15 SAFE", 152, 238.3), ("TP16 RAIL", 160, 238.3),
+        # isolation-barrier warnings (R2-5)
+        ("DO NOT BRIDGE TO TP2", 34, 233.2),
+        ("DO NOT BRIDGE TO TP5", 110, 233.2),
+        # tap probe pads TP17-24 (R2-5): per-row G(ate)/D(rain) marks +
+        # a legend line below the Pico
+        ("TAP PROBES: D WEST / G EAST", 100, 62.5),
+        # REV_ID strap encoding (R2-6): rev-D reads GP21:GP20 = 0b01
+        ("REV ID D=01", 118, 73.4),
+    ]
+    for text, x, y in tp_legend:
+        add_text(board, text, x, y, 1.0, 0, layer=pcbnew.F_SilkS)
+    for y in (52.0, 56.0, 60.0, 64.0):
+        add_text(board, "G", 129.8, y + 1.75, 1.0, 0, layer=pcbnew.F_SilkS)
+        add_text(board, "D", 112.8, y + 2.2, 1.0, 0, layer=pcbnew.F_SilkS)
+
     # Cross-mate guards (review finding 2026-07-20, gate OG-3): J15 shares
     # its mating plug PN (1840447) with J3, and J16 shares its plug PN
     # (1840405) with J13 on the same edge — CP-MSTB 1734634 coding keys at
@@ -696,7 +792,10 @@ def add_silkscreen_labels(board: pcbnew.BOARD) -> None:
         ("KEYED: NOT J15", 25.0, 48.0, 90),   # below 'FIELD INPUTS' silk
         ("KEYED: NOT J3", 25.0, 204.0, 90),
         ("KEYED: NOT J16", 112.0, 218.0, 0),
-        ("KEYED: NOT J13 LAMP", 138.0, 218.0, 0),
+        # (138, 218) until round-2: the R2-4 protection cluster now owns
+        # y 215.3-222.9 there — moved below the cluster, still directly
+        # under J16 and clear of the TP strip.
+        ("KEYED: NOT J13 LAMP", 136.0, 226.5, 0),
     ]
     for text, x, y, rot in keyed:
         add_text(board, text, x, y, 1.2, rot, layer=pcbnew.F_SilkS, thickness=0.20)
@@ -744,7 +843,7 @@ def create_board(args) -> None:
     print(f"  nets from netlist: {len(nets)}")
     print(f"  placed footprints: {placed}")
     print(f"  mounting holes: 4")
-    print(f"  test pads: 16")
+    print(f"  test pads: 24 (16 rev-C-pattern + 8 tap probe pads TP17-24, R2-5)")
     print(f"  missing footprints: {len(set(missing_fp))}")
     print(f"  board: {BOARD_W:.0f}mm x {BOARD_H:.0f}mm, 4 copper layers")
     print()

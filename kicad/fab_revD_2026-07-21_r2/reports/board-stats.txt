@@ -1,0 +1,62 @@
+PCB statistics report
+=====================
+- Date: 7/21/2026 9:28:53 PM
+- Project: wsl-phase8b-revD
+- Board name: wsl-phase8b-revD
+
+Board
+-----
+- Width: 250.0000 mm
+- Height: 240.0000 mm
+- Area: 60000.00 mm²
+- Front copper area: 23354.459 mm²
+- Back copper area: 3078.955 mm²
+- Min track clearance: 0.2100 mm
+- Min track width: 0.2500 mm
+- Min drill diameter: 0.3000 mm
+- Board stackup thickness: 1.6000 mm
+
+- Front footprint area: 12062.827 mm²
+- Back footprint area: 1529.538 mm²
+- Front component density: 20.10 %
+- Back component density: 2.55 %
+Pads
+----
+- Through hole: 298
+- SMD: 646
+- Connector: 0
+- NPTH: 4
+- Castellated: 0
+- Press-fit: 0
+
+Vias
+----
+- Through vias: 583
+- Blind vias: 0
+- Buried vias: 0
+- Micro vias: 0
+
+Components
+----------
+
+|              | Front Side | Back Side | Total |
+|--------------|------------|-----------|-------|
+|THT:          |         64 |         0 |    64 |
+|SMD:          |        206 |         0 |   206 |
+|Unspecified:  |         29 |         0 |    29 |
+|Total:        |        299 |         0 |   299 |
+
+Drill holes
+-----------
+
+| Count | Shape |    X Size |    Y Size | Plated | Via/Pad | Start Layer | Stop Layer |
+|-------|-------|-----------|-----------|--------|---------|-------------|------------|
+|   298 | Round | 0.3000 mm | 0.3000 mm |    PTH |     Via |        F.Cu |       B.Cu |
+|   160 | Round | 0.8000 mm | 0.8000 mm |    PTH |     Pad |        F.Cu |       B.Cu |
+|   129 | Round | 0.3500 mm | 0.3500 mm |    PTH |     Via |        F.Cu |       B.Cu |
+|   128 | Round | 0.4000 mm | 0.4000 mm |    PTH |     Via |        F.Cu |       B.Cu |
+|    62 | Round | 1.4000 mm | 1.4000 mm |    PTH |     Pad |        F.Cu |       B.Cu |
+|    52 | Round | 1.3000 mm | 1.3000 mm |    PTH |     Pad |        F.Cu |       B.Cu |
+|    28 | Round | 0.5000 mm | 0.5000 mm |    PTH |     Via |        F.Cu |       B.Cu |
+|    24 | Round | 1.0000 mm | 1.0000 mm |    PTH |     Pad |        F.Cu |       B.Cu |
+|     4 | Round | 3.2000 mm | 3.2000 mm |   NPTH |     Pad |        F.Cu |       B.Cu |

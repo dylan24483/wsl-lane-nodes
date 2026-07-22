@@ -206,4 +206,26 @@ generate_kicad_netlist_revD = SchLib(tool=SKIDL).add_parts(*[
         Part(**{ 'name':'Q_PMOS_GSD', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Q_PMOS_GSD'}), 'ref_prefix':'Q', 'fplist':[''], 'footprint':'Package_TO_SOT_SMD:SOT-23', 'keywords':'transistor PMOS P-MOS P-MOSFET', 'description':'P-MOSFET transistor, gate/source/drain', 'datasheet':'', 'pins':[
             Pin(num='1',name='G',func=pin_types.INPUT,unit=1),
             Pin(num='2',name='S',func=pin_types.PASSIVE,unit=1),
-            Pin(num='3',name='D',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] })])
+            Pin(num='3',name='D',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] }),
+        Part(**{ 'name':'Polyfuse', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'Polyfuse'}), 'ref_prefix':'F', 'fplist':[''], 'footprint':'Fuse:Fuse_1206_3216Metric', 'keywords':'resettable fuse PTC PPTC polyfuse polyswitch', 'description':'Resettable fuse, polymeric positive temperature coefficient', 'datasheet':'', 'pins':[
+            Pin(num='1',func=pin_types.PASSIVE,unit=1),
+            Pin(num='2',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] }),
+        Part(**{ 'name':'SolderJumper_2_Open', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'SolderJumper_2_Open'}), 'ref_prefix':'JP', 'fplist':[''], 'footprint':'Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm', 'keywords':'solder jumper SPST', 'description':'Solder Jumper, 2-pole, open', 'datasheet':'', 'pins':[
+            Pin(num='1',name='A',func=pin_types.PASSIVE,unit=1),
+            Pin(num='2',name='B',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] }),
+        Part(**{ 'name':'TCA4307', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'TCA4307'}), 'ref_prefix':'U', 'fplist':None, 'footprint':'Package_SO:VSSOP-8_3x3mm_P0.65mm', 'keywords':None, 'description':'', 'datasheet':None, 'pins':[
+            Pin(num='1',name='EN',func=pin_types.INPUT),
+            Pin(num='2',name='SCLOUT',func=pin_types.BIDIR),
+            Pin(num='3',name='SCLIN',func=pin_types.BIDIR),
+            Pin(num='4',name='GND',func=pin_types.PWRIN),
+            Pin(num='5',name='READY',func=pin_types.OPENCOLL),
+            Pin(num='6',name='SDAIN',func=pin_types.BIDIR),
+            Pin(num='7',name='SDAOUT',func=pin_types.BIDIR),
+            Pin(num='8',name='VCC',func=pin_types.PWRIN)] }),
+        Part(**{ 'name':'SRV05-4', 'dest':TEMPLATE, 'tool':SKIDL, 'aliases':Alias({'SRV05-4'}), 'ref_prefix':'U', 'fplist':['Package_TO_SOT_SMD:SOT-23-6'], 'footprint':'Package_TO_SOT_SMD:SOT-23-6', 'keywords':'ESD protection diodes', 'description':'ESD Protection Diodes with Low Clamping Voltage, SOT-23-6', 'datasheet':'http://www.onsemi.com/pub/Collateral/SRV05-4-D.PDF', 'pins':[
+            Pin(num='1',name='IO1',func=pin_types.PASSIVE,unit=1),
+            Pin(num='2',name='VN',func=pin_types.PASSIVE,unit=1),
+            Pin(num='3',name='IO2',func=pin_types.PASSIVE,unit=1),
+            Pin(num='4',name='IO3',func=pin_types.PASSIVE,unit=1),
+            Pin(num='5',name='VP',func=pin_types.PASSIVE,unit=1),
+            Pin(num='6',name='IO4',func=pin_types.PASSIVE,unit=1)], 'unit_defs':[] })])

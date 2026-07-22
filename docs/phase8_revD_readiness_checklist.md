@@ -10,6 +10,14 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > evidence, recorded repo HEADs, and the definitive open-gates list:
 > **`phase8_revD_remediation_report_2026-07-21.md`**. The gates below remain the
 > operational checklist; where wording differs, the remediation spec + report govern
+
+> **2026-07-21 (later) — ROUND-2 remediation batch (Codex R2-*) landed on top.**
+> Board figures anywhere below are superseded: **271 parts / 223 nets, netclasses
+> 103/4/13/82/21, 24 test pads (TP17-24 tap probe pads), ERC baseline 1+39
+> (WVR-ERC-2)**; release DRC = `kicad/revD/DRC-revD-round2-r4.rpt`; as-current fab
+> package = **`kicad/fab_revD_2026-07-21_r2/`** (J16 protection stack, REV_ID
+> straps rev-D=0b01, Q17-Q20 = onsemi 2N7002LT1G C16338, 10M = C26108). Full
+> record: run-log "ROUND-2 BOARD/BOM/EXPORT BATCH" entry (FR-10…FR-14, WVR-ERC-2).
 > the remediated items (taps R1.9, DRU R2, firmware R3).
 
 > **⚠️ GATE SCOPE NOTE (the rev-C lesson, applied up front).** The rev-C checklist went green

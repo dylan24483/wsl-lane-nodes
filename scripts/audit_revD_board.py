@@ -4,12 +4,16 @@ Rev-D topological audit (COPY of scripts/audit_revB_board.py — the rev-C
 auditor is SACRED and untouched). Contract: docs/phase8_revD_change_spec.md
 §H.1/§I.6. Fails closed, same as rev-C.
 
-Expected rev-D class counts (spec delta table + remediation spec R1.7 —
-extend apply_netclasses_revD.py in LOCKSTEP with these):
-    Logic_Signal 97 / Logic_Power 4 / Safety_Rail 13 / Field_Sense 82 /
-    Machine_Output 21  = 217 nets total, 262 parts.
+Expected rev-D class counts (spec delta table + remediation spec R1.7 +
+round-2 remediation R2-4/R2-6 — extend apply_netclasses_revD.py in
+LOCKSTEP with these):
+    Logic_Signal 103 / Logic_Power 4 / Safety_Rail 13 / Field_Sense 82 /
+    Machine_Output 21  = 223 nets total, 271 parts.
     (2026-07-21 R1: -5 resistive tap parts, +15 unidirectional tap-stage
-    parts, +4 TAP_GATE_* nets -> Logic_Signal 93->97.)
+    parts, +4 TAP_GATE_* nets -> Logic_Signal 93->97.
+    2026-07-21 round 2 (Codex R2-4/R2-6): +9 parts (J16 protection stack +
+    REV_ID straps), +6 Logic_Signal nets (J16_5V/J16_3V3/J16_SDA/J16_SCL/
+    REV_ID0/REV_ID1) -> Logic_Signal 97->103.)
 A Safety_Rail count != 13 is an automatic stop-ship (spec §E — the rev-D spin
 adds ZERO safety-rail copper; SAFE_* taps are FMEA-gated out of scope).
 
@@ -32,19 +36,23 @@ FIELD_GND distinct with zero shared nodes (only the TMA-0505S straddles them),
 SAFE_* + RAIL_GATE present, M1 channel still DNP.
 New rev-D checks: EXACT SAFE_-net pad membership (no new pads beyond rev-C —
 guards spec §E scope), ADC_VCC5_SENSE on Pico GP26 (pin 31), TAP_ nets on
-Pico pins 21/22/24/25, J15/J16 identity, 252-part / 213-net totals.
+Pico pins 21/22/24/25, J15/J16 identity, 271-part / 223-net totals, the
+round-2 J16 protection-stack membership (J16 never directly on a rail/bus)
+and the REV_ID strap encoding (rev-D = 0b01).
 """
 import sys
 import collections
 import re
 
-EXPECTED = {"Logic_Signal": 97, "Logic_Power": 4, "Safety_Rail": 13,
+EXPECTED = {"Logic_Signal": 103, "Logic_Power": 4, "Safety_Rail": 13,
             "Field_Sense": 82, "Machine_Output": 21}
-EXPECTED_NETS = 217
-EXPECTED_PARTS = 262
+EXPECTED_NETS = 223
+EXPECTED_PARTS = 271
 # Board-level extras added by place_components_revD.py, NOT in the netlist
 # (same pattern as rev-C: the routed-manual board has 236 = 216 + 16 TP + 4 MK).
-EXPECTED_TESTPADS = 16
+# Round-2 remediation R2-5: +8 tap probe/fault-injection pads (TP17-TP24,
+# one gate + one drain pad per tap stage) -> 24 test pads.
+EXPECTED_TESTPADS = 24
 EXPECTED_MOUNTING = 4
 
 # --pre-route: placement-stage board (no routing yet). Route-stage checks
@@ -103,7 +111,9 @@ def classify_net(net_name):
             or net_name.startswith("WDOG_KICK")
             or net_name.startswith("WDOG_OK")
             or net_name.startswith("AND_")
-            or net_name.startswith("TAP_")):   # rev-D item E
+            or net_name.startswith("TAP_")     # rev-D item E
+            or net_name.startswith("J16_")     # round-2 R2-4 protected J16 nets
+            or net_name.startswith("REV_ID")): # round-2 R2-6 revision straps
         hits.append("Logic_Signal")
     return hits
 
@@ -209,19 +219,68 @@ def audit_common(net_pads, pico_ref, comp_info=None, board_mode=False):
     # FET drain only (the unidirectionality contract, Codex C1). The
     # TAP_GATE_* nets are the ONLY copper touching the observed side and
     # must NEVER reach the Pico.
+    # Round-2 remediation R2-5: the physical board adds ONE TestPoint probe
+    # pad per tap drain net (TP18/20/22/24) and per tap gate net
+    # (TP17/19/21/23) — board mode tolerates exactly one TP ref extra.
     for tap in ("TAP_NE555_OUT", "TAP_WDOG_KICK", "TAP_ARM_PERMIT", "TAP_RP2040_OK"):
         pads = net_pads.get(tap, [])
-        prefixes = sorted(r[0] for r, _ in pads)
-        need(len(pads) == 3 and prefixes == sorted(["Q", "R", pico_ref[0]]),
-             f"{tap} carries exactly (FET drain, pull-up R, Pico) pads (got {pads})")
+        core = [(r, p) for r, p in pads if not r.startswith("TP")]
+        tp_n = len(pads) - len(core)
+        prefixes = sorted(r[0] for r, _ in core)
+        ok = len(core) == 3 and prefixes == sorted(["Q", "R", pico_ref[0]])
+        if board_mode:
+            ok = ok and tp_n == 1
+            need(ok, f"{tap} carries exactly (FET drain, pull-up R, Pico) + 1 probe TP (got {pads})")
+        else:
+            ok = ok and tp_n == 0
+            need(ok, f"{tap} carries exactly (FET drain, pull-up R, Pico) pads (got {pads})")
     for gate in ("TAP_GATE_555", "TAP_GATE_KICK", "TAP_GATE_ARM", "TAP_GATE_RPOK"):
         pads = net_pads.get(gate, [])
-        refs = sorted(set(r for r, _ in pads))
+        core = [(r, p) for r, p in pads if not r.startswith("TP")]
+        tp_n = len(pads) - len(core)
+        refs = sorted(set(r for r, _ in core))
         expected_n = 2 if gate == "TAP_GATE_555" else 3  # 555 tap has no R_TAPG by design
-        need(gate in net_pads and len(pads) == expected_n
-             and all(r.startswith(("R", "Q")) for r in refs)
-             and pico_ref not in refs,
-             f"{gate} carries only R_TAPIN(/R_TAPG) + FET gate, never the Pico (got {pads})")
+        ok = (gate in net_pads and len(core) == expected_n
+              and all(r.startswith(("R", "Q")) for r in refs)
+              and pico_ref not in refs
+              and tp_n == (1 if board_mode else 0))
+        need(ok, f"{gate} carries only R_TAPIN(/R_TAPG) + FET gate"
+                 + (" + 1 probe TP" if board_mode else "")
+                 + f", never the Pico (got {pads})")
+
+    # ---- round-2 remediation (Codex R2-4): J16 protection-stack topology.
+    #      Fail-closed exact membership — the connector must NEVER regain a
+    #      direct rail/bus connection. Refs are stable generation order
+    #      (F1 polyfuse, JP1 solder link, U46 TCA4307, U47 SRV05-4,
+    #      R142/R143 card-side pull-ups). ----
+    def members(net):
+        return sorted((r, str(p)) for r, p in net_pads.get(net, []))
+    need(members("J16_5V") == sorted([("F1", "2"), ("J16", "1"), ("U47", "5")]),
+         f"J16_5V is exactly polyfuse-out + J16.1 + ESD VP (got {members('J16_5V')})")
+    need(members("J16_3V3") == sorted([("JP1", "2"), ("J16", "5"), ("U47", "1")]),
+         f"J16_3V3 is exactly solder-link-out + J16.5 + ESD IO (default-OPEN pin) (got {members('J16_3V3')})")
+    need(members("J16_SDA") == sorted([("U46", "7"), ("R142", "2"), ("J16", "3"), ("U47", "3")]),
+         f"J16_SDA is exactly TCA4307 SDAOUT + pull-up + J16.3 + ESD IO (got {members('J16_SDA')})")
+    need(members("J16_SCL") == sorted([("U46", "2"), ("R143", "2"), ("J16", "4"), ("U47", "6")]),
+         f"J16_SCL is exactly TCA4307 SCLOUT + pull-up + J16.4 + ESD IO (got {members('J16_SCL')})")
+    for raw_net in ("VCC_5V", "VCC_3V3", "I2C_SDA", "I2C_SCL"):
+        on_j16 = [(r, p) for r, p in net_pads.get(raw_net, []) if r == "J16"]
+        need(not on_j16,
+             f"{raw_net} never touches J16 directly (protection stack bypass!) (got {on_j16})")
+    need([(r, str(p)) for r, p in net_pads.get("I2C_SDA", []) if r == "U46"] == [("U46", "6")]
+         and [(r, str(p)) for r, p in net_pads.get("I2C_SCL", []) if r == "U46"] == [("U46", "3")],
+         "TCA4307 main-bus side is exactly SDAIN(6)/SCLIN(3) — in/out not swapped")
+
+    # ---- round-2 remediation (Codex R2-6): REV_ID straps. rev-D = 0b01:
+    #      REV_ID0 (GP20, pin 26) strapped HIGH, REV_ID1 (GP21, pin 27) LOW. ----
+    need(members("REV_ID0") == sorted([("R144", "2"), (pico_ref, "26")]),
+         f"REV_ID0 is exactly strap R144 + Pico pin 26/GP20 (got {members('REV_ID0')})")
+    need(members("REV_ID1") == sorted([("R145", "2"), (pico_ref, "27")]),
+         f"REV_ID1 is exactly strap R145 + Pico pin 27/GP21 (got {members('REV_ID1')})")
+    r144_rail = [(r, str(p)) for r, p in net_pads.get("VCC_3V3", []) if r == "R144"]
+    r145_rail = [(r, str(p)) for r, p in net_pads.get("GND", []) if r == "R145"]
+    need(r144_rail == [("R144", "1")] and r145_rail == [("R145", "1")],
+         "REV_ID encoding is rev-D = 0b01 (R144 pulls HIGH, R145 pulls LOW)")
 
 
 def audit_netlist(path):

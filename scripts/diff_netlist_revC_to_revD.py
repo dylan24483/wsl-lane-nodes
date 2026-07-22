@@ -44,12 +44,16 @@ OUT = os.path.join(OUT_DIR, "netlist_diff_revC_to_revD.txt")
 ALLOWED_TOUCHED_NETS = {
     "FIELD_WET_V",    # A: bleed pair; C: 8 x Rin_AUXn
     "FIELD_GND",      # A: bleed pair; C: J15 pins 9-10
-    "VCC_5V",         # D: divider top; F: J16 pin 1
+    "VCC_5V",         # D: divider top; R2-4: F_J16_5V polyfuse input
+                      #   (J16 pin 1 moved behind it, 2026-07-21 round 2)
     "GND",            # C: 8 x opto emitter; D: divider bottom + cap;
-                      # E(R1): 4 x Q_TAP source + 3 x R_TAPG; F: J16 pins 2,6
-    "VCC_3V3",        # C: 8 x Rpu_AUXn; E(R1): 4 x R_TAPPU; F: J16 pin 5
-    "I2C_SDA",        # F: J16 pin 3
-    "I2C_SCL",        # F: J16 pin 4
+                      # E(R1): 4 x Q_TAP source + 3 x R_TAPG; F: J16 pins 2,6;
+                      # R2-4: buffer GND + bypass + ESD VN/spare; R2-6: REV_ID1 strap
+    "VCC_3V3",        # C: 8 x Rpu_AUXn; E(R1): 4 x R_TAPPU; R2-4: solder-link
+                      #   input + buffer VCC/EN + card-side pull-ups + bypass
+                      #   (J16 pin 5 moved behind the link); R2-6: REV_ID0 strap
+    "I2C_SDA",        # R2-4: TCA4307 SDAIN (J16 pin 3 moved behind the buffer)
+    "I2C_SCL",        # R2-4: TCA4307 SCLIN (J16 pin 4 moved behind the buffer)
     "NE555_OUT",      # E(R1): R_TAPIN_555 series input
     "WDOG_KICK",      # E(R1): R_TAPIN_KICK series input
     "ARM_PERMIT",     # E(R1): R_TAPIN_ARM series input
@@ -72,6 +76,11 @@ EXPECTED_ADDED_TAGS = (
     + [f"Q_TAP_{s}" for s in _TAP_SUFFIXES]                            # E (R1)
     + [f"R_TAPG_{s}" for s in ("KICK", "ARM", "RPOK")]                 # E (R1; 555 has none by design)
     + ["J_EXTI2C"]                                                     # F
+    # Round-2 remediation 2026-07-21 (Codex R2-4 J16 protection stack +
+    # R2-6 REV_ID straps):
+    + ["F_J16_5V", "JP_J16_3V3", "U_I2C_BUF", "C_I2C_BUF",
+       "R_J16_SDA_PU", "R_J16_SCL_PU", "D_ESD_J16",
+       "R_REVID0", "R_REVID1"]
 )
 
 EXPECTED_ADDED_NETS = (
@@ -79,6 +88,8 @@ EXPECTED_ADDED_NETS = (
     + ["ADC_VCC5_SENSE"]                                               # D
     + ["TAP_NE555_OUT", "TAP_WDOG_KICK", "TAP_ARM_PERMIT", "TAP_RP2040_OK"]  # E
     + [f"TAP_GATE_{s}" for s in _TAP_SUFFIXES]                         # E (R1)
+    + ["J16_5V", "J16_3V3", "J16_SDA", "J16_SCL"]                      # R2-4
+    + ["REV_ID0", "REV_ID1"]                                           # R2-6
 )
 
 # ---------------------------------------------------------------------------
@@ -108,9 +119,25 @@ for _i in range(4, 12):                                                # C: AUX 
 for _s in _TAP_SUFFIXES:                                               # E (R1)
     EXPECTED_ADDED_PART_SPECS[f"R_TAPIN_{_s}"] = ("1M", _FP_R)
     EXPECTED_ADDED_PART_SPECS[f"R_TAPPU_{_s}"] = ("10k", _FP_R)
-    EXPECTED_ADDED_PART_SPECS[f"Q_TAP_{_s}"] = (f"2N7002 TAP {_s}", _FP_SOT23)
+    # R2-3 (2026-07-21): tap FETs MPN-locked to onsemi 2N7002LT1G in the
+    # value field (the R1.5 cold-corner margin depends on its documented
+    # V_GS(th)/tempco; the generic JSMSEMI part documents neither).
+    EXPECTED_ADDED_PART_SPECS[f"Q_TAP_{_s}"] = (f"2N7002LT1G TAP {_s}", _FP_SOT23)
 for _s in ("KICK", "ARM", "RPOK"):                                     # E (R1; 555 none by design)
     EXPECTED_ADDED_PART_SPECS[f"R_TAPG_{_s}"] = ("10M", _FP_R)
+# Round-2 remediation (Codex R2-4 / R2-6, 2026-07-21):
+EXPECTED_ADDED_PART_SPECS.update({
+    "F_J16_5V": ("1206L020YR 200mA", "Fuse:Fuse_1206_3216Metric"),
+    "JP_J16_3V3": ("3V3 LINK OPEN DNP",
+                   "Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm"),
+    "U_I2C_BUF": ("TCA4307DGKR", "Package_SO:VSSOP-8_3x3mm_P0.65mm"),
+    "C_I2C_BUF": ("0.1uF", _FP_C),
+    "R_J16_SDA_PU": ("4.7k", _FP_R),
+    "R_J16_SCL_PU": ("4.7k", _FP_R),
+    "D_ESD_J16": ("SRV05-4", "Package_TO_SOT_SMD:SOT-23-6"),
+    "R_REVID0": ("10k", _FP_R),
+    "R_REVID1": ("10k", _FP_R),
+})
 assert sorted(EXPECTED_ADDED_PART_SPECS) == sorted(EXPECTED_ADDED_TAGS), \
     "EXPECTED_ADDED_PART_SPECS and EXPECTED_ADDED_TAGS moved out of lockstep"
 
@@ -137,6 +164,19 @@ for _s, (_tapnet, _pico_pin) in _TAP_RAIL.items():                     # E (R1)
     if _s != "555":
         _gate.add((f"R_TAPG_{_s}", "1"))     # 10M gate bleed (555 has none)
     EXPECTED_ADDED_NET_NODES[f"TAP_GATE_{_s}"] = _gate
+# Round-2 remediation (Codex R2-4 / R2-6, 2026-07-21). TCA4307 pin numbers
+# per TI SCPS270B: 1 EN / 2 SCLOUT / 3 SCLIN / 4 GND / 5 READY(NC) /
+# 6 SDAIN / 7 SDAOUT / 8 VCC. SRV05-4: IO1=1 VN=2 IO2=3 IO3=4 VP=5 IO4=6.
+EXPECTED_ADDED_NET_NODES.update({
+    "J16_5V": {("F_J16_5V", "2"), ("J_EXTI2C", "1"), ("D_ESD_J16", "5")},
+    "J16_3V3": {("JP_J16_3V3", "2"), ("J_EXTI2C", "5"), ("D_ESD_J16", "1")},
+    "J16_SDA": {("U_I2C_BUF", "7"), ("R_J16_SDA_PU", "2"),
+                ("J_EXTI2C", "3"), ("D_ESD_J16", "3")},
+    "J16_SCL": {("U_I2C_BUF", "2"), ("R_J16_SCL_PU", "2"),
+                ("J_EXTI2C", "4"), ("D_ESD_J16", "6")},
+    "REV_ID0": {("R_REVID0", "2"), ("RP_PICO", "26")},   # GP20, strap HIGH
+    "REV_ID1": {("R_REVID1", "2"), ("RP_PICO", "27")},   # GP21, strap LOW
+})
 assert sorted(EXPECTED_ADDED_NET_NODES) == sorted(EXPECTED_ADDED_NETS), \
     "EXPECTED_ADDED_NET_NODES and EXPECTED_ADDED_NETS moved out of lockstep"
 
@@ -147,17 +187,27 @@ EXPECTED_TOUCHED_NET_ADDITIONS = {
                   ("R_WET_BLEED1", "2"), ("R_WET_BLEED2", "2")},
     "FIELD_WET_V": ({("R_WET_BLEED1", "1"), ("R_WET_BLEED2", "1")}
                     | {(f"Rin_AUX{i}", "1") for i in range(4, 12)}),
-    "VCC_5V": {("J_EXTI2C", "1"), ("R_ADC5_TOP", "1")},
+    # R2-4 (2026-07-21): J16 pin 1 now lands on J16_5V (an ADDED net);
+    # VCC_5V's only J16-related addition is the polyfuse input.
+    "VCC_5V": {("F_J16_5V", "1"), ("R_ADC5_TOP", "1")},
     "GND": ({("C_ADC5", "2"), ("J_EXTI2C", "2"), ("J_EXTI2C", "6"),
              ("R_ADC5_BOT", "2")}
             | {(f"OPTO_AUX{i}", "3") for i in range(4, 12)}
             | {(f"Q_TAP_{s}", "2") for s in _TAP_SUFFIXES}
-            | {(f"R_TAPG_{s}", "2") for s in ("KICK", "ARM", "RPOK")}),
-    "VCC_3V3": ({("J_EXTI2C", "5")}
-                | {(f"R_TAPPU_{s}", "1") for s in _TAP_SUFFIXES}
-                | {(f"Rpu_AUX{i}", "1") for i in range(4, 12)}),
-    "I2C_SDA": {("J_EXTI2C", "3")},
-    "I2C_SCL": {("J_EXTI2C", "4")},
+            | {(f"R_TAPG_{s}", "2") for s in ("KICK", "ARM", "RPOK")}
+            # R2-4/R2-6: buffer GND, bypass, ESD VN + spare IO, REV_ID1 strap
+            | {("U_I2C_BUF", "4"), ("C_I2C_BUF", "2"),
+               ("D_ESD_J16", "2"), ("D_ESD_J16", "4"), ("R_REVID1", "1")}),
+    "VCC_3V3": ({(f"R_TAPPU_{s}", "1") for s in _TAP_SUFFIXES}
+                | {(f"Rpu_AUX{i}", "1") for i in range(4, 12)}
+                # R2-4: J16 pin 5 moved behind the solder link; the rail's
+                # additions are the link input, buffer VCC+EN, card-side
+                # pull-up tops, bypass; R2-6: REV_ID0 strap
+                | {("JP_J16_3V3", "1"), ("U_I2C_BUF", "8"), ("U_I2C_BUF", "1"),
+                   ("R_J16_SDA_PU", "1"), ("R_J16_SCL_PU", "1"),
+                   ("C_I2C_BUF", "1"), ("R_REVID0", "1")}),
+    "I2C_SDA": {("U_I2C_BUF", "6")},   # R2-4: SDAIN (J16 pin 3 now buffered)
+    "I2C_SCL": {("U_I2C_BUF", "3")},   # R2-4: SCLIN (J16 pin 4 now buffered)
     "NE555_OUT": {("R_TAPIN_555", "1")},
     "WDOG_KICK": {("R_TAPIN_KICK", "1")},
     "ARM_PERMIT": {("R_TAPIN_ARM", "1")},

@@ -884,6 +884,22 @@
       },
       {
         "netclass": "Logic_Signal",
+        "pattern": "J16_3V3"
+      },
+      {
+        "netclass": "Logic_Signal",
+        "pattern": "J16_5V"
+      },
+      {
+        "netclass": "Logic_Signal",
+        "pattern": "J16_SCL"
+      },
+      {
+        "netclass": "Logic_Signal",
+        "pattern": "J16_SDA"
+      },
+      {
+        "netclass": "Logic_Signal",
         "pattern": "LED_GATE_L_FIRST"
       },
       {
@@ -1021,6 +1037,14 @@
       {
         "netclass": "Safety_Rail",
         "pattern": "RELAY_ENABLE_RAIL"
+      },
+      {
+        "netclass": "Logic_Signal",
+        "pattern": "REV_ID0"
+      },
+      {
+        "netclass": "Logic_Signal",
+        "pattern": "REV_ID1"
       },
       {
         "netclass": "Logic_Signal",

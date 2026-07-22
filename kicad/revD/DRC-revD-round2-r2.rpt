@@ -1,0 +1,26 @@
+** Drc report for wsl-phase8b-revD.kicad_pcb **
+** Created on 2026-07-21T21:20:03 **
+** Report includes: Errors, Warnings, Exclusions **
+
+** Found 1 DRC violations **
+[starved_thermal]: Thermal relief connection to zone incomplete (layer F.Cu; zone min spoke count 2; actual 1)
+    Local override; error
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+    @(141.4375 mm, 217.2000 mm): Pad 2 [GND] of U47 on F.Cu
+
+** Found 1 unconnected pads **
+[unconnected_items]: Missing connection between items
+    Local override; error
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+    @(80.4000 mm, 4.5000 mm): Zone [GND] on F.Cu, priority 0
+
+** Found 0 Footprint errors **
+
+** Ignored checks **
+    - Footprint has no courtyard defined
+    - Track endpoint not centered on via
+    - Tuning profile track geometries
+    - Footprint doesn't match symbol's footprint filters
+    - Footprint component type doesn't match footprint pads
+
+** End of Report **

@@ -1,5 +1,14 @@
 # Phase 8 Rev-D — Codex NO-GO Remediation Report (2026-07-21)
 
+> **SUPERSESSION NOTE (2026-07-21, later):** Codex re-audited this campaign under a
+> fabrication-readiness bar and issued round-2 findings (R2-1…R2-17); the 15/2/1
+> tally below is therefore the ROUND-1 closing state, not the final word. The
+> round-2 hardware slice (R2-2/R2-3/R2-4-board/R2-5-board/R2-6-straps/R2-15) is
+> recorded in the run log ("ROUND-2 BOARD/BOM/EXPORT BATCH") — board is now
+> 271/223, the as-current fab package is `kicad/fab_revD_2026-07-21_r2/`, and the
+> release DRC evidence is `DRC-revD-round2-r4.rpt`. Software/firmware slices land
+> in their own commits.
+
 **Scope:** the 2026-07-21 Codex NO-GO audit against the routed rev-D lane-controller board
 and its software/release chain — 3 critical / 8 high / 7 medium findings. Dylan's
 instruction: remediate ALL issues. This report is the campaign's closing record: final

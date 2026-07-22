@@ -7,8 +7,8 @@
 > name WRONG parts on a rev-D board (46 refdes shifted) and MUST NOT be used here.
 >
 > Sources (sha256 at generation):
-> - `kicad/wsl-phase8b-revD.net` — `ce52ed7fcdd145a3…`
-> - `kicad/revD/wsl-phase8b-revD.kicad_pcb` — `c2743ea2534b54e7…`
+> - `kicad/wsl-phase8b-revD.net` — `5c62db7b4062d48f…`
+> - `kicad/revD/wsl-phase8b-revD.kicad_pcb` — `e207b7863f424373…`
 > - `kicad/revD/netlist_diff_revC_to_revD.txt` (REFDES_SHIFT cross-reference)
 > - `firmware/rp2040/config.h` FW_VERSION — `phase8b-rp2040 v1.2.1` (every firmware reference below)
 >
@@ -108,6 +108,14 @@ R106 is now a lamp resistor).
 | TP14 | RP2040_OK | (144, 236) | LOGIC |
 | TP15 | SAFE_STOP_RETURN | (152, 236) | LOGIC |
 | TP16 | RELAY_ENABLE_RAIL | (160, 236) | LOGIC |
+| TP17 | TAP_GATE_555 | (128, 54) | LOGIC |
+| TP18 | TAP_NE555_OUT | (113, 52) | LOGIC |
+| TP19 | TAP_GATE_KICK | (128, 58) | LOGIC |
+| TP20 | TAP_WDOG_KICK | (113, 56) | LOGIC |
+| TP21 | TAP_GATE_ARM | (128, 62) | LOGIC |
+| TP22 | TAP_ARM_PERMIT | (113, 60) | LOGIC |
+| TP23 | TAP_GATE_RPOK | (128, 66) | LOGIC |
+| TP24 | TAP_RP2040_OK | (113, 64) | LOGIC |
 
 ## 3. Key functional groups (positions from the routed board)
 
@@ -155,10 +163,10 @@ R106 is now a lamp resistor).
 
 | Ref | Function (tag) | Value | Location (x, y) mm | Band | DNP |
 |---|---|---|---|---|---|
-| Q17 | Q_TAP_555 | 2N7002 TAP 555 | (116.0, 52.0) | LOGIC |  |
-| Q18 | Q_TAP_KICK | 2N7002 TAP KICK | (116.0, 56.0) | LOGIC |  |
-| Q19 | Q_TAP_ARM | 2N7002 TAP ARM | (116.0, 60.0) | LOGIC |  |
-| Q20 | Q_TAP_RPOK | 2N7002 TAP RPOK | (116.0, 64.0) | LOGIC |  |
+| Q17 | Q_TAP_555 | 2N7002LT1G TAP 555 | (116.0, 52.0) | LOGIC |  |
+| Q18 | Q_TAP_KICK | 2N7002LT1G TAP KICK | (116.0, 56.0) | LOGIC |  |
+| Q19 | Q_TAP_ARM | 2N7002LT1G TAP ARM | (116.0, 60.0) | LOGIC |  |
+| Q20 | Q_TAP_RPOK | 2N7002LT1G TAP RPOK | (116.0, 64.0) | LOGIC |  |
 | R131 | R_TAPIN_555 | 1M | (146.0, 33.0) | LOGIC |  |
 | R132 | R_TAPPU_555 | 10k | (120.5, 52.0) | LOGIC |  |
 | R133 | R_TAPIN_KICK | 1M | (136.0, 47.0) | LOGIC |  |
@@ -208,6 +216,7 @@ stage deliberately has none** (push-pull source, never high-Z); do not report it
 | J14 | J_SAFE | J_SAFETY | (167.0, 10.0) | LOGIC |  |
 | J15 | J_SLOWC | J_SLOW_IN_C | (9.0, 222.0) | FIELD |  |
 | J16 | J_EXTI2C | J_EXT_I2C | (128.0, 206.0) | LOGIC |  |
+| JP1 | JP_J16_3V3 | 3V3 LINK OPEN DNP | (144.6, 218.9) | LOGIC | DNP |
 
 ## 4. First-article procedures (FA-1 … FA-11)
 

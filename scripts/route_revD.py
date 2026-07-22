@@ -278,11 +278,10 @@ def route_3v3(r) -> int:
     r.via("VCC_3V3", (137.9, 78.0)); added += 1
     added += r.poly("VCC_3V3", [(137.9, 78.0), (V33_TRUNK_X, 78.0)], B_CU)
     r.via("VCC_3V3", (V33_TRUNK_X, 78.0)); added += 1
-    # J16.5 (142,206)
-    added += r.poly("VCC_3V3", [(142.0, 206.0), (142.0, 211.4), (142.15, 212.4)], F_CU)
-    r.via("VCC_3V3", (142.15, 212.4)); added += 1
-    added += r.poly("VCC_3V3", [(142.15, 212.4), (V33_TRUNK_X, 212.4)], B_CU)
-    r.via("VCC_3V3", (V33_TRUNK_X, 212.4)); added += 1
+    # J16.5 feed DELETED (round-2 R2-4): J16 pin 5 is now the J16_3V3 net
+    # behind the default-OPEN solder link JP1; VCC_3V3 instead feeds the
+    # protection cluster via the IN1 y=218.6 spine (see
+    # route_revD_logic.route_j16_protection_and_revid).
     # TP3 (120,229)
     r.via("VCC_3V3", (V33_TRUNK_X, 224.1)); added += 1
     added += r.poly("VCC_3V3", [(V33_TRUNK_X, 224.1), (120.0, 224.1), (120.0, 229.0)], F_CU)
@@ -337,9 +336,10 @@ def route_5v(r) -> int:
     added += r.poly("VCC_5V", [(114.0, 41.913), (115.4, 41.913), (115.4, 40.0)], F_CU)
     r.via("VCC_5V", (115.4, 40.0)); added += 1
     added += r.poly("VCC_5V", [(115.4, 40.0), (V5_TRUNK_X, 40.0)], B_CU)
-    # J16.1 (128,206) on IN1 (clears the WDOG_KICK tail)
-    added += r.poly("VCC_5V", [(128.0, 206.0), (128.0, 210.8), (V5_TRUNK_X, 210.8)], IN1_CU)
-    r.via("VCC_5V", (V5_TRUNK_X, 210.8)); added += 1
+    # J16.1 feed DELETED (round-2 R2-4): J16 pin 1 is now the J16_5V net
+    # behind the F_J16_5V polyfuse; VCC_5V instead feeds F1 pad 1 via a twin
+    # via dropped ON the TP1 IN1 y=217 run (see
+    # route_revD_logic.route_j16_protection_and_revid).
     # J13.1 (104,206) on IN1 (dodges the TRIG/KICK verticals)
     added += r.poly("VCC_5V", [(104.0, 206.0), (104.0, 203.7), (V5_TRUNK_X, 203.7)], IN1_CU)
     r.via("VCC_5V", (V5_TRUNK_X, 203.7)); added += 1
@@ -835,6 +835,7 @@ def main() -> int:
         "uart": logic.route_uart(r),
         "mcp_int": logic.route_mcp_int(r),
         "taps_adc": logic.route_taps_and_adc(r),
+        "j16_revid": logic.route_j16_protection_and_revid(r),
         "watchdog": route_watchdog(r),
         "header_safety": route_header_safety(r),
         "relay_drivers": route_relay_drivers(r),

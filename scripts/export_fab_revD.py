@@ -16,11 +16,16 @@ Contract (spec step I.7 / change-list P3 / remediation task H6):
 - BOM <-> CPL <-> netlist equality is ASSERTED, not assumed: every non-testpoint/mounting
   footprint on the board must exist in kicad/wsl-phase8b-revD.net with the same value and
   footprint, the DNP set must match the generator's DNP rule exactly, and the CPL refs must
-  equal the placed (non-DNP) set exactly. Pinned counts: 262 parts / 27 DNP / 235 placed /
-  218 JLC-placed / 17 hand-solder.
-  NOTE: the remediation tasking circulated "252" as the part count — that was the
-  PRE-remediation figure; remediation spec R1.7 moved it 252 -> 262 (-5 resistive tap
-  parts, +15 unidirectional-stage parts). 262 is asserted here.
+  equal the placed (non-DNP) set exactly. Pinned counts: 271 parts / 28 DNP / 243 placed /
+  226 JLC-placed / 17 hand-solder.
+  (History: 252 pre-remediation -> 262 after R1.7 -> 271 after the 2026-07-21 round-2
+  batch: +9 parts for the R2-4 J16 protection stack and R2-6 REV_ID straps; the JP1
+  default-OPEN solder link is the 28th DNP.)
+- Round-2 hard locks (Codex 2026-07-21): Q17-Q20 -> onsemi 2N7002LT1G C16338 (R2-3);
+  R135/R138/R141 -> UNI-ROYAL 10M C26108 with MATCH-AT-UPLOAD rows forbidden (R2-15);
+  U46 -> TCA4307DGKR C880333, U47 -> Semtech SRV05-4.TCT C13612, F1 -> Littelfuse
+  1206L020YR C207035 (R2-4). Source paths DERIVE from --rev so a rev-D board can never
+  be exported under another revision's label (R2-15).
 - D_PROT is HARD-LOCKED to MDD SS34, LCSC C8678, SMA/DO-214AC (run-log FR-3). The script
   fails if D17 is not SS34/D_SMA, if any SS14 survives anywhere, or if the JLC BOM line for
   SS34 carries anything but C8678/MDD/SMA.
@@ -53,17 +58,20 @@ import pcbnew
 
 ROOT = Path(__file__).resolve().parents[1]
 KICAD_CLI = Path(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe")
-BOARD_PATH = ROOT / "kicad" / "revD" / "wsl-phase8b-revD.kicad_pcb"
-NETLIST_PATH = ROOT / "kicad" / "wsl-phase8b-revD.net"
+# R2-15 (Codex round-2, 2026-07-21): the source board/netlist paths are
+# DERIVED from --rev inside main() — a rev-D source can no longer be exported
+# under another revision's label (the old code hard-coded revD sources while
+# `--rev` freely renamed every emitted file). Any other --rev now fails on
+# "missing routed board" unless that revision's sources actually exist.
 DOCS_HARNESS_BOM = ROOT / "docs" / "phase8_revD_harness_bom.csv"
 
 # ---- pinned release counts (fail closed on ANY drift) -------------------------------
-EXPECTED_NETLIST_PARTS = 262     # remediation spec R1.7 (252 pre-remediation + 10 net)
-EXPECTED_DNP = 27                # 22 value-DNP + 5 M1-optional (Dfly_M1/J12/Qk_M1/Rb_M1/Rpd_M1)
-EXPECTED_PLACED = 235            # 262 - 27
+EXPECTED_NETLIST_PARTS = 271     # R1.7 (262) + round-2 R2-4/R2-6 (+9)
+EXPECTED_DNP = 28                # 22 value-DNP + 5 M1-optional + JP1 (default-OPEN link)
+EXPECTED_PLACED = 243            # 271 - 28
 EXPECTED_HAND_SOLDER = 17        # A1, J1-J11 (J12 is DNP), J13-J16, U45
-EXPECTED_JLC_PLACED = 218        # 235 - 17
-EXPECTED_JLC_LINES = 22          # unique locked JLC part lines
+EXPECTED_JLC_PLACED = 226        # 243 - 17
+EXPECTED_JLC_LINES = 26          # 22 + 2N7002LT1G + TCA4307 + SRV05-4 + 1206L020YR
 
 GERBER_LAYERS = ",".join(
     [
@@ -155,7 +163,45 @@ PART_LOCK: dict[tuple[str, str], dict[str, str]] = {
     ("2N7002", "SOT-23"): {
         "lcsc": "C916396", "mpn": "2N7002", "manufacturer": "JSMSEMI",
         "class": "Extended", "locked_spec": "2N7002 N-channel MOSFET, SOT-23",
-        "note": "Serves both the Qled_* lamp drivers and the Q_TAP_* rail-tap stages (FR-8: V_GS +/-20V abs max).",
+        "note": "Qled_* lamp drivers ONLY. The Q_TAP_* rail-tap stages are MPN-locked "
+                "to onsemi 2N7002LT1G (R2-3/FR-10) - do NOT merge the lines.",
+    },
+    # R2-3 (Codex round-2, 2026-07-21): tap-stage FETs Q17-Q20 HARD-LOCKED to
+    # onsemi 2N7002LT1G - the R1.5 cold-corner gate-drive margin (+0.12-0.14V
+    # worst-stack) is derived from onsemi's published V_GS(th) 1.0-2.5V @
+    # 250uA / tc ~-5mV/C and V_GS abs-max +/-20V; the JSMSEMI datasheet
+    # documents none of these. LCSC C16338 verified in stock 2026-07-21.
+    ("2N7002LT1G", "SOT-23"): {
+        "lcsc": "C16338", "mpn": "2N7002LT1G", "manufacturer": "onsemi",
+        "class": "Extended",
+        "locked_spec": "2N7002LT1G N-channel MOSFET 60V 115mA, SOT-23",
+        "note": "HARD LOCK (R2-3/FR-10): tap stages Q17-Q20 only. Substitution "
+                "requires a documented V_GS(th)/tempco datasheet review "
+                "(Nexperia 2N7002-QR is the approved alternate).",
+    },
+    # R2-4 (Codex round-2): J16 protection stack parts.
+    ("1206L020YR 200mA", "Fuse_1206_3216Metric"): {
+        "lcsc": "C207035", "mpn": "1206L020YR", "manufacturer": "Littelfuse",
+        "class": "Extended",
+        "locked_spec": "PTC resettable fuse 200mA hold / 420mA trip / 24V, 1206",
+        "note": "F_J16_5V current limit for the J16 module supply (R2-4). "
+                "Any substitute must be 1206, hold >= 2x the 100mA module "
+                "allowance and trip << the SS34 3A budget.",
+    },
+    ("TCA4307DGKR", "VSSOP-8_3x3mm_P0.65mm"): {
+        "lcsc": "C880333", "mpn": "TCA4307DGKR", "manufacturer": "Texas Instruments",
+        "class": "Extended",
+        "locked_spec": "TCA4307 hot-swap I2C buffer w/ stuck-bus recovery, VSSOP-8 (DGK)",
+        "note": "Critical: stuck-bus RECOVERY variant (TCA4307, 40ms + SCL pulses); "
+                "do not substitute plain buffers (TCA9517 etc). Pinout verified vs "
+                "TI SCPS270B (FR-13).",
+    },
+    ("SRV05-4", "SOT-23-6"): {
+        "lcsc": "C13612", "mpn": "SRV05-4.TCT", "manufacturer": "SEMTECH",
+        "class": "Extended",
+        "locked_spec": "SRV05-4 4-channel ESD/TVS array 5V, SOT-23-6",
+        "note": "Connector-side ESD for J16 (R2-4). Semtech original locked; "
+                "clone SRV05-4s exist under the same marking - keep the Semtech line.",
     },
     ("AO3400A kick", "SOT-23"): {"alias": ("AO3400A", "SOT-23")},
     ("AO3400A wdog", "SOT-23"): {"alias": ("AO3400A", "SOT-23")},
@@ -197,15 +243,25 @@ PART_LOCK: dict[tuple[str, str], dict[str, str]] = {
     ("1M", "R_0805_2012Metric"): {
         "lcsc": "C17514", "mpn": "0805W8F1004T5E", "manufacturer": "UNI-ROYAL",
         "class": "Basic", "locked_spec": "1M 1% 1/8W 0805 resistor",
-        "note": "R_TAPIN_* injection limiters (remediation R1.4: never reduce below ~825k).",
+        # R2-2 (2026-07-21): the "~825k" floor here was the RETRACTED 25C-only
+        # derivation (run-log RV-5); the binding floor is 1M (>=917k vs the
+        # derated 85C 3.6uA partial-hold onset, remediation spec R1.4).
+        "note": "R_TAPIN_* injection limiters (remediation R1.4 corrected: never "
+                "reduce below 1M - the >=917k derated-onset floor; the old ~825k "
+                "figure was retracted, Codex R2-2).",
     },
     ("10M", "R_0805_2012Metric"): {
-        "lcsc": "MATCH-AT-UPLOAD", "mpn": "0805W8F1005T5E", "manufacturer": "UNI-ROYAL",
+        # R2-15 (2026-07-21): identity PINNED - C26108 verified on LCSC as
+        # UNI-ROYAL 0805W8F1005T5E 10M 1% 0805 (the MATCH-AT-UPLOAD row is
+        # dead). Listed out-of-stock at LCSC retail 2026-07-21: confirm JLC
+        # assembly stock at order time; any substitute must be >=10M 0805 1%
+        # with its C-number fetch-verified (C325772 was a hallucinated match,
+        # rejected - see run log H6).
+        "lcsc": "C26108", "mpn": "0805W8F1005T5E", "manufacturer": "UNI-ROYAL",
         "class": "Extended", "locked_spec": "10M 1% 1/8W 0805 resistor",
-        "note": "LCSC C-number NOT pre-verified (2026-07-21 lookup found the MPN but no "
-                "confirmable C-number) - part-match by MPN at JLC upload and record the "
-                "matched C-number in the order notes. R_TAPG_* gate pulldowns; any "
-                "substitute must be >=10M 0805 1%.",
+        "note": "R_TAPG_* gate pulldowns (R135/R138/R141). Identity pinned "
+                "C26108 (R2-15); verify stock at order time (OOS at LCSC "
+                "retail 2026-07-21).",
     },
     ("MCP23017 MCP_IN_A", "SOIC-28W_7.5x17.9mm_P1.27mm"): {"alias": ("MCP23017", "SOIC-28W_7.5x17.9mm_P1.27mm")},
     ("MCP23017 MCP_IN_B", "SOIC-28W_7.5x17.9mm_P1.27mm"): {"alias": ("MCP23017", "SOIC-28W_7.5x17.9mm_P1.27mm")},
@@ -231,9 +287,11 @@ PART_LOCK: dict[tuple[str, str], dict[str, str]] = {
 # alias fan-outs: MMBT3904 <relay/AND> tags, 2N7002 LED/TAP tags, PC817 channel labels
 for _lbl in ["S", "T", "SP", "BE", "M", "M2", "AND ARM", "AND RP_OK"]:
     PART_LOCK[(f"MMBT3904 {_lbl}", "SOT-23")] = {"alias": ("MMBT3904", "SOT-23")}
-for _lbl in ["LED L_FIRST", "LED L_SECOND", "LED L_STRIKE", "LED L_FOUL",
-             "TAP 555", "TAP KICK", "TAP ARM", "TAP RPOK"]:
+for _lbl in ["LED L_FIRST", "LED L_SECOND", "LED L_STRIKE", "LED L_FOUL"]:
     PART_LOCK[(f"2N7002 {_lbl}", "SOT-23")] = {"alias": ("2N7002", "SOT-23")}
+# R2-3: the tap stages alias to the onsemi hard-lock line, never the generic.
+for _lbl in ["TAP 555", "TAP KICK", "TAP ARM", "TAP RPOK"]:
+    PART_LOCK[(f"2N7002LT1G {_lbl}", "SOT-23")] = {"alias": ("2N7002LT1G", "SOT-23")}
 for _lbl in [
     "SA", "SB", "SC", "TA1", "TA2", "TB", "DIELL_L", "DIELL_R",
     "GS1", "GS2", "GS3", "GS4", "GS5", "GS6", "GS7", "GS8", "GS9", "GS10",
@@ -375,7 +433,14 @@ HARNESS_ROWS = [
                     "2026-07-21, was wrongly specced 0.75-1.0mm2 insulated)",
      "Coding / marking": "none (unique pole count); carries the Candidate-C TBSC jumper on 1-2",
      "Status": "Locked", "Notes": "+1 spare per lane (build-sheet section 4)."},
-    {"Mate For": "J3/J15/J13/J16 coding", "Qty per board": "2 positions x 4 connectors (1 star = 6 profiles; buy 2 stars/board min + spares for the sacrificial pair)",
+    {"Mate For": "J3/J15/J13/J16 coding",
+     # R2-15 (2026-07-21): quantity CORRECTED. Only the PLUG side takes a
+     # profile (COR-5: the header side is a rib REMOVAL, no part) and each
+     # coded plug takes exactly ONE profile at its coded pole -> 4 profiles
+     # per board, so one 6-profile star covers a board with 2 spares. The
+     # old "2 positions x 4 connectors" line double-counted (8/board).
+     "Qty per board": "4 profiles (1 per coded plug: J3@1, J15@10, J13@1, J16@6) = 1 star of 6; "
+                      "buy 2 stars min for the pilot (FA-8 sacrificial-pair proof + spares)",
      "Manufacturer": "Phoenix Contact", "MFR Part #": "1734634",
      "Description": "CP-MSTB coding profile star (6 profiles per star)",
      "Termination": "n/a",
@@ -482,14 +547,23 @@ def main() -> int:
 
     rev = args.rev.upper()
     stem = f"wsl-phase8b-rev{rev}"
+    # R2-15: sources DERIVE from the requested revision — the package label
+    # and the design files can never disagree. (--rev C would look for
+    # kicad/revC/wsl-phase8b-revC.* and fail, not silently relabel rev-D.)
+    board_path = ROOT / "kicad" / f"rev{rev}" / f"{stem}.kicad_pcb"
+    netlist_path = ROOT / "kicad" / f"{stem}.net"
+    global BOARD_PATH, NETLIST_PATH
+    BOARD_PATH, NETLIST_PATH = board_path, netlist_path
     out = Path(args.out) if args.out else ROOT / "kicad" / f"fab_rev{rev}_{date.today().isoformat()}"
     if not out.is_absolute():
         out = ROOT / out
 
     if not BOARD_PATH.exists():
-        raise SystemExit(f"Missing routed board: {BOARD_PATH}")
+        raise SystemExit(f"Missing routed board for rev-{rev}: {BOARD_PATH}\n"
+                         "(R2-15: the export sources derive from --rev; a package "
+                         "can only ever be labeled with its own revision.)")
     if not NETLIST_PATH.exists():
-        raise SystemExit(f"Missing netlist: {NETLIST_PATH}")
+        raise SystemExit(f"Missing netlist for rev-{rev}: {NETLIST_PATH}")
     if not KICAD_CLI.exists():
         raise SystemExit(f"Missing KiCad CLI: {KICAD_CLI}")
 
@@ -630,9 +704,13 @@ def main() -> int:
         w.writerow(["Designator", "Value", "Footprint", "Reason"])
         for ref in sorted(dnp_net, key=natural_ref_key):
             p = net_parts[ref]
-            reason = "M1 optional channel (never metered; populate only after runbook 3.6)" \
-                if (p["tag"].endswith("_M1") or p["tag"] in M1_OPTIONAL_TAGS) else \
-                "DNP (snubber/MOV sizing awaits the powered characterization session - G7 item 7)"
+            if p["tag"] == "JP_J16_3V3":
+                reason = ("Default-OPEN solder link (R2-4): J16 pin 5 ships NC; bridge "
+                          "only for a verified 3.3V module - no part is ever fitted")
+            elif p["tag"].endswith("_M1") or p["tag"] in M1_OPTIONAL_TAGS:
+                reason = "M1 optional channel (never metered; populate only after runbook 3.6)"
+            else:
+                reason = "DNP (snubber/MOV sizing awaits the powered characterization session - G7 item 7)"
             w.writerow([ref, p["value"], p["footprint"].split(":", 1)[-1], reason])
 
     # ---- JLC Standard-PCBA split ----------------------------------------------------
@@ -683,6 +761,30 @@ def main() -> int:
             or str(dprot_line["Designator"]) != "D17"
             or "SMA" not in str(dprot_line["Comment"])):
         raise SystemExit("D_PROT JLC lock failed: D17 must map to MDD SS34 LCSC C8678 in SMA")
+    # R2-3 hard lock: the tap FETs Q17-Q20 must ride the onsemi 2N7002LT1G
+    # line (C16338) and nothing else may join it.
+    tap_line = by_lcsc.get("C16338")
+    if (not tap_line or str(tap_line["MFR Part #"]) != "2N7002LT1G"
+            or str(tap_line["Manufacturer"]) != "onsemi"
+            or str(tap_line["Designator"]) != "Q17,Q18,Q19,Q20"):
+        raise SystemExit("R2-3 lock failed: Q17-Q20 must map exactly to onsemi 2N7002LT1G LCSC C16338 "
+                         f"(got {tap_line})")
+    # R2-15 hard lock: the 10M gate pulldowns are R135/R138/R141 on the
+    # pinned C26108 identity (MATCH-AT-UPLOAD is dead).
+    r10m_line = by_lcsc.get("C26108")
+    if (not r10m_line or str(r10m_line["MFR Part #"]) != "0805W8F1005T5E"
+            or str(r10m_line["Designator"]) != "R135,R138,R141"):
+        raise SystemExit("R2-15 lock failed: R135/R138/R141 must map exactly to UNI-ROYAL "
+                         f"0805W8F1005T5E LCSC C26108 (got {r10m_line})")
+    if any(str(r["LCSC Part #"]) == "MATCH-AT-UPLOAD" for r in jlc_bom):
+        raise SystemExit("R2-15: MATCH-AT-UPLOAD rows are forbidden - every JLC line needs a pinned C-number")
+    # R2-4 hard locks: buffer + ESD + polyfuse identity.
+    for lcsc, mpn, refs, what in (("C880333", "TCA4307DGKR", "U46", "TCA4307 stuck-bus-recovery buffer"),
+                                  ("C13612", "SRV05-4.TCT", "U47", "Semtech SRV05-4 ESD array"),
+                                  ("C207035", "1206L020YR", "F1", "Littelfuse 200mA polyfuse")):
+        line = by_lcsc.get(lcsc)
+        if (not line or str(line["MFR Part #"]) != mpn or str(line["Designator"]) != refs):
+            raise SystemExit(f"R2-4 lock failed: {refs} must map to {what} ({mpn}, LCSC {lcsc}); got {line}")
 
     jlc_cpl = []
     for row in cpl_rows:
@@ -762,17 +864,20 @@ def main() -> int:
         "- kicad-cli DRC: 0 violations / 0 unconnected / 0 footprint errors",
         "  (live remediation .kicad_dru: 2.65 / 3.35 / 1.6 mm - spec R2.3).",
         "- audit_revD_board.py routed mode: ALL PASS (Safety_Rail == 13).",
-        "- BOM<->CPL<->netlist equality asserted: 262 parts / 27 DNP / 235 placed /",
-        "  218 JLC-placed / 17 hand-solder; every placed refdes present in all three.",
+        "- BOM<->CPL<->netlist equality asserted: 271 parts / 28 DNP / 243 placed /",
+        "  226 JLC-placed / 17 hand-solder; every placed refdes present in all three.",
         "- D_PROT hard lock: D17 = MDD SS34, LCSC C8678, SMA/DO-214AC (FR-3); no SS14",
         "  anywhere.",
+        "- Round-2 locks (2026-07-21): Q17-Q20 = onsemi 2N7002LT1G C16338 (R2-3);",
+        "  R135/R138/R141 = UNI-ROYAL 10M C26108 (R2-15, identity pinned - verify",
+        "  stock at order, OOS at LCSC retail 2026-07-21); U46 = TCA4307DGKR C880333;",
+        "  U47 = Semtech SRV05-4.TCT C13612; F1 = Littelfuse 1206L020YR C207035.",
+        "  JP1 (J16 3.3V solder link) is DNP: default-OPEN, no part fitted.",
         "",
         "Uploads:",
         f"- {stem}-gerber-drill.zip  -> JLC PCB order (4-layer FR-4 1.6mm, 1oz/0.5oz,",
         "  ENIG, confirm preview reads 250 x 240 mm - REV-D IS 240 mm TALL).",
         f"- assembly/{stem}-jlc-standard-pcba-upload-bom.csv + -cpl.csv -> Standard PCBA.",
-        "- 10M 0805 line: LCSC number is MATCH-AT-UPLOAD by MPN 0805W8F1005T5E - record",
-        "  the matched C-number in the order notes (see part-lock CSV).",
         "",
         "Hand-solder after JLC: A1, J1-J11, J13, J14, J15, J16, U45.",
         "  U45 is the TMA-0505S (rev-C called it U37 - 46 refdes shifted; use",
@@ -790,7 +895,11 @@ def main() -> int:
         "- K1-K7 pad-net map (coil 2/5, COM 1, NO 3, NC 4 unused).",
         "- The 8 new AUX4-11 opto channels + J15/J16 pads (1.4 mm drills - FR-9).",
         "- Five doubled power vias (RD-VIA-1 twins) visible in the drill map.",
-        "- 'KEYED: NOT ...' silk legible at J3/J15/J13/J16 (1.2 mm / 0.20 mm stroke).",
+        "- 'KEYED: NOT ...' silk legible at J3/J15/J13/J16 (1.2 mm / 0.20 mm stroke;",
+        "  'KEYED: NOT J13 LAMP' moved below the R2-4 cluster at (136, 226.5)).",
+        "- Round-2 additions: J16 protection cluster (F1/U46/U47/JP1/C16/R142/R143)",
+        "  south of J16; REV_ID straps R144/R145 east of the Pico; TP17-24 tap",
+        "  probe pads + TP silk legend + TP2/TP5 DO-NOT-BRIDGE marks.",
         "- USB keep-out clear; row-39 bottom-edge copper acknowledged (1.28 mm to edge).",
         "",
         "This package is fab-geometry evidence only. Fab ORDER remains gated on G7/G8/",

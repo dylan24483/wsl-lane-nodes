@@ -36,7 +36,9 @@ DEFAULT_BOARD = ROOT / "kicad" / "revD" / "wsl-phase8b-revD.kicad_pcb"
 # nets -> Logic_Signal 93->97) — keep in LOCKSTEP with audit_revD_board.py
 # EXPECTED.
 EXPECTED_COUNTS = {
-    "Logic_Signal": 97,
+    # 2026-07-21 round-2 remediation (Codex R2-4/R2-6): +6 Logic_Signal
+    # (J16_5V/J16_3V3/J16_SDA/J16_SCL/REV_ID0/REV_ID1) -> 97 -> 103.
+    "Logic_Signal": 103,
     "Logic_Power": 4,
     "Safety_Rail": 13,
     "Field_Sense": 82,
@@ -142,7 +144,9 @@ def classify_net(net_name: str) -> list[str]:
         or net_name.startswith("WDOG_KICK")
         or net_name.startswith("WDOG_OK")
         or net_name.startswith("AND_")
-        or net_name.startswith("TAP_")  # rev-D item E
+        or net_name.startswith("TAP_")     # rev-D item E
+        or net_name.startswith("J16_")     # round-2 R2-4 protected J16 nets
+        or net_name.startswith("REV_ID")   # round-2 R2-6 revision straps
     ):
         hits.append("Logic_Signal")
 

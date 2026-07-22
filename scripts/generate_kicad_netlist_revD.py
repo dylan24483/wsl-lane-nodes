@@ -36,7 +36,11 @@ Rev-D deltas over rev-C (spec items A-G):
       GPIO + legitimate driver high-Z + 85 C) injects <= 0.56 uA -> 0.056 V
       on RAIL_GATE, >= 8x below the 5 uA partial-hold onset, with a
       transistor-free absolute ceiling of 3.3 V/1.01 M = 3.3 uA (why R_TAPIN
-      must never drop below ~825k). H1 dies by construction: the 2N7002 gate
+      must never drop below 1M: the derated 85 C partial-hold onset is
+      ~3.6 uA, so 3.3 V/R <= 3.6 uA requires R >= 917 k; 1M is the smallest
+      standard value. The earlier "~825k" floor cleared only the 25 C onset
+      and was RETRACTED - remediation spec R1.4 / run-log RV-5, Codex R2-2).
+      H1 dies by construction: the 2N7002 gate
       is +/-20 V rated, the GPIO only ever sees the 3V3-referenced drain.
       LOGIC INVERSION is binding on firmware v1.2 (spec R3): observed HIGH
       => GPIO reads LOW. Firmware input-only remains ENFORCED (R3.2), now as
@@ -56,11 +60,20 @@ Rev-D deltas over rev-C (spec items A-G):
       1734634 coding keys at different positions are MANDATORY (spec §F,
       gate OG-3). 1 part, 0 new nets.
       Modules must avoid I2C addresses 0x20-0x23.
+      2026-07-21 round-2 remediation (Codex R2-4): J16 now sits behind a
+      protection stack — 200 mA polyfuse on pin 1, default-OPEN solder
+      link on pin 5, TCA4307 stuck-bus-recovery buffer + 4.7k card-side
+      pull-ups + SRV05-4 connector-side ESD array on pins 3/4. Plus R2-6:
+      2-bit REV_ID strap (GP20/GP21, rev-D = 0b01). +9 parts, +6 nets —
+      see block_j16_protection_and_revid().
   G - OUT-B MCP23017 @0x23: DEFERRED (spec decision — not placed; a breakout
       on J16 at 0x23 provides the same capacity off-board).
 
-Expected emitted totals: 262 parts, 217 nets, 0 netlist-generation errors
-(remediation spec R1.7: 252-5+15 parts, 213+4 TAP_GATE_* nets).
+Expected emitted totals: 271 parts, 223 nets, 0 netlist-generation errors
+(remediation spec R1.7: 252-5+15 parts, 213+4 TAP_GATE_* nets; round-2
+remediation 2026-07-21 (Codex R2-4/R2-6): +9 parts (J16 protection stack +
+REV_ID straps) and +6 nets (J16_5V/J16_3V3/J16_SDA/J16_SCL/REV_ID0/REV_ID1)
+-> 262+9 / 217+6).
 ERC baseline (waiver WVR-ERC-1, recorded in docs/phase8_revD_run_log.md):
 EXACTLY 1 ERC error — the Pico module's AGND (pin 33) vs GND (pin 3)
 POWER-OUT/POWER-OUT pin-type conflict, a SKiDL symbol artifact (both pins are
@@ -114,7 +127,7 @@ for var in ["KICAD_FOOTPRINT_DIR"] + [f"KICAD{v}_FOOTPRINT_DIR" for v in (6, 7, 
     os.environ[var] = footprint_dir
 print(f"Using KiCad libraries at {kicad_root}")
 
-from skidl import ERC, KICAD, Part, Net, generate_netlist, lib_search_paths, set_default_tool
+from skidl import ERC, KICAD, SKIDL, Part, Pin, Net, generate_netlist, lib_search_paths, set_default_tool
 
 set_default_tool(KICAD)
 lib_search_paths[KICAD].append(symbol_dir)
@@ -147,6 +160,13 @@ FP_MCV_1X10 = "wsl_footprints:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Verti
 FP_MCV_1X12 = "wsl_footprints:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical_D1.4"
 FP_MCV_1X14 = "wsl_footprints:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical_D1.4"
 FP_TB_1X02_508 = "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"
+# Rev-D round-2 (Codex R2-4/R2-6, 2026-07-21): J16 protection stack + REV_ID
+# straps. All system-library footprints, verified present in KiCad 10.0.2
+# (run-log FR-11..FR-14).
+FP_FUSE_1206 = "Fuse:Fuse_1206_3216Metric"
+FP_SJ2_OPEN = "Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm"
+FP_SOT23_6 = "Package_TO_SOT_SMD:SOT-23-6"
+FP_VSSOP8 = "Package_SO:VSSOP-8_3x3mm_P0.65mm"
 
 
 # Global rails and control nets.
@@ -166,6 +186,14 @@ RP_OK = Net("RP2040_OK")
 INT_A = Net("MCP_INT_A")
 INT_B = Net("MCP_INT_B")
 RAIL_EN = Net("RELAY_ENABLE_RAIL")
+# Rev-D round-2 (Codex R2-4): J16 no longer touches the raw rails/bus.
+# Pin 1 sits behind a 200 mA polyfuse (J16_5V), pin 5 behind a default-OPEN
+# solder link (J16_3V3), pins 3/4 behind a TCA4307 stuck-bus-recovery I2C
+# buffer (J16_SDA/J16_SCL). All four are LOGIC-domain nets.
+J16_5V = Net("J16_5V")
+J16_3V3 = Net("J16_3V3")
+J16_SDA = Net("J16_SDA")
+J16_SCL = Net("J16_SCL")
 
 parts = {}
 
@@ -458,6 +486,7 @@ def block_watchdog():
 
 def block_connectors(fast_field, slow_field, motion_pairs, lamp_returns):
     global VRAW, VCC5, VCC3V3, GND, FGND, SDA, SCL, UART_TX, UART_RX, KICK, ARM, RP_OK, INT_A, INT_B
+    global J16_5V, J16_3V3, J16_SDA, J16_SCL
 
     j_pi = Part("Connector_Generic", "Conn_02x10_Odd_Even", value="J_PI", footprint=FP_IDC_2X10, tag="J_PI")
     j_pwr = Part("Connector_Generic", "Conn_01x03", value="J_PWR 5V", footprint=FP_TB3, tag="J_PWR")
@@ -558,14 +587,23 @@ def block_connectors(fast_field, slow_field, motion_pairs, lamp_returns):
         slow_field[name] += j_slowc[pin]
     FGND += j_slowc[9], j_slowc[10]
 
-    # Rev-D item F: J16 = VCC_5V / GND / SDA / SCL / VCC_3V3 / GND.
-    # Pin-1-vs-6 asymmetry + MC keying = polarization. All existing nets;
-    # zero new nets.
-    VCC5 += j_exti2c[1]
+    # Rev-D item F, REVISED by round-2 remediation R2-4 (2026-07-21): the
+    # J16 pin functions are unchanged (5V / GND / SDA / SCL / 3V3 / GND) but
+    # every non-GND pin now lands on a PROTECTED net:
+    #   pin 1 -> J16_5V   (behind the F_J16_5V 200 mA polyfuse)
+    #   pin 3 -> J16_SDA  (behind the TCA4307 buffer + local pull-up + ESD)
+    #   pin 4 -> J16_SCL  (ditto)
+    #   pin 5 -> J16_3V3  (behind the JP_J16_3V3 default-OPEN solder link —
+    #                      the pin ships NC; bridge only for a verified
+    #                      3.3 V module)
+    # A wedged/shorted external module can no longer wedge the main I2C bus
+    # (MCP_OUT_A holding last relay state was the FR-5 hazard) nor drag the
+    # main 5 V rail. Parts live in block_j16_protection_and_revid().
+    J16_5V += j_exti2c[1]
     GND += j_exti2c[2], j_exti2c[6]
-    SDA += j_exti2c[3]
-    SCL += j_exti2c[4]
-    VCC3V3 += j_exti2c[5]
+    J16_SDA += j_exti2c[3]
+    J16_SCL += j_exti2c[4]
+    J16_3V3 += j_exti2c[5]
 
     motion_order = ["S", "T", "SP", "BE", "M", "M2", "M1"]
     for name in motion_order:
@@ -698,7 +736,11 @@ def block_diag(pico, ne555_out):
     # I_C <= 0.56 uA (COR-1 hot calibration, 71 mV/decade) -> 0.056 V across
     # R_RAIL_GATE_PULLUP 100k, >= 8x below the ~5 uA/0.5 V partial-hold
     # onset; absolute transistor-free ceiling 3.3 V/1.01 M = 3.3 uA < 5 uA.
-    # DO NOT reduce R_TAPIN below ~825k (that ceiling is the point); do not
+    # DO NOT reduce R_TAPIN below 1M: the DERATED 85 C partial-hold onset is
+    # ~3.6 uA (|V_GS(th)|min ~0.36 V / 100k), so 3.3 V/R <= 3.6 uA needs
+    # R >= 917 k and 1M is the smallest standard value. (The earlier "~825k"
+    # floor cleared only the 25 C onset and was RETRACTED - remediation spec
+    # R1.4 corrected derivation / run-log RV-5 / Codex R2-2.) Do not
     # "tidy" the missing R_TAPG on the 555 tap (its push-pull output is
     # never high-Z; omitting the pulldown preserves 0.3 V of gate margin
     # against the 555's worst-case VOH). H1 closed: the 2N7002 gate is
@@ -717,10 +759,19 @@ def block_diag(pico, ne555_out):
     ]
     tap_net_names = {"555": "TAP_NE555_OUT", "KICK": "TAP_WDOG_KICK",
                      "ARM": "TAP_ARM_PERMIT", "RPOK": "TAP_RP2040_OK"}
+    # R2-3 (Codex round-2, 2026-07-21): Q17-Q20 tap FETs are MPN-LOCKED to
+    # onsemi 2N7002LT1G (LCSC C16338, verified in stock 2026-07-21) — the
+    # 0.12-0.14 V cold-corner gate-drive margin in spec R1.5 depends on the
+    # documented V_GS(th) 1.0-2.5 V @ 250 uA / tc ~-5 mV/C and V_GS abs-max
+    # +/-20 V figures, which the previously-locked JSMSEMI C916396 datasheet
+    # does not publish. The MPN rides the VALUE field so the netlist, board,
+    # and fab BOM stay equality-asserted (export_fab_revD.py hard-locks the
+    # JLC line). The Qled_* lamp drivers keep the generic 2N7002 value (no
+    # margin-critical corner there). Run-log FR-10.
     for suffix, observed, pin, has_gpd in tap_specs:
         rin = add_res(f"R_TAPIN_{suffix}", "1M")
         rpu = add_res(f"R_TAPPU_{suffix}", "10k")
-        q = Part("Transistor_FET", "Q_NMOS_GSD", value=f"2N7002 TAP {suffix}",
+        q = Part("Transistor_FET", "Q_NMOS_GSD", value=f"2N7002LT1G TAP {suffix}",
                  footprint=FP_SOT23, tag=f"Q_TAP_{suffix}")
         parts[f"Q_TAP_{suffix}"] = q
         gate = Net(f"TAP_GATE_{suffix}")
@@ -737,12 +788,142 @@ def block_diag(pico, ne555_out):
             GND += rgpd[2]
 
 
+def block_j16_protection_and_revid(pico):
+    """Rev-D round-2 remediation (Codex R2-4 board side + R2-6), 2026-07-21.
+
+    APPENDED after block_diag() so every pre-existing refdes is unchanged
+    (the R135/R138/R141 = 10M gate-pulldown pinning in export_fab_revD.py
+    depends on this — appending mid-sequence would shift them).
+
+    J16 protection stack (all LOGIC-domain; the TCA4307 buffer and the
+    polyfuse are NOT isolation-barrier parts — every pin lands on LOGIC
+    nets; the PC817/G5LE barrier inventory is untouched):
+      * F_J16_5V  — Littelfuse 1206L020YR polyfuse (200 mA hold / 420 mA
+        trip / 24 V), VCC_5V -> J16_5V -> J16 pin 1. Caps a shorted module
+        at ~420 mA, inside the FR-3 SS34 (3 A) budget; the sanctioned
+        external-module allowance stays 100 mA << 200 mA hold. This is the
+        FR-3 "open option" now TAKEN (Codex R2-4).
+      * JP_J16_3V3 — default-OPEN solder link, VCC_3V3 -> J16_3V3 ->
+        J16 pin 5. The 3.3 V pin ships NOT CONNECTED; bridging is a
+        deliberate, documented act for a verified 3.3 V module. Value
+        carries DNP so the exporters exclude it from assembly.
+      * U_I2C_BUF — TI TCA4307 (DGK/VSSOP-8, LCSC C880333) hot-swap I2C
+        buffer with 40 ms stuck-bus detection + automatic SCL-pulse
+        recovery between the MAIN bus (SDAIN/SCLIN, pins 6/3) and J16
+        (SDAOUT/SCLOUT, pins 7/2). A wedged module is disconnected and
+        recovery-pulsed; the Pi/MCP bus never sees it. EN (pin 1) tied to
+        VCC_3V3 (datasheet: tie to VCC when unused); READY (pin 5) NC
+        (open-drain status, unused — WVR-ERC-2). VCC (pin 8) = VCC_3V3
+        (2.3-5.5 V range; bus levels are 3.3 V on both sides). Pinout
+        verified against TI SCPS270B (2026-07-21). ICC <= 4.5 mA.
+      * R_J16_SDA_PU / R_J16_SCL_PU — 4.7k card-side pull-ups to VCC_3V3
+        (TCA4307 datasheet requires pull-ups on BOTH sides; main-bus side
+        already has R_I2C_SDA/SCL 4.7k).
+      * C_I2C_BUF — 100 nF bypass at U_I2C_BUF pin 8 (datasheet).
+      * D_ESD_J16 — Semtech SRV05-4 (SOT-23-6, LCSC C13612) connector-side
+        ESD/TVS array: VN (pin 2) = GND, VP (pin 5) = J16_5V, steering IOs
+        on J16_SDA (3), J16_SCL (6), J16_3V3 (1); spare IO (4) tied to GND.
+
+    REV_ID straps (Codex R2-6): 2-bit board-revision code on spare Pico
+    GPIOs, read by firmware (v1.2.2 task) and reported in the identity
+    line so the daemon can reject roles unsupported by the physical board.
+      * GP20 (pin 26) = REV_ID0 — 10k strap to VCC_3V3 (reads 1)
+      * GP21 (pin 27) = REV_ID1 — 10k strap to GND     (reads 0)
+    ENCODING (REV_ID[1:0] = GP21<<1 | GP20):
+      0b00 = reserved/legacy (no straps — a rev-C-class board would float;
+             firmware must treat unreadable/floating as UNKNOWN, not rev-D)
+      0b01 = rev-D  (THIS board)
+      0b10 / 0b11 = future revisions
+    Straps are 10k to rails with the GPIO input-only: zero static current.
+    Pins 26/27 verified free in the pre-change netlist (2026-07-21).
+
+    VCC_3V3 budget delta: buffer <= 4.5 mA + 2 x 4.7k pull-ups (~1.4 mA
+    worst, only while a card-side line is held low) ~ +6 mA worst-case on
+    the Pico 3V3 regulator; VCC_5V ripple-through is noise vs the spec
+    (S)H.4 0.73-0.93 A worst case. Wetting rail untouched; D17 unchanged.
+    """
+    global VCC5, VCC3V3, GND, SDA, SCL, J16_5V, J16_3V3, J16_SDA, J16_SCL
+
+    # --- current-limited 5 V (R2-4a) ---
+    fuse = Part("Device", "Polyfuse", value="1206L020YR 200mA",
+                footprint=FP_FUSE_1206, tag="F_J16_5V")
+    parts["F_J16_5V"] = fuse
+    VCC5 += fuse[1]
+    J16_5V += fuse[2]
+
+    # --- default-open 3.3 V solder link (R2-4b) ---
+    jp = Part("Jumper", "SolderJumper_2_Open", value="3V3 LINK OPEN DNP",
+              footprint=FP_SJ2_OPEN, tag="JP_J16_3V3")
+    parts["JP_J16_3V3"] = jp
+    VCC3V3 += jp[1]
+    J16_3V3 += jp[2]
+
+    # --- TCA4307 stuck-bus-recovery I2C buffer (R2-4c). No KiCad symbol
+    #     exists for the TCA4307, so the part is constructed pin-by-pin from
+    #     the TI SCPS270B pin table (DGK package, verified 2026-07-21):
+    #     1 EN / 2 SCLOUT / 3 SCLIN / 4 GND / 5 READY / 6 SDAIN /
+    #     7 SDAOUT / 8 VCC. ---
+    buf = Part(tool=SKIDL, name="TCA4307", ref_prefix="U", value="TCA4307DGKR",
+               footprint=FP_VSSOP8, tag="U_I2C_BUF")
+    for num, pname, ptype in ((1, "EN", "INPUT"), (2, "SCLOUT", "BIDIR"),
+                              (3, "SCLIN", "BIDIR"), (4, "GND", "PWRIN"),
+                              (5, "READY", "OPENCOLL"), (6, "SDAIN", "BIDIR"),
+                              (7, "SDAOUT", "BIDIR"), (8, "VCC", "PWRIN")):
+        buf += Pin(num=str(num), name=pname, func=getattr(Pin.types, ptype))
+    parts["U_I2C_BUF"] = buf
+    VCC3V3 += buf[8], buf[1]     # VCC + EN tied high (datasheet)
+    GND += buf[4]
+    SCL += buf[3]                # SCLIN  <- main bus
+    SDA += buf[6]                # SDAIN  <- main bus
+    J16_SCL += buf[2]            # SCLOUT -> card side
+    J16_SDA += buf[7]            # SDAOUT -> card side
+    # READY (pin 5) deliberately NC — WVR-ERC-2 covers the ERC warning.
+
+    r_sda_pu = add_res("R_J16_SDA_PU", "4.7k")
+    r_scl_pu = add_res("R_J16_SCL_PU", "4.7k")
+    VCC3V3 += r_sda_pu[1], r_scl_pu[1]
+    J16_SDA += r_sda_pu[2]
+    J16_SCL += r_scl_pu[2]
+
+    cbuf = add_cap("C_I2C_BUF", "0.1uF")
+    VCC3V3 += cbuf[1]
+    GND += cbuf[2]
+
+    # --- connector-side ESD array (R2-4d). KiCad Power_Protection:SRV05-4
+    #     symbol pin map verified against the Semtech datasheet: IO1=1,
+    #     VN=2, IO2=3, IO3=4, VP=5, IO4=6. IO channels are interchangeable;
+    #     the assignment below matches the routed approach geometry. ---
+    esd = Part("Power_Protection", "SRV05-4", value="SRV05-4",
+               footprint=FP_SOT23_6, tag="D_ESD_J16")
+    parts["D_ESD_J16"] = esd
+    J16_3V3 += esd[1]            # IO1
+    GND += esd[2]                # VN
+    J16_SDA += esd[3]            # IO2
+    GND += esd[4]                # IO3 spare channel, tied to GND
+    J16_5V += esd[5]             # VP
+    J16_SCL += esd[6]            # IO4
+
+    # --- REV_ID straps (R2-6) ---
+    r_id0 = add_res("R_REVID0", "10k")
+    r_id1 = add_res("R_REVID1", "10k")
+    rev0 = Net("REV_ID0")
+    rev1 = Net("REV_ID1")
+    VCC3V3 += r_id0[1]           # rev-D: REV_ID0 = 1
+    rev0 += r_id0[2], pico[26]   # GP20
+    GND += r_id1[1]              # rev-D: REV_ID1 = 0
+    rev1 += r_id1[2], pico[27]   # GP21
+
+
 # ---- ERC waiver gate (fail-closed; see docstring + docs/phase8_revD_run_log.md
 #      WVR-ERC-1). Update these constants ONLY together with a new run-log
 #      waiver entry — that is the point of the gate.
 ERC_EXPECTED_ERRORS = 1
 ERC_WAIVED_ERROR_SUBSTR = "Pin conflict on net GND, POWER-OUT pin 33/AGND"
-ERC_EXPECTED_WARNINGS = 40
+# WVR-ERC-2 (2026-07-21, round-2 remediation): baseline 40 -> 39.
+# Delta fully accounted: -2 (Pico pins 26/27 = GP20/GP21 were
+# unconnected-spare warnings, now the REV_ID straps) and +1 (TCA4307
+# READY pin 5 deliberately NC). The waived ERROR is unchanged.
+ERC_EXPECTED_WARNINGS = 39
 
 
 def check_erc_waiver():
@@ -831,6 +1012,7 @@ def main():
     block_supplies()
     block_rail(wdog_pull, connectors["J_SAFE"])
     block_diag(pico, ne555_out)
+    block_j16_protection_and_revid(pico)
 
     # Rev-D output is a NEW file — never the rev-C kicad/wsl-phase8b.net.
     out = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "kicad", "wsl-phase8b-revD.net"))

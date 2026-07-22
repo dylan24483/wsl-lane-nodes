@@ -934,3 +934,181 @@ batch via the new `scripts/verify_revC_snapshot.py`).
   `scripts/verify_revC_snapshot.py` → **189/189 OK, 0 failures**.
 - This mirror-record commit is the campaign's definitive `wsl-lane-nodes` HEAD for
   clean-clone reproduction (WSL Systems: `f1bd3266feeee6d2ed7f6ee3d39fa947a8cd47f8`).
+
+## ROUND-2 BOARD/BOM/EXPORT BATCH (2026-07-21, later — Codex round-2 findings R2-2 / R2-3 / R2-4(board) / R2-5(board) / R2-6(straps) / R2-15)
+
+Implements the hardware slice of the round-2 remediation on the full board chain
+(generator → netlist → diff → placement → route → DRC → audit → fab export).
+Software slices (R2-8/10/11/12 etc.) landed separately (`123fb9b`, `55b2bf5`).
+
+### R2-2 — "~825k" sweep (BOTH repos)
+
+- `grep 825` swept over `wsl-lane-nodes` AND `WSL Systems`. Exactly 3 LIVE
+  occurrences of the retracted floor existed, all corrected to the 1M/≥917k
+  derated-onset derivation: `generate_kicad_netlist_revD.py` docstring (line ~39)
+  + `block_diag()` comment (line ~701), and the `export_fab_revD.py` 1M part-lock
+  note (which flowed into the round-1 fab part-lock CSV). Every other hit is a
+  dated correction record (spec R1.4 retraction text, RV-5, remediation report),
+  coincidental digits (DRC coordinates, UUIDs, LaneFX data), or an unrelated
+  number — retraction records deliberately keep the old figure as history.
+  WSL Systems has ZERO live occurrences. The regenerated r2 fab package carries
+  the corrected note (its only "825" is inside the retraction sentence itself).
+
+### R2-3 / FR-10 — Q17-Q20 MPN-locked to onsemi 2N7002LT1G — PASS
+
+- Value field now carries the MPN (`2N7002LT1G TAP *`) so netlist == board ==
+  BOM by the existing equality asserts; `export_fab_revD.py` hard-locks the JLC
+  line: **onsemi 2N7002LT1G, LCSC C16338 (verified in stock 2026-07-21, LCSC
+  product page)**, designators exactly Q17,Q18,Q19,Q20; Nexperia 2N7002-QR is
+  the recorded approved alternate. Qled_* lamp drivers stay on the generic
+  2N7002 line (no margin-critical corner). Datasheet basis: onsemi 2N7002LT1G
+  V_GS(th) 1.0-2.5 V @ 250 uA, tc ≈ −5 mV/°C, V_GS abs-max ±20 V — the R1.5
+  cold-corner margin numbers now rest on a documented part. Pin-1 marking check
+  at first article vs the purchased reel stands (FR-8).
+
+### R2-4 (board side) — J16 protection stack — IMPLEMENTED
+
+- **Netlist:** J16 pins re-homed onto protected nets (J16_5V / J16_SDA /
+  J16_SCL / J16_3V3); pins 2/6 stay GND. +9 parts / +6 nets → **271 / 223**,
+  netclasses **103/4/13/82/21** (Safety_Rail EXACTLY 13 — stop-ship guard PASS).
+- **Severity record (per the Codex disposition):** a wedged external I2C module
+  was an AVAILABILITY incident, not a silent-safety one — tick-loop I2C failure
+  → `_on_safety_trip` → ARM drop → rail de-energizes the coils. Recorded as
+  such; the stack is fitted anyway (availability of a lane is still money).
+- **Isolation-class verify (standing rule):** TCA4307, SRV05-4, and the
+  polyfuse are LOGIC-domain parts — every pin lands on LOGIC nets; the
+  PC817/G5LE isolation-barrier inventory is UNCHANGED. `audit_revD_board.py`
+  now fail-closed asserts the exact membership of all four J16_* nets AND that
+  VCC_5V/VCC_3V3/I2C_SDA/I2C_SCL never touch J16 directly, and that the
+  TCA4307 main-bus side is exactly SDAIN(6)/SCLIN(3) (in/out not swapped).
+- **Budgets (standing rule, re-run on any current change):** +≤4.5 mA TCA4307
+  ICC + ~1.4 mA worst pull-up sink ≈ **+6 mA worst on VCC_3V3** (Pico regulator,
+  ample); noise vs the §H.4 0.73–0.93 A VCC_5V worst case. The polyfuse caps a
+  shorted module at 420 mA trip — INSIDE the FR-3 SS34 3 A budget and above the
+  sanctioned 100 mA module allowance (200 mA hold = 2×). Wetting rail untouched;
+  D17 unchanged.
+
+### FR-11 — Littelfuse 1206L020YR vs `Fuse:Fuse_1206_3216Metric` — PASS
+
+- 1206L series is a 1206/3216-metric body (3.2 × 1.6 mm); KiCad pads 1.25 × 1.75
+  at ±1.4 mm accept it. Ratings verified on the LCSC product page (C207035,
+  29k+ in stock 2026-07-21): 200 mA hold / 420 mA trip / 24 V max — circuit is
+  5 V. First article: verify body marking + hold behavior with the module load.
+
+### FR-12 — Semtech SRV05-4.TCT vs `Package_TO_SOT_SMD:SOT-23-6` — PASS
+
+- KiCad `Power_Protection:SRV05-4` symbol pin map read from the library file:
+  IO1=1 / VN=2 / IO2=3 / IO3=4 / VP=5 / IO4=6 — matches the Semtech datasheet
+  pinout. SOT-23-6 pad columns verified from the footprint file (left col 1-3,
+  right col 4-6). LCSC C13612 (Semtech original, in stock 2026-07-21); clone
+  SRV05-4s exist under the same marking — the lock names Semtech. VN=GND,
+  VP=J16_5V, IOs on J16_SDA/J16_SCL/J16_3V3, spare IO tied to GND.
+
+### FR-13 — TI TCA4307DGKR vs `Package_SO:VSSOP-8_3x3mm_P0.65mm` — PASS
+
+- **No KiCad symbol exists for the TCA4307** — the part is constructed
+  pin-by-pin in SKiDL from the TI datasheet pin table (SCPS270B, fetched and
+  read 2026-07-21): 1 EN / 2 SCLOUT / 3 SCLIN / 4 GND / 5 READY / 6 SDAIN /
+  7 SDAOUT / 8 VCC. Package: DGK = VSSOP-8, 3×3 mm body, 0.65 mm pitch — the
+  KiCad generic VSSOP-8_3x3mm_P0.65mm matches (first-article: verify body vs
+  pad centering on one part before reflowing the rest — first VSSOP on this
+  board). VCC 2.3–5.5 V (run at 3.3 V, matching both bus sides); EN tied to
+  VCC per datasheet; READY deliberately NC (WVR-ERC-2); 0.1 uF bypass at pin 8
+  (datasheet requirement); pull-ups required on BOTH sides → R142/R143 4.7 k
+  card-side (main side already has R1/R2 4.7 k). Stuck-bus spec: ~40 ms low →
+  disconnect + up to 16 SCLOUT recovery pulses. LCSC C880333, in stock.
+- **VSSOP pad-gap note:** 0.65 mm pitch leaves 0.15 mm pad-to-pad — below the
+  Logic_Signal 0.20 mm netclass clearance, above JLC's 0.127 mm capability.
+  Fixed with a **per-pad local clearance of 0.13 mm scoped to U46 only**
+  (KiCad resolves pair clearance as max-of-both, so every pair involving any
+  OTHER item still gets 0.20 mm). Recorded here so nobody "fixes" the netclass.
+
+### FR-14 — SolderJumper-2 P1.3mm Open (JP_J16_3V3) — PASS
+
+- Copper-only footprint, no part is ever fitted → value carries DNP so both
+  exporters exclude it (28th DNP; dnp-excluded.csv explains the default-OPEN
+  contract). Bridging is a deliberate act for a verified 3.3 V module.
+
+### R2-6 — REV_ID straps (board half) — IMPLEMENTED
+
+- R144 (10 k, VCC_3V3 → REV_ID0 → Pico pin 26/GP20) + R145 (10 k, GND →
+  REV_ID1 → pin 27/GP21). Pins verified free in the pre-change netlist (the
+  two were unconnected-spare ERC warnings — see WVR-ERC-2).
+- **ENCODING (binding for the firmware/daemon tasks): REV_ID[1:0] = GP21<<1 |
+  GP20 read with pulls OFF. rev-D = 0b01. 0b00/floating = legacy/UNKNOWN (a
+  rev-C-class board has no straps — firmware must treat unreadable as UNKNOWN,
+  never default to rev-D); 0b10/0b11 = future.** Zero static current (strap →
+  input pin). Silk "REV ID D=01" at (118, 73.4). Audit asserts membership AND
+  polarity (R144 pulls HIGH, R145 pulls LOW).
+
+### R2-5 (board side) — tap probe pads + TP silk legend — IMPLEMENTED
+
+- **TP17–TP24** (TestPoint_Pad_1.0x1.0mm — the 1.5 mm pad's courtyard does not
+  fit the Pico↔Q_TAP / R_TAPG↔lane gaps): one GATE pad + one DRAIN pad per tap
+  stage (G column x=128.0 at row+1.75, D column x=112.8 on-row; rows 52/56/60/
+  64 = 555/KICK/ARM/RPOK), silk G/D marks + "TAP PROBES: D WEST / G EAST"
+  legend. Fault insertion (R1.9 step 3 / FA-7) clips G↔D on these pads —
+  **never probe/short SOT-23 pins directly**.
+- **Adjacency disposition:** the G and D pads of a pair are ~15 mm apart — the
+  tap cluster's row pitch (4 mm) and flanking courtyards leave no legal slot
+  for side-by-side pads without re-placing the whole (already-validated) tap
+  block. Clip leads span this trivially; recorded as the accepted layout.
+- **TP legend:** every TP1–TP16 now carries fabricated silk (names at y=231.4 /
+  y=238.3 under the two strips), with **TP2 "LOGIC GND"**, **TP5 "FIELD GND"**,
+  and explicit **"DO NOT BRIDGE TO TP5"/"DO NOT BRIDGE TO TP2"** marks —
+  bridging them defeats the TMA-0505S isolation barrier.
+- Probe-impedance (≥100 MΩ) procedure text is the first-article task's item;
+  the pack regeneration below carries the pads + coordinates.
+
+### R2-15 — fab-artifact fixes + regenerated package
+
+- **Revision-labeling defect FIXED:** `export_fab_revD.py` now derives BOARD/
+  NETLIST paths from `--rev` — `--rev C` refuses ("Missing routed board for
+  rev-C", verified live) instead of silently exporting rev-D sources under a
+  rev-C label.
+- **10 M identity PINNED:** LCSC **C26108** fetch-verified 2026-07-21 as
+  UNI-ROYAL 0805W8F1005T5E 10 MΩ ±1 % 0805 (the MATCH-AT-UPLOAD row is dead,
+  and MATCH-AT-UPLOAD anywhere is now export-fatal). Listed OUT OF STOCK at
+  LCSC retail on 2026-07-21 — order-time stock check recorded in the lock note;
+  any substitute must be ≥10 M 0805 1 % with a fetch-verified C-number (the
+  C325772 hallucination trap stands).
+- **Coding-profile quantity CORRECTED** (harness BOM row): 1 profile per coded
+  PLUG × 4 plugs = 4/board (header side is a rib REMOVAL, no part — COR-5);
+  1 star of 6 covers a board; buy 2 stars min for the pilot (FA-8 sacrificial
+  pair + spares). The old "2 positions x 4 connectors" row double-counted.
+- **New package: `kicad/fab_revD_2026-07-21_r2/`** (refuse-if-exists honored —
+  new dated dir; the round-1 `fab_revD_2026-07-21/` stays immutable on disk and
+  in git as the superseded record). Export gates re-proven in-process: DRC
+  0/0/0 + routed audit ALL PASS; counts **271 parts / 28 DNP / 243 placed /
+  226 JLC / 26 lines / 17 hand-solder**; new hard locks all asserted (C16338 =
+  Q17-Q20, C26108 = R135/R138/R141, C880333 = U46, C13612 = U47, C207035 = F1).
+
+### WVR-ERC-2 — ERC baseline 40 → 39 warnings (errors unchanged: 1 waived)
+
+- Delta fully accounted: **−2** (Pico pins 26/27 = GP20/GP21 were
+  unconnected-spare warnings, now the REV_ID straps) **+1** (TCA4307 READY
+  pin 5 deliberately NC — open-drain status output, feature unused).
+  `check_erc_waiver()` constants updated in the same commit; the waived AGND
+  error is byte-identical. Gate PASS: exactly 1 error + 39 warnings.
+
+### Gate runs (all on the installed toolchain, 2026-07-21)
+
+| Gate | Result |
+|---|---|
+| Generator + ERC waiver | 271 parts / 223 nets, 0 netlist errors; ERC 1 waived + 39 (WVR-ERC-2) |
+| Netlist audit | **ALL PASS** (103/4/13/82/21 = 223; new J16/REV_ID topology checks) |
+| Diff vs rev-C | **CLEAN** — deep tables 55/55 parts + 39/39 nets + 11/11 touched; ZERO rev-C removals |
+| Placement + DRC | 271 placed, 0 missing; placement DRC **0 violations** (silk iterated: KEYED "NOT J13 LAMP" moved to (136,226.5) below the new cluster) |
+| Router | SELF-CHECK **0 problems** (2162 actions; 4 iteration rounds — AUX6-11 IN2 lane-column collisions, J13.6 THT impale on the SDA trunk extension → B.Cu duck-under at x=124.75, L_FOUL-return clearance, hole-to-hole at the TP3 via, GND-zone pocket/starved-thermal at U47.2 → solid zone connection on that one pad) |
+| kicad-cli DRC (routed) | **0 / 0 / 0** — `kicad/revD/DRC-revD-round2-r4.rpt` (r1–r3 = iteration evidence) |
+| Board audit (routed mode) | **ALL PASS** (24 TPs incl. TP17-24; board-mode tap nets tolerate exactly 1 probe TP each) |
+| Measured isolation minima | **2.650 mm L-F / 3.350 mm M-L** — unchanged, same worst points (GND zone ↔ U45.4; GND zone ↔ K7.1); as-fabbed worst 2.54 / 3.24 ≥ 2.5 / 3.2 requirements |
+| Fab export | **ALL EXPORT GATES PASS** → `kicad/fab_revD_2026-07-21_r2/` (sha256 manifest) |
+| First-article pack | regenerated (271 rows, 24 TPs, 46 shifts) — M6 re-run rule |
+| Root artifact sync | `generate_kicad_netlist_revD_sklib.py` + `.erc` root copies byte-identical to `scripts/` (RV-6 rule) |
+| Rev-C sacred snapshot | **189/189 OK** before AND after the batch (`scripts/verify_revC_snapshot.py`) |
+| Repo suites | `test_pin_map_drift` 4/4 (parametrized generator guard re-run against the changed generator), `test_safety_rail_rig` ALL PASS |
+
+Superseded-evidence note: `DRC-revD-remediation-r3.rpt` and `fab_revD_2026-07-21/`
+are the round-1 records — cite `DRC-revD-round2-r4.rpt` and
+`fab_revD_2026-07-21_r2/` from here on.

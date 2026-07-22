@@ -240,24 +240,44 @@ def route_i2c(r) -> int:
     added += r.poly("I2C_SCL", [(117.35, 151.715), (118.75, 151.715), (118.75, 150.85), (SCL_X, 150.85)], F_CU)
     r.via("I2C_SCL", (SCL_X, 150.85)); added += 1
 
-    # J16 drops (THT pads start on inner layers directly)
-    added += r.poly("I2C_SDA", [(135.0, 206.0), (135.0, 201.6)], IN2_CU)
-    r.via("I2C_SDA", (135.0, 201.6)); added += 1
-    added += r.poly("I2C_SDA", [(135.0, 201.6), (125.3, 201.6)], IN1_CU)
-    added += r.poly("I2C_SDA", [(125.3, 201.6), (121.0, 197.3)], IN1_CU)
-    r.via("I2C_SDA", (121.0, 197.3)); added += 1
-    added += r.poly("I2C_SCL", [(138.5, 206.0), (138.5, 202.6)], IN2_CU)
-    r.via("I2C_SCL", (138.5, 202.6)); added += 1
-    added += r.poly("I2C_SCL", [(138.5, 202.6), (SCL_X, 202.6)], IN1_CU)
-    r.via("I2C_SCL", (SCL_X, 202.6)); added += 1
+    # Round-2 R2-4: the direct J16 drops are GONE — J16 pins 3/4 live on
+    # J16_SDA/J16_SCL behind the TCA4307 (route_j16_protection_and_revid).
+    # The trunks now extend south to feed the buffer's IN pins:
+    #   SDA trunk IN2 x=121 -> y=224.4, then an IN1 loop-under to the east
+    #   side of U46 (SDAIN pin 6 is on the east column);
+    #   SCL trunk IN2 x=119.8 -> y=220.925, straight F.Cu east into SCLIN
+    #   (pin 3, west column), threading the F1 pad gap.
+    # The straight IN2 x=121 extension would impale the J13.6 THT pad
+    # (120.5-122.5 x, all layers) and the AUX6-11 IN2 lane column owns
+    # x 122.9-126.4 — so the trunk ducks the pad row on B.Cu through the
+    # free x=124.75 corridor between J13.6 and J16.1.
+    added += r.poly("I2C_SDA", [(SDA_X, 197.3), (SDA_X, 200.8), (121.9, 201.6)], IN2_CU)
+    r.via("I2C_SDA", (121.9, 201.6)); added += 1
+    added += r.poly("I2C_SDA", [(121.9, 201.6), (121.9, 202.2), (124.75, 202.2),
+                                (124.75, 210.4), (121.6, 210.4)], B_CU)
+    r.via("I2C_SDA", (121.6, 210.4)); added += 1
+    added += r.poly("I2C_SDA", [(121.6, 210.4), (SDA_X, 211.0), (SDA_X, 224.4)], IN2_CU)
+    r.via("I2C_SDA", (SDA_X, 224.4)); added += 1
+    added += r.poly("I2C_SDA", [(SDA_X, 224.4), (135.8, 224.4)], IN1_CU)
+    r.via("I2C_SDA", (135.8, 224.4)); added += 1
+    added += r.poly("I2C_SDA", [(135.8, 224.4), (135.8, 220.925), (133.0125, 220.925)], F_CU)
+    added += r.poly("I2C_SCL", [(SCL_X, 218.2), (SCL_X, 220.925)], IN2_CU)
+    r.via("I2C_SCL", (SCL_X, 220.925)); added += 1
+    added += r.poly("I2C_SCL", [(SCL_X, 220.925), (128.7875, 220.925)], F_CU)
 
     # test pads: SDA drops to TP6 through the J13/J16 gap at x=129.9
-    r.via("I2C_SDA", (129.9, 201.6)); added += 1
-    added += r.poly("I2C_SDA", [(129.9, 201.6), (129.9, 226.0)], IN2_CU)
+    # (round-2: fed from the trunk at y=199.9 — clear of the L_FOUL return
+    # B.Cu vertical at x=120.9 that killed the y=201.6 junction)
+    r.via("I2C_SDA", (SDA_X, 199.9)); added += 1
+    added += r.poly("I2C_SDA", [(SDA_X, 199.9), (129.9, 199.9)], IN1_CU)
+    r.via("I2C_SDA", (129.9, 199.9)); added += 1
+    added += r.poly("I2C_SDA", [(129.9, 199.9), (129.9, 226.0)], IN2_CU)
     r.via("I2C_SDA", (129.9, 226.0)); added += 1
     added += r.poly("I2C_SDA", [(129.9, 226.0), (130.0, 229.0)], F_CU)
-    r.via("I2C_SCL", (SCL_X, 218.2)); added += 1
-    added += r.poly("I2C_SCL", [(SCL_X, 218.2), (138.6, 218.2), (138.6, 226.0)], B_CU)
+    # TP7 leg re-homed (round-2): the old y=218.2 B.Cu run sat 0.4 mm under
+    # the new VCC_3V3 IN1 spine vias — it now leaves from the SCLIN feed via
+    # at y=220.925 instead.
+    added += r.poly("I2C_SCL", [(SCL_X, 220.925), (138.6, 220.925), (138.6, 226.0)], B_CU)
     r.via("I2C_SCL", (138.6, 226.0)); added += 1
     added += r.poly("I2C_SCL", [(138.6, 226.0), (140.0, 226.0), (140.0, 229.0)], F_CU)
     return added
@@ -338,6 +358,8 @@ def route_taps_and_adc(r) -> int:
         added += r.poly(net, [(114.1, y), (cx, y), (cx, py)], B_CU)
         r.via(net, (cx, py)); added += 1
         added += r.poly(net, [(cx, py), (px, py)], F_CU)
+        # R2-5 probe pad stub: drain TP (TP18/20/22/24) west of the drain via
+        added += r.poly(net, [(114.1, y), (112.8, y)], F_CU)
 
     # ---- VCC_3V3 pull-up feeds: R_TAPPU.1 -> IN1 jog -> IN2 trunk x=113.1
     #      (immediate diagonal off-row so the run clears the drain-net vias
@@ -400,9 +422,135 @@ def route_taps_and_adc(r) -> int:
     r.via("TAP_GATE_RPOK", (158.3, 64.0)); added += 1
     added += r.poly("TAP_GATE_RPOK", [(158.3, 64.0), (156.9125, 64.0)], F_CU)
 
+    # ---- R2-5 gate probe pads (TP17/19/21/23): F.Cu stub from each gate
+    #      tee via east to the TP column at x=128.0 ----
+    for net, y, via_x in (("TAP_GATE_555", 52.0, 125.2),
+                          ("TAP_GATE_KICK", 56.0, 125.9),
+                          ("TAP_GATE_ARM", 60.0, 126.6),
+                          ("TAP_GATE_RPOK", 64.0, 125.9)):
+        added += r.poly(net, [(via_x, y + 1.75), (128.0, y + 1.75)], F_CU)
+
     # ---- item D ADC divider (unchanged): local F.Cu tree at x=112.65 ----
     added += r.poly("ADC_VCC5_SENSE", [(114.0, 40.087), (112.65, 40.087)], F_CU)
     added += r.poly("ADC_VCC5_SENSE", [(114.0, 47.913), (112.65, 47.913), (112.65, 40.087)], F_CU)
     added += r.poly("ADC_VCC5_SENSE", [(117.0, 44.95), (115.2, 44.95), (115.2, 43.6), (112.65, 43.6)], F_CU)
     added += r.poly("ADC_VCC5_SENSE", [(112.65, 40.087), (112.65, 31.73), (109.69, 31.73)], F_CU)
+    return added
+
+
+def route_j16_protection_and_revid(r) -> int:
+    """Round-2 remediation (Codex R2-4 board side + R2-6), 2026-07-21.
+
+    Protection cluster lives at y 214-225 below the J13/J16 bodies
+    (courtyards end y=209.54). Lane inventory added here:
+      F.Cu  — cluster-local stubs and short trees only
+      IN1   — horizontal feeds: 3V3 spine y=218.6, J16_5V loop y=214.9,
+              pull-up legs y=216.2 (J16_SDA) / y=217.9 (J16_SCL)
+      IN2   — verticals: J16_5V x=126.3, J16_SCL x=137.9,
+              REV_ID lanes x=116.6 / x=115.8
+    The I2C trunk extensions feeding the buffer IN pins live in
+    route_i2c(); the deleted direct J16 rail feeds are noted in
+    route_5v()/route_3v3().
+    """
+    added = 0
+
+    # ---- VCC_5V -> F1 pad 1 (twin via ON the existing TP1 IN1 y=217 run;
+    #      x=122.0 sits west of the AUX6 IN2 lane and east of the SDA trunk) ----
+    r.via("VCC_5V", (122.0, 217.0)); added += 1
+    added += r.poly("VCC_5V", [(122.0, 217.0), (122.6, 218.0), (122.6, 219.1)], F_CU)
+
+    # ---- J16_5V: F1 pad 2 -> IN2 x=123.3 (threads the AUX7/AUX8 lane
+    #      gap; both end north of it) -> IN1 y=215.4 loop -> J16.1 THT
+    #      drop at x=129.15 + ESD VP drop at x=137.2 ----
+    added += r.poly("J16_5V", [(122.6, 221.9), (123.3, 222.6)], F_CU)
+    r.via("J16_5V", (123.3, 222.6)); added += 1
+    added += r.poly("J16_5V", [(123.3, 222.6), (123.3, 215.4)], IN2_CU)
+    r.via("J16_5V", (123.3, 215.4)); added += 1
+    added += r.poly("J16_5V", [(123.3, 215.4), (137.2, 215.4)], IN1_CU)
+    r.via("J16_5V", (129.15, 215.4)); added += 1
+    added += r.poly("J16_5V", [(129.15, 215.4), (129.15, 207.0), (128.35, 206.35),
+                               (128.0, 206.0)], F_CU)                          # J16.1
+    r.via("J16_5V", (137.2, 215.4)); added += 1
+    added += r.poly("J16_5V", [(137.2, 215.4), (137.2, 217.2), (139.163, 217.2)], F_CU)  # ESD VP (U47.5)
+
+    # ---- VCC_3V3 spine: trunk tap -> IN1 y=218.6 (jog around the SCL
+    #      trunk's SCLIN-feed corridor at x=119.8) -> east tree; 0.25 mm
+    #      stubs to buffer EN (pin 1) + VCC (pin 8) + C16 (signal-current
+    #      pins only — the width relief keeps the U46 pad row legal) ----
+    r.via("VCC_3V3", (113.1, 218.6)); added += 1    # ON the IN2 x=113.1 trunk
+    added += r.poly("VCC_3V3", [(113.1, 218.6), (118.9, 218.6), (118.9, 219.4),
+                                (120.7, 219.4), (120.7, 218.6), (150.9, 218.6)], IN1_CU)
+    r.via("VCC_3V3", (128.6, 218.6)); added += 1
+    added += r.poly("VCC_3V3", [(128.7875, 219.625), (128.6, 218.6)], F_CU, width=0.25)   # EN
+    r.via("VCC_3V3", (133.35, 218.6)); added += 1
+    added += r.poly("VCC_3V3", [(133.0125, 219.625), (133.35, 218.85), (133.35, 218.6)],
+                    F_CU, width=0.25)                                          # VCC pin 8
+    added += r.poly("VCC_3V3", [(133.4, 217.3125), (133.35, 218.6)], F_CU, width=0.25)    # C16 pad 1
+    r.via("VCC_3V3", (150.9, 218.6)); added += 1
+    added += r.poly("VCC_3V3", [(150.9, 218.6), (150.3, 218.1), (150.3, 216.0),
+                                (149.2125, 216.0)], F_CU)                      # R142 pad 1
+    added += r.poly("VCC_3V3", [(150.9, 218.6), (150.9, 219.6), (146.0, 219.6),
+                                (145.25, 219.1)], F_CU)                        # JP pad 1
+    # SCL pull-up top (R_J16_SCL_PU sits south of the cluster): tap the 3V3
+    # trunk at y=223.5 and run IN1 east into the pad-1 via.
+    # (via at y=222.8: y=223.5 sat 0.6 mm from the TP3 via's drill —
+    # hole-to-hole minimum is 0.5 mm between 0.4 mm drills)
+    r.via("VCC_3V3", (113.1, 222.8)); added += 1    # ON the IN2 x=113.1 trunk
+    added += r.poly("VCC_3V3", [(113.1, 222.8), (114.0, 223.5), (136.85, 223.5)], IN1_CU)
+    r.via("VCC_3V3", (136.85, 223.5)); added += 1   # lands inside R143 pad 1
+
+    # ---- J16_SDA: buffer SDAOUT (pin 7) -> spine -> J16.3 THT; the ESD IO
+    #      (U47.3) hangs off the IN1 pull-up leg via a via EAST of the pad
+    #      column — an F.Cu line into the column from the west would seal
+    #      the GND zone pocket around U47's pads (found by zone-fill/DRC) ----
+    added += r.poly("J16_SDA", [(133.0125, 220.275), (134.6, 220.275), (134.6, 217.8),
+                                (135.0, 217.4), (135.0, 206.0)], F_CU)
+    r.via("J16_SDA", (135.0, 216.2)); added += 1    # junction ON the spine
+    added += r.poly("J16_SDA", [(135.0, 216.2), (146.6, 216.2)], IN1_CU)
+    r.via("J16_SDA", (142.6, 216.2)); added += 1    # ON the IN1 leg
+    added += r.poly("J16_SDA", [(142.6, 216.2), (141.9, 216.25)], F_CU)       # ESD U47.3
+    r.via("J16_SDA", (146.6, 216.2)); added += 1
+    added += r.poly("J16_SDA", [(146.6, 216.2), (147.3875, 216.0)], F_CU)     # R142 pad 2
+
+    # ---- J16_SCL: buffer SCLOUT (pin 2) -> IN1 -> IN2 x=137.9 -> J16.4;
+    #      branches: ESD IO (U47.6) + the south pull-up off the lane via ----
+    added += r.poly("J16_SCL", [(128.7875, 220.275), (127.15, 220.275)], F_CU)
+    r.via("J16_SCL", (127.15, 220.275)); added += 1
+    added += r.poly("J16_SCL", [(127.15, 220.275), (137.9, 220.275)], IN1_CU)
+    r.via("J16_SCL", (137.9, 220.275)); added += 1
+    added += r.poly("J16_SCL", [(137.9, 220.275), (137.9, 207.0), (138.5, 206.0)], IN2_CU)
+    added += r.poly("J16_SCL", [(137.9, 220.275), (139.163, 219.0), (139.163, 218.15)], F_CU)  # ESD U47.6
+    added += r.poly("J16_SCL", [(138.6125, 223.3), (137.9, 222.5), (137.9, 220.4)], F_CU)      # R143 pad 2
+
+    # ---- J16_3V3: J16.5 THT -> east lane -> ESD IO (U47.1) + JP pad 2.
+    #      The vertical runs at x=143.5 (into JP pad 2's west edge) so the
+    #      GND zone keeps a wide channel to U47 pad 2's thermal spokes. ----
+    added += r.poly("J16_3V3", [(142.0, 206.0), (142.0, 213.3), (142.9, 214.2),
+                                (143.5, 214.2), (143.5, 218.9), (143.95, 218.9)], F_CU)
+    added += r.poly("J16_3V3", [(143.5, 218.15), (141.437, 218.15)], F_CU)    # ESD U47.1
+
+    # ---- REV_ID straps (R2-6): IN2 lanes past the tap/ADC clusters to
+    #      Pico GP20 (pin 26) / GP21 (pin 27). Transition vias sit south of
+    #      the C_ADC5 pads; final F.Cu stubs come in from the south-east. ----
+    added += r.poly("REV_ID0", [(117.0875, 68.0), (116.9, 67.5), (116.6, 66.9)], F_CU)
+    r.via("REV_ID0", (116.6, 66.9)); added += 1
+    added += r.poly("REV_ID0", [(116.6, 66.9), (116.6, 41.6)], IN2_CU)
+    r.via("REV_ID0", (116.6, 41.6)); added += 1
+    added += r.poly("REV_ID0", [(116.6, 41.6), (111.95, 43.35)], IN1_CU)
+    r.via("REV_ID0", (111.95, 43.35)); added += 1
+    added += r.poly("REV_ID0", [(111.95, 43.35), (110.8, 44.1), (109.69, 44.43)], F_CU)
+    added += r.poly("REV_ID1", [(117.0875, 71.0), (117.35, 70.4)], F_CU)
+    r.via("REV_ID1", (117.35, 70.4)); added += 1
+    added += r.poly("REV_ID1", [(117.35, 70.4), (117.35, 41.15)], IN2_CU)
+    r.via("REV_ID1", (117.35, 41.15)); added += 1
+    added += r.poly("REV_ID1", [(117.35, 41.15), (116.9, 40.8), (111.9, 40.8)], IN1_CU)
+    r.via("REV_ID1", (111.9, 40.8)); added += 1
+    added += r.poly("REV_ID1", [(111.9, 40.8), (110.7, 41.4), (109.69, 41.89)], F_CU)
+    # 3V3 strap top for REV_ID0 (R144 pad 1); the via sits EAST of both I2C
+    # trunks (x=119.8/121 leave no legal via slot between them); R145 pad 1
+    # grounds through the F.Cu zone.
+    added += r.poly("VCC_3V3", [(118.9125, 68.0), (121.8, 68.0)], F_CU)
+    r.via("VCC_3V3", (121.8, 68.0)); added += 1
+    added += r.poly("VCC_3V3", [(121.8, 68.0), (113.1, 68.0)], IN1_CU)
+    r.via("VCC_3V3", (113.1, 68.0)); added += 1     # ON the IN2 x=113.1 trunk
     return added
