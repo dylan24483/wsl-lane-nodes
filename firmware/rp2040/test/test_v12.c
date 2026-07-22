@@ -229,13 +229,16 @@ int main(void) {
 
     /* ---- G: TAPDUMP + cause classification -------------------------------- */
     printf("[G] TAPDUMP / cause codes\n");
-    /* (a) kick starvation: live kick train, then it stops, then 555 falls */
+    /* (a) kick starvation: live kick train AT THE REAL PI CADENCE (1 Hz: 50 ms
+     * HIGH / 950 ms LOW per lane_node.py watchdog_kick_loop), then it stops,
+     * then 555 falls. Silence must exceed TAP_KICK_STARVE_MS (2000 ms). */
     reset_clean(); tap_init();
     mock_us = 20000000ull;
-    for (int i = 0; i < 6; i++) {                /* kick pulses every 100 ms */
-        tap_edge_sim(PIN_TAP_KICK, (i & 1)); advance_ms(100);
+    for (int i = 0; i < 3; i++) {                /* three 1 Hz kick pulses */
+        tap_edge_sim(PIN_TAP_KICK, 0); advance_ms(50);   /* observed rise */
+        tap_edge_sim(PIN_TAP_KICK, 1); advance_ms(950);  /* observed fall */
     }
-    advance_ms(400);                             /* kick silent > TAP_KICK_STARVE_MS */
+    advance_ms(2500);                            /* kick silent > TAP_KICK_STARVE_MS */
     tap_edge_sim(PIN_TAP_555, 1);                /* raw rise = observed FALL of 555 */
     rx_feed("TAPDUMP\n"); poll_uart(); pump();
     CHECK(tx_has("\"ev\":\"tapdump\"") && tx_has("\"cause\":\"kick_starvation\""),
@@ -244,6 +247,19 @@ int main(void) {
     CHECK(tx_has("\"ev\":\"tape\"") && tx_has("\"ev\":\"tapdump_end\""),
           "dump entries + end marker delivered");
     CHECK(tx_has("\"p\":0") && tx_has("\"p\":1"), "entries carry tap indices (555 + KICK)");
+    /* (a2) REGRESSION vs the v1.2.0 300 ms bug: a 555 fall landing in the normal
+     * 1 Hz inter-kick gap (~950 ms after the last kick edge) is a live-train
+     * 555/board fault -> "555_drop", NOT starvation. With the old 300 ms
+     * threshold this exact case misclassified as kick_starvation. */
+    reset_clean(); tap_init();
+    mock_us = 25000000ull;
+    tap_edge_sim(PIN_TAP_KICK, 0); advance_ms(50);
+    tap_edge_sim(PIN_TAP_KICK, 1);               /* last kick edge */
+    advance_ms(940);                             /* inside the normal 1 Hz gap */
+    tap_edge_sim(PIN_TAP_555, 1);                /* observed 555 FALL, kick train live */
+    tap_dump_start(); pump();
+    CHECK(tx_has("\"cause\":\"555_drop\""),
+          "555 falls mid normal 1 Hz kick gap -> 555_drop (not starvation)");
     /* (b) arm drop: ARM falls first, 555 follows inside the cluster */
     reset_clean(); tap_init();
     mock_us = 30000000ull;
@@ -268,7 +284,7 @@ int main(void) {
     tap_edge_sim(PIN_TAP_KICK, 0);
     advance_ms(100);
     tap_edge_sim(PIN_TAP_KICK, 1);
-    advance_ms(100);                             /* kick edge 100 ms ago < 300 ms */
+    advance_ms(100);                             /* kick edge 100 ms ago < TAP_KICK_STARVE_MS */
     tap_edge_sim(PIN_TAP_555, 1);
     tap_dump_start(); pump();
     CHECK(tx_has("\"cause\":\"555_drop\""), "555 falls with a live kick -> 555_drop");

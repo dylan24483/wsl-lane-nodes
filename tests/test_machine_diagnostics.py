@@ -858,6 +858,16 @@ TESTS = [
 
 
 def main():
+    # This suite is the H4 contract gate, so a red run must be DIAGNOSABLE,
+    # not just countable: a one-shot flake was observed once on a fresh
+    # clean clone (17/18, unreproduced in 16+ follow-up runs, 2026-07-21
+    # post-remediation review) and the failing check's identity was lost
+    # because only the exception MESSAGE was printed. Print the full
+    # traceback so any future transient failure pins the exact check and
+    # line. Deliberately NO auto-retry: a gate that re-runs itself until
+    # green is worse than a flake.
+    import traceback as _tb
+    print(f"  (loopback HTTP server on 127.0.0.1:{PORT})")
     passed = 0
     failed = 0
     for t in TESTS:
@@ -868,9 +878,11 @@ def main():
             passed += 1
         except AssertionError as e:
             print(f"  FAIL  {name}: {e}")
+            _tb.print_exc(file=sys.stdout)
             failed += 1
         except Exception as e:
             print(f"  ERROR {name}: {type(e).__name__}: {e}")
+            _tb.print_exc(file=sys.stdout)
             failed += 1
 
     print()

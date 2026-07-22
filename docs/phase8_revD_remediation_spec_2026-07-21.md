@@ -120,11 +120,21 @@ shorted drain=gate node to 3.3 V directly):**
 - V_base = 3.3 × 100k / (1M + 10k + 100k) = **0.297 V** → same class:
   **I_C ≤ 0.56 µA → 0.056 V on RAIL_GATE — ≥ 8× below partial-hold onset at 85 °C.** ✓
 - Absolute ceiling independent of transistor physics: total injectable current is bounded
-  by 3.3 V / 1.01 M = **3.3 µA** — below even the 5 µA partial-hold onset if every
-  electron became collector current. The 1 M value is chosen exactly so this
-  transistor-free bound already clears the gate; the V_BE math above is the margin on
-  top. **This is why R_TAPIN must never be reduced below ~825 k** (3.3 V/R ≤ the 5 µA
-  onset with margin); 1 M standard value chosen.
+  by 3.3 V / 1.01 M = **3.3 µA**. **Temperature scope of this bound (corrected
+  2026-07-21, post-remediation review):** 3.3 µA clears the **25 °C** partial-hold onset
+  (5 µA) with ~34 % headroom, but against the **derated 85 °C onset** (COR-1:
+  |V_GS(th)|min ≈ 0.36 V → 0.36 V / 100 k ≈ **3.6 µA**) the headroom is only ~9 %
+  (0.33 V vs 0.36 V in the voltage domain). The transistor-free bound is therefore a
+  *25 °C-class* backstop, NOT by itself the at-temperature safety case — at 85 °C the
+  margin comes from (a) the BJT V_BE math above (0.53–0.56 µA, ≥ 6× below the derated
+  onset) and (b) the at-temperature fault-injection gate (R1.9 step 4), which proves the
+  stacked fault empirically.
+  **R_TAPIN floor, re-derived against the DERATED onset: never below 1 M.** (An earlier
+  draft said "~825 k", derived from 3.3 V/R ≤ 5 µA — that clears only the 25 °C onset;
+  825 k–910 k gives 3.6–4.0 µA, at/above the derated 3.6 µA onset, surrendering the
+  transistor-free layer entirely at temperature. 3.3 V/R ≤ 3.6 µA requires R ≥ 917 k;
+  1 M is the smallest standard value satisfying it, with the V_BE math as the actual
+  at-temperature margin.) 1 M chosen.
 
 **Case B — WDOG_KICK tap: D-G short (+ stuck-high GPIO), driver high-Z.**
 - V at AO3400 kick gate = 3.3 × 10k / (1M + 1k + 10k) ≈ **0.033 V** ≪ 0.65 V min
@@ -177,11 +187,12 @@ Timing / kick-path loading (the WDOG_KICK edge-integrity requirement):
 | F4 | FET D-G short **+ GPIO stuck-HIGH** (double) | ≤ 3.3 µA (Case A′) | corrupted | ✓ |
 | F5 | FET D-S short | none (gate isolated) | reads "observed HIGH" constantly | ✓ |
 | F6 | FET G-S short | observed net gains a 1 M load to GND: on a 3.3 V push-pull net ≈ 3.3 µA vs the existing 110 k/30 µA pulldown — cannot false-disarm | reads "observed LOW" constantly | ✓ |
-| F7 | R_TAPIN open | none | gate → R_gpd (or floats on 555 tap) → FET off → reads "observed LOW" constantly; **detectable** (ARM tap reads LOW while rail armed = impossible state) | ✓ |
+| F7 | R_TAPIN open — **KICK/ARM/RPOK taps** | none (the open removes ALL copper to the observed net — injection is zero by construction) | gate → R_gpd 10 M → FET off → reads "observed LOW" constantly; **detectable** (ARM tap reads LOW while rail armed = impossible state) | ✓ |
+| F7b | R_TAPIN open — **555 tap** (no R_gpd, R1.3) | none (same zero-copper argument) | **NOT guaranteed detectable** (corrected 2026-07-21): a floating MOS gate is not guaranteed off, and the routed TAP_GATE_555 trace is 61.6 mm with ~25 mm running parallel to NE555_OUT copper at ~0.5 mm edge gap (gate seg (125.2,53.75)–(150.2,53.75)) — with R_TAPIN open the floating gate capacitively couples to its own source signal and can keep producing plausible, truth-correlated (or drifting) readings instead of pinning LOW. Zero electrical hazard either way; the risk is silent loss of *measurement* integrity on one advisory diagnostic channel. **Accepted residual** (same class as F9): consequence is diagnostic-trust only; treat any post-mortem that leans on the 555 tap as requiring corroboration from the KICK tap + heartbeat evidence. Adding an R_gpd to the 555 tap is NOT the fix — it costs 0.3 V of gate-drive margin the R1.5 worst-stack cannot afford (2.80 V vs 2.68 V). | ✓ (safety) / ✗ (detectability — accepted residual) |
 | F8 | R_TAPIN short (single) | gate sits on observed net directly — still **no** outward DC path (MOS gate, ≤ 100 nA) | reading works | ✓ |
 | F9 | R_TAPIN short **+ D-G short** (double component fault) | base ≈ 3.3 × 100k/120k = 2.75 V through R_pu → BJT hard-on → **rail held — UNSAFE** | — | **✗ residual** — see disposition below |
 | F10 | R_pu open | none | drain floats — Schmitt indeterminate; detectable (noise/stuck) | ✓ |
-| F11 | R_pu short | none to observed net; drain hard-3V3, FET-on current 3.3 V/R_DS(on) may kill the FET (local); GPIO input pad at 3.3 V — within ratings | stuck read | ✓ (local damage only) |
+| F11 | R_pu short | none to observed net. **Consequence corrected 2026-07-21 (was "local damage only"):** drain is tied hard to 3V3, so every time the observed net goes HIGH the FET turns on and dead-shorts VCC_3V3 to GND through R_DS(on) (~2–7 Ω) — the Pico's onboard 3V3 regulator current-limits/folds back, browning out the RP2040 → watchdog reset → RP_OK drops → **rail drops. Whole-lane-down**, potentially boot-looping in sync with the observed signal (e.g. arm attempt → brownout → reset → re-arm → repeat). Failure direction is strictly fail-SAFE (rail can only ever drop, never hold). **Field signature for triage: "lane dies on every arm attempt" (or in sync with the tapped signal) → suspect the tap drain pull-up short BEFORE the Pi/UART.** | brownout/reset, not a stable stuck read | ✓ (fail-safe; lane-down, NOT merely local) |
 | F12 | R_gpd open | none | lose defined-off backup; net-side pulldowns still define — degraded redundancy only | ✓ |
 | F13 | R_gpd short | observed net gains 1 M-to-GND via R_TAPIN (as F6) | reads "observed LOW" | ✓ |
 | F14 | Temp corners −10…+85 °C | all injection cases evaluated at 85 °C junction (worst, R1.4); drive margins at −10 °C (worst, R1.5) | — | ✓ |

@@ -1,7 +1,7 @@
-ERC ERROR: Pin conflict on net GND, POWER-OUT pin 33/AGND of RaspberryPi_Pico/A1 <==> POWER-OUT pin 3/GND of RaspberryPi_Pico/A1 (POWER-OUT connected to POWER-OUT)
 ERC WARNING: Insufficient drive current on net VCC_5V for pin POWER-IN pin 1/+Vin of TMA-0505S/U45.
-ERC WARNING: Insufficient drive current on net VCC_5V for pin POWER-IN pin 8/VCC of NE555D/U44.
 ERC WARNING: Insufficient drive current on net VCC_5V for pin POWER-IN pin 39/VSYS of RaspberryPi_Pico/A1.
+ERC WARNING: Insufficient drive current on net VCC_5V for pin POWER-IN pin 8/VCC of NE555D/U44.
+ERC ERROR: Pin conflict on net GND, POWER-OUT pin 33/AGND of RaspberryPi_Pico/A1 <==> POWER-OUT pin 3/GND of RaspberryPi_Pico/A1 (POWER-OUT connected to POWER-OUT)
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 5/GPIO3 of RaspberryPi_Pico/A1.
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 6/GPIO4 of RaspberryPi_Pico/A1.
 ERC WARNING: Unconnected pin: BIDIRECTIONAL pin 7/GPIO5 of RaspberryPi_Pico/A1.

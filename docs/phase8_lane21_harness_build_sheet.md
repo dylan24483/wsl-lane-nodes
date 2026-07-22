@@ -12,7 +12,9 @@
 >   UNinsulated ferrule** (rated to 1.5 mm²). The 22 AWG / 0.34 mm² insulated ferrules
 >   for J3/J4/J5/J13 are inside the 0.5 mm² limit and stand.
 > - These figures apply to every MC 1,5 plug row below (§2.1 steps 3–4, §4 ferrule
->   rows). MKDS fixed blocks (J2, J6–J11) are a different series — verify their
+>   rows, **and the §4 Tools row — the driver itself must be torque-limited to
+>   0.22–0.25 N·m, not a ~0.5 N·m-class blade; scope gap closed 2026-07-21**).
+>   MKDS fixed blocks (J2, J6–J11) are a different series — verify their
 >   termination data against Phoenix 1715734/1715721 at build; do not reuse either set
 >   of numbers across series.
 > - Machine-readable copy of the corrected data: `docs/phase8_revD_harness_bom.csv`
@@ -262,7 +264,7 @@ Plugs per `phase8_revC_readiness_checklist.md` §3 (the BOM-gap list — these s
 | Split loom / jacket | ~10 mm, keep Bundle 1 and Bundle 3 in **separate** looms (≥50 mm apart) | ~4 m | ~8 m |
 | Wire-map card | printed §1 tables + §2.1 full label text, taped inside enclosure door | 1 | 2 |
 | Back-probe pin set | metering aid ONLY (never permanent termination in this Path-B build) | 1 set | 1 set |
-| Tools | ferrule crimper 0.25–2.5 mm², small flat-blade (~0.5 Nm), strippers 22/18 AWG, pliers for IDC taps, DMM, label printer | on hand | — |
+| Tools | ferrule crimper 0.25–2.5 mm², ~~small flat-blade (~0.5 Nm)~~ **torque-limiting driver set to 0.22–0.25 N·m with a small flat blade (corrected 2026-07-21, H7 — a ~0.5 N·m-class driver is twice the MC 1,5 M2 screw rating; if no torque driver is on hand, use a plain small flat-blade and stop at snug + 1/8 turn, then tug-test)**, strippers 22/18 AWG, pliers for IDC taps, DMM, label printer | on hand | — |
 
 **Path-A note:** no AMP mating housings/contacts in this BOM — Path A stays blocked on the housing-vs-contact P/N + gender confirm (Section F F.3 / F.5 step 0). If Path A unblocks before fleet rollout, the machine-side taps get superseded by proper 34/50-pos mates; this pilot ships on taps.
 
@@ -348,3 +350,4 @@ Order: **chassis lugs → J4 sense taps → J5 → DIELL taps → outputs → J1
 
 **Change log:** 2026-07-07 — created (Candidate-C decision formal, `phase8_interlock_redesign.md` §7). Measured values only from the 2026-06-01 bench + 2026-06-27 + 2026-07-07 at-machine sessions; everything unmeasured is CUT+LABEL-ONLY / NO-LEAD / OPEN with its closing session named.
 2026-07-21 — **H7 correction (Codex NO-GO audit):** MC 1,5 termination data corrected throughout (strip 7 mm not 8; torque 0.22–0.25 N·m not 0.5; insulated ferrules capped at 0.5 mm² — J14 18 AWG leads go bare/uninsulated). Header banner + inline strikethroughs; machine-readable data in `docs/phase8_revD_harness_bom.csv`. A rev-D lane build additionally carries J15/J16 plugs + CP-MSTB coding (profile in the PLUG, never a standard header; sacrificial-pair proof FA-8) — see `docs/phase8_revD_first_article_pack.md`.
+2026-07-21 (later) — **H7 scope gap closed (post-remediation review):** the §4 Tools row still specified a "small flat-blade (~0.5 Nm)" driver — a tool characterized at 2× the corrected torque limit, missed because the banner's scope list skipped the Tools row. Tools row now calls for a torque-limiting driver set to 0.22–0.25 N·m (fallback: plain blade, snug + 1/8 turn + tug-test); banner scope list updated.

@@ -580,7 +580,12 @@ kicad-cli; `py -3` for SKiDL/diff/audit-netlist).
 - Root cause: `BOARD.Remove()` detaches without freeing (SWIG "memory leak of type
   'PCB_TRACK *'" per item) and leaves the board's containers in a state where the later
   `board.Zones()` iteration segfaults or yields raw `SwigPyObject` (the audit's
-  AttributeError). Reproduced both failure modes; minimal repro in `tmp/m2_repro.py`.
+  AttributeError). Reproduced both failure modes; minimal repro in
+  `scripts/repro_m2_getisrulearea.py` *(2026-07-21 later: originally cited as
+  `tmp/m2_repro.py`, but `tmp/` is gitignored — the evidence existed only on this
+  laptop, in no clone and no mirror. Moved verbatim into `scripts/` (paths made
+  repo-relative) so the audit trail survives the single-volume risk M7 documents;
+  post-remediation review finding).*
 - Fix: `BOARD.Delete()` (removes AND destroys natively) in `route_revD_lib.clear_tracks()`
   and for the copper-zone sweep in `route_revD.py` (zone container snapshotted before
   mutation). Verified: `--check-only` exit 0, **SELF-CHECK: 0 problems**, zero leak
@@ -788,4 +793,85 @@ kicad-cli; `py -3` for SKiDL/diff/audit-netlist).
   G1's retirement note) — historical descriptions of the retired figure, not live
   claims. Root-level `generate_kicad_netlist_revD.erc`/`_sklib.py` (stale pre-R2.5
   copies vs the committed scripts/ versions) staged with this batch for coherence.
+  *(CORRECTION 2026-07-21 later, post-remediation review: this note had the drift
+  BACKWARDS — b6a6ab6 updated only the ROOT copies to the post-R2.5 state and left
+  `scripts/generate_kicad_netlist_revD_sklib.py` at the pre-R2.5 system-library MCV
+  footprints (no `_D1.4`), i.e. the stale copy ended up NEXT TO the generator. Both
+  pairs synced byte-identical from the root copies in the review batch below. No
+  functional netlist impact either way — Part() calls pass footprint= explicitly and
+  the committed .net carries `_D1.4` throughout.)*
 - Backup mirror: see the mirror record appended below after commit.
+
+## POST-REMEDIATION REVIEW BATCH (2026-07-21, later — 10 review findings on the campaign itself)
+
+An independent review pass over the completed remediation found 2 major + 8 minor
+issues in the campaign's own artifacts (no board copper affected — netlist/DRC/fab
+package untouched; `kicad/` tree clean throughout, rev-C 189/189 verified after the
+batch via the new `scripts/verify_revC_snapshot.py`).
+
+- **RV-1 (major, firmware): `TAP_KICK_STARVE_MS` 300 → 2000 ms, fw v1.2.1.** The
+  v1.2.0 value was sized against "~250 ms Pi kick cadence" — that figure is
+  `HB_INTERVAL_MS` (the RP2040 heartbeat), NOT the Pi kick. The real kick
+  (`lane_node.py::watchdog_kick_loop`) is 1 Hz (50 ms/950 ms), so kick edges from a
+  healthy Pi arrive up to ~950 ms apart and 300 ms misclassified ~65 % of genuine
+  live-train `555_drop` events as `kick_starvation` (advisory-only — raw ring still
+  delivered — but the post-mortem pointer was wrong, and the VERIFY note anchored
+  first-article to a bogus basis). test_v12 section G(a) now simulates the REAL 1 Hz
+  cadence (the 100 ms simulated kicks are why the wrong constant passed) + new G(a2)
+  regression (555 fall in the normal inter-kick gap ⇒ `555_drop`). Suites
+  **64/64 + 32/32 + 71/71**; README/CHANGELOG/first-article pack updated.
+- **RV-2 (major, docs): `docs/HANDOFF.md` brought current.** The READ-THIS-FIRST doc
+  still described the pre-remediation board (252/213, 93-netclass, resistive taps),
+  cited the superseded `DRC-revD-routed-r3.rpt`, and claimed `export_fab_revD.py`
+  "not yet written"/G11 open. 07-20 addendum figures struck with pointers; new
+  2026-07-21 addendum carries the real state (262/217, 97/4/13/82/21, 2N7002 stages,
+  `DRC-revD-remediation-r3.rpt`, G11 closed, fab package + remediation mirror, fw
+  v1.2.1, remaining gates).
+- **RV-3 (spec, FMEA F7 split): F7's "detectable" disposition was optimistic for the
+  555 tap** — no R_gpd there (by design), and the routed `TAP_GATE_555` (61.6 mm,
+  ~25 mm parallel to NE555_OUT at ~0.5 mm) can capacitively keep a floating gate
+  producing plausible truth-correlated readings with R_TAPIN open. New F7b row:
+  zero-injection safety unchanged; detectability = accepted residual; corroborate the
+  555 channel against KICK + hb in any post-mortem.
+- **RV-4 (spec, FMEA F11 rewrite): "local damage only" was wrong** — R_pu short
+  turns every observed-net HIGH into a 3V3 dead-short through the FET ⇒ Pico
+  brownout/reset ⇒ RP_OK low ⇒ rail refused: fail-SAFE but whole-lane-down,
+  potentially boot-looping in sync with arm attempts. Field-triage signature added.
+- **RV-5 (spec, R1.4 Case A′ scope): the 3.3 µA transistor-free ceiling clears the
+  25 °C onset (5 µA) but only ~9 % under the derated 85 °C onset (3.6 µA)** — and the
+  old "~825 k floor" sentence would NOT clear derated at all (4.0 µA). Ceiling
+  argument now temperature-scoped; R_TAPIN floor re-derived against the derated
+  onset: **≥ 917 k ⇒ 1 M minimum, 825 k retracted.** Values unchanged (1 M was
+  already correct); the derivation text was the defect.
+- **RV-6 (M7 class): `scripts/generate_kicad_netlist_revD_sklib.py` + `.erc` synced**
+  from the updated root copies (see the correction note added to the b6a6ab6 M7
+  entry above — that note had the drift direction backwards).
+- **RV-7 (H7 scope gap): harness build sheet §4 Tools row** still specced a
+  "~0.5 N·m" flat-blade (2× the corrected MC 1,5 torque limit) — corrected to a
+  torque-limiting driver at 0.22–0.25 N·m; banner scope list + changelog updated.
+- **RV-8 (M7 class): M2 evidence de-gitignored** — `tmp/m2_repro.py` (cited above as
+  the M2 minimal repro, but tmp/ is gitignored: evidence existed on one laptop only)
+  moved verbatim to `scripts/repro_m2_getisrulearea.py` (repo-relative paths);
+  verified PASS (exit 0, board untouched on disk) against the fixed lib on KiCad
+  10.0.2. Same rationale: the standing rev-C gate tool promoted from tmp/ to
+  `scripts/verify_revC_snapshot.py` (189/189).
+- **RV-9 (H4 guard fail-open): `WSL Systems/tests/test_phase8_bridge_contract.py`**
+  located `machine_contract.json` only at this laptop's absolute path and silently
+  PASSED with a NOTE when absent — the drift alarm could never fire on WSL-SRV/CI/
+  clean clones. Now fail-closed: `$WSL_MACHINE_CONTRACT` (path, or literal `skip`
+  for an explicit opt-out) → sibling `../wsl-lane-nodes/server/` → legacy absolute
+  path; none found ⇒ suite FAILS. Verified: normal PASS, `skip` opt-out prints and
+  passes, bogus env path exits 1.
+- **RV-10 (flake observability): `tests/test_machine_diagnostics.py`** one-shot
+  17/18 flake on a fresh clone (unreproduced in 16+ runs; identity lost because the
+  runner printed only the exception message). Runner now prints the full traceback
+  per failure + the loopback port; deliberately NO auto-retry (a self-re-running
+  gate is worse than a flake). 18/18 ×3 after the change. Disposition: hardened
+  observability; root cause remains unidentified — if it recurs, the traceback now
+  pins the check.
+- **Gates re-run after the batch:** firmware hosts 64/64 + 32/32 + 71/71 (v1.2.1);
+  `test_machine_diagnostics` 18/18 ×3; `test_watchdog_kick` / `test_rp2040_link`
+  93/93 / `test_daemon_diagnostics` 42/42 / `test_diag_events` 26/26 /
+  `test_fsm_diagnostics` 23/23 all PASS; WSL Systems bridge-contract suite ALL PASS
+  (3 modes); **board chain NOT touched** (git-clean `kicad/`, no netlist/DRC/fab
+  re-export needed); **rev-C 189/189 OK**.

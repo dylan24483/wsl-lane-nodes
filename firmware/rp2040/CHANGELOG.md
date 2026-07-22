@@ -4,6 +4,28 @@ All entries newest-first. "Flashed" status is tracked per entry — a written ve
 NOT a deployed version. Line-format changes are ADDITIVE-ONLY by policy: the Pi-side
 parser (`lane_node/rp2040_link.py`) ignores unknown JSON keys and unknown `ev` kinds.
 
+## v1.2.1 — 2026-07-21 — TAP_KICK_STARVE_MS corrected 300 → 2000 ms. NOT FLASHED.
+
+Advisory-classifier fix (post-remediation review finding vs the C2 work; no safety path
+touched, no line-format change):
+
+- **`TAP_KICK_STARVE_MS` 300 → 2000 ms.** The v1.2.0 value was sized against a "~250 ms
+  Pi kick cadence" that does not exist — that figure was `HB_INTERVAL_MS` (the RP2040
+  heartbeat) mistaken for the Pi's kick period. The real kick source
+  (`lane_node/lane_node.py` `watchdog_kick_loop()`) runs at 1 Hz (50 ms HIGH / 950 ms
+  LOW), so consecutive kick EDGES from a perfectly healthy Pi arrive up to ~950 ms apart
+  and the 300 ms threshold classified ~65 % of genuine live-kick-train `555_drop` events
+  as `kick_starvation`, misdirecting post-mortems toward the Pi/kick path. 2000 ms = two
+  fully missed 1 Hz kick periods: a live train can never trip it; a dead train always
+  does, far inside the ~11 s NE555 window. The config.h comment now derives the value
+  from the real cadence and states both first-article VERIFY bounds (measured NE555
+  window ≫ 2000 ms; observed kick edge spacing < 2000 ms).
+- **Host test:** section G(a) now simulates the REAL 1 Hz kick cadence (previously
+  100 ms pulses — which is why the wrong constant passed), and a new G(a2) regression
+  check pins that a 555 fall landing in the normal ~950 ms inter-kick gap classifies as
+  `555_drop`, NOT starvation (fails against the old 300 ms value). Suites now
+  **64/64 + 32/32 + 71/71**, still `-Wall -Wextra -Werror`-clean.
+
 ## v1.2.0 — 2026-07-21 — rev-D diagnostic taps (remediation spec R3; closes Codex C2). NOT FLASHED.
 
 Scope = exactly `docs/phase8_revD_remediation_spec_2026-07-21.md` §R3 (the binding

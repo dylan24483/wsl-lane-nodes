@@ -17,7 +17,12 @@
 #ifndef WSL_PHASE8B_RP2040_CONFIG_H
 #define WSL_PHASE8B_RP2040_CONFIG_H
 
-/* v1.2.0 (2026-07-21, rev-D remediation R3 — closes Codex finding C2, NOT yet flashed):
+/* v1.2.1 (2026-07-21): TAP_KICK_STARVE_MS 300 -> 2000 ms — the 300 value was sized
+ * against HB_INTERVAL_MS (the RP2040 heartbeat) mistaken for the Pi kick cadence; the
+ * REAL Pi kick is 1 Hz, so 300 ms misclassified ~65 % of genuine 555 drops as
+ * kick_starvation. Advisory-classifier-only change; no safety path touched.
+ *
+ * v1.2.0 (2026-07-21, rev-D remediation R3 — closes Codex finding C2, NOT yet flashed):
  * GP16-19 rev-D diagnostic taps get an ENFORCED input-only init (tap_init choke point +
  * tap_assert_input_only register readback each heartbeat), inverted-tap decode (2N7002
  * common-source stage: raw pad 0 = observed net HIGH), a 1 ms-timestamped rail-drop edge
@@ -25,7 +30,7 @@
  * on GP26. ALL ADDITIVE: v1.1 line formats unchanged, v1.1 enforcement flags still
  * DEFAULT OFF — a default build adds no NEW enforcement beyond the tap direction
  * invariant (which can only ever latch_fault, i.e. fail-safe). See CHANGELOG.md. */
-#define FW_VERSION "phase8b-rp2040 v1.2.0"
+#define FW_VERSION "phase8b-rp2040 v1.2.1"
 
 /* ---- UART (uart0) link to the Pi -------------------------------------------------------- */
 #define UART_BAUD     115200
@@ -100,10 +105,18 @@
  * raw ring too). Falling edges of 555/ARM/RPOK within CLUSTER_MS of the most recent one
  * form "the drop"; the earliest faller is the initiator. A 555 fall with no kick edge in
  * the preceding KICK_STARVE_MS = kick starvation.
- * TAP_KICK_STARVE_MS: VERIFY against the measured NE555 watchdog window at first
- * article (R1.9 step 5) — placeholder consistent with the ~250 ms Pi kick cadence.      */
+ * TAP_KICK_STARVE_MS sizing: the Pi's REAL kick cadence is 1 Hz (lane_node.py
+ * watchdog_kick_loop(): 50 ms HIGH / 950 ms LOW), so consecutive kick EDGES from a
+ * healthy Pi are up to ~950 ms apart. The threshold must sit ABOVE one full kick period
+ * (or a live train gets misread as starvation ~65 % of the time) and far BELOW the
+ * ~11 s NE555 timeout. 2000 ms = two fully missed kick periods: a genuine live train
+ * can never trip it, a dead kick train always does long before the 555 times out.
+ * (v1.2.0 shipped 300u on a WRONG premise — the ~250 ms figure was HB_INTERVAL_MS, the
+ * RP2040 heartbeat, not the Pi kick cadence. Fixed 2026-07-21, review finding vs C2.)
+ * VERIFY at first article (R1.9 step 5): confirm the measured NE555 window ≫ 2000 ms
+ * and the observed kick edge spacing < 2000 ms.                                        */
 #define TAP_CAUSE_CLUSTER_MS  1000u
-#define TAP_KICK_STARVE_MS     300u
+#define TAP_KICK_STARVE_MS    2000u
 
 /* GP19 self-observation cross-check (R3.1): the tap's view of RP2040_OK vs our own GP2
  * output register. Mismatch persisting TAP_RPOK_MISM_STRIKES consecutive heartbeat ticks

@@ -324,7 +324,10 @@ Before reflowing/soldering the remaining six MCV headers, install and solder ONE
 and solder fill is complete. Then proceed with the rest.
 
 ### FA-11 — Firmware v1.2 posture assert (refuses the first-article pass if absent)
-1. Boot banner shows v1.2.0 and `tap:{ep,pre,n}` state.
+1. Boot banner shows v1.2.1 (or later v1.2.x) and `tap:{ep,pre,n}` state.
+   *(v1.2.1, 2026-07-21: `TAP_KICK_STARVE_MS` corrected 300 → 2000 ms — the real Pi
+   kick cadence is 1 Hz, not the "~250 ms" the v1.2.0 placeholder assumed. First-article
+   VERIFY bounds: measured NE555 window ≫ 2 s AND observed kick edge spacing < 2 s.)*
 2. `tap_assert_input_only()` is active (heartbeat-tick OE/FUNCSEL readback); simulate
    nothing here — the host suite already proves the trip path; on-silicon just confirm
    no `tap_dir` fault is latched with the release build.
