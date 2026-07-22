@@ -16,6 +16,8 @@ __pycache__/
 
 # Logs
 *.log
+# ...but as-ordered fab-package logs are part of the hashed package (H6)
+!kicad/fab_revD_*/reports/*.log
 
 # Phase 8 lane-node per-install runtime artifacts (each Pi captures its own)
 lane_node/empty_ref.png
