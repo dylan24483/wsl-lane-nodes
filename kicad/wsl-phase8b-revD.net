@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "generate_kicad_netlist_revD.py")
-    (date "07/20/2026 12:22 AM")
+    (date "07/21/2026 04:31 PM")
     (tool "SKiDL (2.2.3)")
     (sheet
       (number 1)
@@ -13,7 +13,7 @@
         (company)
         (rev)
         (date)
-        (source "generate_kicad_netlist_revD.py")
+        (source "..\generate_kicad_netlist_revD.py")
         (comment
           (number "1")
           (value ""))
@@ -57,7 +57,7 @@
         (field
           (name "SKiDL Tag") "RP_PICO")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:247"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:262"))
       (libsource
         (lib "MCU_Module")
         (part "RaspberryPi_Pico"))
@@ -81,7 +81,7 @@
         (field
           (name "SKiDL Tag") "C_MCP_IN_A")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -105,7 +105,7 @@
         (field
           (name "SKiDL Tag") "Csnub_M1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -129,7 +129,7 @@
         (field
           (name "SKiDL Tag") "C_WDOG_TIMING")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C_Polarized"))
@@ -153,7 +153,7 @@
         (field
           (name "SKiDL Tag") "C_WDOG_VCC")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -177,7 +177,7 @@
         (field
           (name "SKiDL Tag") "C_WDOG_CTRL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -201,7 +201,7 @@
         (field
           (name "SKiDL Tag") "C_3V3_BULK")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -225,7 +225,7 @@
         (field
           (name "SKiDL Tag") "C_ADC5")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -249,7 +249,7 @@
         (field
           (name "SKiDL Tag") "C_MCP_IN_B")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -273,7 +273,7 @@
         (field
           (name "SKiDL Tag") "C_MCP_OUT_A")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -297,7 +297,7 @@
         (field
           (name "SKiDL Tag") "Csnub_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -321,7 +321,7 @@
         (field
           (name "SKiDL Tag") "Csnub_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -345,7 +345,7 @@
         (field
           (name "SKiDL Tag") "Csnub_SP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -369,7 +369,7 @@
         (field
           (name "SKiDL Tag") "Csnub_BE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -393,7 +393,7 @@
         (field
           (name "SKiDL Tag") "Csnub_M")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -417,7 +417,7 @@
         (field
           (name "SKiDL Tag") "Csnub_M2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:230"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:245"))
       (libsource
         (lib "Device")
         (part "C"))
@@ -441,7 +441,7 @@
         (field
           (name "SKiDL Tag") "Dfly_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:343"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:358"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -465,7 +465,7 @@
         (field
           (name "SKiDL Tag") "MOV_M")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:364"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:379"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -489,7 +489,7 @@
         (field
           (name "SKiDL Tag") "Dfly_M2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:343"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:358"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -513,7 +513,7 @@
         (field
           (name "SKiDL Tag") "MOV_M2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:364"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:379"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -537,7 +537,7 @@
         (field
           (name "SKiDL Tag") "Dfly_M1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:343"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:358"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -561,7 +561,7 @@
         (field
           (name "SKiDL Tag") "MOV_M1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:364"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:379"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -585,7 +585,7 @@
         (field
           (name "SKiDL Tag") "D_WDOG_TIMING")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:411"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:426"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -609,7 +609,7 @@
         (field
           (name "SKiDL Tag") "D_WDOG_TRIG")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:412"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:427"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -633,7 +633,7 @@
         (field
           (name "SKiDL Tag") "D_PROT")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:520"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:535"))
       (libsource
         (lib "Device")
         (part "D_Schottky"))
@@ -657,7 +657,7 @@
         (field
           (name "SKiDL Tag") "MOV_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:364"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:379"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -681,7 +681,7 @@
         (field
           (name "SKiDL Tag") "Dfly_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:343"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:358"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -705,7 +705,7 @@
         (field
           (name "SKiDL Tag") "MOV_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:364"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:379"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -729,7 +729,7 @@
         (field
           (name "SKiDL Tag") "Dfly_SP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:343"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:358"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -753,7 +753,7 @@
         (field
           (name "SKiDL Tag") "MOV_SP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:364"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:379"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -777,7 +777,7 @@
         (field
           (name "SKiDL Tag") "Dfly_BE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:343"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:358"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -801,7 +801,7 @@
         (field
           (name "SKiDL Tag") "MOV_BE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:364"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:379"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -825,7 +825,7 @@
         (field
           (name "SKiDL Tag") "Dfly_M")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:343"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:358"))
       (libsource
         (lib "Device")
         (part "D"))
@@ -849,7 +849,7 @@
         (field
           (name "SKiDL Tag") "J_PI")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:447"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:462"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_02x10_Odd_Even"))
@@ -873,7 +873,7 @@
         (field
           (name "SKiDL Tag") "J_MOTION_M")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:453"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:468"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -897,7 +897,7 @@
         (field
           (name "SKiDL Tag") "J_MOTION_M2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:453"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:468"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -921,7 +921,7 @@
         (field
           (name "SKiDL Tag") "J_MOTION_M1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:453"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:468"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -934,18 +934,18 @@
       (ref "J13")
       (value "J_LAMP_LED")
       (description "Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical")
+      (footprint "wsl_footprints:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical")
+          (name "Footprint") "wsl_footprints:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "J_LAMP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:462"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:477"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x06"))
@@ -958,18 +958,18 @@
       (ref "J14")
       (value "J_SAFETY")
       (description "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical")
+      (footprint "wsl_footprints:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical_D1.4")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical")
+          (name "Footprint") "wsl_footprints:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical_D1.4")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "J_SAFE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:463"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:478"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x04"))
@@ -982,18 +982,18 @@
       (ref "J15")
       (value "J_SLOW_IN_C")
       (description "Generic connector, single row, 01x10, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical")
+      (footprint "wsl_footprints:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x10, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical")
+          (name "Footprint") "wsl_footprints:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "J_SLOWC")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:472"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:487"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x10"))
@@ -1006,18 +1006,18 @@
       (ref "J16")
       (value "J_EXT_I2C")
       (description "Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical")
+      (footprint "wsl_footprints:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical")
+          (name "Footprint") "wsl_footprints:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "J_EXTI2C")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:481"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:496"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x06"))
@@ -1041,7 +1041,7 @@
         (field
           (name "SKiDL Tag") "J_PWR")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:448"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:463"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x03"))
@@ -1054,18 +1054,18 @@
       (ref "J3")
       (value "J_FAST_IN")
       (description "Generic connector, single row, 01x10, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical")
+      (footprint "wsl_footprints:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x10, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical")
+          (name "Footprint") "wsl_footprints:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "J_FAST")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:449"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:464"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x10"))
@@ -1078,18 +1078,18 @@
       (ref "J4")
       (value "J_SLOW_IN_A")
       (description "Generic connector, single row, 01x14, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical")
+      (footprint "wsl_footprints:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical_D1.4")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x14, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical")
+          (name "Footprint") "wsl_footprints:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical_D1.4")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "J_SLOWA")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:450"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:465"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x14"))
@@ -1102,18 +1102,18 @@
       (ref "J5")
       (value "J_SLOW_IN_B")
       (description "Generic connector, single row, 01x12, script generated (kicad-library-utils/schlib/autogen/connector/)")
-      (footprint "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical")
+      (footprint "wsl_footprints:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical_D1.4")
       (fields
         (field
           (name "Description") "Generic connector, single row, 01x12, script generated (kicad-library-utils/schlib/autogen/connector/)")
         (field
-          (name "Footprint") "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical")
+          (name "Footprint") "wsl_footprints:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical_D1.4")
         (field
           (name "Datasheet"))
         (field
           (name "SKiDL Tag") "J_SLOWB")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:451"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:466"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x12"))
@@ -1137,7 +1137,7 @@
         (field
           (name "SKiDL Tag") "J_MOTION_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:453"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:468"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -1161,7 +1161,7 @@
         (field
           (name "SKiDL Tag") "J_MOTION_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:453"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:468"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -1185,7 +1185,7 @@
         (field
           (name "SKiDL Tag") "J_MOTION_SP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:453"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:468"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -1209,7 +1209,7 @@
         (field
           (name "SKiDL Tag") "J_MOTION_BE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:453"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:468"))
       (libsource
         (lib "Connector_Generic")
         (part "Conn_01x02"))
@@ -1233,7 +1233,7 @@
         (field
           (name "SKiDL Tag") "K_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:337"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:352"))
       (libsource
         (lib "Relay")
         (part "G5LE-1"))
@@ -1257,7 +1257,7 @@
         (field
           (name "SKiDL Tag") "K_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:337"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:352"))
       (libsource
         (lib "Relay")
         (part "G5LE-1"))
@@ -1281,7 +1281,7 @@
         (field
           (name "SKiDL Tag") "K_SP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:337"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:352"))
       (libsource
         (lib "Relay")
         (part "G5LE-1"))
@@ -1305,7 +1305,7 @@
         (field
           (name "SKiDL Tag") "K_BE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:337"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:352"))
       (libsource
         (lib "Relay")
         (part "G5LE-1"))
@@ -1329,7 +1329,7 @@
         (field
           (name "SKiDL Tag") "K_M")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:337"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:352"))
       (libsource
         (lib "Relay")
         (part "G5LE-1"))
@@ -1353,7 +1353,7 @@
         (field
           (name "SKiDL Tag") "K_M2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:337"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:352"))
       (libsource
         (lib "Relay")
         (part "G5LE-1"))
@@ -1377,7 +1377,7 @@
         (field
           (name "SKiDL Tag") "K_M1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:337"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:352"))
       (libsource
         (lib "Relay")
         (part "G5LE-1"))
@@ -1401,7 +1401,7 @@
         (field
           (name "SKiDL Tag") "Qk_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:339"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:354"))
       (libsource
         (lib "Transistor_BJT")
         (part "MMBT3904"))
@@ -1425,7 +1425,7 @@
         (field
           (name "SKiDL Tag") "Qled_L_STRIKE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:376"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:391"))
       (libsource
         (lib "Transistor_FET")
         (part "Q_NMOS_GSD"))
@@ -1449,7 +1449,7 @@
         (field
           (name "SKiDL Tag") "Qled_L_FOUL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:376"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:391"))
       (libsource
         (lib "Transistor_FET")
         (part "Q_NMOS_GSD"))
@@ -1473,7 +1473,7 @@
         (field
           (name "SKiDL Tag") "Q_WDOG_KICK")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:397"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:412"))
       (libsource
         (lib "Transistor_FET")
         (part "Q_NMOS_GSD"))
@@ -1497,7 +1497,7 @@
         (field
           (name "SKiDL Tag") "Q_WDOG_OK")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:399"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:414"))
       (libsource
         (lib "Transistor_FET")
         (part "Q_NMOS_GSD"))
@@ -1521,7 +1521,7 @@
         (field
           (name "SKiDL Tag") "Q_RAIL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:605"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:620"))
       (libsource
         (lib "Transistor_FET")
         (part "Q_PMOS_GSD"))
@@ -1545,7 +1545,7 @@
         (field
           (name "SKiDL Tag") "Q_AND_ARM")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:622"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:637"))
       (libsource
         (lib "Transistor_BJT")
         (part "MMBT3904"))
@@ -1569,7 +1569,7 @@
         (field
           (name "SKiDL Tag") "Q_AND_RP_OK")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:623"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:638"))
       (libsource
         (lib "Transistor_BJT")
         (part "MMBT3904"))
@@ -1578,6 +1578,78 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "85a60ca3-451c-5c49-a411-7c71454a1059"))
+    (comp
+      (ref "Q17")
+      (value "2N7002 TAP 555")
+      (description "N-MOSFET transistor, gate/source/drain")
+      (footprint "Package_TO_SOT_SMD:SOT-23")
+      (fields
+        (field
+          (name "Description") "N-MOSFET transistor, gate/source/drain")
+        (field
+          (name "Footprint") "Package_TO_SOT_SMD:SOT-23")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Q_TAP_555")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:723"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "Q_NMOS_GSD"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "7393a0e7-eb5e-5afa-be56-3f8271d977eb"))
+    (comp
+      (ref "Q18")
+      (value "2N7002 TAP KICK")
+      (description "N-MOSFET transistor, gate/source/drain")
+      (footprint "Package_TO_SOT_SMD:SOT-23")
+      (fields
+        (field
+          (name "Description") "N-MOSFET transistor, gate/source/drain")
+        (field
+          (name "Footprint") "Package_TO_SOT_SMD:SOT-23")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Q_TAP_KICK")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:723"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "Q_NMOS_GSD"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "4f17b1ba-b7be-5603-a689-d1205623d8ef"))
+    (comp
+      (ref "Q19")
+      (value "2N7002 TAP ARM")
+      (description "N-MOSFET transistor, gate/source/drain")
+      (footprint "Package_TO_SOT_SMD:SOT-23")
+      (fields
+        (field
+          (name "Description") "N-MOSFET transistor, gate/source/drain")
+        (field
+          (name "Footprint") "Package_TO_SOT_SMD:SOT-23")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Q_TAP_ARM")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:723"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "Q_NMOS_GSD"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "0798a3e5-b6e3-5e9f-a664-aecc1771b3f7"))
     (comp
       (ref "Q2")
       (value "MMBT3904 T")
@@ -1593,7 +1665,7 @@
         (field
           (name "SKiDL Tag") "Qk_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:339"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:354"))
       (libsource
         (lib "Transistor_BJT")
         (part "MMBT3904"))
@@ -1602,6 +1674,30 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "6e9c4569-5ffe-5458-bd28-d5da26f31d7c"))
+    (comp
+      (ref "Q20")
+      (value "2N7002 TAP RPOK")
+      (description "N-MOSFET transistor, gate/source/drain")
+      (footprint "Package_TO_SOT_SMD:SOT-23")
+      (fields
+        (field
+          (name "Description") "N-MOSFET transistor, gate/source/drain")
+        (field
+          (name "Footprint") "Package_TO_SOT_SMD:SOT-23")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Q_TAP_RPOK")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:723"))
+      (libsource
+        (lib "Transistor_FET")
+        (part "Q_NMOS_GSD"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "c0e84da3-82bc-53cb-9eb1-c2975d56562e"))
     (comp
       (ref "Q3")
       (value "MMBT3904 SP")
@@ -1617,7 +1713,7 @@
         (field
           (name "SKiDL Tag") "Qk_SP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:339"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:354"))
       (libsource
         (lib "Transistor_BJT")
         (part "MMBT3904"))
@@ -1641,7 +1737,7 @@
         (field
           (name "SKiDL Tag") "Qk_BE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:339"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:354"))
       (libsource
         (lib "Transistor_BJT")
         (part "MMBT3904"))
@@ -1665,7 +1761,7 @@
         (field
           (name "SKiDL Tag") "Qk_M")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:339"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:354"))
       (libsource
         (lib "Transistor_BJT")
         (part "MMBT3904"))
@@ -1689,7 +1785,7 @@
         (field
           (name "SKiDL Tag") "Qk_M2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:339"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:354"))
       (libsource
         (lib "Transistor_BJT")
         (part "MMBT3904"))
@@ -1713,7 +1809,7 @@
         (field
           (name "SKiDL Tag") "Qk_M1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:339"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:354"))
       (libsource
         (lib "Transistor_BJT")
         (part "MMBT3904"))
@@ -1737,7 +1833,7 @@
         (field
           (name "SKiDL Tag") "Qled_L_FIRST")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:376"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:391"))
       (libsource
         (lib "Transistor_FET")
         (part "Q_NMOS_GSD"))
@@ -1761,7 +1857,7 @@
         (field
           (name "SKiDL Tag") "Qled_L_SECOND")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:376"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:391"))
       (libsource
         (lib "Transistor_FET")
         (part "Q_NMOS_GSD"))
@@ -1785,7 +1881,7 @@
         (field
           (name "SKiDL Tag") "R_I2C_SDA")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1809,7 +1905,7 @@
         (field
           (name "SKiDL Tag") "Rpu_TA1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1833,7 +1929,7 @@
         (field
           (name "SKiDL Tag") "Rsnub_M2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1857,7 +1953,7 @@
         (field
           (name "SKiDL Tag") "Rb_M1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1881,7 +1977,7 @@
         (field
           (name "SKiDL Tag") "Rpd_M1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1905,7 +2001,7 @@
         (field
           (name "SKiDL Tag") "Rsnub_M1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1929,7 +2025,7 @@
         (field
           (name "SKiDL Tag") "Rgled_L_FIRST")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1953,7 +2049,7 @@
         (field
           (name "SKiDL Tag") "Rpdled_L_FIRST")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -1977,7 +2073,7 @@
         (field
           (name "SKiDL Tag") "Rled_L_FIRST")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2001,7 +2097,7 @@
         (field
           (name "SKiDL Tag") "Rgled_L_SECOND")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2025,7 +2121,7 @@
         (field
           (name "SKiDL Tag") "Rpdled_L_SECOND")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2049,7 +2145,7 @@
         (field
           (name "SKiDL Tag") "Rled_L_SECOND")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2073,7 +2169,7 @@
         (field
           (name "SKiDL Tag") "Rin_TA2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2097,7 +2193,7 @@
         (field
           (name "SKiDL Tag") "Rgled_L_STRIKE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2121,7 +2217,7 @@
         (field
           (name "SKiDL Tag") "Rpdled_L_STRIKE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2145,7 +2241,7 @@
         (field
           (name "SKiDL Tag") "Rled_L_STRIKE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2169,7 +2265,7 @@
         (field
           (name "SKiDL Tag") "Rgled_L_FOUL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2193,7 +2289,7 @@
         (field
           (name "SKiDL Tag") "Rpdled_L_FOUL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2217,7 +2313,7 @@
         (field
           (name "SKiDL Tag") "Rled_L_FOUL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2241,7 +2337,7 @@
         (field
           (name "SKiDL Tag") "R_WDOG_TIMING")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2265,7 +2361,7 @@
         (field
           (name "SKiDL Tag") "R_WDOG_TRIG_PULLUP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2289,7 +2385,7 @@
         (field
           (name "SKiDL Tag") "R_WDOG_KICK_GATE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2313,7 +2409,7 @@
         (field
           (name "SKiDL Tag") "R_WDOG_KICK_PD")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2337,7 +2433,7 @@
         (field
           (name "SKiDL Tag") "Rpu_TA2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2361,7 +2457,7 @@
         (field
           (name "SKiDL Tag") "R_WDOG_OUT_GATE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2385,7 +2481,7 @@
         (field
           (name "SKiDL Tag") "R_WDOG_OUT_PD")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2409,7 +2505,7 @@
         (field
           (name "SKiDL Tag") "R_WET_BLEED1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2433,7 +2529,7 @@
         (field
           (name "SKiDL Tag") "R_WET_BLEED2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2457,7 +2553,7 @@
         (field
           (name "SKiDL Tag") "R_RAIL_GATE_PULLUP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2481,7 +2577,7 @@
         (field
           (name "SKiDL Tag") "Rb_AND_ARM")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2505,7 +2601,7 @@
         (field
           (name "SKiDL Tag") "Rpd_AND_ARM")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2529,7 +2625,7 @@
         (field
           (name "SKiDL Tag") "Rb_AND_RP_OK")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2553,7 +2649,7 @@
         (field
           (name "SKiDL Tag") "Rpd_AND_RP_OK")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2577,7 +2673,7 @@
         (field
           (name "SKiDL Tag") "R_ADC5_TOP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2601,7 +2697,7 @@
         (field
           (name "SKiDL Tag") "Rin_TB")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2625,7 +2721,7 @@
         (field
           (name "SKiDL Tag") "R_ADC5_BOT")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2636,7 +2732,7 @@
       (tstamps "26428476-f828-58d8-9246-d2bd1f2f2bf0"))
     (comp
       (ref "R131")
-      (value "100k")
+      (value "1M")
       (description "Resistor")
       (footprint "Resistor_SMD:R_0805_2012Metric")
       (fields
@@ -2647,9 +2743,9 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "R_TAP_555")
+          (name "SKiDL Tag") "R_TAPIN_555")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2657,10 +2753,10 @@
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "dc66a3f5-b9eb-5b81-b408-d1edfb877676"))
+      (tstamps "c756ca88-e186-5375-902c-2b5ef16c63f8"))
     (comp
       (ref "R132")
-      (value "680k")
+      (value "10k")
       (description "Resistor")
       (footprint "Resistor_SMD:R_0805_2012Metric")
       (fields
@@ -2671,9 +2767,9 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "R_TAP_555_DIV")
+          (name "SKiDL Tag") "R_TAPPU_555")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2681,10 +2777,10 @@
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "bf571040-af9c-5f41-9ee1-ecfe25c55147"))
+      (tstamps "d8cc3994-71d4-569d-a35b-c4835edd2819"))
     (comp
       (ref "R133")
-      (value "680k")
+      (value "1M")
       (description "Resistor")
       (footprint "Resistor_SMD:R_0805_2012Metric")
       (fields
@@ -2695,9 +2791,9 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "R_TAP_KICK")
+          (name "SKiDL Tag") "R_TAPIN_KICK")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2705,10 +2801,10 @@
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "1ec73683-f592-579b-bcf3-df59eaf5f56f"))
+      (tstamps "a561f4f3-969a-53e8-ae9d-b20cd7bfca1f"))
     (comp
       (ref "R134")
-      (value "680k")
+      (value "10k")
       (description "Resistor")
       (footprint "Resistor_SMD:R_0805_2012Metric")
       (fields
@@ -2719,9 +2815,9 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "R_TAP_ARM")
+          (name "SKiDL Tag") "R_TAPPU_KICK")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2729,10 +2825,10 @@
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "7ddea0b9-5cc1-5f44-80f6-94575d7022b0"))
+      (tstamps "4c8c9964-be9e-5fa0-9c33-9a8c84fb8bc0"))
     (comp
       (ref "R135")
-      (value "680k")
+      (value "10M")
       (description "Resistor")
       (footprint "Resistor_SMD:R_0805_2012Metric")
       (fields
@@ -2743,9 +2839,9 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "R_TAP_RPOK")
+          (name "SKiDL Tag") "R_TAPG_KICK")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2753,7 +2849,103 @@
         (names "/")
         (tstamps "/"))
       (component_classes)
-      (tstamps "0929ca51-e886-518f-963a-50749a0ff4df"))
+      (tstamps "4171b881-6fe0-5455-9a6b-c7515eb8f125"))
+    (comp
+      (ref "R136")
+      (value "1M")
+      (description "Resistor")
+      (footprint "Resistor_SMD:R_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_SMD:R_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R_TAPIN_ARM")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "bff1fdfd-3349-5a9c-9328-4c89e78fec88"))
+    (comp
+      (ref "R137")
+      (value "10k")
+      (description "Resistor")
+      (footprint "Resistor_SMD:R_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_SMD:R_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R_TAPPU_ARM")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "921b9b23-9c60-5c17-bd07-e022181f0621"))
+    (comp
+      (ref "R138")
+      (value "10M")
+      (description "Resistor")
+      (footprint "Resistor_SMD:R_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_SMD:R_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R_TAPG_ARM")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "5540ea73-5c54-5464-960f-791aeecf412c"))
+    (comp
+      (ref "R139")
+      (value "1M")
+      (description "Resistor")
+      (footprint "Resistor_SMD:R_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_SMD:R_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R_TAPIN_RPOK")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "e09100ea-de04-599c-b32c-6318c33c23d9"))
     (comp
       (ref "R14")
       (value "10k")
@@ -2769,7 +2961,7 @@
         (field
           (name "SKiDL Tag") "Rpu_TB")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2778,6 +2970,54 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "c456eff3-f48a-5bb9-b5ba-506c524acf36"))
+    (comp
+      (ref "R140")
+      (value "10k")
+      (description "Resistor")
+      (footprint "Resistor_SMD:R_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_SMD:R_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R_TAPPU_RPOK")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "22c2ed21-0b79-57d5-b027-943e0f1ade9d"))
+    (comp
+      (ref "R141")
+      (value "10M")
+      (description "Resistor")
+      (footprint "Resistor_SMD:R_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Resistor")
+        (field
+          (name "Footprint") "Resistor_SMD:R_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "R_TAPG_RPOK")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
+      (libsource
+        (lib "Device")
+        (part "R"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "4e6f3ed0-9304-58cb-b06d-e44cb885887b"))
     (comp
       (ref "R15")
       (value "2k2")
@@ -2793,7 +3033,7 @@
         (field
           (name "SKiDL Tag") "Rin_DIELL_L")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2817,7 +3057,7 @@
         (field
           (name "SKiDL Tag") "Rpu_DIELL_L")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2841,7 +3081,7 @@
         (field
           (name "SKiDL Tag") "Rin_DIELL_R")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2865,7 +3105,7 @@
         (field
           (name "SKiDL Tag") "Rpu_DIELL_R")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2889,7 +3129,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2913,7 +3153,7 @@
         (field
           (name "SKiDL Tag") "R_I2C_SCL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2937,7 +3177,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2961,7 +3201,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -2985,7 +3225,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3009,7 +3249,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS3")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3033,7 +3273,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS3")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3057,7 +3297,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS4")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3081,7 +3321,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS4")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3105,7 +3345,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS5")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3129,7 +3369,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS5")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3153,7 +3393,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS6")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3177,7 +3417,7 @@
         (field
           (name "SKiDL Tag") "Rin_SA")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3201,7 +3441,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS6")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3225,7 +3465,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS7")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3249,7 +3489,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS7")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3273,7 +3513,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS8")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3297,7 +3537,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS8")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3321,7 +3561,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS9")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3345,7 +3585,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS9")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3369,7 +3609,7 @@
         (field
           (name "SKiDL Tag") "Rin_GS10")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3393,7 +3633,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GS10")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3417,7 +3657,7 @@
         (field
           (name "SKiDL Tag") "Rin_GP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3441,7 +3681,7 @@
         (field
           (name "SKiDL Tag") "Rpu_SA")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3465,7 +3705,7 @@
         (field
           (name "SKiDL Tag") "Rpu_GP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3489,7 +3729,7 @@
         (field
           (name "SKiDL Tag") "Rin_OS")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3513,7 +3753,7 @@
         (field
           (name "SKiDL Tag") "Rpu_OS")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3537,7 +3777,7 @@
         (field
           (name "SKiDL Tag") "Rin_BS")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3561,7 +3801,7 @@
         (field
           (name "SKiDL Tag") "Rpu_BS")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3585,7 +3825,7 @@
         (field
           (name "SKiDL Tag") "Rin_PBZ")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3609,7 +3849,7 @@
         (field
           (name "SKiDL Tag") "Rpu_PBZ")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3633,7 +3873,7 @@
         (field
           (name "SKiDL Tag") "Rin_PBC")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3657,7 +3897,7 @@
         (field
           (name "SKiDL Tag") "Rpu_PBC")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3681,7 +3921,7 @@
         (field
           (name "SKiDL Tag") "Rin_FOUL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3705,7 +3945,7 @@
         (field
           (name "SKiDL Tag") "Rin_SB")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3729,7 +3969,7 @@
         (field
           (name "SKiDL Tag") "Rpu_FOUL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3753,7 +3993,7 @@
         (field
           (name "SKiDL Tag") "Rin_TENTH")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3777,7 +4017,7 @@
         (field
           (name "SKiDL Tag") "Rpu_TENTH")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3801,7 +4041,7 @@
         (field
           (name "SKiDL Tag") "Rin_MAN_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3825,7 +4065,7 @@
         (field
           (name "SKiDL Tag") "Rpu_MAN_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3849,7 +4089,7 @@
         (field
           (name "SKiDL Tag") "Rin_MAN_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3873,7 +4113,7 @@
         (field
           (name "SKiDL Tag") "Rpu_MAN_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3897,7 +4137,7 @@
         (field
           (name "SKiDL Tag") "Rin_MAN_SWS")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3921,7 +4161,7 @@
         (field
           (name "SKiDL Tag") "Rpu_MAN_SWS")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3945,7 +4185,7 @@
         (field
           (name "SKiDL Tag") "Rin_MAN_SWSR")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3969,7 +4209,7 @@
         (field
           (name "SKiDL Tag") "Rpu_SB")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -3993,7 +4233,7 @@
         (field
           (name "SKiDL Tag") "Rpu_MAN_SWSR")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4017,7 +4257,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4041,7 +4281,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4065,7 +4305,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4089,7 +4329,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4113,7 +4353,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX3")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4137,7 +4377,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX3")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4161,7 +4401,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX4")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4185,7 +4425,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX4")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4209,7 +4449,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX5")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4233,7 +4473,7 @@
         (field
           (name "SKiDL Tag") "Rin_SC")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4257,7 +4497,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX5")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4281,7 +4521,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX6")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4305,7 +4545,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX6")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4329,7 +4569,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX7")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4353,7 +4593,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX7")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4377,7 +4617,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX8")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4401,7 +4641,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX8")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4425,7 +4665,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX9")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4449,7 +4689,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX9")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4473,7 +4713,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX10")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4497,7 +4737,7 @@
         (field
           (name "SKiDL Tag") "Rpu_SC")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4521,7 +4761,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX10")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4545,7 +4785,7 @@
         (field
           (name "SKiDL Tag") "Rin_AUX11")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4569,7 +4809,7 @@
         (field
           (name "SKiDL Tag") "Rpu_AUX11")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4593,7 +4833,7 @@
         (field
           (name "SKiDL Tag") "Rb_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4617,7 +4857,7 @@
         (field
           (name "SKiDL Tag") "Rpd_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4641,7 +4881,7 @@
         (field
           (name "SKiDL Tag") "Rsnub_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4665,7 +4905,7 @@
         (field
           (name "SKiDL Tag") "Rb_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4689,7 +4929,7 @@
         (field
           (name "SKiDL Tag") "Rpd_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4713,7 +4953,7 @@
         (field
           (name "SKiDL Tag") "Rsnub_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4737,7 +4977,7 @@
         (field
           (name "SKiDL Tag") "Rb_SP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4761,7 +5001,7 @@
         (field
           (name "SKiDL Tag") "Rin_TA1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4785,7 +5025,7 @@
         (field
           (name "SKiDL Tag") "Rpd_SP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4809,7 +5049,7 @@
         (field
           (name "SKiDL Tag") "Rsnub_SP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4833,7 +5073,7 @@
         (field
           (name "SKiDL Tag") "Rb_BE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4857,7 +5097,7 @@
         (field
           (name "SKiDL Tag") "Rpd_BE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4881,7 +5121,7 @@
         (field
           (name "SKiDL Tag") "Rsnub_BE")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4905,7 +5145,7 @@
         (field
           (name "SKiDL Tag") "Rb_M")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4929,7 +5169,7 @@
         (field
           (name "SKiDL Tag") "Rpd_M")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4953,7 +5193,7 @@
         (field
           (name "SKiDL Tag") "Rsnub_M")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -4977,7 +5217,7 @@
         (field
           (name "SKiDL Tag") "Rb_M2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -5001,7 +5241,7 @@
         (field
           (name "SKiDL Tag") "Rpd_M2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:223"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:238"))
       (libsource
         (lib "Device")
         (part "R"))
@@ -5025,7 +5265,7 @@
         (field
           (name "SKiDL Tag") "MCP_IN_A")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:271"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:286"))
       (libsource
         (lib "Interface_Expansion")
         (part "MCP23017x-x-SO"))
@@ -5049,7 +5289,7 @@
         (field
           (name "SKiDL Tag") "OPTO_DIELL_L")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5073,7 +5313,7 @@
         (field
           (name "SKiDL Tag") "OPTO_DIELL_R")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5097,7 +5337,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5121,7 +5361,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5145,7 +5385,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS3")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5169,7 +5409,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS4")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5193,7 +5433,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS5")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5217,7 +5457,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS6")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5241,7 +5481,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS7")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5265,7 +5505,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS8")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5289,7 +5529,7 @@
         (field
           (name "SKiDL Tag") "MCP_IN_B")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:271"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:286"))
       (libsource
         (lib "Interface_Expansion")
         (part "MCP23017x-x-SO"))
@@ -5313,7 +5553,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS9")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5337,7 +5577,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GS10")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5361,7 +5601,7 @@
         (field
           (name "SKiDL Tag") "OPTO_GP")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5385,7 +5625,7 @@
         (field
           (name "SKiDL Tag") "OPTO_OS")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5409,7 +5649,7 @@
         (field
           (name "SKiDL Tag") "OPTO_BS")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5433,7 +5673,7 @@
         (field
           (name "SKiDL Tag") "OPTO_PBZ")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5457,7 +5697,7 @@
         (field
           (name "SKiDL Tag") "OPTO_PBC")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5481,7 +5721,7 @@
         (field
           (name "SKiDL Tag") "OPTO_FOUL")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5505,7 +5745,7 @@
         (field
           (name "SKiDL Tag") "OPTO_TENTH")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5529,7 +5769,7 @@
         (field
           (name "SKiDL Tag") "OPTO_MAN_T")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5553,7 +5793,7 @@
         (field
           (name "SKiDL Tag") "MCP_OUT_A")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:271"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:286"))
       (libsource
         (lib "Interface_Expansion")
         (part "MCP23017x-x-SO"))
@@ -5577,7 +5817,7 @@
         (field
           (name "SKiDL Tag") "OPTO_MAN_S")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5601,7 +5841,7 @@
         (field
           (name "SKiDL Tag") "OPTO_MAN_SWS")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5625,7 +5865,7 @@
         (field
           (name "SKiDL Tag") "OPTO_MAN_SWSR")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5649,7 +5889,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5673,7 +5913,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5697,7 +5937,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX3")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5721,7 +5961,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX4")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5745,7 +5985,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX5")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5769,7 +6009,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX6")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5793,7 +6033,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX7")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5817,7 +6057,7 @@
         (field
           (name "SKiDL Tag") "OPTO_SA")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5841,7 +6081,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX8")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5865,7 +6105,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX9")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5889,7 +6129,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX10")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5913,7 +6153,7 @@
         (field
           (name "SKiDL Tag") "OPTO_AUX11")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -5937,7 +6177,7 @@
         (field
           (name "SKiDL Tag") "U_WDOG")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:395"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:410"))
       (libsource
         (lib "Timer")
         (part "NE555D"))
@@ -5961,7 +6201,7 @@
         (field
           (name "SKiDL Tag") "ISO_WET")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:577"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:592"))
       (libsource
         (lib "Converter_DCDC")
         (part "TMA-0505S"))
@@ -5985,7 +6225,7 @@
         (field
           (name "SKiDL Tag") "OPTO_SB")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -6009,7 +6249,7 @@
         (field
           (name "SKiDL Tag") "OPTO_SC")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -6033,7 +6273,7 @@
         (field
           (name "SKiDL Tag") "OPTO_TA1")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -6057,7 +6297,7 @@
         (field
           (name "SKiDL Tag") "OPTO_TA2")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -6081,7 +6321,7 @@
         (field
           (name "SKiDL Tag") "OPTO_TB")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:313"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:328"))
       (libsource
         (lib "Isolator")
         (part "PC817"))
@@ -6136,7 +6376,7 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
-        (ref "R134")
+        (ref "R136")
         (pin "1")
         (pintype "PASSIVE")))
     (net
@@ -7948,7 +8188,23 @@
         (pin "2")
         (pintype "PASSIVE"))
       (node
+        (ref "Q17")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q18")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q19")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
         (ref "Q2")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "Q20")
         (pin "2")
         (pintype "PASSIVE"))
       (node
@@ -8020,7 +8276,15 @@
         (pin "2")
         (pintype "PASSIVE"))
       (node
-        (ref "R132")
+        (ref "R135")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R138")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R141")
         (pin "2")
         (pintype "PASSIVE"))
       (node
@@ -8940,7 +9204,7 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
-        (ref "R135")
+        (ref "R139")
         (pin "1")
         (pintype "PASSIVE")))
     (net
@@ -9576,11 +9840,75 @@
         (pin "24")
         (pintype "BIDIRECTIONAL"))
       (node
-        (ref "R134")
+        (ref "Q19")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R137")
         (pin "2")
         (pintype "PASSIVE")))
     (net
       (code 202)
+      (name "TAP_GATE_555")
+      (class "Default")
+      (node
+        (ref "Q17")
+        (pin "1")
+        (pintype "INPUT"))
+      (node
+        (ref "R131")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 203)
+      (name "TAP_GATE_ARM")
+      (class "Default")
+      (node
+        (ref "Q19")
+        (pin "1")
+        (pintype "INPUT"))
+      (node
+        (ref "R136")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R138")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 204)
+      (name "TAP_GATE_KICK")
+      (class "Default")
+      (node
+        (ref "Q18")
+        (pin "1")
+        (pintype "INPUT"))
+      (node
+        (ref "R133")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R135")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 205)
+      (name "TAP_GATE_RPOK")
+      (class "Default")
+      (node
+        (ref "Q20")
+        (pin "1")
+        (pintype "INPUT"))
+      (node
+        (ref "R139")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R141")
+        (pin "1")
+        (pintype "PASSIVE")))
+    (net
+      (code 206)
       (name "TAP_NE555_OUT")
       (class "Default")
       (node
@@ -9588,15 +9916,15 @@
         (pin "21")
         (pintype "BIDIRECTIONAL"))
       (node
-        (ref "R131")
-        (pin "2")
+        (ref "Q17")
+        (pin "3")
         (pintype "PASSIVE"))
       (node
         (ref "R132")
-        (pin "1")
+        (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 203)
+      (code 207)
       (name "TAP_RP2040_OK")
       (class "Default")
       (node
@@ -9604,11 +9932,15 @@
         (pin "25")
         (pintype "BIDIRECTIONAL"))
       (node
-        (ref "R135")
+        (ref "Q20")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R140")
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 204)
+      (code 208)
       (name "TAP_WDOG_KICK")
       (class "Default")
       (node
@@ -9616,11 +9948,15 @@
         (pin "22")
         (pintype "BIDIRECTIONAL"))
       (node
-        (ref "R133")
+        (ref "Q18")
+        (pin "3")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R134")
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 205)
+      (code 209)
       (name "VCC_3V3")
       (class "Default")
       (node
@@ -9664,7 +10000,23 @@
         (pin "1")
         (pintype "PASSIVE"))
       (node
+        (ref "R132")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R134")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R137")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
         (ref "R14")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R140")
         (pin "1")
         (pintype "PASSIVE"))
       (node
@@ -9852,7 +10204,7 @@
         (pin "9")
         (pintype "POWER-IN")))
     (net
-      (code 206)
+      (code 210)
       (name "VCC_5V")
       (class "Default")
       (node
@@ -9908,7 +10260,7 @@
         (pin "1")
         (pintype "POWER-IN")))
     (net
-      (code 207)
+      (code 211)
       (name "VCC_5V_RAW")
       (class "Default")
       (node
@@ -9920,7 +10272,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 208)
+      (code 212)
       (name "WDOG_KICK")
       (class "Default")
       (node
@@ -9936,7 +10288,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 209)
+      (code 213)
       (name "WDOG_KICK_DRAIN")
       (class "Default")
       (node
@@ -9952,7 +10304,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 210)
+      (code 214)
       (name "WDOG_KICK_GATE")
       (class "Default")
       (node
@@ -9968,7 +10320,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 211)
+      (code 215)
       (name "WDOG_OK_GATE")
       (class "Default")
       (node
@@ -9984,7 +10336,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 212)
+      (code 216)
       (name "WDOG_OK_PULLDOWN")
       (class "Default")
       (node
@@ -9996,7 +10348,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 213)
+      (code 217)
       (name "WDOG_TIMING_NODE")
       (class "Default")
       (node

@@ -29,8 +29,9 @@ NET_RULES = {
     "Field_Sense": {"width": 0.30, "via": 0.70, "drill": 0.35, "clr": 0.40},
     "Machine_Output": {"width": 0.50, "via": 1.00, "drill": 0.50, "clr": 0.35},
 }
+# Remediation spec R1.7 (2026-07-21): +4 TAP_GATE_* nets -> Logic_Signal 97.
 NETCLASS_COUNTS = {
-    "Logic_Signal": 93,
+    "Logic_Signal": 97,
     "Logic_Power": 4,
     "Safety_Rail": 13,
     "Field_Sense": 82,
@@ -161,9 +162,15 @@ class Router:
         self.vias.append((net, tuple(xy), dia if dia else r["via"]))
 
     def clear_tracks(self) -> int:
+        # KiCad 10.0.2 (M2 fix): BOARD.Remove() detaches without freeing —
+        # SWIG reports "memory leak of type 'PCB_TRACK *'" and the board's
+        # item containers are left in a state where a later Zones() iteration
+        # segfaults or yields raw SwigPyObject (the audit's GetIsRuleArea
+        # crash). BOARD.Delete() removes AND destroys natively; verified
+        # stable on 10.0.2 (tmp/m2_fix_test.py, 2026-07-21).
         tracks = list(self.board.GetTracks())
         for t in tracks:
-            self.board.Remove(t)
+            self.board.Delete(t)
         return len(tracks)
 
     # ---- self-check ----

@@ -46,7 +46,13 @@
   packages (≥3.2 mm); **no new isolation-barrier component class**; GND and FIELD_GND share
   zero nodes. The `.kicad_pro`/`.kicad_prl`/`.kicad_dru` sidecars travel with the board — the
   `.dru` `hasNetclass()` rules are vacuous without the class assignments (the 2026-06-03
-  false-green lesson).
+  false-green lesson). **2026-07-21 (remediation spec §R2, closes Codex H2): 2.5/3.2 mm are
+  now CONFIRMED requirements** — working voltages measured/derived (FIELD ≤ 14 V as populated
+  / 34 Vpk design basis; MACHINE 24 VAC ≈ ≤ 37 Vpk per the at-machine fieldsheet), IPC-2221B
+  B1 minimum 0.6 mm, ≥4×/≥5× retained margin — and the `.kicad_dru` rule values carry a
+  JLC-etch-tolerance allowance on top: **2.65 / 3.35 / 1.6 mm** (as-fabbed worst case still
+  ≥ 2.5 / 3.2 / ~1.5). Routed-board measured minima 2026-07-21: L↔F 2.650 mm, L↔M 3.350 mm,
+  machine ch↔ch 2.325 mm.
 - **Safety rail observe-only** (catalog constraint 3): never load / jumper / re-reference
   `SAFE_*` / `RELAY_ENABLE_RAIL` / `RAIL_GATE`. **There is NO RELAY_ENABLE_RAIL divider —
   a prior critic explicitly deleted it (catalog §2 item 4). Do not re-add it. VCC_5V sensing
@@ -322,6 +328,19 @@ energize 6 coils (bench_first_article pattern) and confirm the sag is visible in
 
 ## E. Rail-drop edge-ordering taps — existing observable points ONLY
 
+> **⚠ 2026-07-21 — §E.2 AND §E.3 ARE SUPERSEDED by
+> `phase8_revD_remediation_spec_2026-07-21.md` §R1** (Codex NO-GO findings C1 + H1: the
+> resistive taps below are bidirectional copper — a stuck-high GPIO injects into the
+> observed net, and the 555 divider rides an unguaranteed VOH). The implemented rev-D
+> design is the remediation spec's **per-tap 2N7002 common-source inverter** (R_TAPIN 1M →
+> gate; R_TAPG 10M gate pulldown on the 3.3 V taps; VCC_3V3 → R_TAPPU 10k → drain → GPIO;
+> reads INVERTED, firmware v1.2 contract R3): 15 parts, 8 new nets (4 `TAP_GATE_*` +
+> 4 `TAP_*`), 680k GONE from the BOM, +1M/+10M added. Worst double-fault injection
+> ≤ 0.56 µA → 0.056 V on RAIL_GATE (≥ 8× under the partial-hold onset), absolute
+> transistor-free ceiling 3.3 µA. §E.1 (GPIO/pin selection), the SAFE_* scope exclusion,
+> and the Safety_Rail == 13 invariant below still stand. §E.2/§E.3 text is retained for
+> history only — do not implement from it.
+
 **Source:** catalog §2 item 5 (the scope doc's tap grant): 1 ms edge-ordered capture of
 **NE555_OUT, WDOG_KICK (TP8 net), ARM_PERMIT (TP13 net), RP2040_OK (TP14 net)** via spare RP2040
 GPIOs — turns undifferentiated "rail down" into ordered codes (wdt_reset vs pi_death vs
@@ -344,7 +363,7 @@ consumed by item D. Pick the contiguous block:
 | `TAP_ARM_PERMIT` | `ARM_PERMIT` (3.3 V, Pi-driven) | GP18 | 24 |
 | `TAP_RP2040_OK` | `RP2040_OK` (3.3 V, Pico-driven) | GP19 | 25 |
 
-### E.2 Tap networks + the can't-assert/can't-hold proofs
+### E.2 Tap networks + the can't-assert/can't-hold proofs — **SUPERSEDED (see §E banner; remediation spec R1)**
 
 **3.3 V taps (WDOG_KICK, ARM_PERMIT, RP2040_OK): single series 680 kΩ, no shunt, Schmitt-mode
 GPIO input.** A divider would put the read below VIH on an already-3.3 V net; the task's
@@ -397,7 +416,9 @@ the series-only proof below where a shunt would break reading.
   3.3 V/100k = 33 µA — 2+ orders below the 555's drive. ✓
 - 680k appears in both tap flavors → **one new BOM value total (680k 0805)**.
 
-### E.3 Netlist delta
+### E.3 Netlist delta — **SUPERSEDED (see §E banner; implemented delta = remediation spec §R1.7)**
+
+Historical (NOT implemented):
 
 | Part (tag) | Value | From | To |
 |---|---|---|---|
@@ -407,7 +428,12 @@ the series-only proof below where a shunt would break reading.
 | `R_TAP_ARM` | 680k | `ARM_PERMIT` | `TAP_ARM_PERMIT` |
 | `R_TAP_RPOK` | 680k | `RP2040_OK` | `TAP_RP2040_OK` |
 
-All 0805. Tap nets land on Pico pins 21/22/24/25 per E.1. **New nets: 4. Parts: 5.**
+Implemented instead (remediation spec §R1.7, 2026-07-21): per tap suffix in
+{555, KICK, ARM, RPOK} — `R_TAPIN_*` 1M (observed net → `TAP_GATE_*`), `Q_TAP_*` 2N7002
+SOT-23 (G=`TAP_GATE_*`, S=GND, D=`TAP_*`), `R_TAPPU_*` 10k (VCC_3V3 → `TAP_*`), plus
+`R_TAPG_*` 10M (`TAP_GATE_*` → GND) on KICK/ARM/RPOK only (the 555's push-pull output is
+never high-Z; asymmetry deliberate). Tap drain nets land on Pico pins 21/22/24/25 per E.1.
+**New nets: 8. Parts: 15. 680k leaves the BOM entirely.**
 
 - **Netclass:** add prefix rule `TAP_` → Logic_Signal in the rev-D classifier (+4). All tap
   copper is LOGIC-band only; nothing crosses a barrier; Safety_Rail count stays EXACTLY 13
@@ -514,19 +540,22 @@ waived in the run log.
 
 ### H.1 Audit class-count delta table (extend `apply_netclasses_revD.py` + `audit_revD_board.py` in lockstep)
 
-| Class | rev-C (asserted today) | A | B | C | D | E | F | G | **rev-D expected** |
+2026-07-21 (remediation spec §R1.7): item E's delta is now **+8 nets** (4 `TAP_*` drain
+nets + 4 `TAP_GATE_*` gate nets), all Logic_Signal via the `TAP_` prefix rule:
+
+| Class | rev-C (asserted today) | A | B | C | D | E (R1) | F | G | **rev-D expected** |
 |---|---|---|---|---|---|---|---|---|---|
-| Logic_Signal | 80 | — | — | +8 | +1 | +4 | — | — | **93** |
+| Logic_Signal | 80 | — | — | +8 | +1 | +8 | — | — | **97** |
 | Logic_Power | 4 | — | — | — | — | — | — | — | **4** |
 | Safety_Rail | 13 | — | — | — | — | **0 (invariant)** | — | — | **13** |
 | Field_Sense | 66 | — | — | +16 | — | — | — | — | **82** |
 | Machine_Output | 21 | — | — | — | — | — | — | — | **21** |
-| **Total nets** | **184** | | | +24 | +1 | +4 | | | **213** |
+| **Total nets** | **184** | | | +24 | +1 | +8 | | | **217** |
 
 Classifier edits required in the rev-D copy: exact-name `ADC_VCC5_SENSE` → Logic_Signal;
 prefix `TAP_` → Logic_Signal. Everything else classifies under existing rules. The rev-D audit
-script asserts `{Logic_Signal: 93, Logic_Power: 4, Safety_Rail: 13, Field_Sense: 82,
-Machine_Output: 21}`, `Default == 0`, zero `N$*` anonymous nets, 213 total — fails closed,
+script asserts `{Logic_Signal: 97, Logic_Power: 4, Safety_Rail: 13, Field_Sense: 82,
+Machine_Output: 21}`, `Default == 0`, zero `N$*` anonymous nets, 217 total — fails closed,
 same as rev-C. **A Safety_Rail count ≠ 13 is an automatic stop-ship.**
 
 ### H.2 New-part count
@@ -537,14 +566,16 @@ same as rev-C. **A Safety_Rail count ≠ 13 is an automatic stop-ship.**
 | B — USB clearance | 0 |
 | C — GPB opto bank + J15 | 25 |
 | D — VCC_5V ADC | 3 |
-| E — taps | 5 |
+| E — taps (remediation spec R1: 4 × unidirectional stage) | 15 |
 | F — J16 | 1 |
 | G — deferred | 0 |
-| **Total** | **36** → part registry 216 → **252** |
+| **Total** | **46** → part registry 216 → **262** |
 
-New BOM lines: 680k 0805 (only genuinely new value). New footprint classes: **none** (2k2/10k/
-100k/0805/DIP-4/MCV_1x10/MCV_1x06 all already on the board) — but gate 10 datasheet review
-re-runs per part class anyway (§I step 2).
+New BOM lines (2026-07-21, R1): **1M 0805** and **10M 0805** (+2 values; the earlier plan's
+680k is GONE — the taps were its only use). New footprint classes: **none** (2N7002 SOT-23 is
+the existing `Qled_*` class; 2k2/10k/100k/0805/DIP-4/MCV_1x10/MCV_1x06 all already on the
+board) — but gate 10 datasheet review re-runs per part class anyway (§I step 2; run-log FR-8
+covers 2N7002-in-SOT-23, FR-9 the `_D1.4` MCV drill/pad change per remediation spec R2.5).
 
 ### H.3 Wetting-rail budget (TMA-0505S, 5 V / 200 mA / 1 W)
 
@@ -569,8 +600,8 @@ Rev-D additions on VCC_5V:
 | TMA input for +18.3 mA of new secondary load (bleed + 8 channels), η≈0.75, Vin≈4.7 V | ≈ +26 mA |
 | 8 new 10k logic pullups (all optos on) via Pico 3V3 | ≈ +3 mA |
 | ADC divider | +0.25 mA |
-| Taps | µA — negligible |
-| **Total Δ** | **≈ +30 mA** |
+| Taps (R1 stages, 2026-07-21: 4 × 10k drain pull-ups, worst = all four observed nets high → FETs on, 4 × 0.33 mA on VCC_3V3 through the Pico regulator) | ≈ +1.3 mA |
+| **Total Δ** | **≈ +31 mA** |
 
 New worst case ≈ **0.73–0.93 A — still under 1 A but the margin was already thin and rev-D
 consumes ~3 % more**, and J16's sanctioned 100 mA module allowance takes it to ~1.03 A — past

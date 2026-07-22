@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "wsl_footprints")(type "KiCad")(uri "${KIPRJMOD}/../wsl_footprints.pretty")(options "")(descr "WSL rev-D project-local footprints (M4: MCV drill 1.4mm / pad 2.0x3.6)"))
+)

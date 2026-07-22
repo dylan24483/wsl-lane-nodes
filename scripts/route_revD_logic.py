@@ -305,38 +305,102 @@ def route_mcp_int(r) -> int:
 
 
 def route_taps_and_adc(r) -> int:
-    """Item E tap nets to Pico GP pins + item D ADC divider."""
+    """Item E unidirectional tap stages (remediation spec R1) + item D ADC.
+
+    Per tap row y in {52 (555), 56 (KICK), 60 (ARM), 64 (RPOK)}:
+      * TAP_GATE_* (the ONLY copper touching the observed side): R_TAPIN.2
+        at the source -> long high-impedance run -> Q_TAP gate (116.9375,
+        y+0.95) + R_TAPG.1 (124.0875, y; not on the 555 row).
+      * TAP_* drain net (the ONLY copper touching the GPIO): Q_TAP drain
+        (115.0625, y) + R_TAPPU.2 (119.5875, y) -> B.Cu corridor under the
+        Pico -> GP16-19 pad.
+      * VCC_3V3 feed for R_TAPPU.1 (121.4125, y) -> IN1 jog -> IN2 trunk
+        (x=113.1) tap via at (113.1, y-1.9).
+    Q sources + R_TAPG.2 ground through the F.Cu GND zone (Qk/Qled pattern).
+    """
     added = 0
-    # TAP_NE555_OUT: R131.2 (146.912,33) -> B.Cu y=31 -> x=110.5 -> pin21 (109.69,57.13)
-    added += r.poly("TAP_NE555_OUT", [(146.912, 33.0), (148.5, 33.0), (148.5, 31.0)], F_CU)
-    r.via("TAP_NE555_OUT", (148.5, 31.0)); added += 1
-    added += r.poly("TAP_NE555_OUT", [(132.0, 44.9125), (132.0, 48.6), (130.4, 48.6)], F_CU)
-    r.via("TAP_NE555_OUT", (130.4, 48.6)); added += 1
-    added += r.poly("TAP_NE555_OUT", [(130.4, 48.6), (111.05, 48.6), (111.05, 31.0)], B_CU)
-    added += r.poly("TAP_NE555_OUT", [(148.5, 31.0), (110.5, 31.0), (110.5, 57.13)], B_CU)
-    r.via("TAP_NE555_OUT", (110.5, 57.13)); added += 1
-    added += r.poly("TAP_NE555_OUT", [(110.5, 57.13), (109.69, 57.13)], F_CU)
-    # TAP_WDOG_KICK: R133.2 (136,46.088) -> B.Cu y=51.5 -> x=111.3 -> pin22 (109.69,54.59)
-    added += r.poly("TAP_WDOG_KICK", [(136.0, 46.088), (132.95, 46.088), (132.95, 51.5)], F_CU)
-    r.via("TAP_WDOG_KICK", (132.95, 51.5)); added += 1
-    added += r.poly("TAP_WDOG_KICK", [(132.95, 51.5), (111.3, 51.5), (111.3, 54.59)], B_CU)
-    r.via("TAP_WDOG_KICK", (111.3, 54.59)); added += 1
-    added += r.poly("TAP_WDOG_KICK", [(111.3, 54.59), (109.69, 54.59)], F_CU)
-    # TAP_ARM_PERMIT: R134.2 (130,69.088) -> B.Cu y=72.5 -> x=106.5 (under Pico) -> pin24 (109.69,49.51)
-    added += r.poly("TAP_ARM_PERMIT", [(130.0, 69.088), (131.15, 69.088), (131.15, 72.5)], F_CU)
-    r.via("TAP_ARM_PERMIT", (131.15, 72.5)); added += 1
-    added += r.poly("TAP_ARM_PERMIT", [(131.15, 72.5), (107.25, 72.5), (107.25, 49.51)], B_CU)
-    r.via("TAP_ARM_PERMIT", (107.25, 49.51)); added += 1
-    added += r.poly("TAP_ARM_PERMIT", [(107.25, 49.51), (109.69, 49.51)], F_CU)
-    # TAP_RP2040_OK: east stub, IN2 north at x=158.3, B.Cu west at y=45.6
-    added += r.poly("TAP_RP2040_OK", [(156.912, 64.0), (158.3, 64.0)], F_CU)
-    r.via("TAP_RP2040_OK", (158.3, 64.0)); added += 1
-    added += r.poly("TAP_RP2040_OK", [(158.3, 64.0), (158.3, 44.2), (147.9, 44.2), (147.9, 45.6)], IN2_CU)
-    r.via("TAP_RP2040_OK", (147.9, 45.6)); added += 1
-    added += r.poly("TAP_RP2040_OK", [(147.9, 45.6), (112.4, 45.6), (111.75, 47.2)], B_CU)
-    r.via("TAP_RP2040_OK", (111.75, 47.2)); added += 1
-    added += r.poly("TAP_RP2040_OK", [(111.75, 47.2), (110.9, 46.97), (109.69, 46.97)], F_CU)
-    # ADC divider: local F.Cu tree at x=112.4 joining R129.2/R130.1/C15.1 -> A1.31
+    # ---- drain nets: Q drain + R_TAPPU.2 -> B.Cu corridor -> Pico pad ----
+    drains = [
+        # (net, row_y, corridor_x, pico_pad_xy). Corridor x values keep
+        # >= 0.8 mm via-to-track spacing between neighbouring corridors and
+        # clear the SLOW_GS1 staircase via at (106.55, 60.4).
+        ("TAP_NE555_OUT", 52.0, 110.5, (109.69, 57.13)),   # GP16
+        ("TAP_WDOG_KICK", 56.0, 111.3, (109.69, 54.59)),   # GP17
+        ("TAP_ARM_PERMIT", 60.0, 107.25, (109.69, 49.51)),  # GP18
+        ("TAP_RP2040_OK", 64.0, 105.6, (109.69, 46.97)),   # GP19
+    ]
+    for net, y, cx, (px, py) in drains:
+        added += r.poly(net, [(115.0625, y), (114.1, y)], F_CU)
+        r.via(net, (114.1, y)); added += 1
+        added += r.poly(net, [(119.5875, y), (118.6, y)], F_CU)
+        r.via(net, (118.6, y)); added += 1
+        added += r.poly(net, [(118.6, y), (114.1, y)], B_CU)
+        added += r.poly(net, [(114.1, y), (cx, y), (cx, py)], B_CU)
+        r.via(net, (cx, py)); added += 1
+        added += r.poly(net, [(cx, py), (px, py)], F_CU)
+
+    # ---- VCC_3V3 pull-up feeds: R_TAPPU.1 -> IN1 jog -> IN2 trunk x=113.1
+    #      (immediate diagonal off-row so the run clears the drain-net vias
+    #      at (118.6, y)) ----
+    for y in (52.0, 56.0, 60.0, 64.0):
+        added += r.poly("VCC_3V3", [(121.4125, y), (122.3, y)], F_CU)
+        r.via("VCC_3V3", (122.3, y)); added += 1
+        added += r.poly("VCC_3V3", [(122.3, y), (121.6, y - 1.9),
+                                    (113.1, y - 1.9)], IN1_CU)
+        r.via("VCC_3V3", (113.1, y - 1.9)); added += 1
+
+    # ---- gate nets: F.Cu tee (gate pad + R_TAPG.1) -> long run to source ----
+    def gate_tee(net, y, via_x, with_gpd=True):
+        n = r.poly(net, [(116.9375, y + 0.95), (117.75, y + 1.75), (via_x, y + 1.75)], F_CU)
+        if with_gpd:
+            n += r.poly(net, [(124.0875, y + 1.75), (124.0875, y)], F_CU)
+        r.via(net, (via_x, y + 1.75))
+        return n + 1
+
+    # Gate via lanes sit WEST of the MCP_INT_B IN2 vertical at x=127.3
+    # (>= 0.7 mm via-to-track), one distinct x per net so no via lands on a
+    # neighbour's IN2 lane.
+    # TAP_GATE_555 (no R_TAPG by design — push-pull source): tee via at
+    # (125.2, 53.75), IN1 east at y=53.75 (0.75 south of the NE555_OUT IN1
+    # y=53 run), IN2 north at x=150.2 (clear of the WDOG_KICK_DRAIN IN2
+    # y=35 run ending at x=149 and its via), landing F.Cu on
+    # R_TAPIN_555.2 (146.9125, 33).
+    added += gate_tee("TAP_GATE_555", 52.0, 125.2, with_gpd=False)
+    added += r.poly("TAP_GATE_555", [(125.2, 53.75), (150.2, 53.75)], IN1_CU)
+    r.via("TAP_GATE_555", (150.2, 53.75)); added += 1
+    added += r.poly("TAP_GATE_555", [(150.2, 53.75), (150.2, 31.0)], IN2_CU)
+    r.via("TAP_GATE_555", (150.2, 31.0)); added += 1
+    added += r.poly("TAP_GATE_555", [(150.2, 31.0), (150.2, 33.0), (146.9125, 33.0)], F_CU)
+
+    # TAP_GATE_KICK: tee via (125.9, 57.75) -> IN2 north -> IN1 east ->
+    # R_TAPIN_KICK.2 (136, 46.0875).
+    added += gate_tee("TAP_GATE_KICK", 56.0, 125.9)
+    added += r.poly("TAP_GATE_KICK", [(125.9, 57.75), (125.9, 46.5)], IN2_CU)
+    r.via("TAP_GATE_KICK", (125.9, 46.5)); added += 1
+    added += r.poly("TAP_GATE_KICK", [(125.9, 46.5), (135.2, 46.5)], IN1_CU)
+    r.via("TAP_GATE_KICK", (135.2, 46.5)); added += 1
+    added += r.poly("TAP_GATE_KICK", [(135.2, 46.5), (136.0, 46.0875)], F_CU)
+
+    # TAP_GATE_ARM: tee via (126.6, 61.75) -> IN2 south -> F.Cu into
+    # R_TAPIN_ARM.2 (130, 69.0875) from the north.
+    added += gate_tee("TAP_GATE_ARM", 60.0, 126.6)
+    added += r.poly("TAP_GATE_ARM", [(126.6, 61.75), (126.6, 68.3)], IN2_CU)
+    r.via("TAP_GATE_ARM", (126.6, 68.3)); added += 1
+    added += r.poly("TAP_GATE_ARM", [(126.6, 68.3), (130.0, 68.3), (130.0, 69.0875)], F_CU)
+
+    # TAP_GATE_RPOK: tee via (125.9, 65.75) -> IN1 east + diagonal up to the
+    # OLD tap via spot (158.3, 64) -> F.Cu west into R_TAPIN_RPOK.2
+    # (156.9125, 64). The east-side approach keeps the F.Cu GND-zone channel
+    # around C_WDOG_VCC's pad 2 open (a descent at x~157.6 seals it and
+    # strands a zone sliver + starves the pad's thermal spokes — found by
+    # DRC 2026-07-21).
+    added += gate_tee("TAP_GATE_RPOK", 64.0, 125.9)
+    added += r.poly("TAP_GATE_RPOK", [(125.9, 65.75), (157.0, 65.75),
+                                      (158.3, 64.0)], IN1_CU)
+    r.via("TAP_GATE_RPOK", (158.3, 64.0)); added += 1
+    added += r.poly("TAP_GATE_RPOK", [(158.3, 64.0), (156.9125, 64.0)], F_CU)
+
+    # ---- item D ADC divider (unchanged): local F.Cu tree at x=112.65 ----
     added += r.poly("ADC_VCC5_SENSE", [(114.0, 40.087), (112.65, 40.087)], F_CU)
     added += r.poly("ADC_VCC5_SENSE", [(114.0, 47.913), (112.65, 47.913), (112.65, 40.087)], F_CU)
     added += r.poly("ADC_VCC5_SENSE", [(117.0, 44.95), (115.2, 44.95), (115.2, 43.6), (112.65, 43.6)], F_CU)

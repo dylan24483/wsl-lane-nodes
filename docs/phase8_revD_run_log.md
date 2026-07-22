@@ -84,11 +84,48 @@ plug-tab cuts are harness-BOM items; first article includes a physical cross-mat
 
 Existing `R_0805_2012Metric`/`C_0805_2012Metric` classes, dozens of proven instances on the
 as-ordered rev-C board. 680k is the only new VALUE (no new footprint class).
+**2026-07-21 (remediation R1):** 680k is GONE again (taps were its only use); the new values
+are **1M** and **10M** 0805 — same footprint class, no other change. Jumbo-value thick-film
+0805s are stock commodity parts (availability re-check rides the fab-export BOM pass, H6
+task).
 
 ### FR-7 — Regression: K1–K7 relay pad map unchanged — PASS
 
 Rev-D generator `relay_output()` verified 2026-07-20: coil pads 2/5, COM pad 1, NO pad 3,
 pad 4 NC unused — identical to the rev-C meter-confirmed map (G1/G2).
+
+### FR-8 — 2N7002 tap FETs (remediation spec R1) in `Package_TO_SOT_SMD:SOT-23` — PASS (2026-07-21)
+
+- **Pin order vs symbol:** KiCad symbol `Q_NMOS_GSD` pins 1=G, 2=S, 3=D. 2N7002 in SOT-23
+  (Nexperia 2N7002 / onsemi 2N7002LT1G datasheets): **pin 1 = gate, pin 2 = source,
+  pin 3 = drain** — matches the symbol's GSD order. Generator wiring verified in
+  `block_diag()`: gate net += q[1], GND += q[2], drain net += q[3].
+- **Empirical anchor:** the identical symbol+footprint+part combination (`Q_NMOS_GSD` +
+  SOT-23 + 2N7002) is the proven `Qled_*` lamp-driver class on the assembled rev-B/rev-C
+  board #1 (bench 6/6). The AO3400/AO3401 safety-chain FETs use the same footprint class.
+- **Abs-max VERIFY item from remediation spec R1.3:** V_GS abs max **±20 V** confirmed on
+  both candidate MPNs above (the H1-killing number); V_GS(th) 1.0–2.5 V @ 250 µA/25 °C,
+  tc ≈ −5 mV/°C — the R1.5 worst-corner read-margin numbers stand. Final MPN pin-1 marking
+  check repeats at first article against the reel actually purchased.
+
+### FR-9 — MCV 1,5 G-3.5 headers → project-local `_D1.4` footprints (remediation spec R2.5, Codex M4) — PASS (2026-07-21)
+
+- Phoenix's drilling plan for the MC 1,5 / MCV 1,5 G-3.5 header system (1843680 class)
+  specifies **1.4 mm** holes; KiCad 10's stock footprints drill 1.2 mm (pads 1.8×3.6, read
+  2026-07-21). Rev-C assembled at 1.2 mm — pins fit but with no insertion/solder-fill
+  margin (JLC finished-hole floor 1.2 − 0.08 = 1.12 mm).
+- **Change:** project-local copies in `kicad/wsl_footprints.pretty/` (suffix `_D1.4`, five
+  files: 1x04/1x06/1x10/1x12/1x14 covering all 7 instances J3/J4/J5/J13/J14/J15/J16):
+  drill 1.2 → **1.4 mm** (finished worst case 1.32–1.53 mm), pad narrow axis 1.8 →
+  **2.0 mm** (long axis 3.6 unchanged) → annular ring (2.0−1.4)/2 = **0.30 mm** ≥ JLC's
+  0.20 mm multilayer floor with 50 % margin. Pad-to-pad gap at 3.5 mm pitch = 1.5 mm ≫
+  class clearances. The system KiCad library is NEVER edited (it also serves the sacred
+  rev-C generator); `kicad/revD/fp-lib-table` maps the local lib for the GUI.
+- **Layout ripple found & fixed:** the wider J13.4 pad pinched the VCC_3V3 IN2 trunk at
+  x=113.1 to a 0.4 mm gap — trunk now jogs to x=112.75 (centered in the J13.3/J13.4 gap)
+  past y=206 (`route_revD.py`).
+- **First article:** verify header insertion force + solder fill on ONE connector before
+  reflowing/soldering the rest (remediation spec R2.5).
 
 ---
 
@@ -526,3 +563,92 @@ The routed-section entry above silently reinterpreted G8. The record, straight:
   committing it alone would pin deep expectations for a netlist state not at that
   hash. The deep check is proven CLEAN (46/46 + 33/33 + 11/11) against the current
   working-tree netlists.
+
+---
+
+## BOARD CHAIN REMEDIATION (2026-07-21, Codex NO-GO audit — R1 copper / R2 rules / M2 / M3 / M4)
+
+Implements `phase8_revD_remediation_spec_2026-07-21.md` §R1 + §R2 end-to-end on the board
+chain. Every gate below ran on the installed toolchain (KiCad 10.0.2 bundled python +
+kicad-cli; `py -3` for SKiDL/diff/audit-netlist).
+
+### M2 — route_revD.py GetIsRuleArea crash: FIXED, determinism reproducible on 10.0.2
+
+- Root cause: `BOARD.Remove()` detaches without freeing (SWIG "memory leak of type
+  'PCB_TRACK *'" per item) and leaves the board's containers in a state where the later
+  `board.Zones()` iteration segfaults or yields raw `SwigPyObject` (the audit's
+  AttributeError). Reproduced both failure modes; minimal repro in `tmp/m2_repro.py`.
+- Fix: `BOARD.Delete()` (removes AND destroys natively) in `route_revD_lib.clear_tracks()`
+  and for the copper-zone sweep in `route_revD.py` (zone container snapshotted before
+  mutation). Verified: `--check-only` exit 0, **SELF-CHECK: 0 problems**, zero leak
+  messages, on KiCad **10.0.2**.
+
+### R1 — tap front-end implementation (closes C1 + H1 in copper)
+
+- `generate_kicad_netlist_revD.py::block_diag()`: five resistive tap parts REMOVED
+  (R_TAP_555/R_TAP_555_DIV/R_TAP_KICK/R_TAP_ARM/R_TAP_RPOK — 680k leaves the BOM), four
+  unidirectional 2N7002 stages ADDED per spec R1.2/R1.7 (R_TAPIN_* 1M, Q_TAP_* 2N7002
+  SOT-23, R_TAPPU_* 10k, R_TAPG_{KICK,ARM,RPOK} 10M; NO R_TAPG on the 555 tap by design).
+  **262 parts / 217 nets** emitted; refdes map: R131/Q17 (555), R133-135/Q18 (KICK),
+  R136-138/Q19 (ARM), R139-141/Q20 (RPOK).
+- **ERC waiver gate: PASS at the unchanged WVR-ERC-1 baseline** — exactly 1 waived error +
+  40 warnings; no WVR-ERC-2 needed (all new pins connected; no new pin-type pairings).
+- **Diff vs rev-C: CLEAN** (`netlist_diff_revC_to_revD.txt`) — tap replacement whitelisted
+  as rev-D-internal, **ZERO rev-C removals**, 11 touch-point nets additions-only; M1 deep
+  tables (value/footprint/pad-membership per addition) all green.
+- **Netlist + routed-mode audits: ALL PASS** with the new fail-closed tap topology checks:
+  each TAP_* drain net carries EXACTLY (FET drain, pull-up R, Pico pad); each TAP_GATE_*
+  carries only R_TAPIN(/R_TAPG) + FET gate and NEVER the Pico. Netclasses
+  **97/4/13/82/21 = 217** exact; **Safety_Rail EXACTLY 13** (stop-ship guard PASS).
+- Placement: R_TAPIN_* keep the old tap-resistor spots (pad 1 = identical observed-net
+  feed points — pre-existing watchdog/safety routes unchanged); Q/R_TAPPU/R_TAPG cluster
+  in LOGIC at x 114–127 / y 52–64, no gutter incursion, no barrier crossing.
+  `route_revD_logic.route_taps_and_adc()` rewritten: drain corridors under the Pico on
+  B.Cu to GP16-19, gate nets are the long high-impedance runs, R_TAPPU fed from the IN2
+  3V3 trunk. Router SELF-CHECK 0 problems.
+
+### R2 — DRU re-derivation + silk + drill, FULL RE-ROUTE (closes H2, M3, M4 in copper)
+
+- `kicad/revD/wsl-phase8b-revD.kicad_dru` REWRITTEN: header now derives (not defers) the
+  working voltages — the old "final distances still depend on at-machine working voltage"
+  line is DELETED; requirement confirmed 2.5/3.2 mm; JLC ±20 % etch tolerance → 0.11 mm
+  worst spacing loss → 0.15 mm allowance → **rule minima 2.65 / 3.35 / 1.6 mm**.
+- Full pipeline re-run: placement → netclasses (exact) → route → netclasses re-applied →
+  **kicad-cli DRC 0 violations / 0 unconnected / 0 footprint errors**
+  (`kicad/revD/DRC-revD-remediation-r2.rpt`) with the new .dru live → routed-mode audit
+  ALL PASS.
+- **Measured isolation minima (H2 evidence, binary-search on pcbnew Collide, all 4 Cu
+  layers, zones included):**
+  - LOGIC↔FIELD global minimum: **2.650 mm** (GND zone F.Cu ↔ ISO_WET field pad U45.4 —
+    the L-F straddler; as-fabbed worst 2.54 ≥ 2.5 requirement ✓)
+  - LOGIC↔MACHINE global minimum: **3.350 mm** (GND zone F.Cu ↔ relay K3 contact pad —
+    relay row; as-fabbed worst 3.24 ≥ 3.2 ✓)
+  - Machine channel↔channel minimum: **2.325 mm** (D2 OUT_S_A ↔ R88 SNUB_T) ≥ 1.6 ✓
+  - Targeted worst points: ISO_WET straddler pads 3.580 mm; relay-row rail-to-contact
+    3.559 mm; opto straddle column ≥ 6 mm; J15 field-pin region ≥ 6 mm.
+- Two DRC findings during iteration, both fixed at the source scripts: (1) the RPOK gate
+  descent at x≈157.6 sealed the GND-zone channel around C_WDOG_VCC pad 2 (zone sliver +
+  starved thermal) — rerouted via the proven east-side approach through the old (158.3,64)
+  via spot; (2) "J12 M1 DNP" silk at 1.0 mm clipped Rsnub_M1's pad — moved to (227.5,
+  200.5).
+- M3: `add_text()` now ENFORCES the JLC floor (≥1.0 mm / 0.15 mm stroke) for any
+  F.SilkS/B.SilkS text; the four KEYED cross-mate warnings render at 1.2 mm / 0.20 mm.
+- M4: see FR-9. All 7 MCV instances on `_D1.4` local footprints; DRC re-checked pad/drill.
+
+### RD-VIA-1 carried forward — now EMITTED BY THE ROUTER (same batch)
+
+- The 2026-07-20 RD-VIA-1 twin vias were a manual post-route board edit and would have
+  been silently LOST by any regeneration (caught during this batch via the G9 re-run-trap
+  note). `route_revD.py` now emits them deterministically
+  (`route_power_via_redundancy()`, run-log-final coordinates incl. the (160, 81.0) north
+  placement), so the routed artifact — twins included — reproduces from the scripts alone
+  and the old "restore the pristine placement board from git before re-routing" trap is
+  RETIRED (the pipeline is: place → netclasses → route → netclasses → DRC → audit).
+- Final re-run with the twins: DRC **0/0/0** (`kicad/revD/DRC-revD-remediation-r3.rpt` —
+  r3 supersedes r2 as the release evidence), routed-mode audit **ALL PASS**, measured
+  minima unchanged (2.650 / 3.350 / 2.325 mm).
+
+### Sacred snapshot
+
+- `backups/revC_design_snapshot_2026-07-19/MANIFEST.json` re-verified against the live
+  originals after the batch (post-RD-VIA-1 re-run): **189/189 OK, 0 failures**.

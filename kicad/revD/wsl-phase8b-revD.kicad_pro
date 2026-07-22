@@ -1196,6 +1196,22 @@
       },
       {
         "netclass": "Logic_Signal",
+        "pattern": "TAP_GATE_555"
+      },
+      {
+        "netclass": "Logic_Signal",
+        "pattern": "TAP_GATE_ARM"
+      },
+      {
+        "netclass": "Logic_Signal",
+        "pattern": "TAP_GATE_KICK"
+      },
+      {
+        "netclass": "Logic_Signal",
+        "pattern": "TAP_GATE_RPOK"
+      },
+      {
+        "netclass": "Logic_Signal",
         "pattern": "TAP_NE555_OUT"
       },
       {

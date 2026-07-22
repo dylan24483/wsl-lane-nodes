@@ -206,10 +206,15 @@ def route_3v3(r) -> int:
     for y in ys:
         added += r.poly("VCC_3V3", [(85.088, y), (V33_X, y)], F_CU)
         r.via("VCC_3V3", (V33_X, y)); added += 1
-    # logic trunk (IN2) fed from the Pico 3V3_OUT (A1.36)
+    # logic trunk (IN2) fed from the Pico 3V3_OUT (A1.36).
+    # M4 ripple (remediation spec R2.5): J13's MCV pads grew 1.8 -> 2.0 mm,
+    # so the straight trunk at x=113.1 would run 0.4 mm from J13.4's pad
+    # edge — jog to x=112.75 (centered in the J13.3/J13.4 gap) past y=206.
     added += r.poly("VCC_3V3", [(109.69, 19.03), (V33_TRUNK_X, 19.03)], F_CU)
     r.via("VCC_3V3", (V33_TRUNK_X, 19.03)); added += 1
-    added += r.poly("VCC_3V3", [(V33_TRUNK_X, 12.3), (V33_TRUNK_X, 224.1)], IN2_CU)
+    added += r.poly("VCC_3V3", [(V33_TRUNK_X, 12.3), (V33_TRUNK_X, 201.2),
+                                (112.75, 201.9), (112.75, 210.3),
+                                (V33_TRUNK_X, 211.0), (V33_TRUNK_X, 224.1)], IN2_CU)
     # bridge trunk -> pullup backbone
     r.via("VCC_3V3", (V33_TRUNK_X, 12.3)); added += 1
     added += r.poly("VCC_3V3", [(V33_TRUNK_X, 12.3), (V33_X, 12.3)], B_CU)
@@ -752,6 +757,32 @@ def route_machine(r) -> int:
     return added
 
 
+# ---------------------------------------------------- power-via redundancy
+def route_power_via_redundancy(r) -> int:
+    """RD-VIA-1 (run log, 2026-07-20): double the five single-point power
+    vias with a twin barrel ON an existing same-net track plus a short
+    same-net stub on the complementary layer — two truly parallel barrels
+    per junction. Originally applied as a manual post-route board edit;
+    emitted by the router since 2026-07-21 (remediation M2 batch) so the
+    routed artifact is fully reproducible from this script. Copper-only:
+    no netlist / pad-membership / netclass change. Twin coordinates are the
+    run-log-recorded finals (incl. the (160, 81.0) north re-placement that
+    keeps the F.Cu GND zone neck at ~(160, 83-84) intact)."""
+    added = 0
+    twins = [
+        # (net, original via, twin via, stub layer)
+        ("VCC_5V", (118.4, 20.0), (118.4, 21.0), F_CU),
+        ("VCC_5V", (167.0, 14.0), (164.7, 14.0), F_CU),
+        ("SAFE_STOP_RETURN", (177.5, 13.0), (176.5, 13.0), F_CU),
+        ("SAFE_STOP_RETURN", (153.4, 83.1), (150.5, 82.923), IN1_CU),
+        ("RELAY_ENABLE_RAIL", (160.0, 82.0), (160.0, 81.0), F_CU),
+    ]
+    for net, orig, twin, stub_layer in twins:
+        r.via(net, twin); added += 1
+        added += r.poly(net, [orig, twin], stub_layer)
+    return added
+
+
 # ------------------------------------------------------------------- zones
 def add_gnd_zone(r) -> int:
     zone = pcbnew.ZONE(r.board)
@@ -783,9 +814,12 @@ def main() -> int:
     assert_netclasses_active(board)
     r = Router(board)
     removed = r.clear_tracks()
-    # remove any previously added copper zones (keep rule areas)
-    for z in [z for z in board.Zones() if not z.GetIsRuleArea()]:
-        board.Remove(z)
+    # remove any previously added copper zones (keep rule areas).
+    # KiCad 10.0.2 (M2 fix): snapshot the container first, then Delete()
+    # (not Remove()) — Remove() leaks the native object and corrupts later
+    # container iteration (see route_revD_lib.clear_tracks note).
+    for z in [z for z in tuple(board.Zones()) if not z.GetIsRuleArea()]:
+        board.Delete(z)
 
     totals = {
         "field_led_series": route_field_led_series(r),
@@ -808,6 +842,7 @@ def main() -> int:
         "status_leds": route_status_leds(r),
         "drv": route_drv(r),
         "machine": route_machine(r),
+        "power_via_redundancy": route_power_via_redundancy(r),
         "gnd_zone": add_gnd_zone(r),
     }
 

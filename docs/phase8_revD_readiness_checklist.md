@@ -34,36 +34,47 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 - FR-3 D_PROT SS34 — PASS with the package trap checked: **MDD SS34, LCSC C8678, SMA
   (DO-214AC) verified; SS34 from other vendors ships in SMB/SMC — any MPN substitution
   re-runs this review.**
-- FR-6 0805 passives (680k is the only new VALUE, no new footprint class) — PASS.
+- FR-6 0805 passives — PASS. **2026-07-21 update (remediation R1): 680k is GONE (new
+  values 1M + 10M, same footprint class).**
 - FR-7 regression: K1–K7 relay map unchanged (coil pads 2/5, COM 1, NO 3, NC 4 unused —
   identical to the rev-C meter-confirmed G1/G2 map) — PASS.
+- **FR-8 (2026-07-21): 2N7002 tap FETs in SOT-23 — PASS** (Q_NMOS_GSD 1=G/2=S/3=D matches
+  the 2N7002 pinout; same proven class as the Qled_* drivers; V_GS ±20 V abs max confirmed).
+- **FR-9 (2026-07-21): MCV headers → project-local `_D1.4` footprints — PASS** (drill
+  1.4 mm per Phoenix drilling plan, pad 2.0×3.6, annular 0.30 mm; all 7 instances;
+  first-article insertion/solder-fill check on one connector before the rest).
 - Records live in `phase8_revD_run_log.md` (backfilled 2026-07-20 with genuinely-performed
   reviews — the gate had initially run without a written artifact; do not let that recur).
 
-### G3 — Rev-D netlist regenerated + ERC waiver gate green  `[x]`
+### G3 — Rev-D netlist regenerated + ERC waiver gate green  `[x]`  (re-run 2026-07-21, remediation R1)
 - `py -3 scripts/generate_kicad_netlist_revD.py` → `kicad/wsl-phase8b-revD.net`:
-  **252 parts, 213 nets, 0 netlist-generation errors**; regeneration is deterministic (only
-  date + cwd-dependent source-path lines vary; sklib byte-identical).
+  **262 parts, 217 nets, 0 netlist-generation errors** (remediation spec R1.7: −5 resistive
+  tap parts, +15 unidirectional-stage parts, +4 `TAP_GATE_*` nets); regeneration is
+  deterministic (only date + cwd-dependent source-path lines vary; sklib byte-identical).
 - ERC baseline **WVR-ERC-1** (exactly 1 error — the benign Pico AGND/GND POWER-OUT pin-type
   artifact — + 40 warnings) is enforced fail-closed by the generator's `check_erc_waiver()`;
   any drift aborts. Rev-C never ran ERC, so this defines the baseline.
 - J15/J16 refdes confirmed landed as specified.
 
-### G4 — Netlist diff vs rev-C CLEAN  `[x]`
-- `py -3 scripts/diff_netlist_revC_to_revD.py` → **RESULT CLEAN**: 36 added parts, 29 added
-  nets, 11 touch-point nets additions-only, 173 nets unchanged, **0 removals**; sole
-  CHANGED_PART = D_PROT SS14→SS34 (whitelisted per FR-3).
+### G4 — Netlist diff vs rev-C CLEAN  `[x]`  (re-run 2026-07-21, remediation R1 + M1 deep tables)
+- `py -3 scripts/diff_netlist_revC_to_revD.py` → **RESULT CLEAN**: 46 added parts, 33 added
+  nets, 11 touch-point nets additions-only, 173 nets unchanged, **0 removals**;
+  CHANGED_PARTs all whitelisted-and-documented (D_PROT SS14→SS34 per FR-3; the five MCV
+  connectors' `_D1.4` local-footprint repoint per FR-9/R2.5). M1 deep tables (exact
+  value/footprint/pad membership per addition) all green.
 - Every delta traces to spec items A/C/D/E/F; item G confirmed absent; forbidden absences
   confirmed (no SAFE_ tap, no RELAY_ENABLE_RAIL divider, no new barrier class).
 
 ### G5 — Placement + netclasses + placement-stage DRC + audit  `[x]`
-- `kicad/revD/wsl-phase8b-revD.kicad_pcb` — 250×240 mm, 252 parts placed, banding FIELD
+- `kicad/revD/wsl-phase8b-revD.kicad_pcb` — 250×240 mm, 262 parts placed (2026-07-21
+  regeneration; tap-stage cluster added in LOGIC x 114–127 / y 52–64), banding FIELD
   left / LOGIC center / MACHINE right with the established gutters, opto column re-pitched
   to 5.7 mm × 40 rows, USB keep-out envelope (16×12×40 mm) drawn on Dwgs_User, cross-mate
   silk warnings placed, TP strip relocated.
 - Sidecars `wsl-phase8b-revD.kicad_pro/.kicad_prl/.kicad_dru` copied with the board; the
   `.dru` `hasNetclass()` isolation rules confirmed LIVE (not the 2026-06-03 false-green).
-- `apply_netclasses_revD.py --write`: **93 / 4 / 13 / 82 / 21 exact**, zero unknown/overlap.
+- `apply_netclasses_revD.py --write`: **97 / 4 / 13 / 82 / 21 exact** (2026-07-21 counts,
+  remediation R1.7), zero unknown/overlap.
 - Placement DRC (`kicad-cli pcb drc`): **0 violations**; 499 unconnected pads = expected at
   the unrouted placement stage.
 - `audit_revD_board.py`: **ALL PASS in both netlist and board (--pre-route) modes**, and
@@ -136,17 +147,25 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 - 2026-07-20 review-fix RD-VIA-1: the five single-point power vias (VCC_5V feed ×2,
   SAFE_STOP_RETURN ×2, RELAY_ENABLE_RAIL spine entry) were doubled with parallel twin
   barrels + same-net stubs (copper-only; no netlist/pad/netclass change).
-- **Re-run trap:** `route_revD.py` must ONLY run against the pristine pre-route placement
-  board. Restore with `git show a045330:kicad/revD/wsl-phase8b-revD.kicad_pcb` — use
-  **a045330, NOT 230f217** (230f217 also carries a divergent same-size `.kicad_pcb.bak`
-  that is easy to open by mistake; it was removed in a045330). Re-running against the
-  routed board can crash pcbnew's swig layer, and a re-run OVERWRITES the verified routed
-  artifact (which now also carries the RD-VIA-1 redundant vias the router does NOT emit).
+- **Re-run trap RETIRED (2026-07-21, remediation batch):** the RD-VIA-1 twins are now
+  emitted by the router itself (`route_power_via_redundancy()`), the M2 `BOARD.Delete()`
+  fix removed the swig-crash failure mode, and the sanctioned pipeline regenerates the
+  placement board from the netlist first — `place_components_revD.py --force` →
+  `apply_netclasses_revD.py --write` → `route_revD.py` → `apply_netclasses_revD.py
+  --write` → kicad-cli DRC → `audit_revD_board.py`. The routed artifact reproduces from
+  scripts alone (proven 2026-07-21 on KiCad 10.0.2).
+- **2026-07-21 (remediation R1/R2): board REGENERATED + FULLY RE-ROUTED** — 262 parts,
+  new tap stages, new DRU minima 2.65/3.35/1.6 mm. See the change-list remediation banner
+  + run-log board-chain record.
 
-### G10 — Post-route DRC + routed-mode audit + zone fills  `[x]`  (2026-07-20)
-- KiCad DRC with the carried `.dru`: **0 violations / 0 unconnected / 0 footprint errors** —
-  `kicad/revD/DRC-revD-routed-r3.rpt` (r2 = as-routed; r3 = after RD-VIA-1 via redundancy;
-  netclasses re-applied via `apply_netclasses_revD.py --write` before each DRC).
+### G10 — Post-route DRC + routed-mode audit + zone fills  `[x]`  (re-run 2026-07-21, remediation R2 rules)
+- KiCad DRC with the NEW `.dru` (2.65/3.35/1.6 mm — requirement + JLC etch allowance,
+  remediation spec R2.3): **0 violations / 0 unconnected / 0 footprint errors** —
+  `kicad/revD/DRC-revD-remediation-r3.rpt` (supersedes `DRC-revD-routed-r3.rpt`, which
+  was against the old 2.5/3.2/1.5 rules; netclasses re-applied via
+  `apply_netclasses_revD.py --write` before each DRC). Measured isolation minima:
+  **L↔F 2.650 mm / L↔M 3.350 mm / machine ch↔ch 2.325 mm** (as-fabbed worst case ≥ the
+  2.5/3.2 requirement with the ±20 % etch loss included).
 - `audit_revD_board.py` in routed board mode (without `--pre-route`): **ALL PASS**,
   including zone-fill checks (F.Cu GND zone filled, no orphan islands — an early RD-VIA-1
   stub placement severed a zone neck at (160, 83–84) and was caught and re-placed north)
@@ -212,24 +231,36 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
   adjacent rows.
 - `[ ]` **Divider ADC read (item D):** GP26 reads VCC_5V/2 within ±3 % of the TP1 DMM
   value; energize 6 coils and confirm the sag is visible in the ADC trend.
-- `[ ]` **Rail-tap ordering test (item E):**
-  - scope each TAP_ node vs its source for level/threshold margins (NE555 high reads
-    ≥ VIH through the 100k/680k divider; 3.3 V taps read clean through 680k, Schmitt on);
-  - **cold fault injection:** force each tap GPIO output-high (test firmware) with the Pi
-    link disconnected — the rail must NOT arm, and an armed rail must still drop on
-    Pi-kill in the same time as an untapped board;
+- `[ ]` **Rail-tap test (item E — REDESIGNED per remediation spec R1; full procedure =
+  spec R1.9, which GOVERNS this line item):**
+  - **level survey (cold):** scope each `TAP_GATE_*` gate node and `TAP_*` drain node
+    through the full signal swing; gate-high ≥ 3.0 V typical expected (worst-stack
+    margins per spec R1.5); reads are INVERTED (observed HIGH ⇒ pad LOW);
+  - **unidirectionality proof (cold):** FI-1 bench build drives each GP16–19 output-high
+    with J1 unmated (driver high-Z) — each observed net must not move > 1 mV; rail must
+    not arm;
+  - **fault insertion (cold):** clip-short each tap FET drain-gate (F3/F4), repeat; then
+    with the emulator arming normally, go high-Z with the short applied — rail must drop
+    within the normal watchdog window;
   - **AT-TEMPERATURE repeat (gate OG-4 — MANDATORY, a cold-only pass does not discharge
-    it):** hold the Q_AND_ARM / Q_AND_RP_OK / Q_RAIL region ≥70 °C case temperature (heat
-    gun + thermocouple) and prove a deliberate ARM_PERMIT disarm still drops the rail;
-  - forced Pi-death and forced kick-starvation each produce the correct edge ORDER on the
-    four taps.
+    it):** heat the Q_AND_ARM / Q_AND_RP_OK / Q_RAIL region AND the four tap FETs to
+    ≥ 70 °C case (thermocouple-verified, hold ≥ 2 min); repeat the high-Z + D-G-short +
+    stuck-high-GPIO stack — rail must neither arm nor hold, and a driven ARM_PERMIT
+    disarm must still drop it;
+  - **edge-order proof (fw v1.2):** forced Pi-death and forced kick-starvation each
+    produce the documented edge ORDER in the 1 ms ring, and the record survives a Pico
+    reboot (epoch semantics, spec R3.3).
 - `[ ]` **J16 bus check (item F):** scrap ADS1115/INA219 module on J16 → module AND
   0x20/0x21/0x22 all still ACK; bus rise-time spot-check with the module attached.
 - `[ ]` **Cross-mate refusal test (OG-3):** each coded plug physically REFUSES the wrong
   header — J3-plug vs J15 header, J15-plug vs J3, J13-plug vs J16, J16-plug vs J13.
-- `[ ]` Firmware review assert (item E binding): GP16–GP19 configured inputs-only, Schmitt
-  enabled; deliberate disarm drives ARM_PERMIT low, never tristates. (Firmware itself is
-  the separate campaign; this line just refuses a first-article pass without the check.)
+- `[ ]` Firmware review assert (item E binding, now fw v1.2 / remediation spec R3):
+  GP16–GP19 inputs-only ENFORCED (`tap_assert_input_only()` register-readback + the
+  build-failing host direction test), Schmitt enabled, inversion in exactly one
+  `tap_read()` accessor; deliberate disarm drives ARM_PERMIT low, never tristates; the
+  FI-1 fault-injection build is excluded from the release artifact and refuses to run
+  without its physical jumper. (Firmware is the separate C2 task; this line refuses a
+  first-article pass without the check.)
 
 ---
 

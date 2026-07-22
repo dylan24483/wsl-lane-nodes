@@ -8,9 +8,9 @@ docs/phase8_revD_change_spec.md §H.1 — kept in LOCKSTEP with
 scripts/audit_revD_board.py:
   * exact-name 'ADC_VCC5_SENSE' -> Logic_Signal   (item D)
   * prefix 'TAP_'               -> Logic_Signal   (item E)
-plus a fail-closed EXACT per-class count assertion:
-  Logic_Signal 93 / Logic_Power 4 / Safety_Rail 13 / Field_Sense 82 /
-  Machine_Output 21  = 213 nets.
+plus a fail-closed EXACT per-class count assertion (remediation spec R1.7):
+  Logic_Signal 97 / Logic_Power 4 / Safety_Rail 13 / Field_Sense 82 /
+  Machine_Output 21  = 217 nets.
 A Safety_Rail count != 13 is an automatic stop-ship (spec §E).
 
 Run from KiCad's bundled Python:
@@ -32,9 +32,11 @@ import pcbnew
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BOARD = ROOT / "kicad" / "revD" / "wsl-phase8b-revD.kicad_pcb"
 
-# Spec §H.1 delta table — keep in LOCKSTEP with audit_revD_board.py EXPECTED.
+# Spec §H.1 delta table + remediation spec R1.7 (2026-07-21: +4 TAP_GATE_*
+# nets -> Logic_Signal 93->97) — keep in LOCKSTEP with audit_revD_board.py
+# EXPECTED.
 EXPECTED_COUNTS = {
-    "Logic_Signal": 93,
+    "Logic_Signal": 97,
     "Logic_Power": 4,
     "Safety_Rail": 13,
     "Field_Sense": 82,

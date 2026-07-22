@@ -41,7 +41,21 @@ and untouched) with the rev-D deltas from docs/phase8_revD_change_spec.md:
             y=8). TP strip relocated to the new bottom band (y 229/236).
   Item A  - R_WET_BLEED1/2 in the FIELD band near ISO_WET / TP4 area.
   Item D  - ADC divider (R_ADC5_TOP/BOT + C_ADC5) in LOGIC, right of the Pico.
-  Item E  - tap resistors in LOGIC near the watchdog block.
+  Item E  - REDESIGNED 2026-07-21 (remediation spec R1, closes Codex C1+H1):
+            four unidirectional 2N7002 tap stages. Each R_TAPIN (1M) stays at
+            the OLD tap-resistor spot (within ~10 mm of its source node, so
+            the long run is the high-impedance gate side and the pre-existing
+            observed-net feeds in route_revD.py stay valid); the Q_TAP /
+            R_TAPPU / R_TAPG cluster sits in the LOGIC band just east of the
+            Pico (x 114-127, y 52-64), rows aligned to the GP16-19 drain
+            corridors. No barrier crossing, no gutter incursion.
+  M3      - silkscreen fab floor (remediation spec R2.4): every F.SilkS label
+            >= 1.0 mm height / 0.15 mm stroke (JLC minimum); the four KEYED
+            cross-mate warnings 1.2 mm / 0.20 mm stroke. Dwgs_User text is
+            not fabricated and is unchanged.
+  M4      - all MCV 1,5 G-3.5 connectors load from the PROJECT-LOCAL library
+            kicad/wsl_footprints.pretty (suffix _D1.4: drill 1.4 mm, pad
+            2.0x3.6 mm; remediation spec R2.5). System library untouched.
   Item F  - J16 (J_EXTI2C) at (128, 206, 0), LOGIC band bottom edge (spec's
             (155,206) violates 3.2 mm creepage to relay K7 - measured).
   Item G  - deferred; no MCP_OUT_B exists in the netlist.
@@ -76,6 +90,9 @@ REVD_DIR = KICAD_DIR / "revD"
 DEFAULT_NETLIST = KICAD_DIR / "wsl-phase8b-revD.net"
 DEFAULT_BOARD = REVD_DIR / "wsl-phase8b-revD.kicad_pcb"
 FP_ROOT = Path(r"C:\Program Files\KiCad\10.0\share\kicad\footprints")
+# Remediation spec R2.5 (M4): project-local footprint libraries (the system
+# KiCad tree is never edited — it also serves the sacred rev-C generator).
+LOCAL_FP_LIBS = {"wsl_footprints": KICAD_DIR / "wsl_footprints.pretty"}
 TESTPOINT_LIB = FP_ROOT / "TestPoint.pretty"
 TESTPOINT_FP = "TestPoint_Pad_1.5x1.5mm"
 MOUNTING_HOLE_LIB = FP_ROOT / "MountingHole.pretty"
@@ -207,7 +224,7 @@ def load_footprint(fp_name: str):
     if ":" not in fp_name:
         raise ValueError(f"Malformed footprint name: {fp_name}")
     lib, name = fp_name.split(":", 1)
-    lib_dir = FP_ROOT / f"{lib}.pretty"
+    lib_dir = LOCAL_FP_LIBS.get(lib, FP_ROOT / f"{lib}.pretty")
     if not lib_dir.exists():
         raise FileNotFoundError(f"Footprint library not found: {lib_dir}")
     fp = pcbnew.FootprintLoad(str(lib_dir), name)
@@ -325,14 +342,32 @@ def base_placement() -> dict[str, tuple[float, float, float]]:
         "R_ADC5_BOT": (114, 47, 90),
         "C_ADC5": (117, 44, 90),
 
-        # Item E: rail-drop taps. Series resistor near its source node; the
-        # long run to the Pico is the high-impedance side. The area vacated by
-        # the moved Pico (x 113-135, y 30-80) hosts the cluster.
-        "R_TAP_555": (146, 33, 0),      # NE555_OUT source at U_WDOG (151,50)
-        "R_TAP_555_DIV": (132, 44, 90),  # shunt of the 5V tap divider
-        "R_TAP_KICK": (136, 47, 90),    # WDOG_KICK source at kick gate (142,47)
-        "R_TAP_ARM": (130, 70, 90),     # ARM_PERMIT run J1 -> Rb_AND_ARM (133,90)
-        "R_TAP_RPOK": (156, 64, 0),     # RP2040_OK near Q_WDOG_OK (162,58)
+        # Item E (remediation spec R1, 2026-07-21): unidirectional tap
+        # stages. R_TAPIN (1M) keeps the OLD tap-resistor position — pad 1
+        # sits on the identical observed-net feed point already routed in
+        # route_revD.py (route_watchdog / route_header_safety), pad 2 now
+        # feeds the TAP_GATE_* run instead of the GPIO directly. The gate
+        # side is the long, high-impedance run by design (spec R1.7).
+        "R_TAPIN_555": (146, 33, 0),    # NE555_OUT source at U_WDOG (151,50)
+        "R_TAPIN_KICK": (136, 47, 90),  # WDOG_KICK source at kick gate (142,47)
+        "R_TAPIN_ARM": (130, 70, 90),   # ARM_PERMIT run J1 -> Rb_AND_ARM (133,90)
+        "R_TAPIN_RPOK": (156, 64, 0),   # RP2040_OK near Q_WDOG_OK (162,58)
+        # Q/R_TAPPU/R_TAPG cluster east of the Pico, one row per tap, rows
+        # matched to the GP16-19 drain corridors (all LOGIC band; Pico
+        # courtyard right edge is 111.6, MCP_IN_A courtyard starts ~113 at
+        # y >= 96 — this block sits y 52-64). Q rot 180 puts the drain
+        # (pad 3) toward the Pico and gate (pad 1) toward the sources.
+        "Q_TAP_555": (116, 52, 180),
+        "R_TAPPU_555": (120.5, 52, 180),   # pad2 (west) = drain net
+        "Q_TAP_KICK": (116, 56, 180),
+        "R_TAPPU_KICK": (120.5, 56, 180),
+        "R_TAPG_KICK": (125, 56, 0),       # rot 0: pad1 (gate) west, pad2 (GND zone) east
+        "Q_TAP_ARM": (116, 60, 180),
+        "R_TAPPU_ARM": (120.5, 60, 180),
+        "R_TAPG_ARM": (125, 60, 0),
+        "Q_TAP_RPOK": (116, 64, 180),
+        "R_TAPPU_RPOK": (120.5, 64, 180),
+        "R_TAPG_RPOK": (125, 64, 0),
 
         # Watchdog and safety rail (unchanged from rev-C).
         "U_WDOG": (151, 50, 0),
@@ -502,13 +537,19 @@ def add_rect(board: pcbnew.BOARD, x1: float, y1: float, x2: float, y2: float, la
         board.Add(seg)
 
 
-def add_text(board: pcbnew.BOARD, text: str, x: float, y: float, size=1.0, rot=0, layer=None) -> None:
+def add_text(board: pcbnew.BOARD, text: str, x: float, y: float, size=1.0, rot=0, layer=None, thickness=0.15) -> None:
+    # Remediation spec R2.4 (M3): fabricated silk must meet JLC's published
+    # floor of 1.0 mm height / 0.15 mm stroke — enforce it here so no call
+    # site can regress a F.SilkS label below the fab minimum.
+    if (layer is None or layer == pcbnew.F_SilkS or layer == pcbnew.B_SilkS):
+        size = max(size, 1.0)
+        thickness = max(thickness, 0.15)
     item = pcbnew.PCB_TEXT(board)
     item.SetText(text)
     item.SetLayer(layer if layer is not None else pcbnew.F_SilkS)
     item.SetPosition(mm(x, y))
     item.SetTextSize(pcbnew.VECTOR2I(pcbnew.FromMM(size), pcbnew.FromMM(size)))
-    item.SetTextThickness(pcbnew.FromMM(0.15))
+    item.SetTextThickness(pcbnew.FromMM(thickness))
     set_angle(item, rot)
     board.Add(item)
 
@@ -605,50 +646,60 @@ def add_connector_labels(board: pcbnew.BOARD) -> None:
 
 
 def add_silkscreen_labels(board: pcbnew.BOARD) -> None:
+    # Remediation spec R2.4 (M3): every fabricated F.SilkS label >= 1.0 mm
+    # height / 0.15 mm stroke (JLC published minimum; below it JLC auto-widens
+    # strokes and the text smears). The four KEYED cross-mate warnings are the
+    # safety-relevant ones: 1.2 mm / 0.20 mm stroke for extra margin.
     labels = [
         # Board identity / order sanity.
         ("WSL LANE NODE PHASE 8B REV-D", 210.0, 42.0, 1.0, 0),
-        ("4L 250x240  INPUTS LEFT  OUTPUTS RIGHT", 210.0, 45.4, 0.8, 0),
+        ("4L 250x240  INPUTS LEFT  OUTPUTS RIGHT", 210.0, 45.4, 1.0, 0),
 
         # Domain labels.
-        ("FIELD INPUTS", 28.0, 28.0, 0.8, 0),
-        ("LOGIC / SAFETY", 124.0, 26.0, 0.8, 0),
-        ("MACHINE CONTACTS", 188.0, 28.0, 0.8, 0),
+        ("FIELD INPUTS", 28.0, 28.0, 1.0, 0),
+        ("LOGIC / SAFETY", 124.0, 26.0, 1.0, 0),
+        ("MACHINE CONTACTS", 188.0, 28.0, 1.0, 0),
 
         # Top connectors.
-        ("J2 5V IN", 116.0, 17.5, 0.8, 0),
-        ("J1 PI", 135.5, 16.5, 0.8, 0),
-        ("J14 SAFETY LOOP", 167.0, 16.5, 0.8, 0),
+        ("J2 5V IN", 116.0, 17.5, 1.0, 0),
+        ("J1 PI", 135.5, 16.5, 1.0, 0),
+        ("J14 SAFETY LOOP", 167.0, 16.5, 1.0, 0),
 
         # Field connectors.
-        ("J3 FAST", 21.0, 33.0, 0.8, 90),
-        ("J4 SLOW A", 21.0, 92.0, 0.8, 90),
-        ("J5 SLOW B", 21.0, 157.0, 0.8, 90),
-        ("J15 SLOW C", 21.0, 204.0, 0.8, 90),
+        ("J3 FAST", 21.0, 33.0, 1.0, 90),
+        ("J4 SLOW A", 21.0, 92.0, 1.0, 90),
+        ("J5 SLOW B", 21.0, 157.0, 1.0, 90),
+        ("J15 SLOW C", 21.0, 204.0, 1.0, 90),
 
         # Output connectors.
-        ("J6 S", 230.0, 67.0, 0.8, 0),
-        ("J7 T", 230.0, 89.0, 0.8, 0),
-        ("J8 SP", 229.0, 111.0, 0.8, 0),
-        ("J9 BE", 229.0, 133.0, 0.8, 0),
-        ("J10 M", 228.0, 155.0, 0.8, 0),
-        ("J11 M2", 227.0, 177.0, 0.8, 0),
-        ("J12 M1 DNP", 224.0, 199.0, 0.8, 0),
-        ("J13 LED LAMPS", 112.0, 213.0, 0.8, 0),
-        ("J16 EXT I2C", 136.0, 213.0, 0.8, 0),
-
-        # Cross-mate guards (review finding 2026-07-20, gate OG-3): J15
-        # shares its mating plug PN (1840447) with J3, and J16 shares its
-        # plug PN (1840405) with J13 on the same edge — CP-MSTB 1734634
-        # coding keys at different pole positions are the real fix (harness
-        # BOM); the silk names the hazard at both ends of each pair.
-        ("KEYED: NOT J15", 24.5, 48.0, 0.8, 90),  # below 'FIELD INPUTS' silk (silk_overlap)
-        ("KEYED: NOT J3", 24.5, 204.0, 0.8, 90),
-        ("KEYED: NOT J16", 112.0, 217.5, 0.8, 0),
-        ("KEYED: NOT J13 LAMP", 138.0, 217.5, 0.8, 0),
+        ("J6 S", 230.0, 67.0, 1.0, 0),
+        ("J7 T", 230.0, 89.0, 1.0, 0),
+        ("J8 SP", 229.0, 111.0, 1.0, 0),
+        ("J9 BE", 229.0, 133.0, 1.0, 0),
+        ("J10 M", 228.0, 155.0, 1.0, 0),
+        ("J11 M2", 227.0, 177.0, 1.0, 0),
+        # (moved off Rsnub_M1's pad after the 0.8 -> 1.0 mm M3 growth)
+        ("J12 M1 DNP", 227.5, 200.5, 1.0, 0),
+        ("J13 LED LAMPS", 112.0, 213.0, 1.0, 0),
+        ("J16 EXT I2C", 136.0, 213.0, 1.0, 0),
     ]
     for args in labels:
         add_text(board, *args, layer=pcbnew.F_SilkS)
+
+    # Cross-mate guards (review finding 2026-07-20, gate OG-3): J15 shares
+    # its mating plug PN (1840447) with J3, and J16 shares its plug PN
+    # (1840405) with J13 on the same edge — CP-MSTB 1734634 coding keys at
+    # different pole positions are the real fix (harness BOM); the silk
+    # names the hazard at both ends of each pair. 1.2 mm / 0.20 mm stroke
+    # (remediation spec R2.4), positions nudged for the taller text.
+    keyed = [
+        ("KEYED: NOT J15", 25.0, 48.0, 90),   # below 'FIELD INPUTS' silk
+        ("KEYED: NOT J3", 25.0, 204.0, 90),
+        ("KEYED: NOT J16", 112.0, 218.0, 0),
+        ("KEYED: NOT J13 LAMP", 138.0, 218.0, 0),
+    ]
+    for text, x, y, rot in keyed:
+        add_text(board, text, x, y, 1.2, rot, layer=pcbnew.F_SilkS, thickness=0.20)
 
 
 def create_board(args) -> None:
@@ -684,7 +735,8 @@ def create_board(args) -> None:
     missing_fp = []
     for comp in components:
         lib, name = comp.footprint.split(":", 1)
-        if not (FP_ROOT / f"{lib}.pretty" / f"{name}.kicad_mod").exists():
+        lib_dir = LOCAL_FP_LIBS.get(lib, FP_ROOT / f"{lib}.pretty")
+        if not (lib_dir / f"{name}.kicad_mod").exists():
             missing_fp.append(comp.footprint)
 
     print(f"Wrote {args.board}")

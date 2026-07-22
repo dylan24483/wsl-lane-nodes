@@ -4,10 +4,12 @@ Rev-D topological audit (COPY of scripts/audit_revB_board.py — the rev-C
 auditor is SACRED and untouched). Contract: docs/phase8_revD_change_spec.md
 §H.1/§I.6. Fails closed, same as rev-C.
 
-Expected rev-D class counts (spec delta table — extend apply_netclasses_revD.py
-in LOCKSTEP with these):
-    Logic_Signal 93 / Logic_Power 4 / Safety_Rail 13 / Field_Sense 82 /
-    Machine_Output 21  = 213 nets total, 252 parts.
+Expected rev-D class counts (spec delta table + remediation spec R1.7 —
+extend apply_netclasses_revD.py in LOCKSTEP with these):
+    Logic_Signal 97 / Logic_Power 4 / Safety_Rail 13 / Field_Sense 82 /
+    Machine_Output 21  = 217 nets total, 262 parts.
+    (2026-07-21 R1: -5 resistive tap parts, +15 unidirectional tap-stage
+    parts, +4 TAP_GATE_* nets -> Logic_Signal 93->97.)
 A Safety_Rail count != 13 is an automatic stop-ship (spec §E — the rev-D spin
 adds ZERO safety-rail copper; SAFE_* taps are FMEA-gated out of scope).
 
@@ -36,10 +38,10 @@ import sys
 import collections
 import re
 
-EXPECTED = {"Logic_Signal": 93, "Logic_Power": 4, "Safety_Rail": 13,
+EXPECTED = {"Logic_Signal": 97, "Logic_Power": 4, "Safety_Rail": 13,
             "Field_Sense": 82, "Machine_Output": 21}
-EXPECTED_NETS = 213
-EXPECTED_PARTS = 252
+EXPECTED_NETS = 217
+EXPECTED_PARTS = 262
 # Board-level extras added by place_components_revD.py, NOT in the netlist
 # (same pattern as rev-C: the routed-manual board has 236 = 216 + 16 TP + 4 MK).
 EXPECTED_TESTPADS = 16
@@ -202,12 +204,24 @@ def audit_common(net_pads, pico_ref, comp_info=None, board_mode=False):
                      ("TAP_ARM_PERMIT", "24"), ("TAP_RP2040_OK", "25")):
         pads = [(r, str(p)) for r, p in net_pads.get(tap, [])]
         need((pico_ref, pin) in pads, f"{tap} reaches Pico pin {pin} (got {pads})")
-    # taps must NOT touch any safety net's copper: the tap nets carry only
-    # (resistor, Pico) pads
+    # Remediation spec R1 (2026-07-21): each TAP_* drain net carries EXACTLY
+    # (2N7002 drain Q, pull-up R, Pico pad) — the GPIO must connect to the
+    # FET drain only (the unidirectionality contract, Codex C1). The
+    # TAP_GATE_* nets are the ONLY copper touching the observed side and
+    # must NEVER reach the Pico.
     for tap in ("TAP_NE555_OUT", "TAP_WDOG_KICK", "TAP_ARM_PERMIT", "TAP_RP2040_OK"):
-        refs = sorted(set(r for r, _ in net_pads.get(tap, [])))
-        need(all(r.startswith("R") or r == pico_ref for r in refs),
-             f"{tap} carries only resistor + Pico pads (got {refs})")
+        pads = net_pads.get(tap, [])
+        prefixes = sorted(r[0] for r, _ in pads)
+        need(len(pads) == 3 and prefixes == sorted(["Q", "R", pico_ref[0]]),
+             f"{tap} carries exactly (FET drain, pull-up R, Pico) pads (got {pads})")
+    for gate in ("TAP_GATE_555", "TAP_GATE_KICK", "TAP_GATE_ARM", "TAP_GATE_RPOK"):
+        pads = net_pads.get(gate, [])
+        refs = sorted(set(r for r, _ in pads))
+        expected_n = 2 if gate == "TAP_GATE_555" else 3  # 555 tap has no R_TAPG by design
+        need(gate in net_pads and len(pads) == expected_n
+             and all(r.startswith(("R", "Q")) for r in refs)
+             and pico_ref not in refs,
+             f"{gate} carries only R_TAPIN(/R_TAPG) + FET gate, never the Pico (got {pads})")
 
 
 def audit_netlist(path):

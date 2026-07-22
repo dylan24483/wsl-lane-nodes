@@ -20,6 +20,32 @@
 
 ## 0. STATUS — done vs. gates remaining (2026-07-20)
 
+> **⚠ REMEDIATION UPDATE 2026-07-21 (Codex NO-GO campaign; spec =
+> `phase8_revD_remediation_spec_2026-07-21.md`):** the board was REGENERATED and FULLY
+> RE-ROUTED. Where the 2026-07-20 status below says otherwise, THIS block wins:
+> - **Item E redesigned (R1, closes C1+H1):** resistive taps replaced by four
+>   unidirectional 2N7002 stages (R_TAPIN 1M / R_TAPPU 10k / R_TAPG 10M; reads inverted;
+>   firmware v1.2 contract). **262 parts / 217 nets**; netclasses
+>   **97/4/13/82/21** exact (Safety_Rail still EXACTLY 13); 680k GONE from the BOM
+>   (+1M/+10M). Diff vs rev-C still CLEAN, still ZERO rev-C removals.
+> - **DRU re-derived (R2, closes H2):** working voltages measured/derived (FIELD ≤ 14 V
+>   populated / 34 Vpk basis; MACHINE ≤ 37 Vpk, 24 VAC fieldsheet), IPC-2221B B1 0.6 mm
+>   minimum, requirement CONFIRMED at 2.5/3.2 mm; rule values now carry the JLC ±20 %
+>   etch-tolerance allowance: **2.65 / 3.35 / 1.6 mm**. Re-routed: kicad-cli DRC
+>   **0/0/0** (`DRC-revD-remediation-r2.rpt`), routed-mode audit **ALL PASS**, measured
+>   minima **L↔F 2.650 mm / L↔M 3.350 mm / machine ch↔ch 2.325 mm** (straddler 3.580,
+>   relay rows 3.559, opto rows and J15 region ≥ 6).
+> - **M3:** all fabricated F.SilkS ≥ 1.0 mm / 0.15 mm stroke; the four KEYED cross-mate
+>   warnings 1.2 mm / 0.20 mm.
+> - **M4:** all 7 MCV connectors on project-local `_D1.4` footprints
+>   (`kicad/wsl_footprints.pretty/`): drill 1.4 mm (Phoenix drilling plan), pad 2.0×3.6
+>   (0.30 mm annular). System KiCad library untouched.
+> - **M2:** `route_revD.py --check-only` now runs clean on KiCad 10.0.2
+>   (`BOARD.Delete()` fix; the GetIsRuleArea crash is gone) — the routed artifact is
+>   reproducible on the installed toolchain.
+> - The 2026-07-20 "≤ 3.27 V" divider read-bound below is obsolete twice over (first by
+>   COR-2, now by R1 removing the divider entirely) — do not quote it.
+
 **DONE (this campaign, all in new files):**
 - **Spec** — `phase8_revD_change_spec.md`, items A–G, electrical math independently re-derived
   and confirmed in the verify pass.
@@ -166,23 +192,33 @@ owner decisions, physical/powered sessions, or export steps — no open design w
 - First article: GP26 reads VCC_5V/2 within ±3 % of the TP1 DMM value; 6-coil sag visible.
 
 ### E. Rail-drop edge-ordering taps — NE555_OUT / WDOG_KICK / ARM_PERMIT / RP2040_OK
+**REDESIGNED 2026-07-21 (remediation spec R1 — closes Codex C1 + H1; supersedes the
+resistive-tap text that stood here through 2026-07-20):**
 - Catalog §2 item 5: 1 ms edge-ordered capture on GP16–GP19 turns undifferentiated "rail
   down" into ordered fault codes (wdt_reset vs pi_death vs arm_drop). Taps land ONLY on
   existing observable points (TP8/TP13/TP14 nets + NE555_OUT).
-- 3.3 V nets: single series **680 kΩ** (a divider would break reading; do NOT "simplify" the
-  value down — 100 k fails the hold-off proof even cold). 5 V NE555_OUT: 100k/680k divider
-  (ratio bounds the absolute-worst read ≤ 3.27 V < 3.3 V). One genuinely new BOM value (680k
-  0805); 5 parts, 4 new nets (+4 Logic_Signal via `TAP_` prefix rule).
+- Per tap, a **2N7002 common-source inverter** (SOT-23 — the existing `Qled_*` class):
+  observed net → **R_TAPIN 1M** → gate (+ **R_TAPG 10M** to GND on the three 3.3 V taps;
+  the 555's push-pull output is never high-Z — asymmetry deliberate); VCC_3V3 →
+  **R_TAPPU 10k** → drain → GPIO. **The GPIO touches ONLY the drain — a stuck-high GPIO
+  injects ZERO DC into the observed net in unfaulted hardware (C1's headline scenario dies
+  at the netlist), and the ±20 V gate rating absorbs the 555's unguaranteed VOH (H1).**
+  Worst DOUBLE fault (D-G short + stuck GPIO + driver high-Z + 85 °C): ≤ 0.56 µA →
+  0.056 V on RAIL_GATE, ≥ 8× under the partial-hold onset; transistor-free ceiling
+  3.3 V/1.01 M = 3.3 µA. **Reads are INVERTED — firmware v1.2 contract (remediation spec
+  R3) owns the inversion, the register-readback input-only invariant, and the 1 ms noinit
+  edge ring.** 15 parts, 8 new nets (+8 Logic_Signal via the `TAP_` prefix rule); BOM:
+  −680k, +1M, +10M.
 - **Safety_Rail class count stays EXACTLY 13 — design invariant of the spin; any delta in the
   audit is an automatic stop-ship.** No new copper on any SAFE_ net, RELAY_ENABLE_RAIL, or
   RAIL_GATE.
-- **Corrected hold-off proof (run-log COR-1 / gate OG-4):** the original 25 °C "provably OFF"
-  claim was overbroad — V_BE(on) falls ~2 mV/K, so a stuck-high tap CAN partially hold the
-  pass-FET at ≥~70 °C. Binding closures: **(1)** firmware never configures GP16–GP19 as
-  outputs; **(2)** deliberate disarm DRIVES ARM_PERMIT low (push-pull), never tristates;
-  **(3)** the first-article fault-injection gate repeats AT TEMPERATURE (≥70 °C on the
-  Q_AND_*/Q_RAIL region) — a cold-only pass does not discharge it. Option evaluated, NOT
-  taken (needs its own observe-only-contract review): R_RAIL_GATE_PULLUP 100k→22k.
+- **COR-1's procedural closure is now defense-in-depth, not the primary barrier:** the
+  hardware cannot inject regardless of GPIO state; firmware input-only is additionally
+  ENFORCED (R3.2 register-readback + build-failing host direction test). The first-article
+  fault-injection gate still repeats AT TEMPERATURE (≥70 °C, remediation spec R1.9 — OG-4;
+  a cold-only pass does not discharge it), now including physically inserted D-G shorts.
+  14-row FMEA with stated residual (F9, double component fault incl. resistor-fail-SHORT):
+  remediation spec R1.6.
 
 ### F. J16 / `J_EXT_I2C` external-analog expansion header
 - The integrate-without-a-barrier-class answer to the external-analog verdict: a keyed

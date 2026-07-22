@@ -23,18 +23,28 @@ Rev-D deltas over rev-C (spec items A-G):
   D - VCC_5V board-self-health ADC divider: 10k/10k + 100nF -> new net
       ADC_VCC5_SENSE -> Pico pin 31 (GP26/ADC0). ADC_VREF (pin 35) stays NC
       (module-internal reference, spec drift DR-3). 3 parts, 1 new net.
-  E - Rail-drop edge-ordering taps on EXISTING observable points only:
-      NE555_OUT -> GP16 (100k series + 680k shunt divider, 5 V domain),
-      WDOG_KICK -> GP17, ARM_PERMIT -> GP18, RP2040_OK -> GP19 (each a single
-      680k series, NO shunt — do NOT reduce the value; see spec §E.2).
-      2026-07-20 CORRECTION: the 680k can't-hold fault bound is
-      TEMPERATURE-QUALIFIED, not absolute — a stuck-high tap GPIO with the
-      legitimate ARM driver tristated can conduct enough through the AND
-      chain at ~70-85 C junction to hold/partially hold RAIL_GATE (see the
-      corrected proof in block_diag()). Binding consequences: firmware must
-      NEVER configure GP16-GP19 as outputs, deliberate disarm must DRIVE
-      ARM_PERMIT low (never tristate), and the item-E fault-injection gate
-      must be repeated AT TEMPERATURE. 5 parts, 4 new nets.
+  E - Rail-drop edge-ordering taps on EXISTING observable points only.
+      2026-07-21 REDESIGN (remediation spec R1, closes Codex C1 + H1 —
+      SUPERSEDES the §E.2/§E.3 resistive taps): per tap, a 2N7002
+      common-source inverter (SOT-23, the existing Qled_* class):
+        observed_net -> R_TAPIN 1M -> gate; gate -> R_TAPG 10M -> GND
+        (3.3 V taps only; the NE555 push-pull output is never high-Z and
+        deliberately omits it); VCC_3V3 -> R_TAPPU 10k -> drain -> GPIO.
+      GENUINELY UNIDIRECTIONAL: the GPIO touches only the drain; a MOS gate
+      sources nothing into the observed net (I_GSS <= 100 nA); any GPIO
+      state injects ZERO DC. Worst DOUBLE fault (FET D-G short + stuck-high
+      GPIO + legitimate driver high-Z + 85 C) injects <= 0.56 uA -> 0.056 V
+      on RAIL_GATE, >= 8x below the 5 uA partial-hold onset, with a
+      transistor-free absolute ceiling of 3.3 V/1.01 M = 3.3 uA (why R_TAPIN
+      must never drop below ~825k). H1 dies by construction: the 2N7002 gate
+      is +/-20 V rated, the GPIO only ever sees the 3V3-referenced drain.
+      LOGIC INVERSION is binding on firmware v1.2 (spec R3): observed HIGH
+      => GPIO reads LOW. Firmware input-only remains ENFORCED (R3.2), now as
+      defense-in-depth rather than the primary barrier.
+      NE555_OUT -> GP16, WDOG_KICK -> GP17, ARM_PERMIT -> GP18,
+      RP2040_OK -> GP19. 15 parts, 8 new nets (4 TAP_GATE_* + the 4 TAP_*
+      drain nets). 680k and the 100k/680k divider leave the BOM (taps were
+      the only 680k use).
       SAFE_* loop taps are explicitly OUT OF SCOPE — no new copper on any
       SAFE_ net; Safety_Rail class count stays EXACTLY 13.
   F - External-analog expansion header J16 = J_EXT_I2C (Conn_01x06 on
@@ -49,7 +59,8 @@ Rev-D deltas over rev-C (spec items A-G):
   G - OUT-B MCP23017 @0x23: DEFERRED (spec decision — not placed; a breakout
       on J16 at 0x23 provides the same capacity off-board).
 
-Expected emitted totals: 252 parts, 213 nets, 0 netlist-generation errors.
+Expected emitted totals: 262 parts, 217 nets, 0 netlist-generation errors
+(remediation spec R1.7: 252-5+15 parts, 213+4 TAP_GATE_* nets).
 ERC baseline (waiver WVR-ERC-1, recorded in docs/phase8_revD_run_log.md):
 EXACTLY 1 ERC error — the Pico module's AGND (pin 33) vs GND (pin 3)
 POWER-OUT/POWER-OUT pin-type conflict, a SKiDL symbol artifact (both pins are
@@ -124,13 +135,17 @@ FP_D_SOD323 = "Diode_SMD:D_SOD-323"
 FP_D_SMA = "Diode_SMD:D_SMA"
 FP_TB3 = "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal"
 FP_IDC_2X10 = "Connector_IDC:IDC-Header_2x10_P2.54mm_Vertical"
-FP_MCV_1X04 = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical"
-FP_MCV_1X06 = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical"
-FP_MCV_1X08 = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_8-G-3.5_1x08_P3.50mm_Vertical"
-FP_MCV_1X10 = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical"
-FP_MCV_1X12 = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical"
-FP_MCV_1X14 = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical"
-FP_MCV_1X16 = "Connector_Phoenix_MC:PhoenixContact_MCV_1,5_16-G-3.5_1x16_P3.50mm_Vertical"
+# Rev-D remediation R2.5 (Codex M4): ALL MCV 1,5 G-3.5 instances repoint to
+# PROJECT-LOCAL copies (kicad/wsl_footprints.pretty, suffix _D1.4) with drill
+# 1.2 -> 1.4 mm per the Phoenix MC 1,5 / MCV 1,5 G-3.5 drilling plan (1843680
+# header system) and pad narrow axis 1.8 -> 2.0 mm (annular ring 0.30 mm >=
+# JLC's 0.20 mm multilayer floor + 50%). The system KiCad library is NEVER
+# edited — it also serves the sacred rev-C generator. Run-log entry FR-9.
+FP_MCV_1X04 = "wsl_footprints:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical_D1.4"
+FP_MCV_1X06 = "wsl_footprints:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4"
+FP_MCV_1X10 = "wsl_footprints:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4"
+FP_MCV_1X12 = "wsl_footprints:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical_D1.4"
+FP_MCV_1X14 = "wsl_footprints:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical_D1.4"
 FP_TB_1X02_508 = "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"
 
 
@@ -650,7 +665,7 @@ def block_diag(pico, ne555_out):
     NO RELAY_ENABLE_RAIL divider (a prior critic deleted it; VCC_5V sensing
     only).
     """
-    global VCC5, GND, KICK, ARM, RP_OK
+    global VCC5, VCC3V3, GND, KICK, ARM, RP_OK
 
     # Item D: VCC_5V ADC divider 10k/10k + 100nF -> Pico pin 31 (GP26/ADC0).
     # 5k Thevenin (< 10k RP2040 ADC guidance), 318 Hz RC (ADC channel, not an
@@ -664,48 +679,62 @@ def block_diag(pico, ne555_out):
     sense += rtop[2], rbot[1], cadc[1], pico[31]   # GP26/ADC0
     GND += rbot[2], cadc[2]
 
-    # Item E: rail-drop edge-ordering taps. 3.3 V nets get a SINGLE 680k
-    # series (no shunt). CORRECTED PROOF (2026-07-20 — the original "0.42 V
-    # < V_BE, provably OFF" claim only holds near 25 C): with a tap GPIO
-    # stuck driving 3.3 V and the legitimate ARM driver TRISTATED, the
-    # AND-transistor base sits at ~0.42 V (680k + 10k Rb_AND into 100k
-    # Rpd_AND). At 25 C that is ~0.1 uA of collector current (harmless), but
-    # V_BE(on) falls ~2 mV/K: at ~85 C junction the MMBT3904 conducts
-    # ~5-30 uA — and only ~5-13 uA through the 100k R_RAIL_GATE_PULLUP
-    # reaches the AO3401's full Vgs(th) range, so the pass-FET can be held
-    # (partially) ON. Weak-conduction onset ~70-75 C. 680k is still the
-    # right value (a 100k series fails even at 25 C); the residual risk is
-    # closed procedurally, all BINDING: (1) firmware must NEVER configure
-    # GP16-GP19 as outputs (inputs + Schmitt only); (2) a deliberate disarm
-    # must DRIVE ARM_PERMIT low (push-pull — then the tap injects <=0.25 mV
-    # and hold-off is unconditional), never tristate-and-hope; (3) the spec
-    # §E fault-injection gate must be repeated AT TEMPERATURE (>=70 C on the
-    # Q_AND_*/Q_RAIL region). Option NOT taken (safety-rail value change,
-    # needs its own review): R_RAIL_GATE_PULLUP 100k->22k (~5x hold-off
-    # margin). NE555_OUT is 5 V domain: 100k series + 680k shunt (ratio
-    # 0.872) keeps the read < 3.3 V but > VIH; a 2:1 divider reads below
-    # VIH. Schmitt-mode inputs; firmware edge capture is a later campaign —
-    # the board only provisions the channels.
-    r555 = add_res("R_TAP_555", "100k")
-    r555_div = add_res("R_TAP_555_DIV", "680k")
-    rkick = add_res("R_TAP_KICK", "680k")
-    rarm = add_res("R_TAP_ARM", "680k")
-    rrpok = add_res("R_TAP_RPOK", "680k")
-    tap_555 = Net("TAP_NE555_OUT")
-    tap_kick = Net("TAP_WDOG_KICK")
-    tap_arm = Net("TAP_ARM_PERMIT")
-    tap_rpok = Net("TAP_RP2040_OK")
+    # Item E, REDESIGNED per remediation spec R1 (2026-07-21, closes Codex
+    # C1 + H1; supersedes the resistive 680k/100k-680k taps and their
+    # temperature-qualified proof): per tap, a 2N7002 common-source inverter
+    # (SOT-23 = the existing Qled_* footprint/BOM class):
+    #
+    #   observed_net -- R_TAPIN 1M --+-- gate(2N7002)     source -- GND
+    #                                |
+    #                          [R_TAPG 10M -> GND, 3.3 V taps only]
+    #   VCC_3V3 -- R_TAPPU 10k --+-- drain -- Pico GPIO (input, Schmitt)
+    #
+    # Unidirectional BY CONSTRUCTION: the GPIO lands on the drain only;
+    # drain->gate is open at DC and a MOS gate injects nothing into the
+    # observed net (I_GSS <= 100 nA) — a stuck-high GPIO (C1's headline
+    # scenario) does NOTHING to the observed net in unfaulted hardware.
+    # Worst DOUBLE fault (D-G short + stuck-high GPIO + ARM driver high-Z +
+    # 85 C junction): V_base = 3.3*100k/(1M+10k+100k) = 0.297 V ->
+    # I_C <= 0.56 uA (COR-1 hot calibration, 71 mV/decade) -> 0.056 V across
+    # R_RAIL_GATE_PULLUP 100k, >= 8x below the ~5 uA/0.5 V partial-hold
+    # onset; absolute transistor-free ceiling 3.3 V/1.01 M = 3.3 uA < 5 uA.
+    # DO NOT reduce R_TAPIN below ~825k (that ceiling is the point); do not
+    # "tidy" the missing R_TAPG on the 555 tap (its push-pull output is
+    # never high-Z; omitting the pulldown preserves 0.3 V of gate margin
+    # against the 555's worst-case VOH). H1 closed: the 2N7002 gate is
+    # +/-20 V abs-max — the NE555's unguaranteed light-load VOH (<= 5.25 V)
+    # is tolerated by construction and the GPIO only sees the 3V3 drain.
+    # READS ARE INVERTED (observed HIGH => pad LOW) — firmware v1.2 contract
+    # (remediation spec R3.1); input-only is ENFORCED there (R3.2), now as
+    # defense-in-depth. FMEA + at-temperature fault injection: spec R1.6/R1.9.
+    # Full math + worst-corner read margins: remediation spec R1.4/R1.5.
+    tap_specs = [
+        # (suffix, observed_net, pico_pin/GP, has_gate_pulldown)
+        ("555", ne555_out, 21, False),   # GP16; push-pull source, no R_TAPG
+        ("KICK", KICK, 22, True),        # GP17
+        ("ARM", ARM, 24, True),          # GP18
+        ("RPOK", RP_OK, 25, True),       # GP19
+    ]
+    tap_net_names = {"555": "TAP_NE555_OUT", "KICK": "TAP_WDOG_KICK",
+                     "ARM": "TAP_ARM_PERMIT", "RPOK": "TAP_RP2040_OK"}
+    for suffix, observed, pin, has_gpd in tap_specs:
+        rin = add_res(f"R_TAPIN_{suffix}", "1M")
+        rpu = add_res(f"R_TAPPU_{suffix}", "10k")
+        q = Part("Transistor_FET", "Q_NMOS_GSD", value=f"2N7002 TAP {suffix}",
+                 footprint=FP_SOT23, tag=f"Q_TAP_{suffix}")
+        parts[f"Q_TAP_{suffix}"] = q
+        gate = Net(f"TAP_GATE_{suffix}")
+        drain = Net(tap_net_names[suffix])
 
-    ne555_out += r555[1]
-    tap_555 += r555[2], r555_div[1], pico[21]      # GP16
-    GND += r555_div[2]
-
-    KICK += rkick[1]
-    tap_kick += rkick[2], pico[22]                 # GP17
-    ARM += rarm[1]
-    tap_arm += rarm[2], pico[24]                   # GP18
-    RP_OK += rrpok[1]
-    tap_rpok += rrpok[2], pico[25]                 # GP19
+        observed += rin[1]
+        gate += rin[2], q[1]          # G
+        GND += q[2]                   # S
+        drain += q[3], rpu[2], pico[pin]
+        VCC3V3 += rpu[1]
+        if has_gpd:
+            rgpd = add_res(f"R_TAPG_{suffix}", "10M")
+            gate += rgpd[1]
+            GND += rgpd[2]
 
 
 # ---- ERC waiver gate (fail-closed; see docstring + docs/phase8_revD_run_log.md
