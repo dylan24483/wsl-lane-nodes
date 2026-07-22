@@ -347,6 +347,17 @@ class RP2040Link:
         the only clear and is deliberately NOT wrapped here)."""
         self._send("TAPDUMP")
 
+    def request_identity(self):
+        """Ask a v1.2.2+ firmware to (re-)emit its identity line (`ID`).
+        Round-3 fix (Codex 2026-07-21 PM): the firmware volunteers the id line
+        only at ITS boot — a daemon that starts/restarts AFTER the RP2040
+        booted (the common case: service restart while the board stays up)
+        would otherwise never hear one and fw_identity() stayed None
+        indefinitely. start() sends this automatically; pre-v1.2.2 firmware
+        ignores the unknown line (no fault, no reply — identity stays None,
+        which the daemon reports as such)."""
+        self._send("ID")
+
     # ---- inbound parsing ---------------------------------------------------
     def feed_line(self, line):
         """Parse one received protocol line. Safe to call from the reader thread."""
@@ -957,6 +968,9 @@ class RP2040Link:
             return
         self._reader = threading.Thread(target=self._read_loop, name="rp2040-rx", daemon=True)
         self._reader.start()
+        # Round-3: learn the board's identity even when WE are the one that
+        # (re)started — the firmware only volunteers `id` at its own boot.
+        self.request_identity()
 
     def _read_loop(self):
         while not self._stop:

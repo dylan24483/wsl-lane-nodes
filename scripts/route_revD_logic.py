@@ -444,10 +444,18 @@ def route_j16_protection_and_revid(r) -> int:
     Protection cluster lives at y 214-225 below the J13/J16 bodies
     (courtyards end y=209.54). Lane inventory added here:
       F.Cu  — cluster-local stubs and short trees only
-      IN1   — horizontal feeds: 3V3 spine y=218.6, J16_5V loop y=214.9,
-              pull-up legs y=216.2 (J16_SDA) / y=217.9 (J16_SCL)
-      IN2   — verticals: J16_5V x=126.3, J16_SCL x=137.9,
+      IN1   — horizontal feeds: 3V3 spine y=218.6, J16_5V loop y=215.4,
+              J16_SDA pull-up leg y=216.2 (the J16_SCL pull-up went F.Cu
+              south of the cluster instead)
+      IN2   — verticals: J16_5V x=123.3, J16_SCL x=137.9,
               REV_ID lanes x=116.6 / x=115.8
+
+    ROUND-3 REWIRE (Codex 2026-07-21 PM, finding 2): ESD VP (U47.5) moved
+    off the fused J16_5V node onto VCC_5V UPSTREAM of the polyfuse (VP on
+    the fused node + JP1 bridged let a J16 5V-to-GND short pull continuous
+    current out of VCC_3V3 through IO1's upper steering diode — an unfused
+    sneak path through a pulse-rated part). The fused J16_5V pin keeps its
+    ESD clamp via the previously-spare IO3 channel (U47.4, ex-GND).
     The I2C trunk extensions feeding the buffer IN pins live in
     route_i2c(); the deleted direct J16 rail feeds are noted in
     route_5v()/route_3v3().
@@ -461,7 +469,8 @@ def route_j16_protection_and_revid(r) -> int:
 
     # ---- J16_5V: F1 pad 2 -> IN2 x=123.3 (threads the AUX7/AUX8 lane
     #      gap; both end north of it) -> IN1 y=215.4 loop -> J16.1 THT
-    #      drop at x=129.15 + ESD VP drop at x=137.2 ----
+    #      drop at x=129.15 + ESD IO3 drop at x=137.2 (round-3: pad 4,
+    #      y=216.25 — VP no longer rides this net) ----
     added += r.poly("J16_5V", [(122.6, 221.9), (123.3, 222.6)], F_CU)
     r.via("J16_5V", (123.3, 222.6)); added += 1
     added += r.poly("J16_5V", [(123.3, 222.6), (123.3, 215.4)], IN2_CU)
@@ -471,7 +480,18 @@ def route_j16_protection_and_revid(r) -> int:
     added += r.poly("J16_5V", [(129.15, 215.4), (129.15, 207.0), (128.35, 206.35),
                                (128.0, 206.0)], F_CU)                          # J16.1
     r.via("J16_5V", (137.2, 215.4)); added += 1
-    added += r.poly("J16_5V", [(137.2, 215.4), (137.2, 217.2), (139.163, 217.2)], F_CU)  # ESD VP (U47.5)
+    added += r.poly("J16_5V", [(137.2, 215.4), (137.2, 216.25), (139.162, 216.25)],
+                    F_CU)                                                      # ESD IO3 (U47.4)
+
+    # ---- VCC_5V -> ESD VP (U47.5) — round-3: VP rides the UNFUSED rail so
+    #      no steering diode can ever bypass F1. Tap the existing IN1 y=217.0
+    #      VCC_5V run (x=100 .. V5_TRUNK_X=151.5 — it passes under the
+    #      cluster) with a short jog + via landing on the pad (drill fully
+    #      in-pad; clamp pad, negligible wicking concern); x=138.75 clears
+    #      the J16_SCL IN2 x=137.9 vertical by 0.325 mm (0.8 dia power via). ----
+    added += r.poly("VCC_5V", [(138.75, 217.0), (138.75, 217.2)], IN1_CU)
+    r.via("VCC_5V", (138.75, 217.2)); added += 1
+    added += r.poly("VCC_5V", [(138.75, 217.2), (139.162, 217.2)], F_CU)       # ESD VP (U47.5)
 
     # ---- VCC_3V3 spine: trunk tap -> IN1 y=218.6 (jog around the SCL
     #      trunk's SCLIN-feed corridor at x=119.8) -> east tree; 0.25 mm

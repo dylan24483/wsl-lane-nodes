@@ -334,6 +334,17 @@ firmware `{fw_ver}` (release build) + the bench-only **FI-1** build (drives GP16
 output-high on command; refuses to run without its physical jumper; prints its identity
 on the UART banner; NEVER a release artifact).
 
+0. **Boot the FI-1 image (round-3 doc fix — the jumper gate vs the RP2040 bootrom):**
+   BOOTSEL held at power-on is intercepted by the ROM — the chip enters the RPI-RP2
+   USB bootloader and the image never runs, so a plain power cycle with the jumper
+   fitted can NEVER satisfy the gate (bootrom behavior, not a defect). Either:
+   **(a) button:** hold BOOTSEL → plug USB (RPI-RP2) → drag
+   `wsl_phase8b_rp2040_FI1.uf2` → keep holding through the automatic reboot into the
+   image → release after the FI-1 banner (`"fi1":1`) prints; or **(b) jumper +
+   picotool:** fit the jumper → plug USB (lands in RPI-RP2 — expected) →
+   `picotool reboot`; remove the jumper only after the banner. Booting without the
+   jumper is the PERMANENT `fi1_nojumper` refusal — the gate working, never a reason
+   to rebuild with the check stubbed.
 1. **Level survey (cold):** scope each `TAP_GATE_*` gate node and `TAP_*` drain node
    (stage positions in §3.3) through the full signal swing. Expect gate-high ≥ 3.0 V
    typical (worst-stack floor per spec R1.5: 2.80–2.82 V). Reads are INVERTED:

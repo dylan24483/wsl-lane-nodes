@@ -1181,3 +1181,106 @@ line riding v1.2.2), R2-6 firmware half (REV_ID read + identity/build reporting)
 Flash status: **NOT flashed** (board #1 still runs the v1.x image noted in HANDOFF).
 Bench gates added: BOOTSEL read on silicon, REV_ID strap levels vs the real
 10k/internal-pull divider, FA-7 OEOVER/pad behavior on real pads.
+
+## ROUND-3 FIX BATCH (2026-07-21, latest — Codex re-review of the round-2 package: 8 findings, all fixed)
+
+Codex re-reviewed the round-2 remediation (fabrication-readiness bar) and returned
+8 concrete defects. All 8 verified REAL and fixed; the full gate chain re-ran green.
+
+### Finding 1 (CRITICAL) — v1.2.2 boot-order regression — FIXED
+- `main()` ran the first `tap_assert_input_only()` pass BEFORE `init_inputs()`;
+  the R2-1 contract set includes the fast inputs GP6-13, which at that moment are
+  at silicon reset (FUNCSEL=NULL) → EVERY boot latched a spurious `tap_dir`/SA
+  fault and refused RP_OK until an operator PBZ. Host tests missed it because
+  `reset_clean()` always ran `init_inputs()` before any assertion.
+- Fix: `inputs_inited` gate (same pattern as `rev_id_inited`) + a second
+  invariant pass immediately after `init_inputs()`. New `test_v12.c` **section R**
+  replicates main()'s LITERAL boot order on reset-state pins.
+
+### Finding 2 (MAJOR) — unfused rail sneak path through the SRV05-4 — FIXED (board change)
+- Round-2 tied ESD VP (U47.5) to the FUSED `J16_5V` node and IO1 to `J16_3V3`.
+  With the sanctioned JP1 solder link bridged, a J16 5V-to-GND short defeated the
+  polyfuse: VCC_3V3 → IO1 upper steering diode → VP/J16_5V → short (continuous
+  current through a pulse-rated part; 3V3 sag/brownout; likely SRV05-4 death;
+  fail-short = VCC_3V3 permanently tied to the dead node).
+- Fix: **VP → VCC_5V UPSTREAM of the polyfuse**; the fused pin keeps its ESD
+  clamp via the ex-spare IO3 channel (U47.4, ex-GND). Generator + router +
+  audits updated; parts/nets unchanged 271/223. Router adds a short IN1 jog off
+  the existing y=217.0 VCC_5V run + a 0.8 mm power via landing in-pad on U47.5
+  (x=138.75 clears the J16_SCL IN2 x=137.9 vertical by 0.325 mm).
+- `audit_revD_board.py` now fail-closed asserts U47.5 rides VCC_5V and J16_5V's
+  exact membership is F1.2 + J16.1 + U47.4.
+
+### Finding 3 (MAJOR) — fw_identity chain dead-ended Pi-side — FIXED
+- `_consume_link_records` drained the typed `fw_identity` record with no branch
+  (silently discarded), and nothing ever SENT the `ID` command — a daemon
+  restart after RP2040 boot never re-learned identity.
+- Fix: `rp2040_link.start()` sends `ID` (new `request_identity()`); daemon
+  branch emits `fw_identity` machine events — **`fi1_image` and
+  `pcb_rev_mismatch` are FAULT severity** (declared `revC` expects strap-read
+  "unknown"; declared `revD` + "unknown" IS a mismatch). 4 new daemon tests
+  (`tests/test_r2_daemon.py`, 22/22) + 2 link tests (`test_fw_identity_line.py`).
+
+### Finding 4 (minor) — FI-1 jumper gate vs the RP2040 bootrom — DOCUMENTED
+- BOOTSEL held at power-on enters the ROM USB bootloader; the FI-1 image cannot
+  boot via a plain power cycle with the jumper fitted (bootrom behavior). The
+  two working sequences (hold-through-flash button; jumper + `picotool reboot`)
+  are now in `firmware/rp2040/README.md` and first-article FA-7 **step 0**,
+  with an explicit "the refusal is the gate working — never stub the check".
+
+### Finding 5 (minor) — 16-bit epoch aliasing in the classifier — FIXED
+- Ring entries carry only the low 16 bits of the 32-bit epoch; a ~9–18 h
+  watchdog crash-loop (65536 adoptions) could alias a surviving pre-loop edge
+  back to "current" and stamp a wrong advisory cause on a TAPDUMP.
+- Fix: at ring adoption, entries whose truncated tag collides with the NEW
+  current epoch are definitionally stale (IRQs not yet enabled) and are
+  re-tagged to previous-epoch; the scan runs every adoption so nothing ages
+  back into freshness. `test_v12.c` **section S** pins the wrap. `test_v12`
+  total 111 → **119**.
+
+### Finding 7 (minor) — superseded fab dirs had no in-directory tombstone — FIXED
+- `kicad/fab_revD_2026-07-21/` (round-1) and `..._r2/` (round-2) each gained
+  **`_SUPERSEDED_DO_NOT_UPLOAD.txt`** listing exactly which retracted items they
+  still contain and pointing at `_r3/`. Package contents themselves stay
+  byte-frozen (hash manifests intact); the tombstone is additive.
+
+### Finding 8 (minor) — gerber job metadata "Revision": "rev?" — FIXED
+- The board title block was never set; the ONE revision label embedded in the
+  gerber set read "rev?" in BOTH prior packages. `place_components_revD.py` now
+  stamps Title/Rev "D"/Date at board creation and `export_fab_revD.py` asserts
+  title-block rev == `--rev` fail-closed. `_r3/` gbrjob embeds `"Revision": "D"`.
+
+### WVR-ERC-1 amendment (round 3)
+- U47.4 leaving GND changed the GND net's pin ordering; SKiDL flipped which side
+  of the waived A1 GND/AGND pin conflict prints first, so the old contiguous
+  waiver substring no longer matched. The gate now requires all three substrings
+  ("Pin conflict on net GND" + both named A1 pins) in the single ERC ERROR line —
+  order-insensitive and STRICTER (both pins must be named). Baseline unchanged:
+  1 waived error + 39 warnings (WVR-ERC-2 counts stand).
+
+### Gate runs (round 3, 2026-07-21)
+
+| Gate | Result |
+|---|---|
+| Generator + ERC waiver | 271 parts / 223 nets; ERC 1 waived + 39 (WVR-ERC-1 order-insensitive match) |
+| Netlist audit | **ALL PASS** (incl. new U47.5-on-VCC_5V + J16_5V membership asserts) |
+| Diff vs rev-C | **CLEAN** (delta table updated: D_ESD_J16.5 → VCC_5V, .4 → J16_5V, GND loses .4) |
+| Placement | 271 placed / 0 missing; title block stamped (rev "D") |
+| Netclasses | 103/4/13/82/21 — Safety_Rail EXACTLY 13 (stop-ship guard PASS) |
+| Router | SELF-CHECK **0 problems** (2167 actions; +5 for the VP rewire) |
+| kicad-cli DRC (routed) | **0 / 0 / 0** — `kicad/revD/DRC-revD-round3-r1.rpt` (first pass) |
+| Board audit (routed mode) | **ALL PASS** |
+| Measured isolation minima | **2.650 mm L-F / 3.350 mm M-L** — unchanged (GND zone ↔ U45.4; GND zone ↔ relay pad row) |
+| Fab export | **ALL EXPORT GATES PASS** → `kicad/fab_revD_2026-07-21_r3/` (sha256 manifest; gbrjob Revision "D") |
+| First-article pack | regenerated (271 rows, 24 TPs, 46 shifts; FA-7 gains step 0 = FI-1 boot procedure) |
+| Root artifact sync (RV-6) | `.erc` + `_sklib.py` root copies byte-identical to `scripts/` |
+| Firmware host suites | `test_main` **64/64** · `test_v11` **32/32** · `test_v12` **119/119** (+8) · `test_fi1` **28/28** |
+| Lane-node suites | ALL test files exit 0 (incl. new fw-identity daemon/link tests) |
+| Rev-C sacred snapshot | **189/189 OK** (`scripts/verify_revC_snapshot.py`) |
+
+Budgets note (standing rule): the VP rewire moves NO load current — the ESD
+array draws leakage only; wetting rail and D17/FR-3 budgets unchanged. No new
+component classes (SRV05-4/TCA4307/polyfuse inventory identical, all LOGIC-domain);
+PC817/G5LE isolation-barrier inventory untouched.
+
+Firmware flash status: **NOT flashed** (unchanged posture — fixes landed pre-flash).

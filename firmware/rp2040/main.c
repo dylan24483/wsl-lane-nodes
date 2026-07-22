@@ -212,6 +212,15 @@ static uint32_t last_ball_ms = 0;
 static void latch_fault(const char *code, const char *motor);   /* defined below */
 static void camstop_on_cam_edge(const char *cam_id, char edge); /* v1.1, defined below */
 
+/* Round-3 boot-order fix (Codex 2026-07-21 PM, finding 1): the fast inputs
+ * GP6-13 join the tap_assert_input_only() contract set only AFTER init_inputs()
+ * has configured them. main() runs the first invariant pass BEFORE init_inputs()
+ * (taps/ADC must be enforced from the first moment), and at that point GP6-13
+ * are still at silicon reset state (FUNCSEL=NULL, not SIO) — an ungated check
+ * latched a spurious "tap_dir"/SA fault on EVERY boot of the v1.2.2 image and
+ * refused RP_OK until an operator PBZ. Same pattern as rev_id_inited. */
+static bool inputs_inited = false;
+
 static void init_inputs(void) {
     uint64_t t = time_us_64();
     for (size_t i = 0; i < N_INPUTS; i++) {
@@ -227,6 +236,7 @@ static void init_inputs(void) {
         in->ring_n          = 0;
         in->ring_i          = 0;
     }
+    inputs_inited = true;       /* pins now in the invariant contract set */
 }
 
 /* Debounced asserted level of an input by id (false if the id is unknown). Used by the v1.1
@@ -615,6 +625,20 @@ static void tap_boot_init(bool wdt_reboot) {
     if (valid) {
         tap_ring.epoch++;                        /* pre- vs post-reboot edges distinguishable */
         tap_ring_preserved = true;
+        /* Round-3 16-bit alias guard (Codex 2026-07-21 PM, finding 5): entries
+         * store only the LOW 16 BITS of the epoch. After 65536 ring-adopting
+         * reboots (a persistent watchdog crash-loop reaches that in ~9-18 h) a
+         * surviving pre-loop edge's truncated tag would equal the current
+         * epoch's again and tap_classify() would treat the cross-boot edge as
+         * fresh. At adoption time NO entry can legitimately carry the NEW
+         * current epoch's tag (IRQs are not yet enabled), so any collision is
+         * definitionally stale: re-tag it to (current-1), i.e. "previous
+         * epoch". The scan runs on EVERY adoption, so a re-tagged entry can
+         * never age back into freshness across the 64Ki horizon either. */
+        uint16_t cur16 = (uint16_t)tap_ring.epoch;
+        for (uint32_t k = 0; k < tap_ring.count; k++)
+            if (tap_ring.ring[k].epoch == cur16)
+                tap_ring.ring[k].epoch = (uint16_t)(cur16 - 1u);
     } else {
         memset(&tap_ring, 0, sizeof tap_ring);
         tap_ring.magic  = TAP_RING_MAGIC;
@@ -686,15 +710,20 @@ static bool tap_assert_input_only(void) {
         latch_fault("pad_oe", "ADC");
         return false;
     }
-    for (size_t i = 0; i < N_INPUTS; i++) {          /* fast inputs GP6-13 (R2-1 scope) */
-        uint p = inputs[i].gpio;
-        if (gpio_get_dir(p) != GPIO_IN || gpio_get_function(p) != GPIO_FUNC_SIO) {
-            latch_fault("tap_dir", inputs[i].id);
-            return false;
-        }
-        if (!pad_oe_locked(p)) {
-            latch_fault("pad_oe", inputs[i].id);
-            return false;
+    if (inputs_inited) {                             /* fast inputs GP6-13 (R2-1 scope;
+                                                      * gated like rev_id_inited: they join
+                                                      * the contract set only after
+                                                      * init_inputs() — round-3 fix) */
+        for (size_t i = 0; i < N_INPUTS; i++) {
+            uint p = inputs[i].gpio;
+            if (gpio_get_dir(p) != GPIO_IN || gpio_get_function(p) != GPIO_FUNC_SIO) {
+                latch_fault("tap_dir", inputs[i].id);
+                return false;
+            }
+            if (!pad_oe_locked(p)) {
+                latch_fault("pad_oe", inputs[i].id);
+                return false;
+            }
         }
     }
     if (rev_id_inited) {                             /* REV_ID straps GP20-21 (R2-6) */
@@ -1148,6 +1177,9 @@ int main(void) {
     uart_set_fifo_enabled(UART_ID, true);
 
     init_inputs();
+    tap_assert_input_only();    /* GP6-13 joined the contract set — verify immediately
+                                 * (round-3 boot-order fix; the line above pre-inputs
+                                 * covers taps/ADC/REV_ID only) */
     init_camstops();        /* v1.1: resolve cam-stop descriptor motor pointers + disarm */
 #if FI1_ENABLED
     fi1_init();             /* v1.2.2 bench build: physical-jumper gate (permanent refusal) */

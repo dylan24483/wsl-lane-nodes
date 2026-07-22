@@ -89,6 +89,40 @@ def test_identity_does_not_perturb_health():
     assert link.health_ok()              # id line is identity-only
 
 
+def test_request_identity_sends_id():
+    # Round-3 (Codex 2026-07-21 PM): nothing Pi-side ever SENT the ID command,
+    # so a daemon restarting after the RP2040 booted never re-learned identity.
+    link, _ = mk_link()
+    link.request_identity()
+    assert "ID" in list(link.sent)
+
+
+def test_start_requests_identity_on_real_serial():
+    # start() on a real (fake) serial must ask for the identity line — the
+    # firmware only volunteers `id` at ITS boot, not at ours.
+    import time as _time
+
+    class FakeSerial:
+        def __init__(self):
+            self.written = []
+
+        def read(self, n):
+            _time.sleep(0.01)
+            return b""
+
+        def write(self, data):
+            self.written.append(data)
+
+    ser = FakeSerial()
+    link = RP2040Link(serial_obj=ser)
+    link.start()
+    try:
+        assert b"ID\n" in ser.written
+        assert "ID" in list(link.sent)
+    finally:
+        link._stop = True
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(list(globals().items())):

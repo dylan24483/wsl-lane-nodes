@@ -1,0 +1,17 @@
+*** SUPERSEDED PACKAGE — DO NOT UPLOAD, DO NOT ORDER FROM THIS DIRECTORY ***
+
+This is the ROUND-2 rev-D fab package (exported 2026-07-21, post-R2 remediation,
+pre-round-3). It is retained as immutable evidence only. The as-current package is:
+
+    kicad/fab_revD_2026-07-21_r3/        <- ORDER FROM HERE
+
+Defects fixed in _r3 that are still present in THIS board:
+
+  - SRV05-4 VP tied to the FUSED J16_5V node: with the sanctioned JP1 3V3 solder
+    link bridged, a J16 5V-to-GND short defeats the polyfuse through IO1's upper
+    steering diode (unfused sneak path from VCC_3V3 — Codex round-3 finding 2).
+    _r3 moves VP upstream onto VCC_5V and gives the fused pin the spare IO3 channel.
+  - gerber job file "Revision": "rev?" (board title block was never set — Codex
+    round-3 finding 8; _r3 embeds "D").
+
+Tombstone added 2026-07-21 (Codex round-3 finding 7).

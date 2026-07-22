@@ -521,6 +521,69 @@ int main(void) {
     }
     CHECK(!fault_latched, "ignored FI1 lines leave no fault behind");
 
+    /* ---- R: round-3 fix 1 — main()'s LITERAL boot order must not latch ------ */
+    /* Codex round-3 (2026-07-21 PM): v1.2.2 called tap_assert_input_only()
+     * BEFORE init_inputs(); with GP6-13 at silicon reset state (FUNCSEL=NULL)
+     * every boot latched a spurious "tap_dir"/SA fault and refused RP_OK. The
+     * older tests never caught it because reset_clean() runs init_inputs()
+     * before any assertion. This section replicates main()'s exact call order
+     * on reset-state pins. */
+    printf("[R] round-3 boot-order (invariant pass before init_inputs)\n");
+    reset_clean();                                   /* housekeeping baseline */
+    fault_latched = false; fault_code[0] = 0;
+    inputs_inited = false; rev_id_inited = false;    /* statics as at real boot */
+    for (int p = 0; p < 40; p++) {                   /* silicon reset: FUNCSEL=NULL, */
+        mock_gpio_funcsel[p] = GPIO_FUNC_NULL;       /* input, OE disabled           */
+        mock_gpio_dir[p] = GPIO_IN;
+    }
+    all_idle();
+    mock_gpio_floating[PIN_REV_ID0] = 0; mock_gpio_floating[PIN_REV_ID1] = 0;
+    mock_gpio_in[PIN_REV_ID0] = 1; mock_gpio_in[PIN_REV_ID1] = 0;
+    /* --- main()'s literal order --- */
+    gpio_init(PIN_RP_OK); gpio_set_dir(PIN_RP_OK, GPIO_OUT); gpio_put(PIN_RP_OK, 0);
+    memset(&tap_ring, 0, sizeof tap_ring);           /* cold power-up */
+    tap_boot_init(false);
+    tap_init();
+    rev_id_init(); identity_init();
+    {
+        bool pre_ok = tap_assert_input_only();       /* the line-1140 pass */
+        CHECK(pre_ok && !fault_latched,
+              "pre-init_inputs invariant pass is CLEAN (GP6-13 gated out of the set)");
+    }
+    init_inputs();
+    CHECK(tap_assert_input_only() && !fault_latched,
+          "post-init_inputs pass clean — inputs joined the contract set");
+    mock_gpio_funcsel[PIN_DIELL_L] = GPIO_FUNC_UART; /* drift AFTER join must still trip */
+    CHECK(!tap_assert_input_only() && strcmp(fault_code, "tap_dir") == 0,
+          "input funcsel drift trips once the pin is in the set (gate is not a hole)");
+    mock_gpio_funcsel[PIN_DIELL_L] = GPIO_FUNC_SIO;
+    fault_latched = false; fault_code[0] = 0;
+
+    /* ---- S: round-3 fix 2 — 16-bit epoch alias guard at ring adoption ------- */
+    printf("[S] round-3 16-bit epoch alias guard\n");
+    reset_clean(); tap_init();
+    mock_us = 90000000ull;
+    tap_edge_sim(PIN_TAP_KICK, 0); advance_ms(50);
+    tap_edge_sim(PIN_TAP_KICK, 1); advance_ms(2500);
+    tap_edge_sim(PIN_TAP_555, 1);                    /* observed 555 fall, tag (uint16)1 */
+    CHECK(tap_ring.count == 3 && tap_ring.ring[2].epoch == 1, "setup: stale edges tagged epoch 1");
+    tap_ring.epoch = 0x10000u;                       /* crash-loop fast-forward: next   */
+    tap_boot_init(true);                             /* adoption -> 0x10001, low16 == 1 */
+    CHECK(tap_ring.epoch == 0x10001u && tap_ring_preserved,
+          "setup: adoption crossed the 64Ki horizon onto the stale tag value");
+    CHECK(tap_ring.ring[0].epoch == 0 && tap_ring.ring[1].epoch == 0 && tap_ring.ring[2].epoch == 0,
+          "colliding stale entries re-tagged to previous epoch at adoption (alias killed)");
+    advance_ms(3000);
+    tx_reset(); txr_head = txr_tail = 0;
+    tap_dump_start(); pump();
+    CHECK(tx_has("\"cause\":\"none\""),
+          "aliased cross-boot 555 fall can no longer stamp a fresh cause code");
+    tap_edge_sim(PIN_TAP_555, 1);                    /* a REAL fresh-epoch 555 fall */
+    tx_reset(); txr_head = txr_tail = 0;
+    tap_dump_start(); pump();
+    CHECK(tx_has("\"cause\":\"kick_starvation\""),
+          "fresh-epoch edges still classify after the guard re-tag");
+
     printf("\n%d/%d checks passed%s\n", checks - fails, checks, fails ? "  <<< FAILURES" : "");
     return fails ? 1 : 0;
 }

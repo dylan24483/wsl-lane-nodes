@@ -157,6 +157,24 @@ ID           # v1.2.2: re-emit the identity line
 # does not exist in a release image; the FI-1 image refuses to run without its BOOTSEL jumper.
 ```
 
+**FI-1 boot procedure (round-3 doc fix — the jumper gate vs the RP2040 bootrom):** BOOTSEL
+held at power-on is intercepted by the ROM ITSELF — the chip enters the RPI-RP2 USB
+bootloader and the FI-1 image never runs. A plain power cycle with the jumper fitted can
+therefore NEVER satisfy the gate; that is bootrom behavior, not a defect. The two working
+sequences are:
+
+1. **Button (single session):** hold BOOTSEL → plug USB (RPI-RP2 appears) → drag
+   `wsl_phase8b_rp2040_FI1.uf2` → **keep holding through the automatic reboot into the
+   image** → release only after the FI-1 banner (`"fi1":1`) prints on the UART.
+2. **Jumper + picotool (repeatable):** fit a jumper across the BOOTSEL pads → plug USB
+   (lands in RPI-RP2 every power-up — expected) → `picotool reboot` (or re-drag the
+   .uf2); the image boots with the jumper present and the gate passes. Remove the jumper
+   only after the banner.
+
+Booting the FI-1 image without the jumper (e.g. picotool reboot with nothing fitted) is
+the PERMANENT `fi1_nojumper` refusal — that is the gate working. Do NOT rebuild with the
+check stubbed to "get past" it; use sequence 1 or 2.
+
 v1.2 tap fields: hb `tap` = post-inversion observed-net levels (bit 0..3 = 555, KICK, ARM, RPOK), `rd` = ring depth, `ep` = ring epoch, `v5`/`v5n`/`v5x` = VCC_5V latest/min/max mV over the hb window. Boot `tap.ep` = epoch, `tap.pre` = 1 if a valid pre-reboot ring was ADOPTED (0 = zeroed: power loss/first boot), `tap.n` = preserved entries. `tapdump.br` = boot reason (0 cold, 1 soft reboot, 2 watchdog), `mut` = storm-guard-muted tap mask, `cause` = ADVISORY drop classification (`kick_starvation` / `arm_drop` / `self_health` / `555_drop` / `none`) — the Pi always gets the raw ring + per-entry epochs to judge for itself. All fields additive; `rp2040_link.py` verified to ignore them and the new event kinds cleanly (no Pi-side change required).
 
 ### Pi-side integration — implemented in `lane_node/rp2040_link.py`

@@ -821,8 +821,12 @@ def block_j16_protection_and_revid(pico):
         already has R_I2C_SDA/SCL 4.7k).
       * C_I2C_BUF — 100 nF bypass at U_I2C_BUF pin 8 (datasheet).
       * D_ESD_J16 — Semtech SRV05-4 (SOT-23-6, LCSC C13612) connector-side
-        ESD/TVS array: VN (pin 2) = GND, VP (pin 5) = J16_5V, steering IOs
-        on J16_SDA (3), J16_SCL (6), J16_3V3 (1); spare IO (4) tied to GND.
+        ESD/TVS array: VN (pin 2) = GND, VP (pin 5) = VCC_5V UPSTREAM of
+        the polyfuse (round-3 fix — VP on the fused J16_5V node let a
+        bridged-JP1 board defeat the fuse through IO1's upper steering
+        diode on a J16 5V-to-GND short), steering IOs on J16_SDA (3),
+        J16_SCL (6), J16_3V3 (1), and J16_5V (4) so the fused 5 V pin
+        keeps its ESD clamp.
 
     REV_ID straps (Codex R2-6): 2-bit board-revision code on spare Pico
     GPIOs, read by firmware (v1.2.2 task) and reported in the identity
@@ -891,16 +895,30 @@ def block_j16_protection_and_revid(pico):
 
     # --- connector-side ESD array (R2-4d). KiCad Power_Protection:SRV05-4
     #     symbol pin map verified against the Semtech datasheet: IO1=1,
-    #     VN=2, IO2=3, IO3=4, VP=5, IO4=6. IO channels are interchangeable;
-    #     the assignment below matches the routed approach geometry. ---
+    #     VN=2, IO2=3, IO3=4, VP=5, IO4=6. IO channels are interchangeable.
+    #
+    #     ROUND-3 REWIRE (Codex 2026-07-21 PM, finding 2 — unfused rail sneak
+    #     path): the round-2 wiring tied VP to the FUSED J16_5V node and IO1
+    #     to J16_3V3. With the sanctioned JP1 3V3 link bridged, a J16 5V-to-
+    #     GND short defeated the polyfuse: VCC_3V3 -> IO1 upper steering
+    #     diode -> VP/J16_5V -> short, continuous current through a pulse-
+    #     rated ESD diode (3V3 sag / Pico brownout; likely SRV05-4
+    #     destruction; a fail-short part then ties VCC_3V3 to the dead
+    #     J16_5V node permanently). Now: VP rides VCC_5V UPSTREAM of the
+    #     polyfuse (a solid rail — steering diodes from any shorted IO pin
+    #     are reverse-biased, clamp energy still lands on a decoupled rail)
+    #     and the fused J16_5V pin gets the previously-spare IO3 channel so
+    #     the connector's 5 V pin keeps ESD protection. Under the same
+    #     fault: IO3 lower diode to VN reverse-biased, IO3 upper diode
+    #     (0 V -> 5 V VP) reverse-biased — NO sneak path, fuse does its job. ---
     esd = Part("Power_Protection", "SRV05-4", value="SRV05-4",
                footprint=FP_SOT23_6, tag="D_ESD_J16")
     parts["D_ESD_J16"] = esd
     J16_3V3 += esd[1]            # IO1
     GND += esd[2]                # VN
     J16_SDA += esd[3]            # IO2
-    GND += esd[4]                # IO3 spare channel, tied to GND
-    J16_5V += esd[5]             # VP
+    J16_5V += esd[4]             # IO3 — fused 5V pin as an IO channel (round-3)
+    VCC5 += esd[5]               # VP — UPSTREAM of the polyfuse (round-3)
     J16_SCL += esd[6]            # IO4
 
     # --- REV_ID straps (R2-6) ---
@@ -918,7 +936,14 @@ def block_j16_protection_and_revid(pico):
 #      WVR-ERC-1). Update these constants ONLY together with a new run-log
 #      waiver entry — that is the point of the gate.
 ERC_EXPECTED_ERRORS = 1
-ERC_WAIVED_ERROR_SUBSTR = "Pin conflict on net GND, POWER-OUT pin 33/AGND"
+# WVR-ERC-1 (round-3 update, 2026-07-21): the waiver now matches the pin PAIR
+# order-insensitively — the round-3 SRV05-4 rewire (U47.4 GND -> J16_5V)
+# changed the GND net's pin ordering and SKiDL flipped which side of the
+# A1 GND/AGND conflict prints first. Same single waived error, all three
+# substrings must appear in the one ERC ERROR line.
+ERC_WAIVED_ERROR_SUBSTRS = ("Pin conflict on net GND",
+                            "pin 33/AGND of RaspberryPi_Pico/A1",
+                            "pin 3/GND of RaspberryPi_Pico/A1")
 # WVR-ERC-2 (2026-07-21, round-2 remediation): baseline 40 -> 39.
 # Delta fully accounted: -2 (Pico pins 26/27 = GP20/GP21 were
 # unconnected-spare warnings, now the REV_ID straps) and +1 (TCA4307
@@ -957,7 +982,8 @@ def check_erc_waiver():
     else:
         err_lines = [ln for ln in erc_file.read_text(encoding="utf-8", errors="replace").splitlines()
                      if ln.startswith("ERC ERROR")]
-        if len(err_lines) != ERC_EXPECTED_ERRORS or not all(ERC_WAIVED_ERROR_SUBSTR in ln for ln in err_lines):
+        if (len(err_lines) != ERC_EXPECTED_ERRORS
+                or not all(all(s in ln for s in ERC_WAIVED_ERROR_SUBSTRS) for ln in err_lines)):
             problems.append(f"ERC error line(s) do not match waiver WVR-ERC-1: {err_lines}")
 
     if problems:

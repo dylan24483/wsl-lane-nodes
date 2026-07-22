@@ -275,6 +275,65 @@ def test_uart_drops_event():
     assert len(evs) == 1 and evs[0].detail["lost"] == 3
 
 
+ID_LINE = ('{"ev":"id","fw":"phase8b-rp2040 v1.2.2","pcb":"%s","rid":%s,'
+           '"uid":"E66038B713952A31","build":"abc1234","cfg":"aa4ff333",'
+           '"fi1":%d,"t":1234}')
+
+
+def test_fw_identity_reaches_machine_events():
+    # Round-3 (Codex 2026-07-21 PM): the fw_identity record was drained and
+    # silently DISCARDED by _consume_link_records — no elif branch. It must
+    # land in machine_events like every other typed record.
+    w = FakeWriter()
+    bc = mk_board(writer=w, board_rev="revD")
+    to_ready(bc)
+    bc.link.feed_line(ID_LINE % ("revD", 1, 0))
+    bc.tick()
+    evs = w.of_type("fw_identity")
+    assert len(evs) == 1
+    assert evs[0].severity == "info" and evs[0].code is None
+    assert evs[0].detail["pcb"] == "revD"
+    assert evs[0].detail["build"] == "abc1234"
+    assert evs[0].detail["declared_rev"] == "revD"
+
+
+def test_fw_identity_fi1_image_is_a_fault():
+    w = FakeWriter()
+    bc = mk_board(writer=w, board_rev="revD")
+    to_ready(bc)
+    bc.link.feed_line(ID_LINE % ("revD", 1, 1))
+    bc.tick()
+    evs = w.of_type("fw_identity")
+    assert len(evs) == 1
+    assert evs[0].severity == "fault" and evs[0].code == "fi1_image"
+
+
+def test_fw_identity_pcb_rev_mismatch_is_a_fault():
+    # declared revD but the straps read floating/unknown (or another rev)
+    w = FakeWriter()
+    bc = mk_board(writer=w, board_rev="revD")
+    to_ready(bc)
+    bc.link.feed_line(ID_LINE % ("unknown", 255, 0))
+    bc.tick()
+    evs = w.of_type("fw_identity")
+    assert len(evs) == 1
+    assert evs[0].severity == "fault" and evs[0].code == "pcb_rev_mismatch"
+    assert evs[0].detail["declared_rev"] == "revD"
+
+
+def test_fw_identity_revC_expects_floating_straps():
+    # a rev-C-class board HAS no straps: strap read "unknown" is the EXPECTED
+    # value there, never a mismatch fault
+    w = FakeWriter()
+    bc = mk_board(writer=w, board_rev="revC")
+    to_ready(bc)
+    bc.link.feed_line(ID_LINE % ("unknown", 255, 0))
+    bc.tick()
+    evs = w.of_type("fw_identity")
+    assert len(evs) == 1
+    assert evs[0].severity == "info" and evs[0].code is None
+
+
 def test_stale_channel_after_quiet_cycles():
     os.environ["WSL_DIAG_STALE_CHANNEL_CYCLES"] = "3"
     try:

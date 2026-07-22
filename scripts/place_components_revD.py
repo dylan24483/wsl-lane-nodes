@@ -241,6 +241,18 @@ def build_board_from_netlist(components: list[Component], nets: dict[str, list[t
     board = pcbnew.BOARD()
     board.SetCopperLayerCount(4)
 
+    # Round-3 (Codex 2026-07-21 PM, finding 8): the title-block revision was
+    # never set, so every exported gerber job file carried "Revision": "rev?"
+    # — the ONE revision label embedded inside the gerber set itself could not
+    # distinguish rev-D from anything else. Stamp it at board creation; the
+    # router preserves it (load-modify-save) and export_fab_revD.py asserts it
+    # matches --rev fail-closed.
+    tb = board.GetTitleBlock()
+    tb.SetTitle("WSL Phase 8b lane controller (rev D)")
+    tb.SetRevision("D")
+    tb.SetDate("2026-07-21")
+    board.SetTitleBlock(tb)
+
     net_items = {}
     for name in sorted(nets):
         item = pcbnew.NETINFO_ITEM(board, name)

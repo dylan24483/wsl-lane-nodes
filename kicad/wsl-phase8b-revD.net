@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "generate_kicad_netlist_revD.py")
-    (date "07/21/2026 08:53 PM")
+    (date "07/21/2026 11:17 PM")
     (tool "SKiDL (2.2.3)")
     (sheet
       (number 1)
@@ -13,7 +13,7 @@
         (company)
         (rev)
         (date)
-        (source "generate_kicad_netlist_revD.py")
+        (source "..\generate_kicad_netlist_revD.py")
         (comment
           (number "1")
           (value ""))
@@ -873,7 +873,7 @@
         (field
           (name "SKiDL Tag") "F_J16_5V")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:848"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:852"))
       (libsource
         (lib "Device")
         (part "Polyfuse"))
@@ -1281,7 +1281,7 @@
         (field
           (name "SKiDL Tag") "JP_J16_3V3")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:855"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:859"))
       (libsource
         (lib "Jumper")
         (part "SolderJumper_2_Open"))
@@ -6393,7 +6393,7 @@
         (field
           (name "SKiDL Tag") "U_I2C_BUF")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:866"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:870"))
       (libsource
         (lib "NO_LIB")
         (part "TCA4307"))
@@ -6417,7 +6417,7 @@
         (field
           (name "SKiDL Tag") "D_ESD_J16")
         (field
-          (name "SKiDL Line") "generate_kicad_netlist_revD.py:896"))
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:914"))
       (libsource
         (lib "Power_Protection")
         (part "SRV05-4"))
@@ -8732,10 +8732,6 @@
         (pin "2")
         (pintype "PASSIVE"))
       (node
-        (ref "U47")
-        (pin "4")
-        (pintype "PASSIVE"))
-      (node
         (ref "U5")
         (pin "3")
         (pintype "PASSIVE"))
@@ -8841,7 +8837,7 @@
         (pintype "PASSIVE"))
       (node
         (ref "U47")
-        (pin "5")
+        (pin "4")
         (pintype "PASSIVE")))
     (net
       (code 126)
@@ -10614,7 +10610,11 @@
       (node
         (ref "U45")
         (pin "1")
-        (pintype "POWER-IN")))
+        (pintype "POWER-IN"))
+      (node
+        (ref "U47")
+        (pin "5")
+        (pintype "PASSIVE")))
     (net
       (code 217)
       (name "VCC_5V_RAW")

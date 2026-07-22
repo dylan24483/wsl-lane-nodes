@@ -168,7 +168,10 @@ for _s, (_tapnet, _pico_pin) in _TAP_RAIL.items():                     # E (R1)
 # per TI SCPS270B: 1 EN / 2 SCLOUT / 3 SCLIN / 4 GND / 5 READY(NC) /
 # 6 SDAIN / 7 SDAOUT / 8 VCC. SRV05-4: IO1=1 VN=2 IO2=3 IO3=4 VP=5 IO4=6.
 EXPECTED_ADDED_NET_NODES.update({
-    "J16_5V": {("F_J16_5V", "2"), ("J_EXTI2C", "1"), ("D_ESD_J16", "5")},
+    # Round-3 (Codex 2026-07-21 PM, finding 2): ESD VP (pin 5) moved to
+    # VCC_5V upstream of the polyfuse; the fused pin keeps ESD via the
+    # ex-spare IO3 (pin 4, ex-GND).
+    "J16_5V": {("F_J16_5V", "2"), ("J_EXTI2C", "1"), ("D_ESD_J16", "4")},
     "J16_3V3": {("JP_J16_3V3", "2"), ("J_EXTI2C", "5"), ("D_ESD_J16", "1")},
     "J16_SDA": {("U_I2C_BUF", "7"), ("R_J16_SDA_PU", "2"),
                 ("J_EXTI2C", "3"), ("D_ESD_J16", "3")},
@@ -187,17 +190,18 @@ EXPECTED_TOUCHED_NET_ADDITIONS = {
                   ("R_WET_BLEED1", "2"), ("R_WET_BLEED2", "2")},
     "FIELD_WET_V": ({("R_WET_BLEED1", "1"), ("R_WET_BLEED2", "1")}
                     | {(f"Rin_AUX{i}", "1") for i in range(4, 12)}),
-    # R2-4 (2026-07-21): J16 pin 1 now lands on J16_5V (an ADDED net);
-    # VCC_5V's only J16-related addition is the polyfuse input.
-    "VCC_5V": {("F_J16_5V", "1"), ("R_ADC5_TOP", "1")},
+    # R2-4 (2026-07-21): J16 pin 1 now lands on J16_5V (an ADDED net).
+    # Round-3: ESD VP (D_ESD_J16.5) rides VCC_5V UPSTREAM of the polyfuse.
+    "VCC_5V": {("F_J16_5V", "1"), ("R_ADC5_TOP", "1"), ("D_ESD_J16", "5")},
     "GND": ({("C_ADC5", "2"), ("J_EXTI2C", "2"), ("J_EXTI2C", "6"),
              ("R_ADC5_BOT", "2")}
             | {(f"OPTO_AUX{i}", "3") for i in range(4, 12)}
             | {(f"Q_TAP_{s}", "2") for s in _TAP_SUFFIXES}
             | {(f"R_TAPG_{s}", "2") for s in ("KICK", "ARM", "RPOK")}
-            # R2-4/R2-6: buffer GND, bypass, ESD VN + spare IO, REV_ID1 strap
+            # R2-4/R2-6: buffer GND, bypass, ESD VN, REV_ID1 strap.
+            # Round-3: D_ESD_J16.4 (ex-spare IO3) moved to J16_5V.
             | {("U_I2C_BUF", "4"), ("C_I2C_BUF", "2"),
-               ("D_ESD_J16", "2"), ("D_ESD_J16", "4"), ("R_REVID1", "1")}),
+               ("D_ESD_J16", "2"), ("R_REVID1", "1")}),
     "VCC_3V3": ({(f"R_TAPPU_{s}", "1") for s in _TAP_SUFFIXES}
                 | {(f"Rpu_AUX{i}", "1") for i in range(4, 12)}
                 # R2-4: J16 pin 5 moved behind the solder link; the rail's

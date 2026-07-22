@@ -624,6 +624,18 @@ def main() -> int:
         raise SystemExit(f"Netlist part count {len(net_parts)} != pinned {EXPECTED_NETLIST_PARTS}")
 
     board = pcbnew.LoadBoard(str(BOARD_PATH))
+
+    # ---- Round-3 (Codex 2026-07-21 PM, finding 8): the revision label EMBEDDED
+    #      in the artifacts (title block -> gerber .gbrjob "Revision") must match
+    #      --rev. Empty title block used to export as "rev?" — the board-house
+    #      record could not identify the revision from the gerbers themselves. ----
+    tb_rev = board.GetTitleBlock().GetRevision()
+    if tb_rev != rev:
+        raise SystemExit(
+            f"Board title-block revision {tb_rev!r} != --rev {rev!r} — the gerber "
+            f"job file would embed the wrong (or 'rev?') revision. Fix the board title "
+            f"block (place_components_revD.py stamps it) before exporting.")
+
     board_parts: dict[str, dict[str, object]] = {}
     for fp in board.GetFootprints():
         ref = fp.GetReference()

@@ -255,8 +255,14 @@ def audit_common(net_pads, pico_ref, comp_info=None, board_mode=False):
     #      R142/R143 card-side pull-ups). ----
     def members(net):
         return sorted((r, str(p)) for r, p in net_pads.get(net, []))
-    need(members("J16_5V") == sorted([("F1", "2"), ("J16", "1"), ("U47", "5")]),
-         f"J16_5V is exactly polyfuse-out + J16.1 + ESD VP (got {members('J16_5V')})")
+    # Round-3 (Codex 2026-07-21 PM, finding 2): ESD VP moved UPSTREAM of the
+    # polyfuse (VCC_5V) — VP on the fused node was an unfused sneak path from
+    # VCC_3V3 through IO1's steering diode when JP1 is bridged. The fused pin
+    # keeps ESD protection via the previously-spare IO3 channel (U47.4).
+    need(members("J16_5V") == sorted([("F1", "2"), ("J16", "1"), ("U47", "4")]),
+         f"J16_5V is exactly polyfuse-out + J16.1 + ESD IO3 (got {members('J16_5V')})")
+    need([(r, str(p)) for r, p in net_pads.get("VCC_5V", []) if r == "U47"] == [("U47", "5")],
+         "ESD VP (U47.5) rides VCC_5V UPSTREAM of the polyfuse — round-3 sneak-path fix")
     need(members("J16_3V3") == sorted([("JP1", "2"), ("J16", "5"), ("U47", "1")]),
          f"J16_3V3 is exactly solder-link-out + J16.5 + ESD IO (default-OPEN pin) (got {members('J16_3V3')})")
     need(members("J16_SDA") == sorted([("U46", "7"), ("R142", "2"), ("J16", "3"), ("U47", "3")]),

@@ -1,0 +1,24 @@
+*** SUPERSEDED PACKAGE — DO NOT UPLOAD, DO NOT ORDER FROM THIS DIRECTORY ***
+
+This is the ROUND-1 rev-D fab package (exported 2026-07-21 17:15, pre-Codex-round-2).
+It is retained as immutable evidence only. The as-current package is:
+
+    kicad/fab_revD_2026-07-21_r3/        <- ORDER FROM HERE
+
+Known-retracted content that survives INSIDE this directory (kept verbatim because
+the package is hash-frozen; every item below is corrected in _r3):
+
+  - 262 parts: NO J16 protection stack (polyfuse/TCA4307/SRV05-4/solder link),
+    NO REV_ID straps, NO tap probe pads TP17-TP24.
+  - BOM/part-lock note "never reduce below ~825k" — RETRACTED (Codex R2-2).
+    The corrected hold-off floor is >= 917k (1M standard value stays).
+  - 10M line "MATCH-AT-UPLOAD" placeholder row — RETRACTED (Codex R2-15).
+    R135/R138/R141 are pinned to LCSC C26108 in the current package.
+  - Q17-Q20 JSMSEMI C916396 — RETRACTED (Codex R2-3). Current: onsemi
+    2N7002LT1G C16338.
+  - gerber job file "Revision": "rev?" (title block was unset — Codex round-3
+    finding 8; current package embeds "D").
+
+An upload from this folder would order a pre-round-2 board and silently undo
+R2-2/R2-3/R2-4/R2-5/R2-6/R2-15 and the round-3 fixes. Tombstone added 2026-07-21
+(Codex round-3 finding 7).

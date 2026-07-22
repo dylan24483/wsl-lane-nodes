@@ -5,7 +5,8 @@
 > tally below is therefore the ROUND-1 closing state, not the final word. The
 > round-2 hardware slice (R2-2/R2-3/R2-4-board/R2-5-board/R2-6-straps/R2-15) is
 > recorded in the run log ("ROUND-2 BOARD/BOM/EXPORT BATCH") — board is now
-> 271/223, the as-current fab package is `kicad/fab_revD_2026-07-21_r2/`, and the
+> 271/223, the as-current fab package is `kicad/fab_revD_2026-07-21_r3/` (round 3;
+`_r2/` and the round-1 dir are tombstoned in-directory), and the
 > release DRC evidence is `DRC-revD-round2-r4.rpt`. Software/firmware slices land
 > in their own commits.
 

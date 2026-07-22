@@ -1858,6 +1858,27 @@ class BoardController:
                         if ep != self._tapdump_requested_ep:
                             self._tapdump_requested_ep = ep
                             self.link.request_tapdump()
+                elif kind == "fw_identity":
+                    # Round-3 fix (Codex 2026-07-21 PM): this record used to be
+                    # drained and silently DISCARDED — an FI-1 bench image or a
+                    # wrong-revision board at a live lane degraded to a single
+                    # Pi log line. Now it reaches machine_events (and the SMS
+                    # gate via fault severity) like every other typed record.
+                    fi1 = bool(rec.get("fi1"))
+                    pcb = rec.get("pcb")
+                    declared = self.cfg.board_rev
+                    # A rev-C-class board HAS no straps: the strap read reports
+                    # "unknown" (floating) — that IS the expected value there.
+                    expected = "unknown" if declared == "revC" else declared
+                    mismatch = bool(declared and pcb and pcb != expected)
+                    sev = "fault" if (fi1 or mismatch) else "info"
+                    code = ("fi1_image" if fi1
+                            else ("pcb_rev_mismatch" if mismatch else None))
+                    detail = {k: rec.get(k) for k in
+                              ("fw", "pcb", "rid", "uid", "build", "cfg", "fi1")}
+                    detail["declared_rev"] = declared
+                    self.diag.emit_event(sev, "fw_identity", code=code,
+                                         detail=detail, t=t)
         except Exception:
             log.debug("L%s _consume_link_records swallowed", self.cfg.lane,
                       exc_info=True)

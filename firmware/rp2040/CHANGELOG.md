@@ -9,6 +9,30 @@ parser (`lane_node/rp2040_link.py`) ignores unknown JSON keys and unknown `ev` k
 Scope = the round-2 firmware slice of the rev-D remediation (Codex re-audit 2026-07-21 PM).
 All line-format changes ADDITIVE; `rp2040_link.py` gains the matching id/rid consumption.
 
+**Round-3 pre-flash fixes (Codex 2026-07-21 PM re-review; amended in place — this
+version was never flashed, no image with the defects ever left the repo):**
+
+- **Boot-order regression (critical).** The R2-1 contract set grew to include the fast
+  inputs GP6-13, but `main()` runs its first `tap_assert_input_only()` pass BEFORE
+  `init_inputs()` — at that moment GP6-13 are at silicon reset state (FUNCSEL=NULL, not
+  SIO), so EVERY boot of the unfixed image latched a spurious `tap_dir`/SA fault and
+  refused RP_OK until an operator PBZ. Fix: `inputs_inited` gate (same pattern as
+  `rev_id_inited`) — the pre-inputs pass still enforces taps/ADC/REV_ID from the first
+  moment, GP6-13 join the contract set when `init_inputs()` completes, and `main()` runs
+  a second invariant pass immediately after so init-time drift still latches at boot.
+  New host test `test_v12.c` section R replicates main()'s LITERAL boot order on
+  reset-state pins (the old tests all ran `init_inputs()` before any assertion, which is
+  exactly why 111/111 missed it).
+- **16-bit epoch alias guard (minor).** Ring entries store only the low 16 bits of the
+  32-bit boot epoch; after 65536 ring-adopting reboots (a persistent watchdog crash-loop
+  reaches that in ~9-18 h) a surviving pre-loop edge's truncated tag aliased back to
+  "current" and could stamp a wrong advisory cause code on a TAPDUMP. Fix: at ring
+  adoption (`tap_boot_init`), any entry whose 16-bit tag collides with the NEW current
+  epoch is definitionally stale (IRQs not yet enabled) and is re-tagged to previous-epoch;
+  the scan runs on every adoption so nothing can age back into freshness. Host test
+  section S pins the wrap, the re-tag, and that fresh edges still classify.
+  `test_v12` total: 111 → **119**.
+
 - **R2-1 — pad-level output-enable lock.** The v1.2.0/v1.2.1 input-only invariant read
   back the SIO direction + IO-bank function ONLY; the RP2040's per-pin `CTRL.OEOVER`
   field bypasses both (OEOVER=ENABLE/HIGH forces output-enable AT THE PAD with the SIO
