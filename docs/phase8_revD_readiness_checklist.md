@@ -6,6 +6,12 @@ Written 2026-07-20 at the end of the rev-D design campaign. Companions:
 `phase8_revD_change_list.md` (what changed and why), `phase8_revD_change_spec.md` (electrical
 detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, OG-1/OG-3).
 
+> **2026-07-21 — Codex NO-GO remediation campaign CLOSED.** Per-finding final status,
+> evidence, recorded repo HEADs, and the definitive open-gates list:
+> **`phase8_revD_remediation_report_2026-07-21.md`**. The gates below remain the
+> operational checklist; where wording differs, the remediation spec + report govern
+> the remediated items (taps R1.9, DRU R2, firmware R3).
+
 > **⚠️ GATE SCOPE NOTE (the rev-C lesson, applied up front).** The rev-C checklist went green
 > on G1–G5 while change-list items 3/5/6–8 were unresolved, and the order shipped without
 > them. This checklist therefore gates the fab order on EVERYTHING: the design gates (G1–G6),
@@ -86,8 +92,9 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 ### G6 — Rev-C sacred-file integrity  `[x]`
 - 189/189 files in `backups/revC_design_snapshot_2026-07-19/MANIFEST.json` hash-verified
   unchanged against the live tree before AND after every tool run (verified twice more in
-  the independent verify pass). Git shows no rev-C design file modified; staging empty;
-  nothing committed. Re-verify once more immediately before the fab order.
+  the independent verify pass, and again at every batch of the 2026-07-21 remediation
+  campaign incl. its finalize — `scripts/verify_revC_snapshot.py`). Git shows no rev-C
+  design file modified. Re-verify once more immediately before the fab order.
 
 ### G7 — Rev-C carried verify-items 6–7 resolved OR explicitly waived  `[~]`  **(owner + powered-session)**
 - **Item 6 — per-channel front-end (dry-contact vs 24 VAC-rectified):** rev-D carries the

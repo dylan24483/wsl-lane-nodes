@@ -886,3 +886,35 @@ batch via the new `scripts/verify_revC_snapshot.py`).
   `scripts/verify_revC_snapshot.py`, `tests/test_machine_diagnostics.py`) — supersedes
   it as the as-current record; the older mirrors stay untouched. M7's off-disk half
   (copy WSL_Backups to a second physical volume) remains the OPEN Dylan item.
+
+## FINALIZE (2026-07-21, end of the Codex NO-GO remediation campaign)
+
+- **Closing report written:** `docs/phase8_revD_remediation_report_2026-07-21.md` —
+  per-finding final status for all 18 Codex findings (**15 CLOSED, M5/M7 DISPOSITIONED
+  with evidence, H5 PARTIAL with recorded residuals**), evidence anchors (files,
+  commits, measured minima), recorded repo HEADs, the definitive open-gates list, and
+  the mirror table. That report is the campaign's single closing record; this run log
+  entry is the process trail.
+- **C3 last residual CLOSED at finalize.** The one genuine clean-clone failure left by
+  the verification pass — `WSL Systems/tests/public_checkout_identity_smoke.node.js`
+  failing on fresh clones because Git-for-Windows' default `core.autocrlf=true` checks
+  `website.html` out CRLF and breaks the smoke's `\n`-bearing extraction marker — was
+  REPRODUCED live at WSL Systems `03feec5` (clone with `-c core.autocrlf=true` →
+  AssertionError "could not extract function newCheckoutRequestId()"), fixed by a
+  `.gitattributes` pin (`website.html text eol=lf`, WSL Systems commit **`f1bd326`**,
+  explicit staging), and RE-PROVEN on a fresh autocrlf=true clone post-fix: smoke
+  PASSES + `test_phase8_bridge_contract.py` ALL PASS (contract loaded from the lane
+  repo via `WSL_MACHINE_CONTRACT`). Working-tree smoke re-run green too.
+- **Doc sync:** change-list banner — stale `DRC-revD-remediation-r2.rpt` citation
+  corrected to **r3** (verified: r1 = 2 intermediate violations 16:46, r2 clean 16:49,
+  r3 = final clean release-evidence run 16:58) + CAMPAIGN CLOSED block added;
+  readiness-checklist header points at the report; G6 records the finalize re-verify.
+- **Rev-C sacred snapshot:** `scripts/verify_revC_snapshot.py` → **189/189 OK, 0
+  failures** immediately before the finalize commits (and again after — see the mirror
+  record below).
+- **Recorded HEADs for clean-clone reproduction:** WSL Systems
+  `f1bd3266feeee6d2ed7f6ee3d39fa947a8cd47f8` (`fable-audit-fixes`); wsl-lane-nodes =
+  the finalize commits on `fable-audit-fixes` (this record's commit + the mirror-record
+  commit that follows it; the r3 mirror MANIFEST pins the exact hash). Neither repo
+  pushed (lane-nodes 160 MB-PDF history blocker stands; WSL Systems deploys via
+  AnyDesk + server-side checkout per standing practice).

@@ -32,7 +32,8 @@
 >   populated / 34 Vpk basis; MACHINE ≤ 37 Vpk, 24 VAC fieldsheet), IPC-2221B B1 0.6 mm
 >   minimum, requirement CONFIRMED at 2.5/3.2 mm; rule values now carry the JLC ±20 %
 >   etch-tolerance allowance: **2.65 / 3.35 / 1.6 mm**. Re-routed: kicad-cli DRC
->   **0/0/0** (`DRC-revD-remediation-r2.rpt`), routed-mode audit **ALL PASS**, measured
+>   **0/0/0** (`DRC-revD-remediation-r3.rpt` — the release-evidence report; r1/r2 were
+>   intermediate runs of the same rules), routed-mode audit **ALL PASS**, measured
 >   minima **L↔F 2.650 mm / L↔M 3.350 mm / machine ch↔ch 2.325 mm** (straddler 3.580,
 >   relay rows 3.559, opto rows and J15 region ≥ 6).
 > - **M3:** all fabricated F.SilkS ≥ 1.0 mm / 0.15 mm stroke; the four KEYED cross-mate
@@ -71,6 +72,13 @@
 >   procedures incl. the R1.9 ≥ 70 °C tap fault injection, GPB poke, ADC read,
 >   cross-mate/sacrificial-pair, R4 V_CE sampling. Rev-C bench artifacts remain WRONG
 >   for rev-D boards — use only the generated pack.
+>
+> **CAMPAIGN CLOSED 2026-07-21 —** final status of all 18 Codex findings (15 CLOSED,
+> M5/M7 DISPOSITIONED with evidence, H5 PARTIAL with recorded residuals), the recorded
+> repo HEADs for clean-clone reproduction, and the full open-gates list live in
+> **`phase8_revD_remediation_report_2026-07-21.md`** — the campaign's closing record.
+> C3's last residual (WSL Systems clean-clone CRLF smoke failure) closed at finalize
+> (WSL Systems `f1bd326`, `.gitattributes` LF pin on `website.html`).
 
 **DONE (this campaign, all in new files):**
 - **Spec** — `phase8_revD_change_spec.md`, items A–G, electrical math independently re-derived
