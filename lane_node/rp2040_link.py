@@ -14,7 +14,18 @@ Protocol (newline-delimited JSON, 115200 8N1) — see firmware/rp2040/README.md:
                  {"ev":"hb","ok":1,"flt":"","up":..,"drp":0,"in":0,"run":0}
                  {"ev":"rp_ok","v":1,..}   {"ev":"boot",..,"maxrun_ms":8000,"dbg":0}
                  {"ev":"flt","code":"motion_timeout","m":"S",..}
-  Pi -> RP2040:  RUN <m> | STOP <m|*> | CLEAR | PING
+                 {"ev":"id","fw":..,"pcb":"revD","rid":1,"uid":..,"build":..,
+                  "cfg":..,"fi1":0,..}                       (v1.2.2, R2-6)
+  Pi -> RP2040:  RUN <m> | STOP <m|*> | CLEAR | PING | TAPDUMP | ID
+
+v1.2.2 firmware additions (consumed here; all additive):
+  "id" line      — firmware/board identity: strap-read PCB revision, Pico
+                   unique id, build git-describe + config.h hash, FI-1 posture.
+                   Stored (fw_identity()) + emitted as a typed 'fw_identity'
+                   diag record; an fi1:1 image is logged as an ERROR (a bench
+                   fault-injection build must never run at a lane).
+  hb "rid"       — REV_ID strap code every beat (pcb_rev_id(); 255 = floating
+                   straps, i.e. a rev-B/rev-C board).
 
 v0.2.0 firmware additions (consumed here; ALL optional — v0.1.0 lines without
 them keep working unchanged):
@@ -261,6 +272,9 @@ class RP2040Link:
         self._ring_epoch = None     # CURRENT ring epoch (boot tap.ep / hb "ep")
         self._v5 = None             # (v5, v5n, v5x) mV from the last hb window
         self._tapdump = None        # open tapdump collection (header + entries)
+        # v1.2.2 identity (R2-6; None until an "id" line / hb "rid" is heard)
+        self._identity = None       # last "id" line, sanitized dict
+        self._rid = None            # last hb "rid" (REV_ID strap code; 255 = floating)
         # typed diag records for the daemon (bounded; drained off-lock)
         self._dr_lock = threading.Lock()
         self._diag_records = deque(maxlen=DIAG_RECORDS_MAX)
@@ -416,6 +430,32 @@ class RP2040Link:
             with self._lock:
                 self._on_tap_event(kind, ev, records)
             self._push_records(records)
+        elif kind == "id":
+            # v1.2.2 identity line (R2-6): PCB revision (REV_ID strap read),
+            # Pico unique id, build git-describe + config.h hash, FI-1 posture.
+            # Stored (fw_identity()) + promoted to a typed 'fw_identity' record
+            # so the daemon can persist it and alert on mismatches (board rev
+            # vs configured BoardConfig revision, unknown build, FI-1 image).
+            ident = {
+                "fw":    (str(ev.get("fw", ""))[:80] or None),
+                "pcb":   (str(ev.get("pcb", ""))[:16] or None),
+                "rid":   self._num(ev, "rid"),
+                "uid":   (str(ev.get("uid", ""))[:32] or None),
+                "build": (str(ev.get("build", ""))[:64] or None),
+                "cfg":   (str(ev.get("cfg", ""))[:32] or None),
+                "fi1":   bool(ev.get("fi1")),
+                "t_fw":  self._num(ev, "t"),
+            }
+            with self._lock:
+                self._identity = ident
+            if ident["fi1"]:
+                # An FI-1 bench fault-injection image must NEVER run at a lane
+                # (R1.9 / FA-11 step 3) — loudest available signal short of a trip.
+                log.error("RP2040 reports an FI-1 BENCH fault-injection image "
+                          "(%s build %s) — never allowed on a live lane",
+                          ident["fw"], ident["build"])
+            self._push_records([{"kind": "fw_identity", "t_pi": self.now(),
+                                 **ident}])
 
     # ---- v0.2.0 telemetry (helpers called with self._lock HELD; they log via
     # `notes` so no logging handler can ever block under the lock) -------------
@@ -533,6 +573,9 @@ class RP2040Link:
         v5 = self._num(ev, "v5")
         if v5 is not None:
             self._v5 = (int(v5), self._num(ev, "v5n"), self._num(ev, "v5x"))
+        rid = self._num(ev, "rid")
+        if rid is not None:
+            self._rid = int(rid)    # v1.2.2 (R2-6): REV_ID strap code, store-only
         m = self._num(ev, "in")
         if m is not None:
             m = int(m)
@@ -864,6 +907,22 @@ class RP2040Link:
         with self._lock:
             return self._ring_depth
 
+    def fw_identity(self):
+        """The firmware's v1.2.2 "id" line (R2-6), sanitized: {"fw","pcb","rid",
+        "uid","build","cfg","fi1","t_fw"} — or None if never heard (<= v1.2.1
+        firmware). pcb is the STRAP-read board revision ("revD"/"legacy"/
+        "future"/"unknown"), independent of what image is flashed; fi1 True
+        means a BENCH fault-injection image is running (never allowed at a
+        lane — logged as an error on receipt)."""
+        with self._lock:
+            return dict(self._identity) if self._identity else None
+
+    def pcb_rev_id(self):
+        """Last hb "rid" REV_ID strap code (v1.2.2+): 0-3, 255 = floating/
+        unread straps (rev-B/rev-C board), or None if never sent."""
+        with self._lock:
+            return self._rid
+
     def maxrun_ms(self):
         """Firmware max-run ceiling advertised in the boot event (v0.2.0+), or None
         (v0.1.0 firmware, or no boot event heard yet)."""
@@ -1081,6 +1140,34 @@ if __name__ == "__main__":
           "re-sends are bounded (1 original + RUN_RESYNC_RETRIES)")
     link2g.feed_line('{"ev":"hb","ok":1,"flt":"","up":9000}')        # v0.1.0-style hb: no run
     check(link2g.run_mismatch() == ("T",), "hb without a run mask leaves the flag untouched")
+
+    # [H] v1.2.2 identity line + hb rid (R2-6) ------------------------------
+    print("[H] v1.2.2 identity")
+    link = RP2040Link(now=fake_now)
+    check(link.fw_identity() is None and link.pcb_rev_id() is None,
+          "no id/rid heard -> fw_identity()/pcb_rev_id() None")
+    link.feed_line('{"ev":"id","fw":"phase8b-rp2040 v1.2.2","pcb":"revD","rid":1,'
+                   '"uid":"E66038B713952A31","build":"10c3a26-dirty","cfg":"aa4ff333",'
+                   '"fi1":0,"t":123}')
+    ident = link.fw_identity()
+    check(ident is not None and ident["pcb"] == "revD" and ident["rid"] == 1
+          and ident["uid"] == "E66038B713952A31" and ident["build"] == "10c3a26-dirty"
+          and ident["cfg"] == "aa4ff333" and ident["fi1"] is False,
+          "id line stored + queryable (sanitized)")
+    recs = link.drain_diag_records()
+    check(any(r["kind"] == "fw_identity" and r.get("pcb") == "revD" for r in recs),
+          "id line emitted as a typed fw_identity record")
+    link.feed_line('{"ev":"hb","ok":1,"flt":"","up":500,"rid":1}')
+    check(link.pcb_rev_id() == 1, "hb rid stored (pcb_rev_id)")
+    link.feed_line('{"ev":"hb","ok":1,"flt":"","up":750,"rid":255}')
+    check(link.pcb_rev_id() == 255, "floating strap code (255) passes through")
+    # FI-1 image: flagged in the identity + record (log.error fires; no throw)
+    link.feed_line('{"ev":"id","fw":"phase8b-rp2040 v1.2.2","pcb":"revD","rid":1,'
+                   '"uid":"X","build":"bench","cfg":"c","fi1":1}')
+    check(link.fw_identity()["fi1"] is True, "FI-1 bench image flagged")
+    # malformed identity fields must never throw (additive-parser contract)
+    link.feed_line('{"ev":"id","fw":123,"rid":"one","fi1":"yes","uid":null}')
+    check(link.fw_identity() is not None, "malformed id line sanitized, not thrown")
 
     print(f"\n{checks['n'] - checks['fail']}/{checks['n']} checks passed"
           + ("  <<< FAILURES" if checks["fail"] else ""))

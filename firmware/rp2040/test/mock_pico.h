@@ -25,6 +25,29 @@ typedef struct uart_inst uart_inst_t;
 typedef enum { UART_PARITY_NONE = 0 } uart_parity_t;
 typedef void (*gpio_irq_callback_t)(uint gpio, uint32_t event_mask);
 
+/* v1.2.2 (R2-1): pad override surface. Values match the real SDK enum. */
+enum gpio_override { GPIO_OVERRIDE_NORMAL = 0, GPIO_OVERRIDE_INVERT = 1,
+                     GPIO_OVERRIDE_LOW = 2, GPIO_OVERRIDE_HIGH = 3 };
+
+/* v1.2.2 (R2-1): mock IO_BANK0 register file. Real-SDK semantics honored by
+ * the mock bodies: gpio_init()/gpio_set_function()/adc_gpio_init() REWRITE the
+ * whole CTRL register (clearing OEOVER back to NORMAL — the exact ordering trap
+ * force_pad_input_only() must survive), gpio_set_oeover() writes the OEOVER
+ * field, and STATUS.OETOPAD is recomputed from (funcsel, dir, oeover) on every
+ * mutation so main.c's pad_oe_locked() readback sees live-register truth. */
+typedef struct { uint32_t status; uint32_t ctrl; } mock_io_status_ctrl_t;
+typedef struct { mock_io_status_ctrl_t io[40]; } mock_io_bank0_t;
+extern mock_io_bank0_t mock_iobank0;
+#define io_bank0_hw (&mock_iobank0)   /* SDK 2.x accessor name */
+#define IO_BANK0_GPIO0_STATUS_OETOPAD_BITS       0x00002000u
+#define IO_BANK0_GPIO0_CTRL_OEOVER_BITS          0x00003000u
+#define IO_BANK0_GPIO0_CTRL_OEOVER_LSB           12u
+#define IO_BANK0_GPIO0_CTRL_OEOVER_VALUE_DISABLE 0x2u
+
+/* v1.2.2 (R2-6): unique-id surface */
+#define PICO_UNIQUE_BOARD_ID_SIZE_BYTES 8
+void pico_get_unique_board_id_string(char *buf, uint len);
+
 /* v1.2: noinit-section attribute is meaningless on the host — storage is a
  * plain static that PERSISTS across tap_boot_init() calls, which is exactly
  * the semantics the reboot-persistence tests exercise. */
@@ -50,6 +73,11 @@ extern gpio_irq_callback_t mock_irq_cb; /* registered shared IRQ callback       
 extern uint16_t mock_adc_raw;           /* adc_read() returns this                */
 extern int      mock_adc_selected;      /* last adc_select_input()                */
 extern int      mock_adc_inited;        /* adc_init() called                      */
+/* v1.2.2 */
+extern int      mock_gpio_oeover[40];   /* last gpio_set_oeover() value (NORMAL default) */
+extern int      mock_gpio_floating[40]; /* 1 = pin is unconnected: gpio_get follows pull */
+extern int      mock_gpio_pull[40];     /* last pull: 0 none, +1 up, -1 down             */
+extern char     mock_unique_id[17];     /* pico_get_unique_board_id_string() source      */
 
 /* ---- clock (header-inline; one def per TU) -------------------------------- */
 static inline uint32_t to_ms_since_boot(absolute_time_t t) { return (uint32_t)(t / 1000u); }
@@ -60,9 +88,12 @@ static inline uint64_t time_us_64(void)                    { return mock_us; }
 void gpio_init(uint pin);
 void gpio_set_dir(uint pin, bool out);
 void gpio_pull_up(uint pin);
+void gpio_pull_down(uint pin);          /* v1.2.2: REV_ID pull-phase read */
 bool gpio_get(uint pin);
 void gpio_put(uint pin, bool v);
 void gpio_set_function(uint pin, int fn);
+void gpio_set_oeover(uint pin, uint value);   /* v1.2.2 (R2-1) */
+void sleep_us(uint64_t us);             /* v1.2.2: REV_ID settle (advances mock_us) */
 /* v1.2 tap surface */
 uint gpio_get_dir(uint pin);            /* reads back the mock SIO OE state    */
 uint gpio_get_function(uint pin);       /* reads back the mock IO-bank funcsel */

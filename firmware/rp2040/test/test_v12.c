@@ -366,6 +366,161 @@ int main(void) {
     CHECK(dump_pos == dump_n && tx_has("\"ev\":\"tapdump_end\""),
           "dump completes once space frees");
 
+    /* ---- M: v1.2.2 R2-1 — pad-level OEOVER lock + mutation gate ------------ */
+    /* Codex R2-1: the v1.2.0 invariant read the SIO direction only; CTRL.OEOVER
+     * can force output-enable AT THE PAD with the SIO direction still reading
+     * input. This section is the MUTATION GATE: simulate the override being
+     * set and the invariant MUST trip (the test fails if it doesn't). */
+    printf("[M] R2-1 pad-OE lock (OEOVER mutation gate)\n");
+    reset_clean(); tap_init();
+    {
+        int locked = 1;
+        for (uint i = 0; i < N_TAPS; i++) if (!pad_oe_locked(tap_pins[i])) locked = 0;
+        CHECK(locked, "tap_init leaves GP16-19 OEOVER=DISABLE + OETOPAD=0");
+        CHECK(pad_oe_locked(PIN_ADC_VCC5), "GP26 pad-OE locked after adc_gpio_init (post-CTRL-write order)");
+        locked = 1;
+        for (size_t i = 0; i < N_INPUTS; i++) if (!pad_oe_locked(inputs[i].gpio)) locked = 0;
+        CHECK(locked, "fast inputs GP6-13 pad-OE locked by init_inputs (R2-1 scope)");
+    }
+    CHECK(tap_assert_input_only() && !fault_latched, "extended invariant passes on a clean init");
+    /* mutation 1: OEOVER forced HIGH (output-enable at the pad, SIO dir untouched) */
+    gpio_set_oeover(PIN_TAP_555, GPIO_OVERRIDE_HIGH);
+    CHECK(mock_gpio_dir[PIN_TAP_555] == GPIO_IN, "setup: SIO direction STILL reads input (the C2-era blind spot)");
+    CHECK(!tap_assert_input_only(), "OEOVER=HIGH mutation trips the readback (v1.2.1 missed this)");
+    CHECK(fault_latched && strcmp(fault_code, "pad_oe") == 0, "latches pad_oe");
+    supervise(); pump();
+    CHECK(rp_ok_state == false, "RP_OK refused while the pad can drive");
+    CHECK(tx_has("\"code\":\"pad_oe\"") && tx_has("\"m\":\"555\""), "fault names the tap");
+    gpio_set_oeover(PIN_TAP_555, GPIO_OVERRIDE_LOW);         /* repair */
+    rx_feed("CLEAR\n"); poll_uart(); supervise();
+    CHECK(tap_assert_input_only() && !fault_latched && rp_ok_state, "repair + CLEAR recovers");
+    /* mutation 2: OEOVER merely back to NORMAL (OETOPAD still 0 because dir is
+     * input) — the DISABLE-field check must trip anyway: defense must not wait
+     * for the pad to actually drive. */
+    gpio_set_oeover(PIN_TAP_KICK, GPIO_OVERRIDE_NORMAL);
+    CHECK((mock_iobank0.io[PIN_TAP_KICK].status & IO_BANK0_GPIO0_STATUS_OETOPAD_BITS) == 0,
+          "setup: OETOPAD still 0 (pad not yet driving)");
+    CHECK(!tap_assert_input_only() && strcmp(fault_code, "pad_oe") == 0,
+          "OEOVER!=DISABLE trips even before the pad drives");
+    gpio_set_oeover(PIN_TAP_KICK, GPIO_OVERRIDE_LOW);
+    rx_feed("CLEAR\n"); poll_uart(); supervise();
+    /* mutation 3: a rogue whole-CTRL rewrite (gpio_set_function) silently CLEARS
+     * the override — real-SDK semantics the mock mirrors — and must be caught. */
+    gpio_set_function(PIN_TAP_ARM, GPIO_FUNC_SIO);
+    CHECK(!tap_assert_input_only() && strcmp(fault_code, "pad_oe") == 0,
+          "whole-CTRL rewrite clears OEOVER -> invariant trips");
+    gpio_set_oeover(PIN_TAP_ARM, GPIO_OVERRIDE_LOW);
+    rx_feed("CLEAR\n"); poll_uart(); supervise();
+    /* fast-input coverage: same mutation on a cam pin */
+    gpio_set_oeover(PIN_SA, GPIO_OVERRIDE_HIGH);
+    CHECK(!tap_assert_input_only(), "fast-input OEOVER mutation trips too");
+    CHECK(strcmp(fault_code, "pad_oe") == 0, "fast-input mutation latches pad_oe");
+    gpio_set_oeover(PIN_SA, GPIO_OVERRIDE_LOW);
+    rx_feed("CLEAR\n"); poll_uart(); supervise();
+
+    /* ---- N: v1.2.2 R2-13 — epoch-aware rail-drop classifier ---------------- */
+    printf("[N] R2-13 epoch-aware classifier (stale-edge exclusion)\n");
+    /* (a) pre-reboot edges alone must NOT classify after a reboot */
+    reset_clean(); tap_init();
+    mock_us = 70000000ull;
+    tap_edge_sim(PIN_TAP_KICK, 0); advance_ms(50);
+    tap_edge_sim(PIN_TAP_KICK, 1); advance_ms(2500);
+    tap_edge_sim(PIN_TAP_555, 1);                 /* observed 555 FALL — epoch 1 */
+    tap_dump_start(); pump();
+    CHECK(tx_has("\"cause\":\"kick_starvation\""), "setup: classifies within epoch 1");
+    tap_boot_init(true);                          /* watchdog reboot -> epoch 2, ring adopted */
+    CHECK(tap_ring.count == 3 && tap_ring.epoch == 2, "setup: pre-reboot edges preserved into epoch 2");
+    tx_reset(); txr_head = txr_tail = 0;
+    tap_dump_start(); pump();
+    CHECK(tx_has("\"cause\":\"none\""),
+          "pre-reboot 555 fall is EXCLUDED from fresh diagnosis (v1.2.1 classified it)");
+    tap_service(); pump();
+    CHECK(tx_has("\"ep\":1"), "stale entries still dumped as history (per-entry epoch visible)");
+    /* (b) stale edges must not STEER a fresh-epoch classification */
+    reset_clean(); tap_init();
+    mock_us = 80000000ull;
+    tap_edge_sim(PIN_TAP_ARM, 1);                 /* epoch-1 ARM fall (would win as arm_drop) */
+    advance_ms(20);
+    tap_edge_sim(PIN_TAP_555, 1);                 /* epoch-1 555 fall */
+    tap_boot_init(true);                          /* -> epoch 2 */
+    advance_ms(3000);                             /* no epoch-2 kick edges at all */
+    tap_edge_sim(PIN_TAP_555, 1);                 /* fresh epoch-2 555 fall */
+    tx_reset(); txr_head = txr_tail = 0;
+    tap_dump_start(); pump();
+    CHECK(tx_has("\"cause\":\"kick_starvation\""),
+          "fresh-epoch 555 fall classifies from epoch-2 evidence only (stale ARM fall ignored)");
+
+    /* ---- O: v1.2.2 R2-6 — REV_ID strap read + floating detection ----------- */
+    printf("[O] R2-6 REV_ID straps\n");
+    reset_clean();
+    /* rev-D strap pattern: GP20 -> 3V3 (1), GP21 -> GND (0) => code 0b01 */
+    mock_gpio_floating[PIN_REV_ID0] = 0; mock_gpio_floating[PIN_REV_ID1] = 0;
+    mock_gpio_in[PIN_REV_ID0] = 1; mock_gpio_in[PIN_REV_ID1] = 0;
+    rev_id_init();
+    CHECK(pcb_rev_code == REV_ID_REVD, "rev-D straps decode to 0b01");
+    CHECK(strcmp(pcb_rev_name(), "revD") == 0, "code 0b01 names revD");
+    CHECK(mock_gpio_pull[PIN_REV_ID0] == 0 && mock_gpio_pull[PIN_REV_ID1] == 0,
+          "pulls disabled after the read (zero static strap current)");
+    CHECK(pad_oe_locked(PIN_REV_ID0) && pad_oe_locked(PIN_REV_ID1),
+          "REV_ID pins pad-OE locked after the read");
+    CHECK(tap_assert_input_only(), "REV_ID pins joined the invariant contract set");
+    gpio_set_oeover(PIN_REV_ID0, GPIO_OVERRIDE_HIGH);
+    {
+        bool tripped = !tap_assert_input_only();
+        pump();
+        CHECK(tripped && strcmp(fault_code, "pad_oe") == 0 && tx_has("\"m\":\"REV0\""),
+              "REV_ID pad-OE mutation trips + names the pin");
+    }
+    gpio_set_oeover(PIN_REV_ID0, GPIO_OVERRIDE_LOW);
+    rx_feed("CLEAR\n"); poll_uart(); supervise();
+    /* floating pins (rev-B/rev-C board, no straps) follow the pull phases ->
+     * disagree -> UNKNOWN, never assumed rev-D */
+    mock_gpio_floating[PIN_REV_ID0] = 1; mock_gpio_floating[PIN_REV_ID1] = 1;
+    rev_id_init();
+    CHECK(pcb_rev_code == REV_ID_FLOATING, "floating straps detected via pull-phase disagreement");
+    CHECK(strcmp(pcb_rev_name(), "unknown") == 0, "floating reports unknown (NOT rev-D)");
+    mock_gpio_floating[PIN_REV_ID0] = 0; mock_gpio_floating[PIN_REV_ID1] = 0;
+
+    /* ---- P: v1.2.2 R2-6 — identity line + hb rid --------------------------- */
+    printf("[P] identity line\n");
+    reset_clean();
+    mock_gpio_in[PIN_REV_ID0] = 1; mock_gpio_in[PIN_REV_ID1] = 0;
+    rev_id_init(); identity_init();
+    txr_head = txr_tail = 0; tx_reset();
+    emit_id(); pump();
+    CHECK(tx_has("\"ev\":\"id\""), "id line emitted");
+    CHECK(tx_has("\"fw\":\"phase8b-rp2040 v1.2.2\""), "id carries FW_VERSION v1.2.2");
+    CHECK(tx_has("\"pcb\":\"revD\"") && tx_has("\"rid\":1"), "id carries the strap-read PCB rev");
+    CHECK(tx_has("\"uid\":\"E66038B713952A31\""), "id carries the Pico unique id");
+    CHECK(tx_has("\"build\":\"unknown\"") && tx_has("\"cfg\":\"unknown\""),
+          "hostless build falls back to unknown build/cfg identity");
+    CHECK(tx_has("\"fi1\":0"), "release build advertises fi1:0 (FA-11 banner identity)");
+    txr_head = txr_tail = 0; tx_reset();
+    emit_hb(); pump();
+    CHECK(tx_has("\"rid\":1"), "hb carries the rid field every beat");
+    /* ID command re-emits on demand */
+    txr_head = txr_tail = 0; tx_reset();
+    rx_feed("ID\n"); poll_uart(); pump();
+    CHECK(tx_has("\"ev\":\"id\""), "ID command re-emits the identity line");
+
+    /* ---- Q: v1.2.2 — FI-1 grammar does NOT exist in a release build --------- */
+    printf("[Q] FI-1 compiled out of release\n");
+    CHECK(FI1_ENABLED == 0, "FI1_ENABLED defaults OFF");
+    reset_clean(); tap_init();
+    memset(mock_dir_out_calls, 0, sizeof mock_dir_out_calls);
+    memset(mock_put_calls, 0, sizeof mock_put_calls);
+    txr_head = txr_tail = 0; tx_reset();
+    rx_feed("FI1 ARM\n"); poll_uart();
+    rx_feed("FI1 DRIVE 2\n"); poll_uart(); pump();
+    CHECK(!tx_has("\"ev\":\"fi1\""), "FI1 commands produce NO response (unknown-line path)");
+    {
+        int tap_out = 0;
+        for (uint i = 0; i < N_TAPS; i++)
+            tap_out += mock_dir_out_calls[tap_pins[i]] + mock_put_calls[tap_pins[i]];
+        CHECK(tap_out == 0, "FI1 DRIVE cannot touch a tap pin in a release image");
+    }
+    CHECK(!fault_latched, "ignored FI1 lines leave no fault behind");
+
     printf("\n%d/%d checks passed%s\n", checks - fails, checks, fails ? "  <<< FAILURES" : "");
     return fails ? 1 : 0;
 }

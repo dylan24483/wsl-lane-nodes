@@ -1128,3 +1128,56 @@ are the round-1 records — cite `DRC-revD-round2-r4.rpt` and
   item — this zip's hash is listed here for that verification.
 - Rev-C sacred snapshot re-verified after the batch commit:
   `scripts/verify_revC_snapshot.py` -> 189/189 OK, 0 failures.
+
+### Firmware round-2 slice — `phase8b-rp2040 v1.2.2` (Codex R2-1 + R2-13 + R2-6, 2026-07-21; NOT flashed)
+
+Scope = the firmware half of the Codex round-2 remediation (`firmware/rp2040/` +
+the Pi-side `lane_node/rp2040_link.py` identity consumption). Full narrative in
+`firmware/rp2040/CHANGELOG.md` v1.2.2; binding asks were R2-1 (pad-level OEOVER
+enforcement + mutation test), R2-13 (epoch-aware classifier + FI-1 hook + identity
+line riding v1.2.2), R2-6 firmware half (REV_ID read + identity/build reporting).
+
+- **R2-1:** `force_pad_input_only()` (CTRL.OEOVER=DISABLE, called LAST in every
+  pin-config choke point — `gpio_init`/`gpio_set_function` rewrite the whole CTRL
+  register and clear the override; the host mock mirrors exactly that) +
+  `pad_oe_locked()` (OEOVER field == DISABLE **and** live `STATUS.OETOPAD` == 0)
+  verified at init + every hb tick on every input-contract pin: GP16-19, GP26,
+  GP6-13, GP20-21. Drift → fail-safe `pad_oe` fault. Host mutation gate =
+  `test_v12.c` section M: OEOVER→HIGH with SIO still input (the exact bypass),
+  OEOVER→NORMAL before the pad drives, rogue whole-CTRL rewrite, fast-input +
+  REV_ID variants — each must trip or the suite fails.
+- **R2-13:** `tap_classify(e, n, cur_ep)` — cross-epoch (pre-reboot) ring entries
+  excluded from cause classification (their t_ms is another boot's clock);
+  history-only via the per-entry `ep` on tape lines. Host: stale-only ring ⇒
+  `none`; a stale ARM-fall cannot steer a fresh `kick_starvation`. **FI-1 exists
+  now** (previously "not-yet-written"): `-DFI1_BUILD=ON` ⇒
+  `wsl_phase8b_rp2040_FI1.uf2` (63 KB, name-auditable), zero FI-1 code/grammar in
+  release (host-pinned, test_v12 §Q), BOOTSEL physical-jumper gate in
+  `fi1_bootsel.c` (`__no_inline_not_in_flash_func` flash-CS float read; absent ⇒
+  permanent `fi1_nojumper` re-latched past CLEAR), `FI1 ARM`→`FI1 DRIVE <0-3>`
+  (output-high per FA-7 step 2; driven pin invariant-exempt, others enforced)
+  →`FI1 RELEASE` (restore + re-verify). `test_fi1.c` 28/28.
+- **R2-6 (firmware half):** REV_ID strap read at boot on GP20/GP21 per the
+  committed generator encoding (`REV_ID[1:0]=GP21<<1|GP20`, rev-D=0b01) with
+  pull-phase floating detection (floating ⇒ "unknown"); additive `id` line
+  (fw/pcb/rid/uid/build/cfg/fi1) after boot + on the new `ID` command; hb `rid`
+  every beat; `build_id.h` regenerated EVERY build by `gen_build_id.cmake`
+  (`git describe --always --dirty` + sha256(config.h)[:8] — build-time custom
+  target, never stale-configure identity). `rp2040_link.py`: `id`/`rid` consumed
+  (`fw_identity()`/`pcb_rev_id()`, typed `fw_identity` record, ERROR log on an
+  `fi1:1` image). TXR_HEADROOM 288→320 (hb grew `rid`; budgets re-counted in
+  main.c).
+
+| Gate | Result |
+|---|---|
+| Host suites (gcc 16.1.0, `-Wall -Wextra -Werror`) | `test_main` **64/64** · `test_v11` **32/32** · `test_v12` **111/111** (+40) · `test_fi1` **28/28** (new) |
+| ARM cross-build (release) | clean → `wsl_phase8b_rp2040.uf2` **60.5 KB**; `build_id.h` = `10c3a26-dirty` / cfg `aa4ff333` (real values embedded); `.map`: `tap_ring` still `.uninitialized_data` |
+| ARM cross-build (FI-1 bench) | clean → `wsl_phase8b_rp2040_FI1.uf2` **63 KB** (separate artifact name; `build_fi1/` git-ignored) |
+| Pi-side | `rp2040_link.py` self-test **45/45**; `tests/test_rp2040_link.py` 93/93; new `tests/test_fw_identity_line.py` 6/6 |
+| Lane-node suites | pytest (collectable set) **193 passed**; all script-style standalones exit 0 |
+| First-article pack | regenerated (M6 rule): every firmware reference now **v1.2.2**, zero stale v1.2.1 |
+| Rev-C sacred snapshot | 189/189 OK before the batch; re-verified after commit (see below) |
+
+Flash status: **NOT flashed** (board #1 still runs the v1.x image noted in HANDOFF).
+Bench gates added: BOOTSEL read on silicon, REV_ID strap levels vs the real
+10k/internal-pull divider, FA-7 OEOVER/pad behavior on real pads.

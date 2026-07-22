@@ -56,6 +56,12 @@
 #include "hardware/watchdog.h"
 #include "hardware/adc.h"       /* v1.2: VCC_5V sense on GP26/ADC0            */
 #include "hardware/sync.h"      /* v1.2: IRQ-safe tap-ring snapshot/clear     */
+#include "hardware/structs/io_bank0.h"  /* v1.2.2: CTRL.OEOVER + STATUS.OETOPAD readback (R2-1) */
+#include "pico/unique_id.h"     /* v1.2.2: Pico unique board id (identity line, R2-6) */
+
+#ifdef WSL_EMBED_BUILD_ID
+#include "build_id.h"           /* generated per build: WSL_BUILD_GIT / WSL_CFG_SHA */
+#endif
 
 #include "config.h"
 
@@ -105,13 +111,15 @@ static void txr_drain(void) {
  *   emit()     — critical lines (boot/hb/flt/rp_ok/ack): may fill the ring.
  *   emit_evt() — cam/ball telemetry: only enqueued while TXR_HEADROOM bytes
  *                stay free, so an event flood can never starve hb/flt/rp_ok. */
-/* SIZE BUDGET (re-counted for v1.2, 2026-07-21): the longest single lines are
+/* SIZE BUDGET (re-counted for v1.2.2, 2026-07-21): the longest single lines are
  *   boot = ~147 B v1.1.1 worst + 36 B tap{} block            = ~183 B worst
- *   hb   = ~110 B v1.1.1 worst + ~64 B tap/rd/ep/v5* fields  = ~174 B worst
- * fmtbuf grew 160 -> 256 with them (~70 B margin). If you ADD A FIELD, re-count
- * the worst case or the whole line silently drops (visible only as txr_drops)
- * and the Pi loses it. Grow fmtbuf with the line, never trust it silently.
- * TXR_HEADROOM (288) must stay >= the worst flt+rp_ok+hb burst — re-check it too. */
+ *   hb   = ~110 B v1.1.1 worst + ~64 B tap/rd/ep/v5* + 10 B rid = ~184 B worst
+ *   id   = ~85 B fixed + fw 21 + pcb 7 + rid 3 + uid 16 + build<=32 + cfg<=16
+ *          + t 10 (build/cfg/uid are %.Ns-capped)             = ~190 B worst
+ * fmtbuf 256 (~65 B margin). If you ADD A FIELD, re-count the worst case or the
+ * whole line silently drops (visible only as txr_drops) and the Pi loses it.
+ * Grow fmtbuf with the line, never trust it silently. TXR_HEADROOM (320) must
+ * stay >= the worst flt+rp_ok+hb burst (~60+40+184 = 284) — re-check it too. */
 static char fmtbuf[256];
 static void emit_v(bool lowprio, const char *fmt, va_list ap) {
     int n = vsnprintf(fmtbuf, sizeof(fmtbuf), fmt, ap);
@@ -130,6 +138,35 @@ static void emit(const char *fmt, ...) {
 static void emit_evt(const char *fmt, ...) EMIT_FMT;
 static void emit_evt(const char *fmt, ...) {
     va_list ap; va_start(ap, fmt); emit_v(true, fmt, ap); va_end(ap);
+}
+
+/* ====================================================================== */
+/*  v1.2.2 pad-level output-enable lock (Codex R2-1)                       */
+/* ====================================================================== */
+/* The v1.2.0/v1.2.1 input-only invariant read back the SIO OE + IO-bank
+ * function registers ONLY. The RP2040's per-pin CTRL.OEOVER field bypasses
+ * both: OEOVER=ENABLE/HIGH forces the pad's output-enable ON at the pad
+ * regardless of the SIO direction, so a rogue write to one IO_BANK0 CTRL
+ * register could drive an "input-only" pin while the old readback stayed
+ * green. Fix (R2-1):
+ *   - force_pad_input_only() is the ONE lock point: CTRL.OEOVER = DISABLE.
+ *     Called LAST in each pin-config choke point (gpio_init/gpio_set_function
+ *     rewrite the whole CTRL register and would silently clear the override —
+ *     ordering is load-bearing; the host mock mirrors that clearing).
+ *   - pad_oe_locked() verifies BOTH the CTRL.OEOVER field still reads
+ *     DISABLE AND the live pad STATUS.OETOPAD bit reads 0 (the actual
+ *     output-enable reaching the pad). Checked at init and every heartbeat
+ *     tick by tap_assert_input_only() for EVERY input-contract pin (taps
+ *     GP16-19, ADC GP26, fast inputs GP6-13, REV_ID GP20-21); drift latches
+ *     a fail-safe "pad_oe" fault -> RP_OK drops.                            */
+static void force_pad_input_only(uint p) { gpio_set_oeover(p, GPIO_OVERRIDE_LOW); }
+
+static bool pad_oe_locked(uint p) {
+    uint32_t ctrl = io_bank0_hw->io[p].ctrl;
+    if (((ctrl & IO_BANK0_GPIO0_CTRL_OEOVER_BITS) >> IO_BANK0_GPIO0_CTRL_OEOVER_LSB)
+        != IO_BANK0_GPIO0_CTRL_OEOVER_VALUE_DISABLE)
+        return false;
+    return (io_bank0_hw->io[p].status & IO_BANK0_GPIO0_STATUS_OETOPAD_BITS) == 0u;
 }
 
 /* ====================================================================== */
@@ -182,6 +219,7 @@ static void init_inputs(void) {
         gpio_init(in->gpio);
         gpio_set_dir(in->gpio, GPIO_IN);
         gpio_pull_up(in->gpio);                 /* belt + suspenders with the on-board 10k */
+        force_pad_input_only(in->gpio);         /* v1.2.2 R2-1: OEOVER=DISABLE, LAST (see lock section) */
         bool asserted = (gpio_get(in->gpio) == 0);   /* active-low */
         in->stable_asserted = asserted;
         in->cand_asserted   = asserted;
@@ -385,6 +423,16 @@ static bool     rp_ok_state    = false;   /* mirrors the GP2 level */
 static uint32_t boot_ms        = 0;
 static bool     booted_done    = false;   /* latched once, BOOT_SETTLE_MS after boot */
 
+#if FI1_ENABLED
+/* FI-1 bench build state (v1.2.2, R2-13/R1.9 — compiled OUT of release; see config.h).
+ * Declared here (ahead of supervise + the tap invariant) so the refusal re-latch and
+ * the driven-pin invariant exemption can see them; the command handlers live after the
+ * tap section. */
+static bool    fi1_refused = false;   /* booted WITHOUT the physical BOOTSEL jumper      */
+static bool    fi1_armed   = false;   /* "FI1 ARM" received (required before any DRIVE)  */
+static uint8_t fi1_driving = 0;       /* bitmask of taps currently driven output-high    */
+#endif
+
 static void set_rp_ok(bool ok) {
     if (ok != rp_ok_state) {
         rp_ok_state = ok;
@@ -404,6 +452,13 @@ static void latch_fault(const char *code, const char *motor) {
 
 static void supervise(void) {
     uint32_t m = now_ms();
+
+#if FI1_ENABLED
+    /* FI-1 jumper refusal is PERMANENT for the whole power cycle: a CLEAR must
+     * not resurrect a fault-injection build that booted without its physical
+     * jumper (R1.9 "must refuse to run"). Re-latch on every pass. */
+    if (fi1_refused && !fault_latched) latch_fault("fi1_nojumper", "");
+#endif
 
     /* Max-run backstop: a guarded motor RUNNING longer than MAX_MOTION_MS -> fault. */
     if (!fault_latched) {
@@ -582,9 +637,11 @@ static void tap_init(void) {
         gpio_set_dir(p, GPIO_IN);
         gpio_disable_pulls(p);
         gpio_set_input_hysteresis_enabled(p, true);
+        force_pad_input_only(p);                   /* v1.2.2 R2-1: OEOVER=DISABLE, LAST    */
     }
     adc_init();
     adc_gpio_init(PIN_ADC_VCC5);                   /* function NULL, digital pad disabled  */
+    force_pad_input_only(PIN_ADC_VCC5);            /* R2-1 (after adc_gpio_init's CTRL write) */
     adc_select_input(ADC_VCC5_INPUT);
     /* both-edge IRQ capture (R3.3); one shared callback for all four taps */
     gpio_set_irq_enabled_with_callback(tap_pins[0], TAP_IRQ_EDGES, true, &tap_irq_handler);
@@ -592,23 +649,68 @@ static void tap_init(void) {
         gpio_set_irq_enabled(tap_pins[i], TAP_IRQ_EDGES, true);
 }
 
-/* The ENFORCED half of the invariant (R3.2): read BACK the hardware registers —
- * SIO OE via gpio_get_dir(), IO-bank FUNCSEL via gpio_get_function() — and hard-
- * fault if any tap pin is output-enabled or off the SIO function (GP26 must stay
- * on the null/ADC function). latch_fault() drops RP_OK via supervise(): a board
- * whose tap pins can drive is REFUSED motion permission. Called at the end of
- * init and every heartbeat tick (4+1 register-read pairs — negligible).         */
+/* The ENFORCED half of the invariant (R3.2 + R2-1): read BACK the hardware
+ * registers — SIO OE via gpio_get_dir(), IO-bank FUNCSEL via gpio_get_function(),
+ * AND (v1.2.2) the CTRL.OEOVER field + live pad STATUS.OETOPAD bit via
+ * pad_oe_locked() — and hard-fault if any input-contract pin can drive. The
+ * v1.2.0 SIO-only readback missed the OEOVER bypass (Codex R2-1): OEOVER can
+ * force output-enable at the pad with the SIO direction still reading input.
+ * Coverage grew from taps+ADC to EVERY input-contract pin: taps GP16-19, ADC
+ * GP26, the 8 fast inputs GP6-13, and (once read) the REV_ID straps GP20-21.
+ * latch_fault() drops RP_OK via supervise(): a board whose input pins can drive
+ * is REFUSED motion permission. Called at the end of init and every heartbeat
+ * tick (register reads only — negligible). Fault codes: "tap_dir" = direction/
+ * function drift, "pad_oe" = override/pad-level drift.                          */
+static bool rev_id_inited = false;     /* REV_ID pins join the contract set after their read */
+
 static bool tap_assert_input_only(void) {
     for (uint i = 0; i < N_TAPS; i++) {
         uint p = tap_pins[i];
+#if FI1_ENABLED
+        if (fi1_driving & (1u << i)) continue;   /* FI-1 bench drive in progress (deliberate) */
+#endif
         if (gpio_get_dir(p) != GPIO_IN || gpio_get_function(p) != GPIO_FUNC_SIO) {
             latch_fault("tap_dir", tap_names[i]);
+            return false;
+        }
+        if (!pad_oe_locked(p)) {
+            latch_fault("pad_oe", tap_names[i]);
             return false;
         }
     }
     if (gpio_get_dir(PIN_ADC_VCC5) != GPIO_IN || gpio_get_function(PIN_ADC_VCC5) != GPIO_FUNC_NULL) {
         latch_fault("tap_dir", "ADC");
         return false;
+    }
+    if (!pad_oe_locked(PIN_ADC_VCC5)) {
+        latch_fault("pad_oe", "ADC");
+        return false;
+    }
+    for (size_t i = 0; i < N_INPUTS; i++) {          /* fast inputs GP6-13 (R2-1 scope) */
+        uint p = inputs[i].gpio;
+        if (gpio_get_dir(p) != GPIO_IN || gpio_get_function(p) != GPIO_FUNC_SIO) {
+            latch_fault("tap_dir", inputs[i].id);
+            return false;
+        }
+        if (!pad_oe_locked(p)) {
+            latch_fault("pad_oe", inputs[i].id);
+            return false;
+        }
+    }
+    if (rev_id_inited) {                             /* REV_ID straps GP20-21 (R2-6) */
+        const uint rev_pins[2]  = { PIN_REV_ID0, PIN_REV_ID1 };
+        static const char *rev_names[2] = { "REV0", "REV1" };
+        for (uint i = 0; i < 2; i++) {
+            uint p = rev_pins[i];
+            if (gpio_get_dir(p) != GPIO_IN || gpio_get_function(p) != GPIO_FUNC_SIO) {
+                latch_fault("tap_dir", rev_names[i]);
+                return false;
+            }
+            if (!pad_oe_locked(p)) {
+                latch_fault("pad_oe", rev_names[i]);
+                return false;
+            }
+        }
     }
     return true;
 }
@@ -640,8 +742,14 @@ static void adc_v5_window_reset(void) { adc_v5_min = adc_v5_max = adc_v5_mv; }
  *   RPOK first -> "self_health"     (our own GP2 went low first)
  *   555  first -> "kick_starvation" if no kick edge in the TAP_KICK_STARVE_MS
  *                 before it, else "555_drop" (555 fell despite a live kick train)
- * Epochs are deliberately ignored (advisory; the Pi gets the raw ring + epochs). */
-static const char *tap_classify(const tap_edge_t *e, uint32_t n) {
+ * EPOCH-AWARE (v1.2.2, Codex R2-13): only entries from `cur_ep` (the epoch the
+ * dump snapshot was taken in) participate — pre-reboot edges carry an older
+ * epoch, their t_ms is from a DIFFERENT boot's ms clock (cross-epoch time
+ * arithmetic is meaningless), and v1.2.0's epoch-blind scan let a stale
+ * pre-reboot 555 fall classify a fresh, empty-this-epoch ring. Cross-epoch
+ * entries remain in the dump as history (tape lines carry per-entry epochs);
+ * they just can never influence a fresh cause code.                            */
+static const char *tap_classify(const tap_edge_t *e, uint32_t n, uint16_t cur_ep) {
     bool     have555 = false, haveArm = false, haveRpok = false, haveKick = false;
     uint32_t t555 = 0, tArm = 0, tRpok = 0, tKick = 0;
     /* kick state AS OF the 555 fall (entries are chronological, so when the 555
@@ -650,6 +758,7 @@ static const char *tap_classify(const tap_edge_t *e, uint32_t n) {
     bool     haveKickAt555 = false;
     uint32_t tKickAt555 = 0;
     for (uint32_t k = 0; k < n; k++) {
+        if (e[k].epoch != cur_ep) continue;         /* R2-13: stale pre-reboot edge — history only */
         if (e[k].pin_idx == TAP_KICK) { haveKick = true; tKick = e[k].t_ms; continue; }
         if (e[k].level != 0) continue;              /* only falling edges classify */
         switch (e[k].pin_idx) {
@@ -699,7 +808,7 @@ static void tap_dump_start(void) {
     dump_n = n; dump_pos = 0; dump_end_pending = true;
     emit("{\"ev\":\"tapdump\",\"n\":%lu,\"ep\":%lu,\"br\":%u,\"mut\":%u,\"cause\":\"%s\",\"t\":%lu}\n",
          (unsigned long)dump_n, (unsigned long)dump_ep, tap_boot_reason, tap_irq_muted,
-         tap_classify(dump_buf, dump_n), (unsigned long)now_ms());
+         tap_classify(dump_buf, dump_n, (uint16_t)dump_ep), (unsigned long)now_ms());
 }
 
 /* Explicit clear (the ONLY thing that empties the ring — R3.3). Keeps magic+epoch. */
@@ -770,8 +879,122 @@ static void tap_hb_tick(void) {
 }
 
 /* ====================================================================== */
+/*  v1.2.2 REV_ID strap read + identity line (Codex R2-6)                  */
+/* ====================================================================== */
+/* Pins/encoding: config.h REV_ID block (source: generate_kicad_netlist_revD.py
+ * block_j16_protection_and_revid()). Read ONCE at init with the pull-phase
+ * floating detector: a strapped pin (10k to a rail) reads the same under the
+ * internal pull-down and pull-up phases; a floating pin (rev-B/rev-C board —
+ * no straps fitted) follows the pull and the phases disagree -> the code is
+ * REV_ID_FLOATING and the board reports "unknown", never assumed rev-D. After
+ * the read the pins are left input-only, pulls off, pad-OE locked, and join
+ * the tap_assert_input_only() contract set (rev_id_inited).                  */
+static uint8_t pcb_rev_code = REV_ID_FLOATING;   /* 0-3 strap code, 0xFF = floating/unread */
+
+static const char *pcb_rev_name(void) {
+    switch (pcb_rev_code) {
+        case REV_ID_REVD: return "revD";
+        case 0x0u:        return "legacy";    /* reserved/no-strap code — NOT rev-D */
+        case 0x2u:
+        case 0x3u:        return "future";
+        default:          return "unknown";   /* REV_ID_FLOATING / never read */
+    }
+}
+
+static void rev_id_init(void) {
+    const uint pins[2] = { PIN_REV_ID0, PIN_REV_ID1 };   /* bit i = pins[i] (GP21<<1|GP20) */
+    uint8_t v_pd = 0, v_pu = 0;
+    for (int i = 0; i < 2; i++) { gpio_init(pins[i]); gpio_set_dir(pins[i], GPIO_IN); }
+    for (int i = 0; i < 2; i++) gpio_pull_down(pins[i]);
+    sleep_us(REV_ID_SETTLE_US);
+    for (int i = 0; i < 2; i++) if (gpio_get(pins[i])) v_pd |= (uint8_t)(1u << i);
+    for (int i = 0; i < 2; i++) gpio_pull_up(pins[i]);
+    sleep_us(REV_ID_SETTLE_US);
+    for (int i = 0; i < 2; i++) if (gpio_get(pins[i])) v_pu |= (uint8_t)(1u << i);
+    for (int i = 0; i < 2; i++) { gpio_disable_pulls(pins[i]); force_pad_input_only(pins[i]); }
+    pcb_rev_code = (v_pd == v_pu) ? v_pd : REV_ID_FLOATING;
+    rev_id_inited = true;                    /* pins now in the invariant contract set */
+}
+
+/* Pico unique board id, captured once as a hex string for the id line. */
+static char fw_uid[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1] = "";
+static void identity_init(void) { pico_get_unique_board_id_string(fw_uid, sizeof fw_uid); }
+
+/* The additive "id" line (R2-6): PCB revision (strap-read), Pico unique id,
+ * build git-describe + config.h hash (build_id.h, "unknown" on hostless
+ * builds), and the FI-1 posture (FA-11 step 3: an FI-1 image must be
+ * banner-identifiable). Emitted right after the boot line and on "ID". */
+static void emit_id(void) {
+    emit("{\"ev\":\"id\",\"fw\":\"%s\",\"pcb\":\"%s\",\"rid\":%u,\"uid\":\"%.16s\","
+         "\"build\":\"%.32s\",\"cfg\":\"%.16s\",\"fi1\":%d,\"t\":%lu}\n",
+         FW_VERSION, pcb_rev_name(), (unsigned)pcb_rev_code, fw_uid,
+         WSL_BUILD_GIT, WSL_CFG_SHA, FI1_ENABLED ? 1 : 0, (unsigned long)now_ms());
+}
+
+#if FI1_ENABLED
+/* ====================================================================== */
+/*  FI-1 bench fault-injection (v1.2.2, R2-13 / R1.9) — NOT in release     */
+/* ====================================================================== */
+/* Everything here is compiled OUT unless -DFI1_ENABLED=1 (config.h has the
+ * full gate story). fi1_jumper_present() is the physical-jumper check —
+ * implemented for the target in fi1_bootsel.c (BOOTSEL button read); the
+ * host test provides its own mock definition. */
+bool fi1_jumper_present(void);
+
+static void fi1_init(void) {
+    if (!fi1_jumper_present()) {
+        fi1_refused = true;
+        latch_fault("fi1_nojumper", "");     /* re-latched forever by supervise() */
+    }
+}
+
+static void fi1_release_all(void) {
+    for (uint i = 0; i < N_TAPS; i++) {
+        if (!(fi1_driving & (1u << i))) continue;
+        uint p = tap_pins[i];
+        gpio_init(p);                        /* back to SIO, input, output disabled */
+        gpio_set_dir(p, GPIO_IN);
+        gpio_disable_pulls(p);
+        gpio_set_input_hysteresis_enabled(p, true);
+        force_pad_input_only(p);
+        gpio_set_irq_enabled(p, TAP_IRQ_EDGES, true);
+    }
+    fi1_driving = 0;
+}
+
+static void fi1_cmd(const char *s) {
+    if (fi1_refused) {                       /* jumper absent: every FI1 cmd refused */
+        emit("{\"ev\":\"fi1\",\"op\":\"refused\",\"t\":%lu}\n", (unsigned long)now_ms());
+        return;
+    }
+    if (strcmp(s, "ARM") == 0) {
+        fi1_armed = true;
+        emit("{\"ev\":\"fi1\",\"op\":\"armed\",\"t\":%lu}\n", (unsigned long)now_ms());
+    } else if (strncmp(s, "DRIVE ", 6) == 0 && s[6] >= '0' && s[6] <= '3' && s[7] == '\0') {
+        if (!fi1_armed) return;              /* DRIVE before ARM is ignored */
+        uint idx = (uint)(s[6] - '0');
+        uint p = tap_pins[idx];
+        gpio_set_irq_enabled(p, TAP_IRQ_EDGES, false);   /* no self-edge storm into the ring */
+        gpio_set_oeover(p, GPIO_OVERRIDE_NORMAL);        /* unlock the pad OE (deliberate)   */
+        gpio_set_dir(p, GPIO_OUT);
+        gpio_put(p, 1);                                  /* FA-7 step 2: output-HIGH         */
+        fi1_driving |= (uint8_t)(1u << idx);
+        emit("{\"ev\":\"fi1\",\"op\":\"drive\",\"p\":%u,\"t\":%lu}\n",
+             idx, (unsigned long)now_ms());
+    } else if (strcmp(s, "RELEASE") == 0) {
+        fi1_release_all();
+        fi1_armed = false;
+        bool ok = tap_assert_input_only();   /* re-verify the restored contract */
+        emit("{\"ev\":\"fi1\",\"op\":\"released\",\"ok\":%d,\"t\":%lu}\n",
+             ok ? 1 : 0, (unsigned long)now_ms());
+    }
+    /* unknown FI1 sub-commands are ignored */
+}
+#endif /* FI1_ENABLED */
+
+/* ====================================================================== */
 /*  Pi -> RP2040 command line protocol                                    */
-/*    RUN <m>   STOP <m|*>   CLEAR   PING   TAPDUMP   TAPCLR (v1.2)        */
+/*    RUN <m>  STOP <m|*>  CLEAR  PING  TAPDUMP  TAPCLR (v1.2)  ID (v1.2.2)*/
 /* ====================================================================== */
 static void emit_hb(void);
 
@@ -806,6 +1029,14 @@ static void handle_line(char *s) {
         /* v1.2: the ONLY thing that empties the tap ring (reboot never does) */
         tap_ring_clear();
         emit("{\"ev\":\"ack\",\"cmd\":\"TAPCLR\",\"t\":%lu}\n", (unsigned long)now_ms());
+    } else if (strcmp(s, "ID") == 0) {
+        /* v1.2.2 (R2-6): re-emit the identity line on demand */
+        emit_id();
+#if FI1_ENABLED
+    } else if (strncmp(s, "FI1 ", 4) == 0) {
+        /* v1.2.2 bench build ONLY (R1.9): a release image has no FI1 grammar */
+        fi1_cmd(s + 4);
+#endif
     }
     /* unknown lines are ignored (forward-compatible) */
 }
@@ -860,16 +1091,18 @@ static void emit_hb(void) {
     /* v1.2 additive fields (R3.3/R3.4 — older Pi parsers ignore unknown keys):
      * tap = observed-net levels (bit 0..3 = 555,KICK,ARM,RPOK — POST-inversion),
      * rd = tap-ring depth, ep = ring epoch, v5/v5n/v5x = VCC_5V latest/min/max mV
-     * over the current hb window. Re-count the fmtbuf SIZE BUDGET if you add more. */
+     * over the current hb window. v1.2.2 (R2-6): rid = the REV_ID strap code
+     * (0-3; 255 = floating/unread — a rev-D image on a strapless board is
+     * visible every beat). Re-count the fmtbuf SIZE BUDGET if you add more. */
     emit("{\"ev\":\"hb\",\"ok\":%d,\"flt\":\"%s\",\"up\":%lu,\"drp\":%lu,\"in\":%u,\"run\":%u,"
-         "\"tap\":%u,\"rd\":%lu,\"ep\":%lu,\"v5\":%u,\"v5n\":%u,\"v5x\":%u}\n",
+         "\"tap\":%u,\"rd\":%lu,\"ep\":%lu,\"v5\":%u,\"v5n\":%u,\"v5x\":%u,\"rid\":%u}\n",
          rp_ok_state ? 1 : 0,
          fault_latched ? fault_code : "",
          (unsigned long)now_ms(),
          (unsigned long)txr_drops,
          input_mask(), run_mask(),
          tap_mask(), (unsigned long)tap_ring.count, (unsigned long)tap_ring.epoch,
-         adc_v5_mv, adc_v5_min, adc_v5_max);
+         adc_v5_mv, adc_v5_min, adc_v5_max, (unsigned)pcb_rev_code);
 }
 
 /* v1.1 posture string for the boot event: "off" when the per-cam enable is 0, else
@@ -902,6 +1135,8 @@ int main(void) {
     bool wdt_reboot = watchdog_caused_reboot();
     tap_boot_init(wdt_reboot);
     tap_init();
+    rev_id_init();              /* v1.2.2 R2-6: strap read; pins then join the contract set */
+    identity_init();            /* v1.2.2 R2-6: capture the Pico unique id                  */
     tap_assert_input_only();    /* enforced from the first moment (latches on drift) */
 
     /* uart0 to the Pi (protocol transport; NOT stdio). */
@@ -914,6 +1149,9 @@ int main(void) {
 
     init_inputs();
     init_camstops();        /* v1.1: resolve cam-stop descriptor motor pointers + disarm */
+#if FI1_ENABLED
+    fi1_init();             /* v1.2.2 bench build: physical-jumper gate (permanent refusal) */
+#endif
     boot_ms = now_ms();
 
     /* maxrun_ms: the Pi must verify its MAX_MOTION_S does not exceed this at
@@ -937,6 +1175,7 @@ int main(void) {
          sa_p, ta1_p, INTERLOCK_ECHO_ENABLED ? 1 : 0, MOTION_NO_RUN_ENABLED ? 1 : 0,
          (unsigned long)tap_ring.epoch, tap_ring_preserved ? 1 : 0,
          (unsigned long)tap_ring.count);
+    emit_id();              /* v1.2.2 R2-6: identity line follows the boot line */
 
     /* RP2040 hardware watchdog: if the loop ever hangs, the chip resets -> GP2 goes
      * Hi-Z -> external 100k pulldown holds the rail DEAD -> motion stops. */

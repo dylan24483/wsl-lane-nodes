@@ -4,6 +4,74 @@ All entries newest-first. "Flashed" status is tracked per entry — a written ve
 NOT a deployed version. Line-format changes are ADDITIVE-ONLY by policy: the Pi-side
 parser (`lane_node/rp2040_link.py`) ignores unknown JSON keys and unknown `ev` kinds.
 
+## v1.2.2 — 2026-07-21 — Codex round-2 R2-1 + R2-13 (pad-OE lock, epoch classifier, FI-1, identity). NOT FLASHED.
+
+Scope = the round-2 firmware slice of the rev-D remediation (Codex re-audit 2026-07-21 PM).
+All line-format changes ADDITIVE; `rp2040_link.py` gains the matching id/rid consumption.
+
+- **R2-1 — pad-level output-enable lock.** The v1.2.0/v1.2.1 input-only invariant read
+  back the SIO direction + IO-bank function ONLY; the RP2040's per-pin `CTRL.OEOVER`
+  field bypasses both (OEOVER=ENABLE/HIGH forces output-enable AT THE PAD with the SIO
+  direction still reading input). Now: `force_pad_input_only()` (the ONE lock point,
+  `gpio_set_oeover(OEOVER=DISABLE)`, called LAST in every pin-config choke point because
+  `gpio_init`/`gpio_set_function` rewrite the whole CTRL register and silently clear the
+  override — the mock mirrors that clearing) + `pad_oe_locked()` verifying BOTH the
+  OEOVER field still reads DISABLE AND the live pad `STATUS.OETOPAD` bit reads 0, at init
+  and every heartbeat tick. Coverage widened from taps+ADC to EVERY input-contract pin:
+  GP16-19, GP26, fast inputs GP6-13, REV_ID GP20-21. Drift latches a fail-safe `pad_oe`
+  fault (RP_OK drops). The host direction gate (`test_v12.c` section M) got the required
+  **OEOVER mutation cases**: override forced HIGH (pad drives, SIO still input — the
+  exact blind spot), override merely returned to NORMAL (must trip BEFORE the pad
+  drives), a rogue whole-CTRL rewrite, and the same on a fast input + REV_ID pin.
+- **R2-13 — epoch-aware rail-drop classifier.** `tap_classify()` now takes the dump's
+  epoch and EXCLUDES cross-epoch (pre-reboot) ring entries from classification — their
+  timestamps are from a different boot's ms clock, and the epoch-blind v1.2.x scan let a
+  stale pre-reboot 555 fall classify (or steer) a fresh diagnosis. Stale entries remain
+  in the dump as history (`tape` lines carry per-entry epochs; the Pi's own staleness
+  judgment is unchanged). Host tests pin both directions: stale-only ring ⇒ `none`;
+  stale ARM-fall cannot steer a fresh-epoch `kick_starvation`.
+- **R2-13/R1.9 — FI-1 bench fault-injection hook (⛔ NEVER a release artifact).**
+  Compile-flag gated: `FI1_ENABLED` default 0 ⇒ ZERO FI-1 code in a release image (the
+  `FI1` grammar does not exist; pinned by test_v12 section Q). The bench image (CMake
+  `-DFI1_BUILD=ON`) builds to a DIFFERENT artifact name (`wsl_phase8b_rp2040_FI1.uf2`),
+  compiles `fi1_bootsel.c` (BOOTSEL physical-jumper gate: booted without the jumper ⇒
+  PERMANENT `fi1_nojumper` fault re-latched past CLEAR, all FI1 commands answered
+  `refused`), and requires `FI1 ARM` before `FI1 DRIVE <0-3>` drives one tap output-high
+  for the FA-7 unidirectionality proof (`FI1 RELEASE` restores + re-verifies the locked
+  contract). Driven pin is invariant-exempt while driving; all other pins stay enforced.
+  New host binary `test/test_fi1.c` (28/28) proves all three gates.
+- **R2-6 — identity line.** REV_ID strap read on GP20/GP21 (encoding per the committed
+  netlist generator: `REV_ID[1:0] = GP21<<1|GP20`, rev-D = 0b01) with a pull-phase
+  floating detector — internal pull-down read, then pull-up read; a 10k strap wins both,
+  a floating (rev-B/rev-C) pin follows the pull ⇒ reads differ ⇒ `REV_ID_FLOATING`
+  reported "unknown", never assumed rev-D; pulls disabled after the read (zero static
+  current) and the pins join the invariant contract set. New additive
+  `{"ev":"id",fw,pcb,rid,uid,build,cfg,fi1,t}` line (after boot + on the new `ID`
+  command): strap-read PCB rev, Pico unique id (`pico_unique_id`), build identity
+  (`build_id.h`, regenerated EVERY build by `gen_build_id.cmake`: `git describe
+  --always --dirty` + sha256(config.h)[:8]; host/fallback = "unknown"), FI-1 posture.
+  hb gains `rid` every beat. Pi-side: `rp2040_link.py` consumes both (stored +
+  `fw_identity()`/`pcb_rev_id()` accessors + typed `fw_identity` diag record; an
+  `fi1:1` image is logged as an ERROR — never allowed at a lane).
+- **Capacity re-budget:** hb worst ~184 B (rid), id worst ~190 B (capped `%.Ns` fields);
+  fmtbuf 256 holds; `TXR_HEADROOM` 288 → 320 (worst flt+rp_ok+hb burst ~284 B).
+- **Safety-critical paths untouched:** the only new fault sources are `pad_oe`
+  (fail-safe direction) and the FI-1-build-only `fi1_nojumper`. RP_OK-LOW-first boot
+  ordering retained; REV_ID read happens before the boot line so identity is coherent
+  from the first emission.
+- **Verification:** host tests **64/64** (`test_main`) + **32/32** (`test_v11`) +
+  **111/111** (`test_v12`, +40 for R2-1/R2-13/R2-6) + **28/28** (`test_fi1`, new), all
+  0-warning under `-Wall -Wextra -Werror` (gcc 16.1.0). Clean ARM cross-builds:
+  release `.uf2` = 60.5 KB (build_id.h verified: real git hash + config sha embedded;
+  `.map` confirms `tap_ring` still in `.uninitialized_data`) and FI-1 bench
+  `wsl_phase8b_rp2040_FI1.uf2` = 63 KB. Pi-side: `rp2040_link.py` self-test **45/45**,
+  `tests/test_rp2040_link.py` 93/93, new `tests/test_fw_identity_line.py` (6), full
+  lane-node pytest suite green.
+- **Bench gates (host tests CANNOT prove):** BOOTSEL read on real silicon (flash-CS
+  float window), REV_ID strap levels vs the real 10k/internal-pull divider, OEOVER
+  behavior on real pads (FA-7 step 2 measures the nets), and everything already listed
+  under v1.2.0.
+
 ## v1.2.1 — 2026-07-21 — TAP_KICK_STARVE_MS corrected 300 → 2000 ms. NOT FLASHED.
 
 Advisory-classifier fix (post-remediation review finding vs the C2 work; no safety path

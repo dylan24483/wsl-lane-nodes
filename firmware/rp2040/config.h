@@ -17,7 +17,26 @@
 #ifndef WSL_PHASE8B_RP2040_CONFIG_H
 #define WSL_PHASE8B_RP2040_CONFIG_H
 
-/* v1.2.1 (2026-07-21): TAP_KICK_STARVE_MS 300 -> 2000 ms — the 300 value was sized
+/* v1.2.2 (2026-07-21, Codex round-2 remediation R2-1 + R2-13 — NOT flashed):
+ *   - PAD-LEVEL output lock (R2-1): CTRL.OEOVER is forced to DISABLE on every
+ *     input-contract pin (taps GP16-19, ADC GP26, fast inputs GP6-13, REV_ID
+ *     GP20-21) and the invariant readback now ALSO verifies the OEOVER field +
+ *     the pad STATUS.OETOPAD bit — the v1.2.0/v1.2.1 check read only the SIO
+ *     direction, which an OEOVER override bypasses entirely at the pad.
+ *   - Epoch-aware rail-drop classifier (R2-13): tap_classify() now excludes
+ *     pre-reboot (cross-epoch) ring entries — they stay in the dump as
+ *     history, but can never influence a fresh cause code.
+ *   - FI-1 bench fault-injection hook (R2-13/R1.9): compile-flag gated
+ *     (FI1_ENABLED, default OFF = zero code compiled in), BOOTSEL-jumper +
+ *     arm-command gated at runtime, drives GP16-19 output-high on command for
+ *     the FA-7 unidirectionality proof. NEVER a release artifact.
+ *   - Identity line (R2-6): REV_ID strap read (GP20/GP21), Pico unique ID,
+ *     build git-describe + config.h hash in a new additive "id" line + hb
+ *     "rid" field.
+ * ALL ADDITIVE line formats; safety paths unchanged except the new fail-safe
+ * pad_oe fault direction. See CHANGELOG.md.
+ *
+ * v1.2.1 (2026-07-21): TAP_KICK_STARVE_MS 300 -> 2000 ms — the 300 value was sized
  * against HB_INTERVAL_MS (the RP2040 heartbeat) mistaken for the Pi kick cadence; the
  * REAL Pi kick is 1 Hz, so 300 ms misclassified ~65 % of genuine 555 drops as
  * kick_starvation. Advisory-classifier-only change; no safety path touched.
@@ -30,7 +49,20 @@
  * on GP26. ALL ADDITIVE: v1.1 line formats unchanged, v1.1 enforcement flags still
  * DEFAULT OFF — a default build adds no NEW enforcement beyond the tap direction
  * invariant (which can only ever latch_fault, i.e. fail-safe). See CHANGELOG.md. */
-#define FW_VERSION "phase8b-rp2040 v1.2.1"
+#define FW_VERSION "phase8b-rp2040 v1.2.2"
+
+/* ---- v1.2.2 build identity (R2-6) ------------------------------------------------------- */
+/* The REAL values are generated at BUILD time (CMake gen_build_id.cmake writes build_id.h:
+ * WSL_BUILD_GIT = `git describe --always --dirty`, WSL_CFG_SHA = sha256(config.h)[:8] —
+ * regenerated every build, so a stale configure can never embed a stale identity). These
+ * fallbacks exist for the host tests and any build without the generator. Reported in the
+ * "id" line; a lane whose id line says build:"unknown" is running an untraceable image.   */
+#ifndef WSL_BUILD_GIT
+#define WSL_BUILD_GIT "unknown"
+#endif
+#ifndef WSL_CFG_SHA
+#define WSL_CFG_SHA "unknown"
+#endif
 
 /* ---- UART (uart0) link to the Pi -------------------------------------------------------- */
 #define UART_BAUD     115200
@@ -74,6 +106,24 @@
 #define PIN_TAP_RPOK   19   /* GP19, Pico pin 25 : TAP_RP2040_OK   (INVERTED; cross-checked vs GP2) */
 #define PIN_ADC_VCC5   26   /* GP26/ADC0, Pico pin 31 : ADC_VCC5_SENSE = VCC_5V/2 (10k/10k divider) */
 #define ADC_VCC5_INPUT  0   /* ADC mux input for GP26 */
+
+/* ---- v1.2.2 REV_ID board-revision straps (Codex R2-6) ----------------------------------- */
+/* AUTHORITATIVE SOURCE: generate_kicad_netlist_revD.py block_j16_protection_and_revid()
+ * (committed 2026-07-21, dc56964). GP20 (Pico pin 26) = REV_ID0, 10k strap; GP21 (Pico
+ * pin 27) = REV_ID1, 10k strap. ENCODING: REV_ID[1:0] = GP21<<1 | GP20.
+ *   rev-D board: REV_ID0 strapped to VCC_3V3 (reads 1), REV_ID1 to GND (reads 0) = 0b01.
+ *   0b00 = reserved/legacy; 0b10/0b11 = future revisions.
+ * On a rev-B/rev-C board these pins are UNCONNECTED (float). Detection: read once under
+ * internal pull-DOWN, once under internal pull-UP — a 10k external strap wins both times
+ * (the RP2040 internal pulls are ~50-80k), a floating pin follows the pull, so differing
+ * reads = floating = REV_ID_FLOATING (reported "unknown", NEVER assumed rev-D). After the
+ * read, pulls are disabled (zero static strap current) and the pins join the pad-OE
+ * locked input-contract set.                                                              */
+#define PIN_REV_ID0      20   /* GP20, Pico pin 26 : REV_ID bit 0 (rev-D: 10k to VCC_3V3) */
+#define PIN_REV_ID1      21   /* GP21, Pico pin 27 : REV_ID bit 1 (rev-D: 10k to GND)     */
+#define REV_ID_REVD      0x1u /* the code THIS firmware expects on a rev-D board          */
+#define REV_ID_FLOATING  0xFFu/* sentinel: pull-phase reads disagreed (no straps fitted)  */
+#define REV_ID_SETTLE_US 50u  /* pull -> read settle (10k/50k node settles in ~us; ample) */
 
 /* VCC_5V sampling cadence (R3.4): 10 Hz; the heartbeat carries latest + min/max over the
  * hb interval so 250 ms sag events (6-coil inrush) stay visible. mV conversion assumes
@@ -153,10 +203,11 @@
 /* TX ring bytes reserved for the critical lines (boot/hb/flt/rp_ok/ack): cam/ball telemetry    */
 /* is only enqueued while at least this much stays free, so an input flood can never starve the */
 /* heartbeat or a fault report. v1.2: raised 128 -> 288 (and TXR_SZ 512 -> 1024 in main.c)      */
-/* because the hb line grew tap/ring/ADC fields — 288 covers the worst flt+rp_ok+hb burst       */
-/* (~60+40+170 B) that the old 128 only partially reserved for. Tap-ring dump lines use an      */
-/* EXPLICIT free-space check on top of this headroom, so a dump can never starve hb/flt either. */
-#define TXR_HEADROOM        288u
+/* because the hb line grew tap/ring/ADC fields. v1.2.2: 288 -> 320 — hb grew the "rid" field   */
+/* (worst hb now ~184 B; worst flt+rp_ok+hb burst ~60+40+184 = 284 B — 320 restores margin).    */
+/* Tap-ring dump lines use an EXPLICIT free-space check on top of this headroom, so a dump can  */
+/* never starve hb/flt either.                                                                  */
+#define TXR_HEADROOM        320u
 /* Chatter guard: more than chatter_max DEBOUNCED edges from one input inside ANY window of     */
 /* this length latches a "chatter" fault naming the input (fail-safe: drops RP_OK). v1.1.1:     */
 /* implemented as a TRUE SLIDING window (per-input edge-timestamp ring in main.c) — the old     */
@@ -265,6 +316,23 @@
 #endif
 /* A trip edge whose motor IS the cam's own guarded motor while THAT motor is running is a       */
 /* normal stop, never "uncommanded". Only a trip with no motion motor running at all counts.     */
+
+/* ---- FI-1 bench fault-injection build (v1.2.2, Codex R2-13 / remediation spec R1.9) ---- */
+/* ⛔ NEVER a release artifact. DEFAULT 0 = ZERO FI-1 code is compiled in: the FI1 command    */
+/* grammar does not exist, the release image physically cannot drive a tap pin, and the host  */
+/* direction-invariant gate (test_v12.c section B) enforces that. Build with -DFI1_ENABLED=1  */
+/* (CMake -DFI1_BUILD=ON — separate artifact name wsl_phase8b_rp2040_FI1.uf2) ONLY for the    */
+/* first-article FA-7 unidirectionality proof (drive each GP16-19 output-high in turn while   */
+/* metering the observed nets). Runtime gates on top of the compile gate:                     */
+/*   1. physical jumper: the Pico BOOTSEL button/jumper must be HELD at boot (R1.9: "must     */
+/*      refuse to run unless a physical BOOTSEL-era jumper/flag is set") — absent, the build  */
+/*      latches a PERMANENT fi1_nojumper fault (re-latched past CLEAR) and ignores FI1 cmds;  */
+/*   2. arm command: "FI1 ARM" must precede any "FI1 DRIVE <0-3>"; "FI1 RELEASE" restores     */
+/*      every driven pin to the locked input-only contract and re-verifies it.               */
+/* The id line carries "fi1":1 so an FI-1 image is banner-identifiable (FA-11 step 3).        */
+#ifndef FI1_ENABLED
+#define FI1_ENABLED 0
+#endif
 
 /* ---- Debug ----------------------------------------------------------------------------- */
 /* When 1, event lines are mirrored to USB-CDC stdio for bench debugging (the protocol still */

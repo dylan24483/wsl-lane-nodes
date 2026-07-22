@@ -30,21 +30,62 @@ gpio_irq_callback_t mock_irq_cb = 0;
 uint16_t mock_adc_raw = 0;
 int      mock_adc_selected = -1;
 int      mock_adc_inited = 0;
+/* v1.2.2 */
+int      mock_gpio_oeover[40];          /* GPIO_OVERRIDE_NORMAL (0) by default */
+int      mock_gpio_floating[40];
+int      mock_gpio_pull[40];
+char     mock_unique_id[17] = "E66038B713952A31";
+mock_io_bank0_t mock_iobank0;
 
 /* ---- mock bodies --------------------------------------------------------- */
 /* v1.2: direction + function are now RECORDED (the C2 direction-invariant test
  * asserts the tap pins never see an output call), matching real-SDK semantics:
- * gpio_init() = SIO function, input, output disabled.                          */
-void gpio_init(uint pin)                 { mock_gpio_dir[pin] = GPIO_IN; mock_gpio_funcsel[pin] = GPIO_FUNC_SIO; }
-void gpio_set_dir(uint pin, bool out)    { mock_gpio_dir[pin] = out ? 1 : 0; if (out) mock_dir_out_calls[pin]++; }
-void gpio_pull_up(uint pin)              { (void)pin; }
-bool gpio_get(uint pin)                  { return mock_gpio_in[pin] != 0; }
+ * gpio_init() = SIO function, input, output disabled.
+ * v1.2.2 (R2-1): the mock now maintains the IO_BANK0 CTRL.OEOVER field + the
+ * live STATUS.OETOPAD bit with real-SDK semantics — in particular, ANY whole-
+ * CTRL rewrite (gpio_init / gpio_set_function / adc_gpio_init) clears OEOVER
+ * back to NORMAL, so a choke point that locks the pad BEFORE its last CTRL
+ * write is caught by the tests exactly as it would be on silicon.              */
+static void mock_recompute_oe(uint pin) {
+    int oe;
+    switch (mock_gpio_oeover[pin]) {
+        case GPIO_OVERRIDE_LOW:    oe = 0; break;
+        case GPIO_OVERRIDE_HIGH:   oe = 1; break;
+        case GPIO_OVERRIDE_INVERT: oe = !(mock_gpio_funcsel[pin] == GPIO_FUNC_SIO
+                                          && mock_gpio_dir[pin] == 1); break;
+        default:                   oe = (mock_gpio_funcsel[pin] == GPIO_FUNC_SIO
+                                          && mock_gpio_dir[pin] == 1); break;
+    }
+    mock_iobank0.io[pin].ctrl =
+        (mock_iobank0.io[pin].ctrl & ~IO_BANK0_GPIO0_CTRL_OEOVER_BITS)
+        | ((uint32_t)mock_gpio_oeover[pin] << IO_BANK0_GPIO0_CTRL_OEOVER_LSB);
+    if (oe) mock_iobank0.io[pin].status |=  IO_BANK0_GPIO0_STATUS_OETOPAD_BITS;
+    else    mock_iobank0.io[pin].status &= ~IO_BANK0_GPIO0_STATUS_OETOPAD_BITS;
+}
+void gpio_init(uint pin)                 { mock_gpio_dir[pin] = GPIO_IN; mock_gpio_funcsel[pin] = GPIO_FUNC_SIO;
+                                           mock_gpio_oeover[pin] = GPIO_OVERRIDE_NORMAL;  /* whole-CTRL write */
+                                           mock_gpio_pull[pin] = 0; mock_recompute_oe(pin); }
+void gpio_set_dir(uint pin, bool out)    { mock_gpio_dir[pin] = out ? 1 : 0; if (out) mock_dir_out_calls[pin]++;
+                                           mock_recompute_oe(pin); }
+void gpio_pull_up(uint pin)              { mock_gpio_pull[pin] = 1; }
+void gpio_pull_down(uint pin)            { mock_gpio_pull[pin] = -1; }
+bool gpio_get(uint pin)                  { if (mock_gpio_floating[pin]) return mock_gpio_pull[pin] > 0;
+                                           return mock_gpio_in[pin] != 0; }
 void gpio_put(uint pin, bool v)          { mock_gpio_out[pin] = v ? 1 : 0; mock_put_calls[pin]++; }
-void gpio_set_function(uint pin, int fn) { mock_gpio_funcsel[pin] = fn; }
+void gpio_set_function(uint pin, int fn) { mock_gpio_funcsel[pin] = fn;
+                                           mock_gpio_oeover[pin] = GPIO_OVERRIDE_NORMAL;  /* whole-CTRL write */
+                                           mock_recompute_oe(pin); }
+void gpio_set_oeover(uint pin, uint value) { mock_gpio_oeover[pin] = (int)value; mock_recompute_oe(pin); }
+void sleep_us(uint64_t us)               { mock_us += us; }
+void pico_get_unique_board_id_string(char *buf, uint len) {
+    uint i = 0;
+    for (; i + 1u < len && mock_unique_id[i]; i++) buf[i] = mock_unique_id[i];
+    buf[i] = 0;
+}
 /* v1.2 tap surface */
 uint gpio_get_dir(uint pin)              { return (uint)mock_gpio_dir[pin]; }
 uint gpio_get_function(uint pin)         { return (uint)mock_gpio_funcsel[pin]; }
-void gpio_disable_pulls(uint pin)        { (void)pin; }
+void gpio_disable_pulls(uint pin)        { mock_gpio_pull[pin] = 0; }
 void gpio_set_input_hysteresis_enabled(uint pin, bool enabled) { (void)pin; (void)enabled; }
 void gpio_set_irq_enabled(uint pin, uint32_t events, bool enabled) {
     mock_irq_mask[pin] = enabled ? events : 0u;
@@ -55,7 +96,8 @@ void gpio_set_irq_enabled_with_callback(uint pin, uint32_t events, bool enabled,
     gpio_set_irq_enabled(pin, events, enabled);
 }
 void     adc_init(void)                  { mock_adc_inited = 1; }
-void     adc_gpio_init(uint pin)         { mock_gpio_funcsel[pin] = GPIO_FUNC_NULL; mock_gpio_dir[pin] = GPIO_IN; }
+void     adc_gpio_init(uint pin)         { mock_gpio_dir[pin] = GPIO_IN;
+                                           gpio_set_function(pin, GPIO_FUNC_NULL); /* whole-CTRL write (v1.2.2) */ }
 void     adc_select_input(uint input)    { mock_adc_selected = (int)input; }
 uint16_t adc_read(void)                  { return mock_adc_raw; }
 uint32_t save_and_disable_interrupts(void) { return 0; }
