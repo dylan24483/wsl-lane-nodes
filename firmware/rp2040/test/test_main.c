@@ -42,7 +42,7 @@ int main(void) {
 
     /* ---- B: debounce + edge detection ---------------------------------- */
     printf("[B] debounce / edges\n");
-    all_idle(); mock_us = 0; init_inputs(); tx_reset(); txr_head = txr_tail = 0;
+    all_idle(); mock_us = 0; tap_init(); init_inputs(); tx_reset(); txr_head = txr_tail = 0;
     mock_gpio_in[PIN_SA] = 0;                      /* assert */
     scan_inputs(); pump();
     CHECK(!tx_has("\"id\":\"SA\""), "no edge before debounce window");
@@ -55,7 +55,7 @@ int main(void) {
     advance_us(DEBOUNCE_CAM_US + 1); scan_inputs(); pump();
     CHECK(tx_has("\"id\":\"SA\",\"e\":\"r\""), "rise edge after debounce window");
     /* glitch shorter than the window must NOT produce an edge */
-    all_idle(); mock_us = 100000000ull; init_inputs(); tx_reset();
+    all_idle(); mock_us = 100000000ull; tap_init(); init_inputs(); tx_reset();
     mock_gpio_in[PIN_SB] = 0; scan_inputs();
     advance_us(DEBOUNCE_CAM_US / 2); scan_inputs();
     mock_gpio_in[PIN_SB] = 1; scan_inputs();        /* back to idle before stable */
@@ -64,7 +64,7 @@ int main(void) {
 
     /* ---- C: ball detect + re-trigger lockout --------------------------- */
     printf("[C] ball lockout\n");
-    all_idle(); mock_us = 200000000ull; init_inputs(); tx_reset(); last_ball_ms = 0;
+    all_idle(); mock_us = 200000000ull; tap_init(); init_inputs(); tx_reset(); last_ball_ms = 0;
     mock_gpio_in[PIN_DIELL_L] = 0; scan_inputs();
     advance_us(DEBOUNCE_DIELL_US + 1); scan_inputs(); pump();
     CHECK(tx_has("\"ev\":\"ball\",\"src\":\"L\""), "first beam-break emits a ball");
@@ -94,7 +94,7 @@ int main(void) {
 
     /* ---- E: RP_OK safety supervisor ------------------------------------ */
     printf("[E] RP_OK supervisor\n");
-    all_idle(); init_inputs(); tx_reset();
+    all_idle(); tap_init(); init_inputs(); tx_reset();
     motors_all_stop(); fault_latched = false; fault_code[0] = 0;
     mock_us = 0; boot_ms = now_ms();
     rp_ok_state = true; mock_gpio_out[PIN_RP_OK] = 1;     /* force opposite to observe the drive */
@@ -208,7 +208,7 @@ int main(void) {
 
     /* ---- H: chatter guard + TX ring headroom + oversized emit ------------ */
     printf("[H] chatter guard / ring headroom\n");
-    all_idle(); mock_us += 1000000ull; init_inputs();
+    all_idle(); mock_us += 1000000ull; tap_init(); init_inputs();
     motors_all_stop(); fault_latched = false; fault_code[0] = 0;
     rx_discard = false; llen = 0;
     txr_head = txr_tail = 0; txr_drops = 0; tx_reset(); mock_uart_writable = true;
@@ -281,7 +281,7 @@ int main(void) {
 
     /* ---- I: hb input/run masks ------------------------------------------ */
     printf("[I] hb input/run masks\n");
-    all_idle(); mock_us += 1000000ull; init_inputs();
+    all_idle(); mock_us += 1000000ull; tap_init(); init_inputs();
     motors_all_stop(); fault_latched = false; fault_code[0] = 0;
     rx_discard = false; llen = 0;
     mock_gpio_in[PIN_SC] = 0;                               /* assert SC (bit 2) */
@@ -311,7 +311,7 @@ int main(void) {
         CHECK(strcmp(sa_p, "off") == 0 && strcmp(ta1_p, "off") == 0,
               "default build advertises sa/ta1 = \"off\" in the boot v11 posture");
     }
-    all_idle(); mock_us += 1000000ull; init_inputs(); init_camstops();
+    all_idle(); mock_us += 1000000ull; tap_init(); init_inputs(); init_camstops();
     motors_all_stop(); fault_latched = false; fault_code[0] = 0;
     rx_discard = false; llen = 0;
     /* (a) cam-stop overrun: RUN S, trip SA, never STOP, wait well past any grace -> NO fault */

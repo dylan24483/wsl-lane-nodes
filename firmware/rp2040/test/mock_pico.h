@@ -48,6 +48,20 @@ extern mock_io_bank0_t mock_iobank0;
 #define PICO_UNIQUE_BOARD_ID_SIZE_BYTES 8
 void pico_get_unique_board_id_string(char *buf, uint len);
 
+/* v1.2.3 (R3-5): mock ROSC register file — the boot-nonce entropy source.
+ * On silicon `rosc_hw->randombit` yields a FRESH bit on every read; a plain
+ * struct field would return the same bit 32 times and boot_nonce_init() would
+ * degenerate to a constant, hiding a real defect. So `rosc_hw` is a macro that
+ * advances a 32-bit xorshift LFSR and republishes its low bit before handing
+ * back the struct — one fresh bit per read, exactly like the hardware.
+ * mock_rosc_seed is settable so a test can force two DIFFERENT boot nonces (or
+ * deliberately re-seed to prove the time_us_64() fold still separates them). */
+typedef struct { uint32_t randombit; } mock_rosc_t;
+extern mock_rosc_t mock_rosc;
+extern uint32_t    mock_rosc_seed;
+mock_rosc_t       *mock_rosc_next(void);
+#define rosc_hw (mock_rosc_next())
+
 /* v1.2: noinit-section attribute is meaningless on the host — storage is a
  * plain static that PERSISTS across tap_boot_init() calls, which is exactly
  * the semantics the reboot-persistence tests exercise. */

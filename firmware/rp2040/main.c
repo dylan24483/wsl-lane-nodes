@@ -58,6 +58,7 @@
 #include "hardware/sync.h"      /* v1.2: IRQ-safe tap-ring snapshot/clear     */
 #include "hardware/structs/io_bank0.h"  /* v1.2.2: CTRL.OEOVER + STATUS.OETOPAD readback (R2-1) */
 #include "pico/unique_id.h"     /* v1.2.2: Pico unique board id (identity line, R2-6) */
+#include "hardware/structs/rosc.h"  /* v1.2.3: ROSC randombit entropy for the boot nonce (R3-5) */
 
 #ifdef WSL_EMBED_BUILD_ID
 #include "build_id.h"           /* generated per build: WSL_BUILD_GIT / WSL_CFG_SHA */
@@ -111,15 +112,16 @@ static void txr_drain(void) {
  *   emit()     — critical lines (boot/hb/flt/rp_ok/ack): may fill the ring.
  *   emit_evt() — cam/ball telemetry: only enqueued while TXR_HEADROOM bytes
  *                stay free, so an event flood can never starve hb/flt/rp_ok. */
-/* SIZE BUDGET (re-counted for v1.2.2, 2026-07-21): the longest single lines are
- *   boot = ~147 B v1.1.1 worst + 36 B tap{} block            = ~183 B worst
- *   hb   = ~110 B v1.1.1 worst + ~64 B tap/rd/ep/v5* + 10 B rid = ~184 B worst
- *   id   = ~85 B fixed + fw 21 + pcb 7 + rid 3 + uid 16 + build<=32 + cfg<=16
- *          + t 10 (build/cfg/uid are %.Ns-capped)             = ~190 B worst
- * fmtbuf 256 (~65 B margin). If you ADD A FIELD, re-count the worst case or the
+/* SIZE BUDGET (re-counted for v1.2.3, 2026-07-23): the longest single lines are
+ *   boot = ~147 B v1.1.1 worst + 36 B tap{} block + 16 B bn  = ~199 B worst
+ *   hb   = ~110 B v1.1.1 worst + ~64 B tap/rd/ep/v5* + 10 B rid
+ *          + 16 B bn                                          = ~200 B worst
+ *   id   = ~85 B fixed + fw 21 + bn 16 + pcb 7 + rid 3 + uid 16 + build<=32
+ *          + cfg<=16 + t 10 (build/cfg/uid are %.Ns-capped)   = ~206 B worst
+ * fmtbuf 256 (~50 B margin). If you ADD A FIELD, re-count the worst case or the
  * whole line silently drops (visible only as txr_drops) and the Pi loses it.
  * Grow fmtbuf with the line, never trust it silently. TXR_HEADROOM (320) must
- * stay >= the worst flt+rp_ok+hb burst (~60+40+184 = 284) — re-check it too. */
+ * stay >= the worst flt+rp_ok+hb burst (~60+40+200 = 300) — re-check it too. */
 static char fmtbuf[256];
 static void emit_v(bool lowprio, const char *fmt, va_list ap) {
     int n = vsnprintf(fmtbuf, sizeof(fmtbuf), fmt, ap);
@@ -949,14 +951,38 @@ static void rev_id_init(void) {
 static char fw_uid[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1] = "";
 static void identity_init(void) { pico_get_unique_board_id_string(fw_uid, sizeof fw_uid); }
 
+/* v1.2.3 (firmware half of Codex R3-5): per-boot 32-bit nonce. The tap-ring
+ * epoch is NOT a boot identity — it resets to 1 on any true power loss, so two
+ * consecutive cold boots are indistinguishable by epoch alone, and a Pi that
+ * missed the boot line could keep trusting stale cached identity/capability
+ * state. The nonce is sampled fresh every boot (32 ROSC randombit reads,
+ * decorrelated by 1 us gaps, XOR the boot-time us clock) and carried in the
+ * boot line, the id line AND EVERY heartbeat ("bn") — a nonce change on any
+ * hb is an unambiguous "the firmware rebooted since your cache" signal, even
+ * if the boot line itself was lost. 0 is reserved (= pre-v1.2.3 firmware /
+ * never initialized) so the Pi can treat absence and legacy identically.     */
+static uint32_t fw_boot_nonce = 0;
+
+static void boot_nonce_init(void) {
+    uint32_t n = 0;
+    for (int i = 0; i < 32; i++) {
+        n = (n << 1) | (rosc_hw->randombit & 1u);
+        sleep_us(1);                     /* decorrelate successive ROSC samples */
+    }
+    n ^= (uint32_t)time_us_64();         /* fold in boot-time jitter            */
+    if (n == 0u) n = 1u;                 /* 0 reserved = unknown/legacy         */
+    fw_boot_nonce = n;
+}
+
 /* The additive "id" line (R2-6): PCB revision (strap-read), Pico unique id,
  * build git-describe + config.h hash (build_id.h, "unknown" on hostless
  * builds), and the FI-1 posture (FA-11 step 3: an FI-1 image must be
  * banner-identifiable). Emitted right after the boot line and on "ID". */
 static void emit_id(void) {
-    emit("{\"ev\":\"id\",\"fw\":\"%s\",\"pcb\":\"%s\",\"rid\":%u,\"uid\":\"%.16s\","
+    emit("{\"ev\":\"id\",\"fw\":\"%s\",\"bn\":%lu,\"pcb\":\"%s\",\"rid\":%u,\"uid\":\"%.16s\","
          "\"build\":\"%.32s\",\"cfg\":\"%.16s\",\"fi1\":%d,\"t\":%lu}\n",
-         FW_VERSION, pcb_rev_name(), (unsigned)pcb_rev_code, fw_uid,
+         FW_VERSION, (unsigned long)fw_boot_nonce,
+         pcb_rev_name(), (unsigned)pcb_rev_code, fw_uid,
          WSL_BUILD_GIT, WSL_CFG_SHA, FI1_ENABLED ? 1 : 0, (unsigned long)now_ms());
 }
 
@@ -970,7 +996,15 @@ static void emit_id(void) {
  * host test provides its own mock definition. */
 bool fi1_jumper_present(void);
 
+/* v1.2.3 (R3-6) dead-man state. All timers are ms since boot; all four release
+ * paths are FAIL-SAFE (they only ever restore the locked input contract). */
+static uint32_t fi1_arm_ms     = 0;   /* when "FI1 ARM" was accepted (arm-timeout anchor) */
+static uint32_t fi1_drive_ms   = 0;   /* when fi1_driving went 0 -> nonzero               */
+static uint32_t fi1_ka_ms      = 0;   /* last dead-man token (ARM / DRIVE / "FI1 KA")     */
+static uint32_t fi1_last_rx_ms = 0;   /* last byte received on uart0 (link-alive proxy)   */
+
 static void fi1_init(void) {
+    fi1_last_rx_ms = now_ms();
     if (!fi1_jumper_present()) {
         fi1_refused = true;
         latch_fault("fi1_nojumper", "");     /* re-latched forever by supervise() */
@@ -998,7 +1032,13 @@ static void fi1_cmd(const char *s) {
     }
     if (strcmp(s, "ARM") == 0) {
         fi1_armed = true;
+        fi1_arm_ms = fi1_ka_ms = now_ms();   /* v1.2.3: arm-timeout anchor + dead-man token */
         emit("{\"ev\":\"fi1\",\"op\":\"armed\",\"t\":%lu}\n", (unsigned long)now_ms());
+    } else if (strcmp(s, "KA") == 0) {
+        /* v1.2.3 (R3-6): the continuous dead-man token. While a pin is driven,
+         * this must arrive at least every FI1_DEADMAN_MS or fi1_service()
+         * releases the injection. Ignored when not armed (nothing to keep alive). */
+        if (fi1_armed) fi1_ka_ms = now_ms();
     } else if (strncmp(s, "DRIVE ", 6) == 0 && s[6] >= '0' && s[6] <= '3' && s[7] == '\0') {
         if (!fi1_armed) return;              /* DRIVE before ARM is ignored */
         uint idx = (uint)(s[6] - '0');
@@ -1007,6 +1047,10 @@ static void fi1_cmd(const char *s) {
         gpio_set_oeover(p, GPIO_OVERRIDE_NORMAL);        /* unlock the pad OE (deliberate)   */
         gpio_set_dir(p, GPIO_OUT);
         gpio_put(p, 1);                                  /* FA-7 step 2: output-HIGH         */
+        if (fi1_driving == 0) fi1_drive_ms = now_ms();   /* v1.2.3: injection duration anchor
+                                                          * (first drive only — more DRIVEs
+                                                          * never extend the hard cap)       */
+        fi1_ka_ms = now_ms();                            /* a DRIVE is also a dead-man token */
         fi1_driving |= (uint8_t)(1u << idx);
         emit("{\"ev\":\"fi1\",\"op\":\"drive\",\"p\":%u,\"t\":%lu}\n",
              idx, (unsigned long)now_ms());
@@ -1018,6 +1062,38 @@ static void fi1_cmd(const char *s) {
              ok ? 1 : 0, (unsigned long)now_ms());
     }
     /* unknown FI1 sub-commands are ignored */
+}
+
+/* v1.2.3 (Codex R3-6): FI-1 dead-man supervision — runs every main-loop pass.
+ * Four independent FAIL-SAFE release paths (each can only ever restore the
+ * locked input-only contract, never extend an injection):
+ *   arm timeout   — armed with no DRIVE for FI1_ARM_TIMEOUT_MS -> auto-disarm;
+ *   drive timeout — any injection older than FI1_DRIVE_MAX_MS  -> release;
+ *   UART loss     — no uart0 RX byte for FI1_UART_IDLE_MS while driving
+ *                   (the controlling bench host is gone)        -> release;
+ *   dead-man      — no "FI1 KA" token for FI1_DEADMAN_MS while driving
+ *                   (host alive but the operator script stopped) -> release.
+ * Every release re-verifies the restored contract and reports why.           */
+static void fi1_autorelease(const char *why) {
+    fi1_release_all();
+    fi1_armed = false;
+    bool ok = tap_assert_input_only();       /* re-verify the restored contract */
+    emit("{\"ev\":\"fi1\",\"op\":\"autorel\",\"why\":\"%s\",\"ok\":%d,\"t\":%lu}\n",
+         why, ok ? 1 : 0, (unsigned long)now_ms());
+}
+
+static void fi1_service(void) {
+    if (fi1_refused) return;                 /* refused build never armed/drove */
+    uint32_t m = now_ms();
+    if (fi1_driving) {
+        if ((uint32_t)(m - fi1_drive_ms) > FI1_DRIVE_MAX_MS)   { fi1_autorelease("drive_timeout"); return; }
+        if ((uint32_t)(m - fi1_last_rx_ms) > FI1_UART_IDLE_MS) { fi1_autorelease("uart_loss");     return; }
+        if ((uint32_t)(m - fi1_ka_ms) > FI1_DEADMAN_MS)        { fi1_autorelease("deadman");       return; }
+    } else if (fi1_armed && (uint32_t)(m - fi1_arm_ms) > FI1_ARM_TIMEOUT_MS) {
+        fi1_armed = false;
+        emit("{\"ev\":\"fi1\",\"op\":\"disarm\",\"why\":\"arm_timeout\",\"t\":%lu}\n",
+             (unsigned long)m);
+    }
 }
 #endif /* FI1_ENABLED */
 
@@ -1043,9 +1119,34 @@ static void handle_line(char *s) {
             if (mt) { camstop_motor_stopped(mt); mt->running = false; }
         }
     } else if (strcmp(s, "CLEAR") == 0) {
-        /* The Pi issues CLEAR only from a known-safe (zero/ready) state. */
+        /* The Pi issues CLEAR only from a known-safe (zero/ready) state.
+         *
+         * v1.2.3 (Codex R3-6): SYNCHRONOUSLY revalidate EVERY input-only
+         * contract pin (SIO direction + funcsel + OEOVER field + live
+         * OETOPAD pad bit — tap_assert_input_only() checks all four on taps
+         * GP16-19, ADC GP26, fast inputs GP6-13, REV_ID GP20-21) BEFORE
+         * clearing any fault. Pre-fix, CLEAR cleared unconditionally and
+         * supervise() could reassert RP_OK for up to one hb tick (250 ms)
+         * while a pad violation persisted — the invariant only re-ran at the
+         * next tap_hb_tick(). Now a persistent violation makes CLEAR a
+         * strict no-op FOR THE RECOVERY HALF: the (possibly newly latched)
+         * fault stays latched, RP_OK stays low, and the Pi gets a "nak"
+         * naming the fault code.
+         *
+         * ORDERING (deliberate): the FAIL-SAFE half of CLEAR — stop every
+         * motor, disarm every cam-stop grace window — runs FIRST and
+         * UNCONDITIONALLY. Gating it behind the pad check would mean a board
+         * with a violated pad answers CLEAR by leaving motors marked running,
+         * i.e. the refusal path would be LESS safe than the accept path. Only
+         * the recovery half (dropping the latch, which is what lets
+         * supervise() raise RP_OK again) is gated. */
         motors_all_stop();
         camstop_all_disarm();
+        if (!tap_assert_input_only()) {
+            emit("{\"ev\":\"nak\",\"cmd\":\"CLEAR\",\"code\":\"%s\",\"t\":%lu}\n",
+                 fault_code, (unsigned long)now_ms());
+            return;
+        }
         fault_latched = false;
         fault_code[0] = '\0';
         emit("{\"ev\":\"ack\",\"cmd\":\"CLEAR\",\"t\":%lu}\n", (unsigned long)now_ms());
@@ -1077,6 +1178,16 @@ static bool   rx_discard = false;   /* overrun: swallow until end-of-line */
 static void poll_uart(void) {
     while (uart_is_readable(UART_ID)) {
         char c = uart_getc(UART_ID);
+#if FI1_ENABLED
+        /* v1.2.3 (R3-6): link-alive proxy for the FI-1 UART-loss release.
+         * Stamped on EVERY received byte — not per parsed line — so a host
+         * that is transmitting but whose lines are being discarded (overrun /
+         * garbage) still counts as alive, and ONLY a genuinely dead link
+         * (no bytes at all for FI1_UART_IDLE_MS) releases an injection.
+         * The dead-man ("FI1 KA") is the separate, stricter check that
+         * catches a live link whose operator script has stopped. */
+        fi1_last_rx_ms = now_ms();
+#endif
         if (c == '\n' || c == '\r') {
             if (!rx_discard && llen) { line[llen] = '\0'; handle_line(line); }
             llen = 0;
@@ -1122,16 +1233,21 @@ static void emit_hb(void) {
      * rd = tap-ring depth, ep = ring epoch, v5/v5n/v5x = VCC_5V latest/min/max mV
      * over the current hb window. v1.2.2 (R2-6): rid = the REV_ID strap code
      * (0-3; 255 = floating/unread — a rev-D image on a strapless board is
-     * visible every beat). Re-count the fmtbuf SIZE BUDGET if you add more. */
+     * visible every beat). v1.2.3 (R3-5): bn = the per-boot nonce on EVERY
+     * beat — a change vs the Pi's cached value is an unambiguous reboot signal
+     * even when the boot line itself was lost (the Pi must invalidate ALL
+     * cached identity/capability state and re-request ID).
+     * Re-count the fmtbuf SIZE BUDGET if you add more. */
     emit("{\"ev\":\"hb\",\"ok\":%d,\"flt\":\"%s\",\"up\":%lu,\"drp\":%lu,\"in\":%u,\"run\":%u,"
-         "\"tap\":%u,\"rd\":%lu,\"ep\":%lu,\"v5\":%u,\"v5n\":%u,\"v5x\":%u,\"rid\":%u}\n",
+         "\"tap\":%u,\"rd\":%lu,\"ep\":%lu,\"v5\":%u,\"v5n\":%u,\"v5x\":%u,\"rid\":%u,\"bn\":%lu}\n",
          rp_ok_state ? 1 : 0,
          fault_latched ? fault_code : "",
          (unsigned long)now_ms(),
          (unsigned long)txr_drops,
          input_mask(), run_mask(),
          tap_mask(), (unsigned long)tap_ring.count, (unsigned long)tap_ring.epoch,
-         adc_v5_mv, adc_v5_min, adc_v5_max, (unsigned)pcb_rev_code);
+         adc_v5_mv, adc_v5_min, adc_v5_max, (unsigned)pcb_rev_code,
+         (unsigned long)fw_boot_nonce);
 }
 
 /* v1.1 posture string for the boot event: "off" when the per-cam enable is 0, else
@@ -1166,6 +1282,7 @@ int main(void) {
     tap_init();
     rev_id_init();              /* v1.2.2 R2-6: strap read; pins then join the contract set */
     identity_init();            /* v1.2.2 R2-6: capture the Pico unique id                  */
+    boot_nonce_init();          /* v1.2.3 R3-5: per-boot nonce (boot/id/hb "bn")            */
     tap_assert_input_only();    /* enforced from the first moment (latches on drift) */
 
     /* uart0 to the Pi (protocol transport; NOT stdio). */
@@ -1200,10 +1317,17 @@ int main(void) {
     char sa_p[4], ta1_p[4];
     camstop_posture_str(sa_p,  (bool)CAM_SA_STOP_ENABLED,  CAM_SA_TRIP);
     camstop_posture_str(ta1_p, (bool)CAM_TA1_STOP_ENABLED, CAM_TA1_TRIP);
-    emit("{\"ev\":\"boot\",\"fw\":\"%s\",\"wdt_reset\":%d,\"rp_ok\":0,\"maxrun_ms\":%lu,\"dbg\":%d,"
+    /* v1.2.3 (R3-5): "bn" = the per-boot nonce. The tap ring epoch resets to 1
+     * on power loss, so it is NOT a boot identity; bn is fresh every boot and
+     * repeated on every hb, making a missed boot line detectable within one
+     * heartbeat. The boot line + this nonce are the Pi's cache-invalidation
+     * epoch signal (rp2040_link must drop ALL cached identity/capability
+     * state whenever bn changes or a boot line arrives).                    */
+    emit("{\"ev\":\"boot\",\"fw\":\"%s\",\"bn\":%lu,\"wdt_reset\":%d,\"rp_ok\":0,\"maxrun_ms\":%lu,\"dbg\":%d,"
          "\"v11\":{\"sa\":\"%s\",\"ta1\":\"%s\",\"echo\":%d,\"nrun\":%d},"
          "\"tap\":{\"ep\":%lu,\"pre\":%d,\"n\":%lu}}\n",
-         FW_VERSION, wdt_reboot ? 1 : 0, (unsigned long)MAX_MOTION_MS, DEBUG_USB ? 1 : 0,
+         FW_VERSION, (unsigned long)fw_boot_nonce,
+         wdt_reboot ? 1 : 0, (unsigned long)MAX_MOTION_MS, DEBUG_USB ? 1 : 0,
          sa_p, ta1_p, INTERLOCK_ECHO_ENABLED ? 1 : 0, MOTION_NO_RUN_ENABLED ? 1 : 0,
          (unsigned long)tap_ring.epoch, tap_ring_preserved ? 1 : 0,
          (unsigned long)tap_ring.count);
@@ -1220,6 +1344,16 @@ int main(void) {
         watchdog_update();      /* keep the chip alive only while the loop runs */
         scan_inputs();          /* debounce + push cam/ball events             */
         poll_uart();            /* RUN/STOP/CLEAR/PING/TAPDUMP/TAPCLR from Pi  */
+#if FI1_ENABLED
+        fi1_service();          /* v1.2.3 R3-6: FI-1 dead-man supervision —
+                                 * arm/drive timeout, UART loss, KA token.
+                                 * AFTER poll_uart (so this pass sees the
+                                 * freshest RX/KA stamps and cannot release on
+                                 * data that already arrived) and BEFORE
+                                 * supervise() (so an auto-release that
+                                 * re-latches a pad fault drops RP_OK in the
+                                 * SAME pass, not one loop later).            */
+#endif
         supervise();            /* compute + drive RP_OK (fail-safe)           */
         txr_drain();            /* push queued telemetry, non-blocking         */
         tap_service();          /* v1.2: IRQ un-mute + drip tap-ring dump      */

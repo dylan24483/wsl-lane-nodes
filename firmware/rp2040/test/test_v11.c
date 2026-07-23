@@ -48,6 +48,9 @@ static int checks = 0, fails = 0;
 /* reset firmware + mock state to a clean armed-and-healthy baseline */
 static void reset_clean(void) {
     all_idle(); mock_us += 5000000ull;
+    tap_init();                 /* v1.2.3: real boot configures taps/ADC input-only
+                                 * BEFORE init_inputs() — the CLEAR pad-revalidation
+                                 * (R3-6) reads them back, so the harness must too */
     init_inputs(); init_camstops();
     motors_all_stop();
     fault_latched = false; fault_code[0] = 0;

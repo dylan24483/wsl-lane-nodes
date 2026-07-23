@@ -17,7 +17,28 @@
 #ifndef WSL_PHASE8B_RP2040_CONFIG_H
 #define WSL_PHASE8B_RP2040_CONFIG_H
 
-/* v1.2.2 (2026-07-21, Codex round-2 remediation R2-1 + R2-13 — NOT flashed):
+/* v1.2.3 (2026-07-23, Codex round-3 remediation R3-6 + firmware half of R3-5 — NOT flashed):
+ *   - CLEAR pad-revalidation gate (R3-6): the CLEAR handler now SYNCHRONOUSLY
+ *     re-runs the full input-only invariant (SIO dir + funcsel + OEOVER +
+ *     OETOPAD on every contract pin) BEFORE clearing any fault — a persistent
+ *     pad violation makes CLEAR a no-op answered with a "nak" line, the fault
+ *     stays latched and RP_OK stays low. Closes the Codex window where CLEAR
+ *     unconditionally cleared and RP_OK could reassert for up to one hb tick
+ *     (250 ms) with a driveable "input" pad.
+ *   - FI-1 dead-man hardening (R3-6, bench build only): arm timeout (ARM with
+ *     no DRIVE auto-disarms), drive timeout (max continuous injection), UART-
+ *     loss release (RX-idle link-dead detection releases injection), and a
+ *     continuous dead-man ("FI1 KA" token required while driving). Every
+ *     auto-release restores the locked input-only contract and re-verifies it.
+ *   - Boot-epoch nonce (firmware half of R3-5): a per-boot 32-bit nonce
+ *     (ROSC entropy ^ boot time, never 0) in a new additive "bn" field on the
+ *     boot line, the id line AND every heartbeat — the Pi can detect a missed
+ *     boot line within one hb and invalidate ALL cached identity/capability
+ *     state (identity itself is re-emitted after every boot and on "ID").
+ * ALL ADDITIVE line formats; no safety path weakened (the CLEAR gate only ever
+ * REFUSES a recovery). See CHANGELOG.md.
+ *
+ * v1.2.2 (2026-07-21, Codex round-2 remediation R2-1 + R2-13 — NOT flashed):
  *   - PAD-LEVEL output lock (R2-1): CTRL.OEOVER is forced to DISABLE on every
  *     input-contract pin (taps GP16-19, ADC GP26, fast inputs GP6-13, REV_ID
  *     GP20-21) and the invariant readback now ALSO verifies the OEOVER field +
@@ -49,7 +70,7 @@
  * on GP26. ALL ADDITIVE: v1.1 line formats unchanged, v1.1 enforcement flags still
  * DEFAULT OFF — a default build adds no NEW enforcement beyond the tap direction
  * invariant (which can only ever latch_fault, i.e. fail-safe). See CHANGELOG.md. */
-#define FW_VERSION "phase8b-rp2040 v1.2.2"
+#define FW_VERSION "phase8b-rp2040 v1.2.3"
 
 /* ---- v1.2.2 build identity (R2-6) ------------------------------------------------------- */
 /* The REAL values are generated at BUILD time (CMake gen_build_id.cmake writes build_id.h:
@@ -332,6 +353,33 @@
 /* The id line carries "fi1":1 so an FI-1 image is banner-identifiable (FA-11 step 3).        */
 #ifndef FI1_ENABLED
 #define FI1_ENABLED 0
+#endif
+
+/* v1.2.3 (R3-6) FI-1 dead-man hardening — bench build only, all four are FAIL-SAFE
+ * RELEASE directions (they can only ever return a driven pin to the locked input
+ * contract, never extend an injection):
+ *   ARM_TIMEOUT : "FI1 ARM" with no DRIVE inside this window auto-disarms (an armed
+ *                 image left on a bench cannot stay armed indefinitely).
+ *   DRIVE_MAX   : hard cap on one continuous injection — the pin auto-releases even
+ *                 if the operator walks away mid-FA-7.
+ *   UART_IDLE   : link-dead detection — NO bytes received on uart0 for this long
+ *                 while a pin is driven ⇒ the controlling host is gone ⇒ release.
+ *   DEADMAN     : continuous re-arm token — while driving, an explicit "FI1 KA"
+ *                 line must arrive at least this often or the injection releases.
+ * The bench script sends "FI1 KA" at 1 Hz (worst gap ~1 s < both UART_IDLE and
+ * DEADMAN). Every auto-release path emits {"ev":"fi1","op":"autorel","why":...}
+ * and re-verifies the restored input-only contract.                              */
+#ifndef FI1_ARM_TIMEOUT_MS
+#define FI1_ARM_TIMEOUT_MS 10000u
+#endif
+#ifndef FI1_DRIVE_MAX_MS
+#define FI1_DRIVE_MAX_MS   60000u
+#endif
+#ifndef FI1_UART_IDLE_MS
+#define FI1_UART_IDLE_MS    2000u
+#endif
+#ifndef FI1_DEADMAN_MS
+#define FI1_DEADMAN_MS      3000u
 #endif
 
 /* ---- Debug ----------------------------------------------------------------------------- */

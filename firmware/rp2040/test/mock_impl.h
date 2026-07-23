@@ -36,6 +36,17 @@ int      mock_gpio_floating[40];
 int      mock_gpio_pull[40];
 char     mock_unique_id[17] = "E66038B713952A31";
 mock_io_bank0_t mock_iobank0;
+/* v1.2.3 (R3-5) */
+mock_rosc_t mock_rosc = { 0 };
+uint32_t    mock_rosc_seed = 0x13579BDFu;   /* any non-zero xorshift seed */
+mock_rosc_t *mock_rosc_next(void) {
+    /* xorshift32 — one fresh bit per read, mirroring silicon ROSC randombit */
+    uint32_t x = mock_rosc_seed;
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    mock_rosc_seed = x ? x : 0x13579BDFu;   /* xorshift32 never reaches 0 anyway */
+    mock_rosc.randombit = mock_rosc_seed & 1u;
+    return &mock_rosc;
+}
 
 /* ---- mock bodies --------------------------------------------------------- */
 /* v1.2: direction + function are now RECORDED (the C2 direction-invariant test

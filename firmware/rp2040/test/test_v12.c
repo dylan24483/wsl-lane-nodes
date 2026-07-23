@@ -489,7 +489,7 @@ int main(void) {
     txr_head = txr_tail = 0; tx_reset();
     emit_id(); pump();
     CHECK(tx_has("\"ev\":\"id\""), "id line emitted");
-    CHECK(tx_has("\"fw\":\"phase8b-rp2040 v1.2.2\""), "id carries FW_VERSION v1.2.2");
+    CHECK(tx_has("\"fw\":\"phase8b-rp2040 v1.2.3\""), "id carries FW_VERSION v1.2.3");
     CHECK(tx_has("\"pcb\":\"revD\"") && tx_has("\"rid\":1"), "id carries the strap-read PCB rev");
     CHECK(tx_has("\"uid\":\"E66038B713952A31\""), "id carries the Pico unique id");
     CHECK(tx_has("\"build\":\"unknown\"") && tx_has("\"cfg\":\"unknown\""),
@@ -498,10 +498,12 @@ int main(void) {
     txr_head = txr_tail = 0; tx_reset();
     emit_hb(); pump();
     CHECK(tx_has("\"rid\":1"), "hb carries the rid field every beat");
+    CHECK(tx_has("\"bn\":"), "hb carries the boot-nonce field every beat (R3-5)");
     /* ID command re-emits on demand */
     txr_head = txr_tail = 0; tx_reset();
     rx_feed("ID\n"); poll_uart(); pump();
     CHECK(tx_has("\"ev\":\"id\""), "ID command re-emits the identity line");
+    CHECK(tx_has("\"bn\":"), "ID line carries the boot-nonce field (R3-5)");
 
     /* ---- Q: v1.2.2 — FI-1 grammar does NOT exist in a release build --------- */
     printf("[Q] FI-1 compiled out of release\n");
@@ -583,6 +585,83 @@ int main(void) {
     tap_dump_start(); pump();
     CHECK(tx_has("\"cause\":\"kick_starvation\""),
           "fresh-epoch edges still classify after the guard re-tag");
+
+    /* ---- T: round-3 R3-5 — per-boot nonce (identity cache-invalidation) ----- */
+    /* The tap-ring epoch resets to 1 on power loss, so two cold boots are
+     * epoch-indistinguishable and a Pi that missed the boot line could keep
+     * trusting stale cached identity. bn is fresh every boot and repeated on
+     * every hb, so a nonce change on ANY beat is an unambiguous reboot signal. */
+    printf("[T] round-3 boot nonce (R3-5)\n");
+    reset_clean();
+    boot_nonce_init();
+    uint32_t bn1 = fw_boot_nonce;
+    CHECK(bn1 != 0u, "boot nonce is non-zero (0 reserved = legacy/unknown firmware)");
+    mock_us += 7777u;                                /* a later boot time */
+    boot_nonce_init();
+    uint32_t bn2 = fw_boot_nonce;
+    CHECK(bn2 != 0u, "second boot nonce also non-zero");
+    CHECK(bn1 != bn2, "consecutive boots get DIFFERENT nonces (missed boot line detectable)");
+    /* the boot line, id line AND hb of the SAME boot must all carry the live
+     * nonce, so an hb-only comparison against the Pi's cache is valid */
+    {
+        char want[32];
+        snprintf(want, sizeof want, "\"bn\":%lu", (unsigned long)fw_boot_nonce);
+        txr_head = txr_tail = 0; tx_reset();
+        emit_id(); pump();
+        CHECK(tx_has(want), "id line carries the LIVE boot nonce");
+        txr_head = txr_tail = 0; tx_reset();
+        emit_hb(); pump();
+        CHECK(tx_has(want), "hb line carries the SAME live boot nonce (epoch-consistent)");
+    }
+    /* stability across many boots — the 0-reservation guard never yields 0 */
+    {
+        bool all_nz = true;
+        for (int i = 0; i < 64; i++) { mock_us += 101u; boot_nonce_init();
+                                       if (fw_boot_nonce == 0u) all_nz = false; }
+        CHECK(all_nz, "64 successive boots all yield a non-zero nonce (guard holds)");
+    }
+
+    /* ---- U: round-3 R3-6 — CLEAR synchronously revalidates the input pads --- */
+    /* Pre-fix, CLEAR dropped the latch unconditionally and supervise() could
+     * reassert RP_OK for up to one hb tick (250 ms) with a driveable "input"
+     * pad. Now CLEAR re-runs the full input-only invariant BEFORE clearing the
+     * latch: a persistent violation makes the recovery a strict no-op (nak,
+     * fault stays latched, RP_OK stays low) — while the fail-safe half
+     * (motors_all_stop) still runs unconditionally. Release-build behavior. */
+    printf("[U] round-3 CLEAR pad revalidation (R3-6)\n");
+    reset_clean(); tap_init();
+    CHECK(tap_assert_input_only() && !fault_latched, "setup: clean pads, no fault");
+    /* (a) clean pads -> CLEAR clears normally (regression guard) */
+    latch_fault("motion_timeout", "S");
+    supervise();
+    CHECK(fault_latched && !rp_ok_state, "setup: fault latched, RP_OK low");
+    txr_head = txr_tail = 0; tx_reset();
+    rx_feed("CLEAR\n"); poll_uart(); pump();
+    CHECK(!fault_latched && tx_has("\"ev\":\"ack\",\"cmd\":\"CLEAR\""),
+          "clean pads: CLEAR clears the latch and acks");
+    supervise();
+    CHECK(rp_ok_state, "clean pads: RP_OK recovers after CLEAR");
+    /* (b) a persistent pad violation makes CLEAR a strict no-op for recovery */
+    gpio_set_oeover(PIN_TAP_555, GPIO_OVERRIDE_HIGH);   /* input pin can now drive */
+    CHECK(!tap_assert_input_only() && fault_latched && strcmp(fault_code, "pad_oe") == 0,
+          "setup: pad violation latches pad_oe");
+    supervise();
+    CHECK(!rp_ok_state, "setup: RP_OK low on the pad fault");
+    txr_head = txr_tail = 0; tx_reset();
+    rx_feed("CLEAR\n"); poll_uart(); pump();
+    CHECK(tx_has("\"ev\":\"nak\",\"cmd\":\"CLEAR\""), "violated pad: CLEAR answered nak");
+    CHECK(tx_has("\"code\":\"pad_oe\""), "nak names the offending fault code");
+    CHECK(fault_latched, "violated pad: fault STAYS latched (recovery half refused)");
+    supervise();
+    CHECK(!rp_ok_state, "violated pad: RP_OK STAYS low through CLEAR (no 250 ms window)");
+    /* (c) restore the pad -> a subsequent CLEAR succeeds */
+    force_pad_input_only(PIN_TAP_555);
+    txr_head = txr_tail = 0; tx_reset();
+    rx_feed("CLEAR\n"); poll_uart(); pump();
+    CHECK(!fault_latched && tx_has("\"ev\":\"ack\",\"cmd\":\"CLEAR\""),
+          "pad restored: CLEAR clears and acks");
+    supervise();
+    CHECK(rp_ok_state, "pad restored: RP_OK recovers");
 
     printf("\n%d/%d checks passed%s\n", checks - fails, checks, fails ? "  <<< FAILURES" : "");
     return fails ? 1 : 0;

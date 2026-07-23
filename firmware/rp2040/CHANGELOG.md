@@ -4,6 +4,63 @@ All entries newest-first. "Flashed" status is tracked per entry — a written ve
 NOT a deployed version. Line-format changes are ADDITIVE-ONLY by policy: the Pi-side
 parser (`lane_node/rp2040_link.py`) ignores unknown JSON keys and unknown `ev` kinds.
 
+## v1.2.3 — 2026-07-23 — Codex round-3 R3-6 + firmware half of R3-5 (CLEAR pad-revalidation, FI-1 dead-man, boot nonce). NOT FLASHED.
+
+Scope = the round-3 firmware slice of the rev-D remediation (Codex re-audit regrade,
+adversarial reproductions). All three line-format additions are ADDITIVE (`bn` key);
+`rp2040_link.py` must gain the boot-nonce cache-invalidation consumer (Pi-side task —
+see followups; the field is defined here and repeated on boot/id/hb).
+
+- **R3-6 — CLEAR synchronously revalidates the input-only pads.** Pre-fix, `CLEAR`
+  dropped the fault latch unconditionally and `supervise()` could reassert RP_OK for up
+  to one heartbeat tick (250 ms) while a driveable "input" pad persisted — the invariant
+  only re-ran at the next `tap_hb_tick()`. Now the `CLEAR` handler runs the FAIL-SAFE
+  half first and unconditionally (`motors_all_stop()` + `camstop_all_disarm()`), then
+  re-runs the full `tap_assert_input_only()` (SIO dir + funcsel + OEOVER field + live
+  OETOPAD pad bit on taps GP16-19, ADC GP26, fast inputs GP6-13, REV_ID GP20-21) BEFORE
+  clearing the latch. A persistent violation makes the recovery a strict no-op: the fault
+  stays latched, RP_OK stays low, and the Pi gets a `nak` line naming the fault code. The
+  fail-safe half is deliberately NOT gated (a refusal must never be less safe than an
+  accept). Host test `test_v12.c` section U: clean-pad CLEAR still clears (regression
+  guard); violated-pad CLEAR → nak + fault latched + RP_OK stays low; restored-pad CLEAR
+  succeeds.
+
+- **R3-6 — FI-1 dead-man hardening (bench build only).** The FI-1 fault-injection image
+  gained four INDEPENDENT fail-safe auto-release paths, all supervised by `fi1_service()`
+  (called every main-loop pass, after `poll_uart()` so it sees the freshest RX/KA stamps,
+  before `supervise()` so a re-latch drops RP_OK the same pass): **arm timeout** (`FI1 ARM`
+  with no `DRIVE` for 10 s auto-disarms), **drive timeout** (any injection older than 60 s
+  releases), **UART loss** (no uart0 RX byte for 2 s while driving → the bench host is gone
+  → release), and a **continuous dead-man** (`FI1 KA` token required every 3 s while
+  driving, else release — catches a live link whose operator script stopped). Every
+  auto-release restores the locked input-only contract and re-verifies it (`autorel` event
+  with `why` + `ok`). `fi1_last_rx_ms` is now stamped on EVERY received byte (not per parsed
+  line) so an overrun/garbage stream still counts as a live link. Host test `test_fi1.c`
+  section E proves each release path fires, restores the pin, and (E5) that the 1 Hz bench
+  KA cadence holds an injection across 10 s with no false release. `test_fi1`: 28 → **44**.
+
+- **R3-5 (firmware half) — per-boot nonce.** The tap-ring epoch resets to 1 on power loss,
+  so two cold boots are epoch-indistinguishable and a Pi that missed the boot line could
+  keep trusting stale cached identity/capability state. A fresh 32-bit nonce (32 ROSC
+  `randombit` reads decorrelated by 1 µs gaps, XOR the boot-time µs clock; 0 reserved =
+  legacy/unknown) is sampled every boot and carried in the `bn` field on the boot line, the
+  id line AND every heartbeat — a `bn` change on ANY beat is an unambiguous "rebooted since
+  your cache" signal even when the boot line itself was lost. Identity is re-emitted after
+  every boot and on `ID`. The Pi-side consumer (drop ALL cached identity/capability state on
+  a `bn` change or boot line) is a `rp2040_link.py` task coordinated with the lane agent —
+  see followups. Host test `test_v12.c` section T: nonce non-zero, differs across boots,
+  consistent across id+hb of one boot, and the 0-reservation guard holds over 64 boots.
+
+- **fmtbuf SIZE BUDGET re-counted** for the added `bn` field: worst boot ~199 B, hb ~200 B,
+  id ~206 B in the 256 B buffer; TXR_HEADROOM (320) still ≥ the worst flt+rp_ok+hb burst
+  (~300 B). No safety path weakened — every new path is a fail-safe RELEASE or a REFUSAL.
+
+**Build:** both ARM images rebuild clean (arm-none-eabi-gcc 13.3.1, 0 warnings on main.c):
+release `wsl_phase8b_rp2040.uf2` (61.5 KB) + bench `wsl_phase8b_rp2040_FI1.uf2` (65.5 KB,
+differently-named — release directory auditable by filename). Host suites: `test_main`
+**64/64** · `test_v11` **32/32** · `test_v12` **139/139** (+20) · `test_fi1` **44/44** (+16),
+all clean under `-Wall -Wextra -Werror` (gcc 16.1.0). **NOT flashed.**
+
 ## v1.2.2 — 2026-07-21 — Codex round-2 R2-1 + R2-13 (pad-OE lock, epoch classifier, FI-1, identity). NOT FLASHED.
 
 Scope = the round-2 firmware slice of the rev-D remediation (Codex re-audit 2026-07-21 PM).
