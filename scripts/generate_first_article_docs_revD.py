@@ -227,6 +227,15 @@ def main() -> int:
 > Procedure authority: `phase8_revD_remediation_spec_2026-07-21.md` §R1.9/§R3/§R4 and
 > `phase8_revD_readiness_checklist.md` §2 — this pack is their per-board execution form.
 
+> **⚗️ EXPERIMENTAL FIRST-ARTICLE (R3-8).** These boards are a prototype validation run,
+> not a fleet release. The input front-end (PC817) margin is bounded arithmetic
+> (spec §R4-A), not a datasheet guarantee; fleet-release status is contingent on the
+> upgraded **FA-9 numeric V_CE / I_C-capability aging-reserve qualification** and the
+> at-temperature **FA-7 step 4 (OG-4)** passing on every populated channel of the real
+> boards. Do not scale to fleet quantity or field-deploy a lane on these boards until
+> FA-9 + OG-4 pass and the readiness-checklist G15 EXPERIMENTAL-ORDER acceptance line is
+> signed.
+
 ## 0. Hard rules before power
 
 1. **⛔ Use ONLY this pack + its CSV for probing.** A technician probing "U37" from the
@@ -405,27 +414,63 @@ The header side of the code is made by removing the coding rib at the matching p
 4. Verify silk legibility at all four: "KEYED: NOT J15" / "NOT J3" / "NOT J16" /
    "NOT J13 LAMP" (1.2 mm silk).
 
-### FA-9 — PC817 input-channel qualification (remediation spec R4 + round-2 R2-7)
+### FA-9 — PC817 input-channel NUMERIC qualification (remediation spec R4 + R2-7 + round-3 R3-8) — **EXPERIMENTAL FIRST-ARTICLE**
 
-1. **V_CE sampling (R4 trigger condition 1):** measure V_CE(on) on **3 sample channels**
-   at nominal wetting (~1.7 mA I_F) with the field contact closed. Gate: **V_CE(on) ≤
-   0.3 V** on every sampled channel. Any channel above 0.3 V REOPENS the R4 disposition
-   (forces Rin 2k2 → 1k ≈ 3.5 mA + mandatory §H.3 wetting and §H.4 D17 budget re-runs).
-   Record values per channel.
-2. **Per-channel qualification at minimum field voltage (R2-7):** load the wetting rail
-   to its fleet worst case (all populated field contacts closed), confirm FIELD_WET_V at
-   TP4 sits at its loaded minimum (≈ 4.5 V — FA-1 step 3), then close each populated
-   field-input channel in turn and confirm its MCP23017 bit reads ACTIVE-LOW. This is
-   the R4 threshold condition made empirical: the phototransistor must sink
-   ≈ 0.26 mA (pull the 10 k logic pull-up below V_IL ≈ 0.66 V) at the LOWEST I_F the
-   fleet will ever supply. **Every populated channel — not a sample.**
-3. **Temperature leg (R2-7):** heat the populated PC817 input optos (§3 refdes map) to
-   **≥ 70 °C case** (thermocouple-verified — same rig as FA-7 step 4) and repeat
-   step 2 at the loaded minimum field voltage. Hot + low-I_F is the worst-case CTR
-   corner the spec R4 arithmetic bounds from typical curves; a clean per-channel pass
-   here is the empirical closure of the R2-7 disposition (spec §R4-A). Record
-   per-channel PASS + measured TP4 voltage + case temperature. Any failure lands
-   under R4 reopen trigger 1.
+> **R3-8 upgrade (2026-07-21): this is the EXPERIMENTAL first-article gate.** The PC817
+> input-margin arithmetic (spec §R4-A) is *bounded evidence, not a datasheet guarantee* —
+> Sharp publishes no minimum CTR at the fleet's ~1.7 mA I_F. FA-9 is therefore no longer a
+> digital pass/fail: every populated channel is characterized with **NUMERIC V_CE(sat) and
+> a computed sink-margin against an aging reserve**, at the loaded-minimum FIELD_WET and
+> across the declared temperature range. Fleet-release status is contingent on this data
+> (readiness gate G15). Record every number in the run-log FA-9 table — a bare "PASS" is
+> not acceptable closure.
+
+**Threshold arithmetic (the numbers every measurement is scored against):**
+- The MCP23017 input flips ACTIVE-LOW when the collector node (= the 10 k logic pull-up
+  node, which IS V_CE of the phototransistor) is pulled below **V_IL ≈ 0.66 V** (0.2 × VDD
+  at 3.3 V).
+- In-circuit the collector current is **rail-limited by the 10 k pull-up**:
+  `I_C(in-circ) = (V_rail − V_CE)/10 kΩ`. Flip needs the node at 0.66 V →
+  **I_C(flip) ≈ 0.26 mA**; the pull-up can deliver at most **0.33 mA** (node at 0 V). That
+  native 0.33/0.26 ≈ **1.25× window is a fixed property of the 3.3 V/10 k front-end** — FA-9
+  cannot widen it; it can only prove each opto sits deep enough in saturation to keep the
+  read valid over life. Healthy hard-saturation shows **V_CE(sat) ≤ 0.30 V**.
+- **Why V_CE(sat) alone is not the reserve:** once the opto's capability CTR × I_F exceeds
+  the 0.33 mA pull-up limit the transistor saturates and V_CE pins low regardless of *how
+  much* extra capability exists — so in-circuit V_CE cannot distinguish "just saturating"
+  from "saturating with 3× headroom". The aging reserve therefore requires a **capability
+  measurement that is NOT rail-limited**: at the min-I_F/hot corner, temporarily load the
+  collector with a **diagnostic pull-up / current meter** (e.g. a bench 3.3 kΩ to the rail
+  or a µA meter in place of the 10 k) and read the collector current the opto can actually
+  sink, **I_C(cap)**.
+- **Aging reserve criterion (spec R4 end-of-life CTR factor ×0.70):** the fresh channel must
+  keep the in-circuit transistor in hard saturation even after a 30 % CTR loss, i.e. its
+  capability must still exceed the 0.33 mA pull-up max after aging:
+  **PASS ⟺ I_C(cap, hot, min-I_F) × 0.70 ≥ 0.33 mA ⟹ I_C(cap) ≥ 0.47 mA.**
+  A channel whose capability is only ~0.33–0.40 mA reads active-low *today* but has **no
+  aging reserve** and FAILS this gate.
+
+**Procedure — record numerics per channel, both temperature legs:**
+1. **V_CE(sat) census at nominal wetting (R4 trigger condition 1):** with the field
+   contact closed at nominal ~1.7 mA I_F, measure and RECORD **in-circuit V_CE(on) on every
+   populated channel** (not a 3-channel sample any more). Flag any channel with
+   **V_CE(on) > 0.30 V** — it REOPENS the R4 disposition (forces Rin 2k2 → 1k ≈ 3.5 mA +
+   mandatory §H.3 wetting and §H.4 D17 re-runs).
+2. **Loaded-minimum FIELD_WET leg (R2-7, cold):** load the wetting rail to fleet worst case
+   (all populated contacts closed), confirm FIELD_WET_V at TP4 at its loaded minimum
+   (≈ 4.5 V — FA-1 step 3). Per populated channel record **in-circuit V_CE(sat)** AND the
+   **diagnostic-load capability I_C(cap)** (bench pull-up / µA meter as above); confirm the
+   MCP23017 bit reads ACTIVE-LOW. **Every populated channel.**
+3. **Temperature leg (R2-7 + R3-8 — the worst-case CTR corner):** heat the populated PC817
+   input optos (§3 refdes map) to **≥ 70 °C case** (thermocouple-verified — same rig as
+   FA-7 step 4) and repeat step 2 at the loaded minimum field voltage, spanning the declared
+   range (25 °C ambient → ≥ 70 °C case). Hot + low-I_F is the corner the §R4-A curves cannot
+   guarantee. **Record per channel: V_CE(sat) cold, V_CE(sat) hot, I_C(cap) hot, the margin
+   ratio I_C(cap)/0.33 mA, aging-reserve PASS/FAIL (I_C(cap)×0.70 ≥ 0.33 mA), measured TP4
+   voltage, and case temperature.** The gate is the aging-reserve criterion evaluated at the
+   HOT/min-I_F numbers. Any failure lands under R4 reopen trigger 1 and blocks the G15
+   fleet-release acceptance (the order stays EXPERIMENTAL first-article until every populated
+   channel clears it).
 
 ### FA-10 — MCV header mechanical (FR-9, first connector only)
 Before reflowing/soldering the remaining six MCV headers, install and solder ONE
@@ -463,6 +508,14 @@ relays exercising the FA-3 pattern.
    land as tick-I2C failure → `_on_safety_trip` → ARM drop → rail de-energized — an
    availability incident with a fail-safe landing. U46 exists so a J16 module cannot
    cause even that. Record the observed behavior against this statement.
+6. **Polyfuse contract (F1 = 1206L020YR; R2-4 fitted, allowance re-derived R3-7):** the
+   sanctioned STEADY module draw on J16 pin 1 (VCC_5V) is **≤ 45 mA** — re-derived from the
+   1206L020 temperature-derating table at the 85 °C worst-case enclosure body temperature
+   with a ≥ 2× hold margin (90 mA hold @ 85 °C ÷ 2); the earlier 100 mA figure used the
+   23 °C hold and had no hot margin. F1 still trips a *shorted* module (~420 mA @23 °C) well
+   inside the SS34 3 A rail budget. If a module is fitted, record its measured steady draw
+   and confirm ≤ 45 mA. (rev-D.1 upgrade path — eFuse with an open-drain FAULT flag to a
+   spare RP2040 GPIO — is recorded in run-log FR-15; needs copper, not this spin.)
 
 ## 5. Sign-off
 
@@ -478,8 +531,8 @@ relays exercising the FA-3 pattern.
 | FA-7 step 4 **AT ≥ 70 °C** (OG-4) | | |
 | FA-7 step 5 edge order + reboot persistence | | |
 | FA-8 sacrificial pair + 4-way refusal | | |
-| FA-9 V_CE ≤ 0.3 V ×3 channels | | |
-| FA-9 per-channel qual @ min FIELD_WET + ≥ 70 °C (R2-7) | | |
+| FA-9 V_CE(sat) numeric census — every populated channel (R4) | | |
+| FA-9 per-channel I_C(cap) + aging-reserve PASS @ min FIELD_WET + ≥ 70 °C (R2-7 / R3-8) | | |
 | FA-10 MCV insertion/solder fill | | |
 | FA-11 firmware `{fw_ver}` posture | | |
 | FA-12 J16 SDA/SCL short recovery (U46, R2-4) | | |

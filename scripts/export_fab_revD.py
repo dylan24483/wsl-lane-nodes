@@ -184,9 +184,11 @@ PART_LOCK: dict[tuple[str, str], dict[str, str]] = {
         "lcsc": "C207035", "mpn": "1206L020YR", "manufacturer": "Littelfuse",
         "class": "Extended",
         "locked_spec": "PTC resettable fuse 200mA hold / 420mA trip / 24V, 1206",
-        "note": "F_J16_5V current limit for the J16 module supply (R2-4). "
-                "Any substitute must be 1206, hold >= 2x the 100mA module "
-                "allowance and trip << the SS34 3A budget.",
+        "note": "F_J16_5V current limit for the J16 module supply (R2-4; "
+                "allowance re-derived to 45mA @85C worst case per R3-7). Any "
+                "substitute must be 1206, hold >= 2x the 45mA module allowance "
+                "(i.e. >= 90mA hold; 1206L020 at 200mA/23C satisfies it hot) "
+                "and trip << the SS34 3A budget.",
     },
     ("TCA4307DGKR", "VSSOP-8_3x3mm_P0.65mm"): {
         "lcsc": "C880333", "mpn": "TCA4307DGKR", "manufacturer": "Texas Instruments",

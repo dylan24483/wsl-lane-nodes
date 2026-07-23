@@ -296,9 +296,11 @@ resistive-tap text that stood here through 2026-07-20):**
   pole 6), band colors (J13 white / J16 blue), silk warnings, first-article refusal test
   (install per the corrected H7 rule — see item C; parts on the harness BOM CSV).
 - 1 part, 0 new nets, 0 class deltas; DNP-tolerant (electrically inert unpopulated).
-  Module rules: ≤100 mA from pin 1 (re-run the D17 budget before any module lands — a
-  polyfuse in series with pin 1 is a recorded open option for Dylan), I2C addresses
-  0x20–0x23 forbidden.
+  Module rules: **≤ 45 mA from pin 1** (R3-7 re-derivation; was 100 mA — the old figure
+  used the 23 °C polyfuse hold, which collapses to 90 mA @ 85 °C, so a ≥ 2× margin caps the
+  allowance at 45 mA. Re-run the D17 budget before any module lands.) The series polyfuse
+  (F1 = 1206L020YR on pin 1) is now FITTED (Codex R2-4), not just a recorded option. I2C
+  addresses 0x20–0x23 forbidden.
 
 ### G. OUT-B MCP23017 @0x23 — DEFERRED (decision recorded, nothing placed)
 - Catalog nice-to-have with zero diagnostics yield. Real cost is board area + I2C stub + 32
@@ -308,11 +310,14 @@ resistive-tap text that stood here through 2026-07-20):**
   need a new waiver-ledger entry.
 
 ### H. D_PROT diode SS14 → SS34 (consequence fix, run-log FR-3)
-- Rev-D adds ~+30 mA to a rail whose worst case was already 0.7–0.9 A on a 1 A SS14, and
-  J16's sanctioned 100 mA module allowance would cross 1 A. Value swap to **SS34 (3 A)**,
+- Rev-D adds ~+30 mA to a rail whose worst case was already 0.7–0.9 A on a 1 A SS14 —
+  an already-thin margin. Value swap to **SS34 (3 A)**,
   same `D_SMA` footprint, zero copper change. Gate-10 package check done: **MDD SS34, LCSC
   C8678, SMA/DO-214AC verified** — SS34 from other vendors ships in SMB/SMC, exactly the
   G5LE-1/-14 trap class; **any MPN substitution re-runs the review.**
+- R3-7 note: the J16 module allowance was re-derived 100 mA → **45 mA** (see §F and the
+  change-spec §H.4 derivation). This *lowers* the D17 worst case to ~0.78–0.98 A, so SS34
+  keeps comfortable margin — the re-derivation does not reopen this swap.
 
 ---
 

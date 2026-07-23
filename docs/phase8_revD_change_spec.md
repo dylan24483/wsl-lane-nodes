@@ -485,7 +485,7 @@ Phoenix MC 1,5/6-ST-3,5 = **1840405** (same PN as J13's plug — add to harness 
 
 | J16 pin | Net | Note |
 |---|---|---|
-| 1 | `VCC_5V` | module primary power — budget cap 100 mA, re-run §H D17 math before any module lands |
+| 1 | `VCC_5V` | module primary power — **budget cap 45 mA** (R3-7 re-derivation; was 100 mA), re-run §H D17 math before any module lands |
 | 2 | `GND` | |
 | 3 | `I2C_SDA` | shared bus 1 (existing 4.7k pullups) |
 | 4 | `I2C_SCL` | |
@@ -615,16 +615,40 @@ Rev-D additions on VCC_5V:
 | **Total Δ** | **≈ +31 mA** |
 
 New worst case ≈ **0.73–0.93 A — still under 1 A but the margin was already thin and rev-D
-consumes ~3 % more**, and J16's sanctioned 100 mA module allowance takes it to ~1.03 A — past
-SS14's rating. **IMPLEMENTED in the rev-D generator (2026-07-20, run-log FR-3): `D_PROT` value
+consumes ~3 % more**. **IMPLEMENTED in the rev-D generator (2026-07-20, run-log FR-3): `D_PROT` value
 is now SS34 (3 A)** — a value swap, zero copper change, same `D_SMA` footprint. Gate-10
 footprint-vs-datasheet check DONE: chosen MPN **MDD SS34, LCSC C8678, package SMA/DO-214AC
 verified** (SS34 also ships in SMB/SMC from other vendors — exactly the G5LE-1/-14 class of
 trap; do not substitute MPNs without re-running gate 10). The diff-script contract whitelists
-this one value change (`ALLOWED_CHANGED_PARTS`). If any J16 module (≤100 mA cap) ever
-populates, re-run this table anyway. **OPEN option (Dylan decision, NOT taken — adds a part +
-net + budget re-run): a polyfuse (~200 mA hold) in series with J16 pin 1, bounding the unfused
-external 5 V tap against harness shorts.**
+this one value change (`ALLOWED_CHANGED_PARTS`).
+
+**J16 module allowance — RE-DERIVED (R3-7, 2026-07-21; was 100 mA):** the earlier
+"sanctioned 100 mA module allowance" silently used the 1206L020 **23 °C** hold (0.20 A ×
+½ = 100 mA "2× margin"). That margin evaporates at temperature. Littelfuse 1206L020
+still-air hold-current derating: 0.17 A @40 °C, 0.15 A @50 °C, **0.12 A @70 °C, 0.09 A
+@85 °C**. The declared worst-case F1 body temperature is **85 °C** — enclosure spec
+`phase8_pair_enclosure_spec.md` gives ≤ ~48 °C internal *bulk* air (35 °C summer + ΔT ≈
+8 °C, sealed no-vent), and F1 sits in that volume next to the dominant heat sources
+(Pi + heatsink, TMA-0505S brick, energized relay coils), so we derate at the datasheet's
+characterized ceiling (85 °C) to envelope any local hotspot rather than model it (48 °C
+bulk interpolates to ~154 mA hold for reference). Applying the required **≥ 2× hold
+margin at 85 °C: allowance = 90 mA / 2 = 45 mA.** PPTC *trip* is a minimum-to-trip, not a
+hard cap; sizing the steady module draw well under I_hold(T) is what keeps a legitimate
+hot module from nuisance-tripping. **F1 selection is UNCHANGED** (1206L020YR still trips
+a shorted module inside the SS34 budget); the reduced 45 mA allowance takes the D17 worst
+case to ~**0.775–0.975 A**, which only *widens* the SS34 margin — it does not reopen the
+SS14 decision. **If any J16 module (≤ 45 mA cap) ever populates, re-run this table anyway.**
+
+**Polyfuse — TAKEN (Codex R2-4, round 2):** the "open option" below is now the fitted
+F1 (`1206L020YR`, VCC_5V → J16 pin 1) plus the TCA4307/SRV05-4/JP1 stack. Historical
+note retained: *the pre-round-2 spec listed a series polyfuse as an untaken option.*
+
+**rev-D.1 upgrade path (recorded, NOT this spin — needs copper):** replace the PPTC + ESD
+with a current-limiting **eFuse / e-load-switch that has a hardware-programmable current
+limit AND an open-drain FAULT flag routed to a spare RP2040 GPIO** (part class: TI
+**TPS2660** industrial eFuse w/ /FLT, TI **TPS25200** 5 V eFuse w/ FAULT, or Nexperia
+NX5P-class), so a wedged/over-drawing J16 module becomes a firmware-diagnosable event
+rather than a silent trip with a long PPTC reset tail.
 
 ---
 

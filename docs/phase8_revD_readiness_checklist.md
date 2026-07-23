@@ -2,6 +2,16 @@
 
 Status legend: `[ ]` open · `[~]` blocked on physical verify / owner decision · `[x]` done.
 **Do not place a fab order until every PRE-ORDER GATE is `[x]`.**
+
+> **⚗️ THIS ORDER IS AN EXPERIMENTAL FIRST-ARTICLE ONLY (R3-8, 2026-07-21).** Until
+> the physical first-article gates clear — chiefly **FA-9 numeric PC817 V_CE / margin
+> qualification** (the input front-end margin still rests on bounded arithmetic, spec
+> §R4-A, NOT a datasheet guarantee) plus the OG-4 at-temperature tap gate — this board
+> is a prototype validation run, not a fleet-release build. The fab-order line item in
+> G15 is labelled accordingly and carries a **blank EXPERIMENTAL-ORDER acceptance line
+> for Dylan**, mirroring the blank OG-1 and H2 lines. Do not scale to fleet quantity or
+> field-deploy a lane on these boards until FA-9 + OG-4 pass and the acceptance line is
+> signed.
 Written 2026-07-20 at the end of the rev-D design campaign. Companions:
 `phase8_revD_change_list.md` (what changed and why), `phase8_revD_change_spec.md` (electrical
 detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, OG-1/OG-3).
@@ -238,8 +248,21 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 
 ### G14 — Dylan's overall review of the rev-D docs + spec  `[ ]`
 - Change list + spec + this checklist + run log. Open decisions parked for him: OG-1 (G8),
-  the G7 waiver-or-session choice, the J16 polyfuse option (run-log FR-3), and the deferred
-  OUT-B override (change-list item G).
+  the G7 waiver-or-session choice, and the deferred OUT-B override (change-list item G).
+- **J16 polyfuse is FITTED** (F1, Codex R2-4) — no longer an open option; the module
+  allowance was re-derived **100 mA → 45 mA @ 85 °C worst case** (R3-7, run-log FR-15).
+
+### G15 — EXPERIMENTAL FIRST-ARTICLE order acceptance  `[~]`  **(owner sign-off — blank, like OG-1 / H2)**
+- This spin ships as an **experimental first-article validation build**, not a fleet
+  release (R3-8). The input front-end (PC817) margin is bounded arithmetic (spec §R4-A),
+  proven empirically only AT first article by the upgraded numeric **FA-9** V_CE / margin
+  qualification; the tap safety gate is proven only by the at-temperature **OG-4** repeat.
+  Both are physical gates that cannot be discharged before boards exist.
+- **To close this gate — Dylan appends the acceptance line below** (mirrors the blank
+  OG-1 sign-off line in the run log). Signing accepts placing an EXPERIMENTAL order whose
+  fleet-release status is contingent on FA-9 + OG-4 passing on the physical boards.
+
+  `EXPERIMENTAL-ORDER ACCEPTANCE: _____________________________ (date / decision — experimental first-article, fleet-release gated on FA-9 numeric V_CE + OG-4 at-temp)`
 
 ---
 
@@ -329,13 +352,16 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
    the five doubled power vias + the row-39 bottom edge in the visual pass).
 5. **Order the harness/coding parts with the boards** — G13 (the BOM now exists:
    `docs/phase8_revD_harness_bom.csv`; the order itself is still to be placed).
-6. **Final sacred-file hash re-verify + Dylan's review** — G6 (re-run) + G14.
+6. **Final sacred-file hash re-verify + Dylan's review** — G6 (re-run) + G14, **plus the
+   G15 EXPERIMENTAL-ORDER acceptance line** (R3-8: this is a prototype validation build,
+   not a fleet release, until FA-9 numeric V_CE + OG-4 at-temp pass on real boards).
 7. **After assembly, the §2 first-article gate** — the per-board test docs are already
    generated for rev-D refdes (M6, 2026-07-21: `docs/phase8_revD_first_article_pack.md`;
    re-run the generator if the design moves), and the gate includes the MANDATORY
    at-temperature (≥70 °C) rail-tap repeat (OG-4) plus the FA-8 sacrificial-pair coding
-   proof. The characterization session (analog population, DC1–DC3) is scheduled but not
-   fab-blocking.
+   proof AND the upgraded **FA-9 numeric per-channel PC817 V_CE / margin qualification**
+   (R3-8 — the experimental-order gate). The characterization session (analog population,
+   DC1–DC3) is scheduled but not fab-blocking.
 
 Not fab-blocking but scheduled: the **characterization session** that decides external
 analog population (CT current channels, 24 VAC sense, temp channels — all on the external

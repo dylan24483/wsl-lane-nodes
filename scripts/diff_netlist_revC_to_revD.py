@@ -223,8 +223,9 @@ assert set(EXPECTED_TOUCHED_NET_ADDITIONS) == ALLOWED_TOUCHED_NETS, \
 # Documented rev-C part value/footprint changes (still reported as
 # CHANGED_PART lines, but not PROBLEMs).
 #  - D_PROT: spec §H.4 / run-log FR-3: SS14 (1 A) -> SS34 (3 A, MDD C8678,
-#    same D_SMA footprint) — rev-D worst case 0.73-0.93 A + J16's 100 mA
-#    module allowance exceeds SS14's rating.
+#    same D_SMA footprint) — rev-D worst case 0.73-0.93 A on an already-thin
+#    SS14 margin (R3-7 re-derived J16's module allowance 100 mA -> 45 mA, which
+#    only widens the SS34 headroom; SS14 stays retired regardless).
 #  - MCV connectors (remediation spec R2.5, Codex M4, run-log FR-9): all
 #    MCV 1,5 G-3.5 instances repoint to the project-local _D1.4 footprints
 #    (drill 1.4 mm per the Phoenix drilling plan, pad 2.0x3.6). Value

@@ -555,9 +555,15 @@ def block_connectors(fast_field, slow_field, motion_pairs, lamp_returns):
     VRAW += j_pwr[1]
     GND += j_pwr[2], j_pwr[3]
     # Rev-D (spec §H.4, review finding 2026-07-20): SS14 (1 A) -> SS34 (3 A).
-    # The rev-D worst case is 0.73-0.93 A and J16's sanctioned 100 mA external
-    # module takes it past 1 A; the generator is the BOM source of truth so the
-    # substitution lands HERE. Gate-10 check done: MPN MDD SS34, LCSC C8678,
+    # The rev-D worst case is 0.73-0.93 A on a rail whose SS14 margin was ALREADY
+    # thin; SS34 buys headroom with zero copper change (value swap only). The
+    # generator is the BOM source of truth so the substitution lands HERE.
+    # (R3-7, 2026-07-21: the J16 sanctioned module allowance was RE-DERIVED from
+    # the Littelfuse 1206L020 temperature-derating table to 45 mA @ 85 C worst
+    # case, down from the false 100 mA; the corrected 45 mA takes the worst case
+    # to ~0.775-0.975 A, so the reduced allowance only WIDENS the SS34 margin --
+    # it does not un-justify the swap, and SS14 stays retired.) Gate-10 check
+    # done: MPN MDD SS34, LCSC C8678,
     # package SMA/DO-214AC verified (SS34 also ships in SMB/SMC from other
     # vendors — do NOT swap MPNs without re-running gate 10). Same D_SMA
     # footprint, zero copper change. Run-log entry FR-3.
@@ -799,10 +805,18 @@ def block_j16_protection_and_revid(pico):
     polyfuse are NOT isolation-barrier parts — every pin lands on LOGIC
     nets; the PC817/G5LE barrier inventory is untouched):
       * F_J16_5V  — Littelfuse 1206L020YR polyfuse (200 mA hold / 420 mA
-        trip / 24 V), VCC_5V -> J16_5V -> J16 pin 1. Caps a shorted module
-        at ~420 mA, inside the FR-3 SS34 (3 A) budget; the sanctioned
-        external-module allowance stays 100 mA << 200 mA hold. This is the
-        FR-3 "open option" now TAKEN (Codex R2-4).
+        trip / 24 V @ 23 C), VCC_5V -> J16_5V -> J16 pin 1. Caps a shorted
+        module at its trip point (inside the FR-3 SS34 (3 A) budget). The
+        sanctioned steady module allowance is 45 mA (R3-7, re-derived from
+        the 1206L020 temperature-derating table: I_hold falls to 90 mA @
+        85 C worst-case enclosure temperature, and >=2x hold margin -> 45 mA;
+        the old "100 mA << 200 mA hold" claim silently used the 23 C hold and
+        evaporated hot). F1 part choice is UNCHANGED -- only the allowance
+        number is corrected. This is the FR-3 "open option" now TAKEN
+        (Codex R2-4). rev-D.1 upgrade path: swap the PPTC+ESD for a
+        current-limiting eFuse with an open-drain FAULT flag to a spare
+        RP2040 GPIO (TI TPS2660 / TPS25200 class) so a wedged module is a
+        diagnosable event, not a silent trip -- needs copper, so NOT this spin.
       * JP_J16_3V3 — default-OPEN solder link, VCC_3V3 -> J16_3V3 ->
         J16 pin 5. The 3.3 V pin ships NOT CONNECTED; bridging is a
         deliberate, documented act for a verified 3.3 V module. Value

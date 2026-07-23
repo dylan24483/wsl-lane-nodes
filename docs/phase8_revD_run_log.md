@@ -59,14 +59,18 @@ Sacrificial-pair proof (first-article pack FA-8) required before coding producti
 
 ### FR-3 — D_PROT diode swap SS14 → SS34 in SMA — PASS (package trap checked)
 
-- Driver: spec §H.4 — rev-D worst case 0.73–0.93 A on a 1 A SS14, and J16's sanctioned 100 mA
-  module allowance exceeds 1 A. Generator (BOM source of truth) now emits **SS34**.
+- Driver: spec §H.4 — rev-D worst case 0.73–0.93 A on a 1 A SS14 whose margin was already
+  thin. Generator (BOM source of truth) now emits **SS34**. *(R3-7, 2026-07-21: the J16
+  module allowance was re-derived 100 mA → 45 mA @ 85 °C worst case; the corrected figure
+  takes the worst case to ~0.775–0.975 A — it WIDENS the SS34 margin, does not reopen the
+  swap. Full derivation: change-spec §H.4 + FR-15 below.)*
 - Gate-10 package check (the G5LE-1/-14 trap class): chosen MPN **MDD (Microdiode) SS34,
   LCSC C8678 — listed package SMA (DO-214AC), 40 V / 3 A** (LCSC/JLC listings checked
   2026-07-20). SS34 from other vendors ships in SMB/SMC — **any MPN substitution re-runs this
   review.** Footprint `Diode_SMD:D_SMA` unchanged; zero copper change.
 - Open option recorded (Dylan decision): polyfuse ~200 mA hold in series with J16 pin 1
-  (adds a part + net + budget re-run; not taken this spin).
+  (adds a part + net + budget re-run). *(TAKEN in round 2 — Codex R2-4: F1 = 1206L020YR
+  now fitted on VCC_5V → J16 pin 1. This "not taken this spin" line is superseded.)*
 
 ### FR-4 — J3/J15 cross-mate coding (same 1840447 plug, same field edge) — DECIDED
 
@@ -984,9 +988,11 @@ Software slices (R2-8/10/11/12 etc.) landed separately (`123fb9b`, `55b2bf5`).
 - **Budgets (standing rule, re-run on any current change):** +≤4.5 mA TCA4307
   ICC + ~1.4 mA worst pull-up sink ≈ **+6 mA worst on VCC_3V3** (Pico regulator,
   ample); noise vs the §H.4 0.73–0.93 A VCC_5V worst case. The polyfuse caps a
-  shorted module at 420 mA trip — INSIDE the FR-3 SS34 3 A budget and above the
-  sanctioned 100 mA module allowance (200 mA hold = 2×). Wetting rail untouched;
-  D17 unchanged.
+  shorted module at 420 mA trip — INSIDE the FR-3 SS34 3 A budget. *(R3-7,
+  2026-07-21: the "sanctioned 100 mA allowance (200 mA hold = 2×)" claim used
+  the 23 °C hold; the 1206L020 hold falls to 90 mA @ 85 °C, so the sanctioned
+  allowance is RE-DERIVED to 45 mA @ 85 °C worst case for a real ≥ 2× hot
+  margin — see FR-15.)* Wetting rail untouched; D17 unchanged.
 
 ### FR-11 — Littelfuse 1206L020YR vs `Fuse:Fuse_1206_3216Metric` — PASS
 
@@ -1028,6 +1034,53 @@ Software slices (R2-8/10/11/12 etc.) landed separately (`123fb9b`, `55b2bf5`).
 - Copper-only footprint, no part is ever fitted → value carries DNP so both
   exporters exclude it (28th DNP; dnp-excluded.csv explains the default-OPEN
   contract). Bridging is a deliberate act for a verified 3.3 V module.
+
+### FR-15 — J16 polyfuse module-allowance RE-DERIVATION (Codex R3-7) — DOCS/CONTRACT ONLY, NO COPPER
+
+- **Finding:** the round-2 "sanctioned 100 mA module allowance (200 mA hold =
+  2×)" claim is false at temperature. It used the 1206L020 **23 °C** still-air
+  hold (0.20 A). PPTC hold derates steeply with ambient, and PPTC *trip* is a
+  minimum-to-trip, not a hard cap — so a real allowance must be sized against
+  the hold at the worst-case body temperature with explicit margin.
+- **Datasheet (Littelfuse POLYFUSE Resettable PTCs, 1206L Series; 1206L020-C =
+  1206L020YR):** I_hold 0.20 A / I_trip 0.42 A / V_max 24 V / I_max 100 A @ 23 °C.
+  Still-air hold-current derating table (A): −40 °C 0.28 · −20 °C 0.25 · 0 °C 0.23 ·
+  **23 °C 0.20** · 40 °C 0.17 · 50 °C 0.15 · 60 °C 0.14 · **70 °C 0.12** · **85 °C 0.09**.
+- **Declared worst-case F1 body temperature: 85 °C.** `phase8_pair_enclosure_spec.md`
+  (2026-07-14) gives ≤ ~48 °C internal *bulk* air (35 °C summer ambient + ΔT ≈ 8 °C,
+  sealed no-vent). F1 sits in that sealed volume adjacent to the dominant heat
+  sources (Pi + heatsink, TMA-0505S brick, energized relay coils); the derating
+  references ambient at the device, so the local hotspot can exceed bulk air.
+  Rather than model an uncertain hotspot we derate at the datasheet's characterized
+  ceiling (85 °C), which envelopes any realistic in-box rise (48 °C bulk interpolates
+  to ~0.154 A hold, for reference only).
+- **Re-derived allowance:** I_hold(85 °C) = 0.090 A; required ≥ 2× hold margin →
+  **sanctioned J16 module 5 V allowance = 0.090 / 2 = 45 mA** (was 100 mA).
+- **Consequences:** (1) **F1 part UNCHANGED** — 1206L020YR still trips a shorted
+  module (~420 mA @23 °C / ~250 mA hot) INSIDE the FR-3 SS34 3 A budget; only the
+  quoted steady-draw allowance is corrected. (2) **D17 budget IMPROVES** — worst
+  case with 45 mA ≈ 0.775–0.975 A (was ~1.03 A at 100 mA); SS34 keeps comfortable
+  margin, SS14 stays retired (no copper motion either way). (3) **NO copper /
+  netlist / DRU change** — F1 footprint, MPN (C207035), placement, and all four
+  J16_* nets are byte-identical; this is a comment/spec correction only. No
+  executable audit/export assert encodes 100 mA (verified by grep) — only prose
+  and one BOM note string, all corrected in source.
+- **Frozen fab package residual (disclosed):** `kicad/fab_revD_2026-07-21_r3/`
+  and `..._r2/` are hashed atomic exports (manifest.json + zips). Their
+  `assembly/…-jlc-standard-pcba-bom.csv` and `…-part-lock.csv` F1 rows carry the
+  legacy "100mA module allowance" text in a **human-readable NOTE field only** —
+  MPN, footprint, qty, designator all identical, and F1's own rating (200 mA hold)
+  amply satisfies even the corrected "hold ≥ 2× 45 mA = 90 mA" substitution rule.
+  The r3 package is NOT regenerated (that would re-hash an as-exported package and
+  churn gerbers for a comment); the corrected string lives in `export_fab_revD.py`
+  and flows into the next regeneration. No hardware consequence.
+- **rev-D.1 upgrade path (recorded, needs copper → not this spin):** replace the
+  PPTC + SRV05-4 with a current-limiting **eFuse / e-load-switch carrying a
+  hardware-programmable current limit AND an open-drain FAULT flag** routed to a
+  spare RP2040 GPIO — part class TI **TPS2660** (industrial eFuse, adj. ILIM,
+  /FLT) · TI **TPS25200** (5 V eFuse, FAULT) · Nexperia **NX5P3290** class — so a
+  wedged/over-drawing J16 module becomes a firmware-diagnosable event instead of a
+  silent trip with a long PPTC reset tail.
 
 ### R2-6 — REV_ID straps (board half) — IMPLEMENTED
 
