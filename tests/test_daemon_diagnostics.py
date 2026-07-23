@@ -381,6 +381,29 @@ def test_be_no_current_after_cycle_window():
         assert len(w.of_type("be_no_current")) == 2
 
 
+def test_bank_read_failure_suppresses_aux_rules_not_false_faults():
+    """R3-9 (Codex round-3): when the IN-B bank read raises, dependent AUX
+    rules go UNKNOWN (suppressed) — the outage must NOT be read as 'all
+    sensors deasserted' and manufacture a FALSE be_no_current. The real
+    condition (bank_unavailable) is what surfaces."""
+    with _EnvPatch(WSL_DIAG_BE_WINDOW_S="2", WSL_DIAG_BANK_FAIL_N="1"):
+        w = FakeWriter()
+        bc = mk_board(roles={"AUX1": "be_current"}, writer=w)
+        to_ready(bc)
+        run_strike_cycle(bc)                         # opens the be window
+        # the bank read now FAILS every tick (I²C NAK / dead expander)
+        def _boom():
+            raise RuntimeError("i2c read failed")
+        bc.io.read_inputs_b = _boom
+        advance(bc, 3.0)                             # window would have elapsed
+        for _ in range(3):
+            bc.tick()
+        assert w.of_type("be_no_current") == [], \
+            "bank-unknown must NOT fabricate a be_no_current fault (R3-9)"
+        assert len(w.of_type("bank_unavailable")) >= 1, \
+            "bank_unavailable is emitted instead"
+
+
 def test_dist_index_stall_during_cycle():
     w = FakeWriter()
     bc = mk_board(roles={"AUX3": "dist_index"}, writer=w)
@@ -890,13 +913,25 @@ def test_parse_aux_roles():
     assert _parse_aux_roles("") == {}
     assert _parse_aux_roles("aux1=be_current,aux2=exit_beam,aux3=dist_index") == {
         "AUX1": "be_current", "AUX2": "exit_beam", "AUX3": "dist_index"}
-    # H3 (2026-07-21): aux4-aux11 (rev-D GPB bank) are now valid role keys
-    assert _parse_aux_roles("aux9=be_current,aux1=warp_drive,garbage") == {
-        "AUX9": "be_current"}
+    # H3 (2026-07-21): aux4-aux11 (rev-D GPB bank) are valid role keys
     assert _parse_aux_roles("aux4=exit_beam,aux11=dist_index") == {
         "AUX4": "exit_beam", "AUX11": "dist_index"}
-    # beyond the bank / zero-indexed keys stay invalid
-    assert _parse_aux_roles("aux12=be_current,aux0=exit_beam") == {}
+    # R3-9 (Codex round-3, 2026-07-23): an unrecognized role string, unknown
+    # AUX key, or malformed token now REFUSES startup loudly — it is NEVER
+    # silently skipped (the seed-flag-matched-by-name time bomb). Each raises
+    # ValueError with the valid list.
+    import pytest
+    with pytest.raises(ValueError):
+        _parse_aux_roles("aux1=warp_drive")          # typo'd role
+    with pytest.raises(ValueError):
+        _parse_aux_roles("aux9=be_current,garbage")  # token with no '='
+    with pytest.raises(ValueError):
+        _parse_aux_roles("aux12=be_current")         # AUX key out of range
+    with pytest.raises(ValueError):
+        _parse_aux_roles("aux0=exit_beam")           # zero-indexed key
+    # the valid part of a mixed spec is irrelevant — one bad entry refuses all
+    with pytest.raises(ValueError):
+        _parse_aux_roles("aux9=be_current,aux1=warp_drive")
 
 
 def test_master_killswitch_silences_everything():

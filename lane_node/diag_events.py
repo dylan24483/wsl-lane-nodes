@@ -88,6 +88,14 @@ OUTBOX_POLL_ENV = "WSL_DIAG_OUTBOX_POLL_S"
 DEFAULT_OUTBOX_POLL_S = 10.0
 OUTBOX_BATCH_MAX = 200          # lines read + POSTed per replay pass segment
 CURSOR_FILENAME = "outbox_cursor.json"
+QUARANTINE_FILENAME = "outbox_quarantine.jsonl"   # R3-1c: server-rejected rows
+
+
+def _reject_nonfinite(const):
+    """json.loads parse_constant hook (R3-10 robustness): NaN / Infinity /
+    -Infinity in a stored line are treated as corruption, not silently
+    turned into float('nan') that then poisons downstream math."""
+    raise ValueError(f"non-finite JSON constant {const!r}")
 
 DEFAULT_QUEUE_MAX = 1000
 DEFAULT_DIR = "./diag_logs"
@@ -99,10 +107,28 @@ DEFAULT_FLUSH_S = 5.0
 DEFAULT_HTTP_TIMEOUT_S = 2.0
 DEFAULT_HTTP_RETRIES = 2
 
-# The ONLY closed vocabulary in this domain (mirrors the machine_events CHECK —
-# scope §2 schema: severity is the one CHECK enum; event_type is writer-validated
-# and deliberately open so the taxonomy can grow without a table rebuild).
-SEVERITIES = ("info", "warn", "fault")
+# R3-1a (2026-07-23): the machine-diagnostics vocabulary has ONE source —
+# server/machine_contract.json. The client loads SEVERITIES and the
+# event-type allow-set from that same file (not a private copy) so a type
+# the daemon emits can never silently disagree with what the server
+# validates (the fw_identity poison pill, R3-1). If the file is unreadable
+# (running the client from an odd cwd, a partial checkout), SEVERITIES falls
+# back to the frozen triple and EVENT_TYPES to None (== "don't second-guess
+# the taxonomy client-side"); the server stays the authority either way.
+_CONTRACT_JSON = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "..", "server", "machine_contract.json"))
+
+
+def _load_contract_vocab():
+    try:
+        with open(_CONTRACT_JSON, encoding="utf-8") as f:
+            v = json.load(f)["vocab"]
+        return tuple(v["severities"]), frozenset(v["event_types"])
+    except Exception:
+        return ("info", "warn", "fault"), None
+
+
+SEVERITIES, EVENT_TYPES = _load_contract_vocab()
 
 _FALSEY = ("0", "false", "no", "off", "")
 
@@ -530,7 +556,7 @@ class OutboxReplayer:
 
     def __init__(self, dir_path, base_url, *, post=None, token=None,
                  poll_s=None, timeout=DEFAULT_HTTP_TIMEOUT_S,
-                 cursor_path=None):
+                 cursor_path=None, on_quarantine=None):
         self.dir = dir_path or DEFAULT_DIR
         self.base_url = str(base_url or "").strip().rstrip("/")
         tok = token if token is not None else os.environ.get(TOKEN_ENV, "")
@@ -541,9 +567,17 @@ class OutboxReplayer:
                                             DEFAULT_OUTBOX_POLL_S))
         self.cursor_path = cursor_path or os.path.join(self.dir,
                                                        CURSOR_FILENAME)
+        self.quarantine_path = os.path.join(self.dir, QUARANTINE_FILENAME)
+        # R3-1c: notified (count, sample_lane, errors) when the server
+        # per-record-rejects rows — the daemon turns this into an
+        # 'outbox_quarantine' event. Optional so the replayer stays usable
+        # standalone (tests).
+        self._on_quarantine = on_quarantine
         self._post = post or self._urllib_post
         self.shipped = 0        # rows POSTed + acked (cursor advanced past)
         self.skipped = 0        # rows without delivery identity (not replayable)
+        self.quarantined = 0    # R3-1c: rows the server per-record-rejected
+        self.cycles_shipped = 0  # R3-3: durable machine_cycles rows shipped
         self.post_errors = 0    # failed POST attempts (cursor NOT advanced)
         self.errors = 0         # swallowed internal errors
         self._stop_ev = threading.Event()
@@ -582,8 +616,10 @@ class OutboxReplayer:
 
     # -- one replay pass ---------------------------------------------------
     def replay_once(self):
-        """Ship at most one batch segment per file position. Returns the
-        number of rows acked this pass. Never raises."""
+        """Ship every unshipped record segment. Returns the number of rows
+        acked this pass. Never raises. R3-3: recovery scans from the OLDEST
+        file with unshipped records (see below), and cycle records ride the
+        SAME durable file as events (routed to /api/machine/cycles)."""
         acked = 0
         try:
             files = self._outbox_files()
@@ -591,14 +627,19 @@ class OutboxReplayer:
                 return 0
             cur = self._load_cursor()
             if cur is None or cur["file"] not in files:
-                # First run (or the cursor's file was pruned): start at the
-                # NEWEST file from its current position 0 — identity-less
-                # legacy lines inside are skipped, so nothing double-ships.
-                cur = {"file": files[-1], "pos": 0}
+                # R3-3 (Codex round-3): a missing/invalid cursor (first run, or
+                # the cursor's file was pruned) recovers from the OLDEST file,
+                # NOT the newest. The old code started at files[-1], which
+                # STRANDED every older file's unsent records forever (Codex's
+                # 2-file repro). Identity-less legacy lines are skipped and the
+                # server dedupes replays, so re-scanning from the oldest loses
+                # nothing and strands nothing.
+                cur = {"file": files[0], "pos": 0}
             while True:
-                rows, new_pos, eof = self._read_batch(cur["file"], cur["pos"])
+                rows, kind, new_pos, eof = self._read_batch(cur["file"],
+                                                            cur["pos"])
                 if rows:
-                    if not self._post_batch(rows):
+                    if not self._ship(kind, rows):
                         self.post_errors += 1
                         return acked          # cursor stays; retry next pass
                     self.shipped += len(rows)
@@ -606,7 +647,7 @@ class OutboxReplayer:
                 cur = {"file": cur["file"], "pos": new_pos}
                 self._save_cursor(cur)
                 if not eof:
-                    continue                  # more in this file
+                    continue                  # more in this file (or a kind run)
                 # at EOF: roll to the next file if one exists, else done
                 idx = files.index(cur["file"])
                 if idx + 1 < len(files):
@@ -620,44 +661,123 @@ class OutboxReplayer:
             return acked
 
     def _read_batch(self, name, pos):
-        """Read up to OUTBOX_BATCH_MAX replayable rows from `name` starting at
-        byte `pos`. Returns (rows, new_pos, eof). Partial trailing lines (a
-        flush in progress) are left for the next pass."""
+        """Read up to OUTBOX_BATCH_MAX replayable rows of ONE kind ('event' or
+        'cycle') from `name` starting at byte `pos`. Returns
+        (rows, kind, new_pos, eof). A record of a different kind ends the run
+        WITHOUT being consumed (new_pos points at it, eof False) so the next
+        read picks it up. Partial trailing lines (a flush in progress) are left
+        for the next pass. Identity-less legacy lines are skipped + counted."""
         rows = []
+        kind = None
         path = os.path.join(self.dir, name)
         try:
             with open(path, "rb") as f:
                 f.seek(pos)
                 while len(rows) < OUTBOX_BATCH_MAX:
+                    before = f.tell()
                     line = f.readline()
                     if not line:
-                        return rows, pos, True
+                        return rows, kind, before, True
                     if not line.endswith(b"\n"):
-                        return rows, pos, True      # partial write — wait
-                    pos = f.tell()
+                        return rows, kind, before, True    # partial — wait
                     try:
-                        row = json.loads(line.decode("utf-8"))
+                        row = json.loads(line.decode("utf-8"),
+                                         parse_constant=_reject_nonfinite)
                     except Exception:
-                        continue                    # corrupt line: skip
-                    if (isinstance(row, dict) and row.get("source_id")
+                        continue                    # corrupt line: skip (consumed)
+                    if not (isinstance(row, dict) and row.get("source_id")
                             and row.get("boot_id")
                             and row.get("seq") is not None):
-                        rows.append(row)
-                    else:
                         self.skipped += 1
-                return rows, pos, False
+                        continue                    # identity-less: consumed
+                    rk = "cycle" if row.get("_kind") == "cycle" else "event"
+                    if kind is None:
+                        kind = rk
+                    elif rk != kind:
+                        # kind boundary: leave this line for the next read
+                        return rows, kind, before, False
+                    rows.append(row)
+                return rows, kind, f.tell(), False
         except FileNotFoundError:
-            return rows, pos, True
+            return rows, kind, pos, True
         except Exception:
             self.errors += 1
-            return rows, pos, True
+            return rows, kind, pos, True
 
-    def _post_batch(self, rows):
+    def _ship(self, kind, rows):
+        """Ship one homogeneous run. Events go as one batch to the events
+        endpoint; cycles go one-at-a-time to the cycles endpoint (R3-3 durable
+        cycle path). Returns True only if the WHOLE run was accepted (2xx) so
+        the cursor advances past exactly what shipped."""
+        if kind == "cycle":
+            ok = True
+            for row in rows:
+                if not self._post_cycle(row):
+                    ok = False
+                    break
+                self.cycles_shipped += 1
+            return ok
+        return self._post_batch(rows)
+
+    def _post_cycle(self, row):
         try:
-            self._post(self.base_url + HttpSink.EVENTS_PATH, {"events": rows})
+            body = {k: v for k, v in row.items() if k != "_kind"}
+            self._post(self.base_url + HttpSink.CYCLES_PATH, {"cycle": body})
             return True
         except Exception:
             return False
+
+    def _post_batch(self, rows):
+        try:
+            resp = self._post(self.base_url + HttpSink.EVENTS_PATH,
+                              {"events": rows})
+            # R3-1c: the server per-record-rejects poison records (2xx with a
+            # 'rejected' list). The POST is a cursor-ack either way — the run
+            # advances — but the rejected rows are quarantined (file + counter
+            # + 'outbox_quarantine' event) instead of replaying forever. A
+            # None response (a fake, or a server that predates the field) means
+            # "no per-record info" — nothing to quarantine.
+            if isinstance(resp, dict):
+                rejected = resp.get("rejected")
+                if rejected:
+                    self._quarantine(rows, rejected)
+            return True
+        except Exception:
+            return False
+
+    def _quarantine(self, rows, rejected):
+        """Append server-rejected rows to the quarantine file, count them, and
+        notify the daemon (which emits the 'outbox_quarantine' event). Never
+        raises — a quarantine-write failure must not stall the cursor."""
+        sample_lane = None
+        try:
+            recs = []
+            for r in rejected:
+                if not isinstance(r, dict):
+                    continue
+                idx = r.get("index")
+                row = rows[idx] if isinstance(idx, int) and 0 <= idx < len(rows) \
+                    else None
+                if sample_lane is None and isinstance(row, dict):
+                    lid = row.get("lane_id")
+                    if isinstance(lid, int):
+                        sample_lane = lid
+                recs.append({"error": r.get("error"), "row": row})
+            self.quarantined += len(recs)
+            os.makedirs(self.dir, exist_ok=True)
+            with open(self.quarantine_path, "a", encoding="utf-8") as f:
+                for rec in recs:
+                    f.write(json.dumps(rec, default=str) + "\n")
+        except Exception:
+            self.errors += 1
+        # Notify OUTSIDE the file write so a callback bug can't lose the count.
+        try:
+            if self._on_quarantine is not None and rejected:
+                self._on_quarantine(len(rejected), sample_lane,
+                                    [r.get("error") for r in rejected
+                                     if isinstance(r, dict)])
+        except Exception:
+            self.errors += 1
 
     def _urllib_post(self, url, payload):
         import urllib.request
@@ -668,10 +788,57 @@ class OutboxReplayer:
         req = urllib.request.Request(url, data=data, method="POST",
                                      headers=headers)
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            resp.read(1024)
+            body = resp.read(65536)
             status = int(getattr(resp, "status", 200) or 200)
             if status >= 300:
                 raise RuntimeError(f"HTTP {status} from {url}")
+            try:
+                return json.loads(body.decode("utf-8")) if body else None
+            except Exception:
+                return None
+
+    def health(self):
+        """R3-3 outbox health telemetry: oldest-unsent age, backlog depth,
+        cursor health, quarantined count. Best-effort; never raises. Feeds the
+        controller heartbeat (R3-2) and can be event-emitted on threshold."""
+        try:
+            files = self._outbox_files()
+            cur = self._load_cursor()
+            cursor_ok = (not files) or (cur is not None
+                                        and cur.get("file") in files)
+            backlog_bytes = 0
+            oldest_age = None
+            if files:
+                start_idx, start_pos = 0, 0
+                if cur and cur.get("file") in files:
+                    start_idx = files.index(cur["file"])
+                    start_pos = int(cur.get("pos", 0) or 0)
+                for i in range(start_idx, len(files)):
+                    path = os.path.join(self.dir, files[i])
+                    try:
+                        size = os.path.getsize(path)
+                        remaining = size - (start_pos if i == start_idx else 0)
+                        if remaining > 0:
+                            backlog_bytes += remaining
+                            if oldest_age is None:
+                                oldest_age = max(
+                                    0.0, time.time() - os.path.getmtime(path))
+                    except OSError:
+                        continue
+            return {
+                "oldest_unsent_age_s": (round(oldest_age, 1)
+                                        if oldest_age is not None else None),
+                "backlog_bytes": backlog_bytes,
+                "cursor_ok": bool(cursor_ok),
+                "quarantined": self.quarantined,
+                "shipped": self.shipped,
+                "skipped": self.skipped,
+                "cycles_shipped": self.cycles_shipped,
+                "post_errors": self.post_errors,
+            }
+        except Exception:
+            return {"cursor_ok": False, "quarantined": self.quarantined,
+                    "error": True}
 
     # -- lifecycle ---------------------------------------------------------
     def start(self):
@@ -707,6 +874,8 @@ class OutboxReplayer:
 
     def stats(self):
         return {"shipped": self.shipped, "skipped": self.skipped,
+                "quarantined": self.quarantined,
+                "cycles_shipped": self.cycles_shipped,
                 "post_errors": self.post_errors, "errors": self.errors}
 
 
@@ -759,6 +928,30 @@ class DiagWriter:
         if not self.enabled:
             return False
         return self.queue.emit(event)
+
+    def outbox_active(self):
+        """True when the JSONL-as-outbox HTTP leg owns delivery (R3-3 durable
+        path). The daemon uses this to decide whether cycles ride the durable
+        outbox (emit_cycle) or the legacy live CycleShipper->post_cycle."""
+        return self.outbox is not None
+
+    def emit_cycle(self, row):
+        """R3-3: durable machine_cycles delivery. In outbox mode the cycle row
+        is tagged '_kind: cycle' and queued onto the SAME single write path as
+        events — it lands in the daily JSONL file and the OutboxReplayer ships
+        it to /api/machine/cycles with the same delivery-identity idempotency
+        and crash/outage replay. Returns True if queued. Never raises. (When
+        the outbox is NOT active this returns False so the caller keeps the
+        legacy direct-POST CycleShipper path — a lone live sink has no durable
+        file to replay from.)"""
+        if not self.enabled or self.outbox is None:
+            return False
+        try:
+            r = dict(row)
+            r["_kind"] = "cycle"
+            return self.queue.emit(r)
+        except Exception:
+            return False
 
     # -- lifecycle ------------------------------------------------------------
     def start(self):

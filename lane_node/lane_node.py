@@ -775,6 +775,33 @@ def _diag_emit(severity, event_type, code=None, detail=None):
         log.debug("camera diag emit swallowed", exc_info=True)
 
 
+def _health_drop_path():
+    d = os.environ.get("WSL_DIAG_DIR", "").strip() or "./diag_logs"
+    import health_drop
+    return os.path.join(d, health_drop.HEALTH_DROP_FILENAME)
+
+
+def _health_drop_hop(last_health=None):
+    """R3-11: write THIS (camera/Track-A) service's last-known health to the
+    shared drop file, and relay the OTHER (controller/Track-B) service's
+    last-known health to the store — so Pi/controller platform health is
+    visible on the desk even while only the camera service is running. Both
+    services are mutually exclusive (systemd Conflicts=), so the drop file is
+    the hand-off. Best-effort; never raises."""
+    try:
+        import health_drop
+        path = _health_drop_path()
+        health_drop.write_drop(path, health_drop.SERVICE_CAMERA,
+                               last_health or {"lanes": list(LANES)})
+        for service, payload, age_s in health_drop.read_foreign_drops(
+                path, health_drop.SERVICE_CAMERA):
+            _diag_emit("info", "service_restart", code="drop_relay",
+                       detail={"from_service": service, "age_s": age_s,
+                               "snapshot": payload})
+    except Exception:
+        log.debug("_health_drop_hop swallowed", exc_info=True)
+
+
 def _classify_camera_health(h):
     """Map a frame_health dict onto the catalog's dead/frozen/dark/blur
     classes for the event code."""
@@ -816,6 +843,10 @@ async def camera_health_loop():
                 continue        # never race a scoring capture
             h = await asyncio.to_thread(cam.frame_health)
             ok = bool(h.get('ok'))
+            # R3-11: hand this health snapshot to the shared drop file + relay
+            # the controller service's last-known health onward.
+            _health_drop_hop({"ok": ok, "code": _classify_camera_health(h),
+                              "lanes": list(LANES)})
             if not ok and not _cam_health_warned:
                 _cam_health_warned = True
                 _diag_emit("warn", "camera_health",

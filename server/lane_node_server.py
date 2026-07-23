@@ -1066,32 +1066,52 @@ class HttpHandler(BaseHTTPRequestHandler):
                                       "error": "batch too large",
                                       "max": machine_store.MAX_EVENT_BATCH,
                                   }).encode('utf-8'))
+            # R3-1b (Codex round-3, 2026-07-23): PER-RECORD ingest, never
+            # all-or-nothing. The old loop returned a 400 on the FIRST invalid
+            # record — which is exactly how the fw_identity poison pill stalled
+            # the outbox: one unknown-type record 400'd the whole batch, so the
+            # client's cursor-ack never fired and every later record (valid or
+            # not) was blocked forever behind it. Now each record is validated
+            # independently; the valid ones insert, the invalid ones come back
+            # in 'rejected' as {index, error}, and the response is a 2xx (the
+            # cursor-ack) for any well-formed array body. The client quarantines
+            # the rejected indices and advances its cursor past them.
             rows = []
+            row_index = []      # rows[k] came from events[row_index[k]]
+            rejected = []
             for i, ev in enumerate(events):
                 try:
                     rows.append(machine_store.validate_event(ev))
+                    row_index.append(i)
                 except ValueError as e:
-                    return self._send(400, 'application/json',
-                                      json.dumps({"error": str(e),
-                                                  "index": i}).encode('utf-8'))
-            try:
-                ids = machine_store.insert_events(rows)
-            except machine_store.StoreDisabled:
-                return self._send(503, 'application/json',
-                                  b'{"ok":false,"error":"machine diagnostics '
-                                  b'disabled (WSL_MACHINE_DIAG)"}')
-            except Exception as e:
-                log.warning(f"machine events insert failed: {e}")
-                return self._send(500, 'application/json',
-                                  b'{"error":"insert failed"}')
+                    rejected.append({"index": i, "error": str(e)})
+            ids = []
+            if rows:
+                try:
+                    ids = machine_store.insert_events(rows)
+                except machine_store.StoreDisabled:
+                    return self._send(503, 'application/json',
+                                      b'{"ok":false,"error":"machine '
+                                      b'diagnostics disabled '
+                                      b'(WSL_MACHINE_DIAG)"}')
+                except Exception as e:
+                    # A real store failure (not a bad record) — the client must
+                    # NOT advance its cursor, so this is a 5xx, not a 2xx with
+                    # rejects. Retry replays the whole segment idempotently.
+                    log.warning(f"machine events insert failed: {e}")
+                    return self._send(500, 'application/json',
+                                      b'{"error":"insert failed"}')
             # 'duplicates' (R2-12): rows the delivery-identity UNIQUE index
             # deduped — an outbox replay overlapping a prior ack. The 2xx is
-            # the cursor-ack either way.
+            # the cursor-ack either way; 'rejected' lets the client quarantine
+            # the poison records (R3-1c) instead of retrying them forever.
             return self._send(200, 'application/json',
                               json.dumps({
                                   "ok": True, "inserted": len(ids),
                                   "duplicates":
                                       machine_store.last_insert_duplicates(),
+                                  "accepted": len(rows),
+                                  "rejected": rejected,
                                   "ids": ids}).encode('utf-8'))
 
         if parts == ['api', 'machine', 'cycles']:
@@ -1126,6 +1146,54 @@ class HttpHandler(BaseHTTPRequestHandler):
             return self._send(200, 'application/json',
                               json.dumps({"ok": True,
                                           "id": cycle_id}).encode('utf-8'))
+
+        if parts == ['api', 'machine', 'heartbeat']:
+            # R3-2 (Codex round-3, 2026-07-23): the controller_daemon's
+            # periodic authenticated lease renewal. The Track-B controller
+            # service does NOT send the scoring WS heartbeat (that path is
+            # Track-A only) — without this, a healthy-but-quiet controller
+            # expired OFFLINE at the 90 s lease window (the wrong-topology
+            # bug). This POST touches the lease identically to the WS/ingest
+            # path and records the board/firmware/contract identity so a
+            # wrong-image board is visible on the desk. Canonical shape is
+            # {"heartbeat": {...}}; a bare object is tolerated. NOT gated by
+            # WSL_MACHINE_DIAG (liveness must survive a diagnostics kill).
+            body, err = self._read_json_body(8192)
+            if err:
+                return self._send(400, 'application/json', err)
+            if isinstance(body, dict) and 'heartbeat' in body:
+                body = body['heartbeat']
+            if not isinstance(body, dict):
+                return self._send(400, 'application/json',
+                                  b'{"error":"heartbeat body must be an '
+                                  b'object"}')
+            try:
+                lane = machine_store._lane_id(body.get('lane_id'))
+            except ValueError as e:
+                return self._send(400, 'application/json',
+                                  json.dumps({"error": str(e)}).encode('utf-8'))
+            try:
+                row = machine_store.record_heartbeat(
+                    lane,
+                    board_rev=body.get('board_rev'),
+                    fw_build=body.get('fw_build'),
+                    fw_cfg=body.get('fw_cfg'),
+                    fw_version=body.get('fw_version'),
+                    contract_sha256=body.get('contract_sha256'),
+                    identity_ok=body.get('identity_ok'),
+                    ro_fs=body.get('ro_fs'),
+                    outbox=body.get('outbox'))
+            except ValueError as e:
+                return self._send(400, 'application/json',
+                                  json.dumps({"error": str(e)}).encode('utf-8'))
+            except Exception as e:
+                log.warning(f"machine heartbeat failed: {e}")
+                return self._send(500, 'application/json',
+                                  b'{"error":"heartbeat failed"}')
+            return self._send(200, 'application/json',
+                              json.dumps({"ok": True, "lane": lane,
+                                          "last_seen": row.get('last_seen')
+                                          }).encode('utf-8'))
 
         if (len(parts) == 5 and parts[:3] == ['api', 'machine', 'lane']
                 and parts[4] == 'maintenance'):

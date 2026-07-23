@@ -80,9 +80,18 @@ pyserial is imported lazily so this module loads + tests on any machine.
 from __future__ import annotations
 import json
 import logging
+import math
 import threading
 import time
 from collections import deque
+
+
+def _reject_nonfinite(const):
+    """json.loads parse_constant hook (R3-10): a telemetry line carrying NaN /
+    Infinity / -Infinity is CORRUPTION, not data. Rejecting it here means
+    json.loads raises (caught by feed_line) instead of silently producing a
+    float('nan') that then poisons FwClock / extrema / interval math."""
+    raise ValueError(f"non-finite JSON constant {const!r}")
 
 log = logging.getLogger("rp2040_link")
 
@@ -104,6 +113,14 @@ SENT_MAXLEN = 256    # `sent` is a test/bench record, not an unbounded log
 SEND_FAIL_LIMIT = 3  # consecutive serial-write failures => health_ok() False
 REBOOT_FAULT = "fw_reboot"  # synthetic fault latched on firmware-reboot detection
 RUN_RESYNC_RETRIES = 3  # hb run-mask mismatch: re-sends per motor per episode
+
+# R3-5 (Codex round-3, 2026-07-23): firmware-identity re-request after a
+# reboot. A reboot INVALIDATES every cached identity/capability/extrema fact
+# (an old v1.2.2 image's identity must never survive into a v0.1 boot). The
+# link re-requests the id line and, if none arrives within the budget, reports
+# it MISSING once so the daemon inhibits ARM (env-escapable for the bench).
+IDENTITY_RETRY_S = 3.0       # seconds between id re-requests after a reboot
+IDENTITY_MAX_RETRIES = 3     # re-requests before declaring identity MISSING
 
 # v1.2.x tap telemetry (Codex round-2 R2-11, 2026-07-21). The firmware's hb
 # "tap" mask + tapdump "p" field use this bit/pin order (README "v1.2 tap
@@ -275,10 +292,18 @@ class RP2040Link:
         # v1.2.2 identity (R2-6; None until an "id" line / hb "rid" is heard)
         self._identity = None       # last "id" line, sanitized dict
         self._rid = None            # last hb "rid" (REV_ID strap code; 255 = floating)
+        # R3-5 identity-after-reboot re-request bookkeeping
+        self._identity_boot_seen = False       # a boot happened => id expected
+        self._identity_req_at = None           # monotonic of the last id request
+        self._identity_retries = 0             # re-requests this reboot
+        self._identity_missing_reported = False  # 'missing' returned once
         # typed diag records for the daemon (bounded; drained off-lock)
         self._dr_lock = threading.Lock()
         self._diag_records = deque(maxlen=DIAG_RECORDS_MAX)
         self.diag_record_drops = 0  # records lost to the deque cap
+        # R3-10: hardened-parse bookkeeping (NaN/Infinity/garbage lines)
+        self.parse_errors = 0
+        self._quar_lines = deque(maxlen=32)   # bounded sample of bad raw lines
 
         # queued cam/ball events, drained by apply_events()
         self._evlock = threading.Lock()
@@ -360,18 +385,39 @@ class RP2040Link:
 
     # ---- inbound parsing ---------------------------------------------------
     def feed_line(self, line):
-        """Parse one received protocol line. Safe to call from the reader thread."""
+        """Parse one received protocol line. Safe to call from the reader
+        thread. R3-10 hardened: NaN/Infinity/garbage never raise and never
+        reach the handlers — a corrupt/hostile UART line is counted
+        (parse_errors), a bounded sample is quarantined (_quar_lines), and the
+        line is dropped. The serial reader keeps running regardless."""
         line = line.strip()
         if not line:
             return
         try:
-            ev = json.loads(line)
-        except ValueError:
-            log.debug("RP2040 unparseable line: %r", line)
+            ev = json.loads(line, parse_constant=_reject_nonfinite)
+        except (ValueError, TypeError, RecursionError):
+            self._note_parse_error(line)
             return
         if not isinstance(ev, dict):
+            self._note_parse_error(line)
             return
-        self._handle(ev)
+        try:
+            self._handle(ev)
+        except Exception:
+            # A malformed-but-parseable object (wrong types in a field) must
+            # never crash the reader thread (R3-10 "never raises").
+            self._note_parse_error(line)
+            log.debug("RP2040 handler swallowed for line %r", line,
+                      exc_info=True)
+
+    def _note_parse_error(self, line):
+        """Bounded quarantine of a bad line (R3-10). Never raises."""
+        try:
+            with self._lock:
+                self.parse_errors += 1
+                self._quar_lines.append(str(line)[:200])
+        except Exception:
+            pass
 
     def _handle(self, ev):
         kind = ev.get("ev")
@@ -459,6 +505,11 @@ class RP2040Link:
             }
             with self._lock:
                 self._identity = ident
+                # R3-5: a fresh id line clears the after-reboot re-request state
+                # (and any latched 'missing') — identity is current again.
+                self._identity_missing_reported = False
+                self._identity_req_at = None
+                self._identity_retries = 0
             if ident["fi1"]:
                 # An FI-1 bench fault-injection image must NEVER run at a lane
                 # (R1.9 / FA-11 step 3) — loudest available signal short of a trip.
@@ -472,10 +523,15 @@ class RP2040Link:
     # `notes` so no logging handler can ever block under the lock) -------------
     @staticmethod
     def _num(ev, key):
-        """ev[key] if it is a real number (bool excluded), else None — additive
-        fields from unknown/fuzzed senders must never throw here."""
+        """ev[key] if it is a FINITE real number (bool excluded), else None —
+        additive fields from unknown/fuzzed senders must never throw here.
+        R3-10: NaN / Infinity are rejected (they should never survive
+        feed_line's parse_constant guard, but this is the belt to that
+        suspenders — a non-finite value in extrema/interval math is poison)."""
         v = ev.get(key)
         if isinstance(v, (int, float)) and not isinstance(v, bool):
+            if isinstance(v, float) and not math.isfinite(v):
+                return None
             return v
         return None
 
@@ -490,6 +546,32 @@ class RP2040Link:
         rebooted = self._last_up is not None    # we had heartbeats before this boot
         self._last_up = None                    # fresh uptime/drp baselines
         self._last_drp = None
+        # R3-5 (Codex round-3): a reboot INVALIDATES all cached identity /
+        # capability / extrema state. Codex's repro flashed a v1.2.2 image,
+        # then rebooted into a v0.1 image that sends no id line — the STALE
+        # v1.2.2 identity (revision, build/config hashes, RID, MAXRUN, tap
+        # masks, V5 extrema) survived and the daemon armed against a board it
+        # could no longer identify. Clear it all here; the fresh boot event's
+        # own fields repopulate below, and the id line is re-requested so a
+        # firmware that still speaks v1.2.2 re-announces. What it CANNOT do is
+        # keep reading as the old image.
+        self._identity = None
+        self._rid = None
+        self._maxrun_ms = None
+        self._v5 = None
+        self._tap_mask = None
+        self._ring_depth = None
+        self._in_mask = None
+        self._run_mask = None
+        self._v11 = None
+        # re-arm the identity re-request state machine. poll_identity (driven
+        # by the daemon off-tick) issues the first ID request immediately
+        # (req_at None) and retries on a bounded schedule; sending here, on the
+        # reader thread mid-parse, is avoided.
+        self._identity_boot_seen = True
+        self._identity_req_at = None
+        self._identity_retries = 0
+        self._identity_missing_reported = False
         # fw ms clock restarted at 0 -> the learned offset is garbage. Resync on
         # EVERY boot event (first boot included: offset may predate a missed boot).
         self.fw_clock.resync()
@@ -933,6 +1015,53 @@ class RP2040Link:
         unread straps (rev-B/rev-C board), or None if never sent."""
         with self._lock:
             return self._rid
+
+    def identity_ok(self):
+        """True once the firmware's id line has been heard AND is still valid
+        for the current boot (R3-5: a reboot clears it). False before the
+        first id line, and after any reboot until the id is re-heard."""
+        with self._lock:
+            return self._identity is not None
+
+    def identity_missing(self):
+        """True once poll_identity has exhausted its re-request budget after a
+        reboot with no id line (a firmware too old to answer ID, or a dead
+        UART). Latched until the next successful id line / reboot."""
+        with self._lock:
+            return self._identity_missing_reported and self._identity is None
+
+    def poll_identity(self, now=None):
+        """Off-tick driver for the R3-5 identity re-request. Issues an ID
+        request after a reboot and retries on a bounded schedule; returns
+        'missing' EXACTLY ONCE when the budget is spent with no id line (the
+        daemon turns that into an 'fw_identity_missing' event + ARM inhibit),
+        else None. Never raises. Safe to call every platform-health tick."""
+        if now is None:
+            now = self._now()
+        send = False
+        result = None
+        try:
+            with self._lock:
+                if (self._identity is not None
+                        or not self._identity_boot_seen
+                        or self._identity_missing_reported):
+                    return None
+                if self._identity_req_at is None:
+                    send = True
+                    self._identity_req_at = now
+                elif now - self._identity_req_at >= IDENTITY_RETRY_S:
+                    if self._identity_retries < IDENTITY_MAX_RETRIES:
+                        self._identity_retries += 1
+                        self._identity_req_at = now
+                        send = True
+                    else:
+                        self._identity_missing_reported = True
+                        result = "missing"
+            if send:
+                self.request_identity()   # sends outside the lock
+        except Exception:
+            log.debug("poll_identity swallowed", exc_info=True)
+        return result
 
     def maxrun_ms(self):
         """Firmware max-run ceiling advertised in the boot event (v0.2.0+), or None

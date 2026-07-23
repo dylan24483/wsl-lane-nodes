@@ -44,6 +44,7 @@ import logging
 import os
 import sqlite3
 import threading
+import time
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from datetime import time as dtime
@@ -75,40 +76,37 @@ DEFAULT_BUSINESS_TZ = "America/Los_Angeles"
 DEFAULT_BUSINESS_CUTOFF = "04:00"
 
 # Writer-validated vocabularies (NO CHECK constraints — extend freely,
-# no table rebuild needed). Initial event set is the scope §2 list.
-EVENT_TYPES = {
-    'fsm_fault', 'fw_fault', 'drift_alarm', 'chatter', 'link_lost',
-    'fw_reboot', 'rp2040_wdt_reset', 'rail_drop', 'pi_undervoltage',
-    'service_restart', 'stuck_input', 'beam_blocked', 'gripper_disagree',
-    'short_rack', 'run_mismatch', 'manual_override', 'recovered',
-    # 2026-07-19 wave-2 daemon-integration additions (Pi-side emitters):
-    'unexpected_edge',                       # FSM out-of-state cam/ball counts
-    'be_stuck_running', 'be_no_current',     # AUX be_current rules
-    'ball_return_missing',                   # AUX exit_beam rule (catalog §1.2)
-    'dist_index_stall',                      # AUX dist_index rule
-    # 2026-07-21 Codex round-2 additions:
-    # R2-11 — firmware v1.2.x record consumption (tap ring / warns / VCC_5V):
-    'tapdump',                               # aggregated rail-drop edge ring
-    'tap_warn',                              # fw tapwarn (e.g. rpok_mism)
-    'v5_out_of_range',                       # VCC_5V hb extrema out of window
-    # R2-12 — bank health + promoted infrastructure faults:
-    'bank_unavailable', 'stale_channel', 'configured_role_missing',
-    'uart_drops', 'diag_drops', 'http_sink_drops',
-    'service_restart_loop', 'fw_config_mismatch',
-    # R2-16 — FIELD_WET loopback role (AUX11):
-    'field_wet_lost', 'field_wet_restored',
-    # R2-14 — camera + Pi platform health:
-    'camera_health', 'camera_ref_drift', 'gs_camera_disagree',
-    'pi_disk_low', 'pi_fs_readonly', 'pi_thermal', 'pi_clock_drift',
-    'diag_storage_pruned',
-}
-SEVERITIES = ('info', 'warn', 'fault')  # the ONLY CHECK enum
-CYCLE_TYPES = {'ball', 'reset', 'power_on', 'manual', 'test'}
-FINAL_STATES = {'READY', 'FAULT', 'MANUAL_INTERVENTION'}
+# no table rebuild needed). R3-1a (2026-07-23): these are LOADED from
+# server/machine_contract.json — the single source of truth — not
+# re-declared here. The three-round drift class (a type emitted by a
+# client but absent from this validator, e.g. the fw_identity poison pill
+# that 400'd whole batches and stalled the outbox cursor) is now
+# structurally impossible: there is exactly one list, and a NEW emit site
+# that skips the contract is caught by tests/test_event_type_vocab_coverage.
+# Fail posture: a live server must not die because a deploy dropped the JSON
+# mid-copy, so a missing file falls back to accept-any-string on the
+# taxonomy (never on delivery identity) with a loud warning; the CI vocab
+# test still gates development.
+import machine_contract as _contract  # noqa: E402
+
+try:
+    _VOCAB = _contract.load_vocab()
+    _EVENT_TYPES_STRICT = True
+except _contract.ContractUnavailable:
+    _VOCAB = _contract.load_vocab(allow_fallback=True)
+    _EVENT_TYPES_STRICT = False
+    log.error("machine_contract.json unavailable — event_type validation is "
+              "running in fail-open (accept-any) mode; SEVERITIES/states still "
+              "enforced from the frozen fallback. Fix the deploy.")
+
+EVENT_TYPES = _VOCAB["event_types"]      # set or None (None = fail-open taxonomy)
+SEVERITIES = _VOCAB["severities"]        # the ONLY CHECK enum
+CYCLE_TYPES = set(_VOCAB["cycle_types"])
+FINAL_STATES = set(_VOCAB["final_states"])
+RECORD_KINDS = set(_VOCAB["record_kinds"])
 
 # The six CamTelemetry intervals (scope §2 schema), integer ms.
-INTERVAL_COLUMNS = ('ss_to_guard_ms', 'guard_to_table_ms', 'table_to_ta2_ms',
-                    'ta2_to_sa_ms', 'sa_to_ta1zero_ms', 'bs_to_ta1zero_ms')
+INTERVAL_COLUMNS = _VOCAB["interval_columns"]
 
 # ------------------------------------------------------------------
 # Board liveness leases (Codex R2-10, 2026-07-21). Every configured
@@ -125,7 +123,7 @@ INTERVAL_COLUMNS = ('ss_to_guard_ms', 'guard_to_table_ms', 'table_to_ta2_ms',
 # (code 'deploy_marker:*'), which are posted by deploy.ps1 on WSL-SRV
 # and must not fake board liveness.
 # ------------------------------------------------------------------
-MACHINE_STATES = ('HEALTHY', 'FAULT', 'OFFLINE', 'UNKNOWN', 'MAINTENANCE')
+MACHINE_STATES = _VOCAB["states"]   # R3-1a: loaded from the contract vocab
 LEASE_WINDOW_ENV = "WSL_MACHINE_LEASE_S"
 DEFAULT_LEASE_WINDOW_S = 90.0
 MACHINE_LANES_ENV = "WSL_MACHINE_LANES"
@@ -221,6 +219,18 @@ def _warn_once(key, msg):
     if key not in _warned:
         _warned.add(key)
         log.warning(msg)
+
+
+def _env_float(name, default):
+    """Read a positive float env var; garbage / non-positive -> default."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return float(default)
+    try:
+        val = float(raw)
+        return val if val > 0 else float(default)
+    except ValueError:
+        return float(default)
 
 
 # ------------------------------------------------------------------
@@ -405,10 +415,36 @@ def _migrate_identity(conn):
     conn.executescript(_IDENTITY_INDEXES)
 
 
+# R3-2 / R3-5 (2026-07-23): the periodic authenticated heartbeat the
+# controller_daemon POSTs carries board + firmware + contract identity so a
+# healthy-but-quiet Track-B controller keeps its lease fresh AND the desk can
+# see WHICH board/firmware/contract each lane is running. Additive columns.
+_LEASE_IDENTITY_COLUMNS = (
+    ('heartbeat_at', 'TEXT'),        # last heartbeat POST time
+    ('board_rev', 'TEXT'),           # e.g. 'revD'
+    ('fw_build', 'TEXT'),            # firmware build id (git describe)
+    ('fw_cfg', 'TEXT'),              # firmware config.h sha256[:8]
+    ('fw_version', 'TEXT'),          # firmware semantic version
+    ('contract_sha256', 'TEXT'),     # contract digest the daemon shipped with
+    ('identity_ok', 'INTEGER'),      # daemon self-report: identity resolved?
+    ('outbox_json', 'TEXT'),         # last outbox health block (R3-3)
+    ('overdue_alerted_at', 'TEXT'),  # R3-10 maintenance_overdue idempotency
+)
+
+
+def _migrate_leases(conn):
+    """Additive lease-identity columns (R3-2/R3-5/R3-10). Safe every connect."""
+    have = {r['name'] for r in conn.execute("PRAGMA table_info(machine_leases)")}
+    for col, ctype in _LEASE_IDENTITY_COLUMNS:
+        if col not in have:
+            conn.execute(f"ALTER TABLE machine_leases ADD COLUMN {col} {ctype}")
+
+
 def _ensure_schema(conn):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
     _migrate_identity(conn)
+    _migrate_leases(conn)
 
 
 def _connect():
@@ -481,7 +517,13 @@ def validate_event(ev):
         raise ValueError(f"severity must be one of {list(SEVERITIES)}")
     row['severity'] = severity
     event_type = ev.get('event_type')
-    if not isinstance(event_type, str) or event_type not in EVENT_TYPES:
+    if not isinstance(event_type, str) or not event_type:
+        raise ValueError(f"event_type must be a non-empty string, got "
+                         f"{event_type!r}")
+    # EVENT_TYPES is None only in the fail-open degraded mode (contract JSON
+    # unreadable at runtime) — accept any non-empty string then, so a live
+    # board keeps delivering; strict membership is the normal path.
+    if EVENT_TYPES is not None and event_type not in EVENT_TYPES:
         raise ValueError(f"unknown event_type {event_type!r} "
                          f"(allowed: {sorted(EVENT_TYPES)})")
     row['event_type'] = event_type
@@ -631,17 +673,161 @@ def set_maintenance(lane_id, on, note=None):
     now = _utc_now_iso()
     with _db_lock:
         with closing(_connect()) as conn:
+            # overdue_alerted_at is reset on EVERY toggle (R3-10): turning
+            # maintenance off clears a prior alert; turning it on starts a
+            # fresh window that can alert once when it expires.
             conn.execute(
                 "INSERT INTO machine_leases (lane_id, maintenance, "
-                "maintenance_note, maintenance_changed_at) VALUES (?,?,?,?) "
+                "maintenance_note, maintenance_changed_at, overdue_alerted_at) "
+                "VALUES (?,?,?,?,NULL) "
                 "ON CONFLICT(lane_id) DO UPDATE SET maintenance = ?, "
-                "maintenance_note = ?, maintenance_changed_at = ?",
+                "maintenance_note = ?, maintenance_changed_at = ?, "
+                "overdue_alerted_at = NULL",
                 (lane_id, 1 if on else 0, note, now,
                  1 if on else 0, note, now))
             conn.commit()
             row = conn.execute("SELECT * FROM machine_leases WHERE lane_id = ?",
                                (lane_id,)).fetchone()
     return dict(row) if row is not None else {'lane_id': lane_id}
+
+
+# R3-10 (2026-07-23): a machine left in MAINTENANCE forever silently
+# suppresses every alert. Once maintenance has been on longer than this,
+# the server emits ONE maintenance_overdue warn (state stays MAINTENANCE —
+# only the mechanic clears it — but the desk is told).
+MAINTENANCE_MAX_ENV = "WSL_MACHINE_MAINTENANCE_MAX_S"
+DEFAULT_MAINTENANCE_MAX_S = 43200.0   # 12 h
+
+
+def maintenance_max_s():
+    raw = os.environ.get(MAINTENANCE_MAX_ENV, "").strip()
+    if not raw:
+        return DEFAULT_MAINTENANCE_MAX_S
+    try:
+        val = float(raw)
+        return val if val > 0 else DEFAULT_MAINTENANCE_MAX_S
+    except ValueError:
+        return DEFAULT_MAINTENANCE_MAX_S
+
+
+# Heartbeat identity fields the daemon may carry (R3-2/R3-5). lane_id is
+# handled separately; everything else is optional and stored as-is.
+_HEARTBEAT_STR_FIELDS = ('board_rev', 'fw_build', 'fw_cfg', 'fw_version',
+                         'contract_sha256')
+
+
+def record_heartbeat(lane_id, *, board_rev=None, fw_build=None, fw_cfg=None,
+                     fw_version=None, contract_sha256=None, identity_ok=None,
+                     ro_fs=None, outbox=None, when=None):
+    """R3-2: consume one authenticated controller heartbeat. Touches the
+    lease last_seen (identically to the WS/ingest path — a quiet Track-B
+    controller stays HEALTHY) and records the board/firmware/contract
+    identity + outbox health. NEVER raises (liveness bookkeeping must not
+    take down the endpoint). Returns the stored lease row as a dict.
+    Deliberately NOT gated on WSL_MACHINE_DIAG — same rule as touch_lanes."""
+    try:
+        lane_id = _lane_id(lane_id)
+    except ValueError:
+        raise
+    now = _normalize_utc_iso(when) if when is not None else _utc_now_iso()
+    vals = {'heartbeat_at': now}
+    for f in _HEARTBEAT_STR_FIELDS:
+        v = locals().get(f)
+        if v is not None:
+            vals[f] = _opt_str(v, f, max_len=200)
+    if identity_ok is not None:
+        vals['identity_ok'] = 1 if identity_ok else 0
+    # R3-10 ro_fs rides the outbox_json blob (no new column) so the desk/bridge
+    # can read the read-only-FS flag even when the pi_fs_readonly EVENT itself
+    # could not be persisted to the (read-only) outbox file.
+    if outbox is not None or ro_fs is not None:
+        blob = {"ro_fs": bool(ro_fs)} if ro_fs is not None else {}
+        if isinstance(outbox, dict):
+            blob.update(outbox)
+        elif outbox is not None:
+            blob["outbox"] = outbox
+        try:
+            vals['outbox_json'] = json.dumps(blob)[:4000]
+        except (TypeError, ValueError):
+            vals['outbox_json'] = None
+    cols = ['lane_id', 'last_seen'] + list(vals.keys())
+    placeholders = ','.join('?' * len(cols))
+    updates = ', '.join(f"{c} = excluded.{c}"
+                        for c in ['last_seen'] + list(vals.keys()))
+    params = [lane_id, now] + list(vals.values())
+    try:
+        with _db_lock:
+            with closing(_connect()) as conn:
+                conn.execute(
+                    f"INSERT INTO machine_leases ({','.join(cols)}) "
+                    f"VALUES ({placeholders}) "
+                    f"ON CONFLICT(lane_id) DO UPDATE SET {updates}",
+                    params)
+                conn.commit()
+                row = conn.execute(
+                    "SELECT * FROM machine_leases WHERE lane_id = ?",
+                    (lane_id,)).fetchone()
+        return dict(row) if row is not None else {'lane_id': lane_id}
+    except Exception as e:
+        _bump_error()
+        _warn_once('heartbeat', f"machine heartbeat record failed: {e}")
+        return {'lane_id': lane_id}
+
+
+def sweep_maintenance_overdue(now=None):
+    """R3-10: emit ONE 'maintenance_overdue' warn per lane whose maintenance
+    flag has been on longer than maintenance_max_s(). Idempotent via
+    overdue_alerted_at — re-cleared when maintenance is turned off. Returns
+    the number of overdue events emitted this sweep. Never raises."""
+    base = now if isinstance(now, datetime) else datetime.now(timezone.utc)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=timezone.utc)
+    limit = maintenance_max_s()
+    emitted = 0
+    try:
+        with _db_lock:
+            with closing(_connect()) as conn:
+                rows = conn.execute(
+                    "SELECT lane_id, maintenance, maintenance_changed_at, "
+                    "maintenance_note, overdue_alerted_at "
+                    "FROM machine_leases WHERE maintenance = 1").fetchall()
+                due = []
+                for r in rows:
+                    if r['overdue_alerted_at'] is not None:
+                        continue
+                    changed = r['maintenance_changed_at']
+                    if not changed:
+                        continue
+                    try:
+                        age = (base - datetime.fromisoformat(changed)) \
+                            .total_seconds()
+                    except ValueError:
+                        continue
+                    if age >= limit:
+                        due.append((r['lane_id'], round(age, 1),
+                                    r['maintenance_note']))
+                stamp = _normalize_utc_iso(base)
+                for lane_id, age, note in due:
+                    conn.execute(
+                        "UPDATE machine_leases SET overdue_alerted_at = ? "
+                        "WHERE lane_id = ?", (stamp, lane_id))
+                conn.commit()
+        # Emit outside the sweep transaction (insert_events takes _db_lock).
+        for lane_id, age, note in due:
+            try:
+                insert_events([validate_event({
+                    'lane_id': lane_id, 'severity': 'warn',
+                    'event_type': 'maintenance_overdue',
+                    'code': 'maintenance',
+                    'detail': {'age_s': age, 'limit_s': limit, 'note': note},
+                })])
+                emitted += 1
+            except Exception:
+                _bump_error()
+    except Exception as e:
+        _bump_error()
+        _warn_once('maint_overdue', f"maintenance overdue sweep failed: {e}")
+    return emitted
 
 
 def insert_events(rows):
@@ -985,13 +1171,28 @@ def prune_events(now=None):
 
 
 def _retention_loop(interval_s):
+    # R3-10: the maintenance-overdue sweep needs a finer cadence than the
+    # daily prune (a 12 h flag left on should alert the same day, not on the
+    # next prune tick). Wake at most every MAINT_SWEEP_S; run the (cheap)
+    # overdue sweep every wake and the prune only once per interval_s.
+    sweep_s = min(interval_s, _env_float(
+        "WSL_MACHINE_MAINT_SWEEP_S", 900.0))   # 15 min default
+    last_prune = 0.0
     while True:
         try:
-            prune_events()
+            now = time.monotonic()
+            if now - last_prune >= interval_s:
+                prune_events()
+                last_prune = now
         except Exception as e:
             _bump_error()
             log.warning(f"machine_events retention prune failed: {e}")
-        if _retention_wake.wait(interval_s):
+        try:
+            sweep_maintenance_overdue()
+        except Exception as e:
+            _bump_error()
+            log.warning(f"maintenance overdue sweep failed: {e}")
+        if _retention_wake.wait(sweep_s):
             _retention_wake.clear()
 
 

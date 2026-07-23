@@ -65,10 +65,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cycle_control_8270 import CycleController, State, MOTION_STATES
 from controller_io import MachineIO, RecordingIO, ShadowIO
-from rp2040_link import RP2040Link, REBOOT_FAULT
+from rp2040_link import RP2040Link, REBOOT_FAULT, IDENTITY_MAX_RETRIES
 from flight_recorder import FlightRecorder
 from cam_telemetry import CamTelemetry, CycleShipper
-from diag_events import DiagWriter, HttpSink, make_event, stamp_delivery
+from diag_events import (DiagWriter, HttpSink, make_event, stamp_delivery,
+                         SERVER_URL_ENV)
+import health_drop
+from health_drop import HEALTH_DROP_FILENAME, SERVICE_CONTROLLER, SERVICE_CAMERA
 
 log = logging.getLogger("controller_daemon")
 
@@ -242,6 +245,20 @@ def _env_int(name, default, lo=1, hi=50):
         return int(default)
 
 
+def _read_contract_sha():
+    """R3-2: the machine-contract digest this daemon shipped with, carried in
+    the heartbeat so the server/desk can catch a Pi running a stale contract.
+    server/machine_contract.sha256 sits next to the checkout. None if
+    unreadable."""
+    try:
+        p = Path(__file__).resolve().parent.parent / "server" \
+            / "machine_contract.sha256"
+        text = p.read_text(encoding="utf-8").split()
+        return text[0].strip() if text else None
+    except Exception:
+        return None
+
+
 class SlowDebounce:
     """Stable-time debouncer for the 50 Hz slow-input samples (H3, Codex
     audit 2026-07-21): a NEW level is accepted only after `n` CONSECUTIVE
@@ -277,22 +294,34 @@ def _utc_now_iso():
 
 def _parse_aux_roles(spec):
     """'aux1=be_current,aux2=exit_beam' -> {'AUX1': 'be_current', ...}.
-    Unknown keys/roles are logged + skipped (never raises). None/blank -> {}."""
+    None/blank -> {} (no roles configured — the default, sensors not installed).
+
+    R3-9 (Codex round-3, 2026-07-23): an unrecognized role string, unknown AUX
+    key, or malformed token REFUSES startup with a ValueError that PRINTS the
+    valid role list — it is never silently skipped. The old skip-and-warn was
+    a seed-flag-matched-by-name time bomb: a typo ('be_currnet') logged one
+    warning at boot and then the sensor rule sat dormant forever, looking
+    exactly like a correctly-configured-but-quiet sensor. Fail loud instead."""
     roles = {}
     if not spec or not str(spec).strip():
         return roles
     for tok in str(spec).replace(",", " ").split():
-        try:
-            k, v = tok.split("=", 1)
-        except ValueError:
-            log.warning("aux role token %r has no '=' — skipped", tok)
-            continue
+        if "=" not in tok:
+            raise ValueError(
+                f"AUX role token {tok!r} is malformed (want 'auxN=role'). "
+                f"Valid roles: {list(aux_roles_valid())}")
+        k, v = tok.split("=", 1)
         name = _AUX_KEY_TO_INPUT.get(k.strip().lower())
         role = v.strip().lower()
-        if name is None or role not in AUX_ROLE_HANDLERS:
-            log.warning("aux role %r=%r not recognized — skipped "
-                        "(known roles: %s)", k, v, aux_roles_valid())
-            continue
+        if name is None:
+            raise ValueError(
+                f"AUX channel key {k.strip()!r} is not a known input "
+                f"(valid keys: {sorted(_AUX_KEY_TO_INPUT)})")
+        if role not in AUX_ROLE_HANDLERS:
+            raise ValueError(
+                f"AUX role {v.strip()!r} on {k.strip()!r} is not a known role "
+                f"(valid roles: {list(aux_roles_valid())}) — fix the typo or "
+                f"register the role; it will NOT be silently ignored")
         roles[name] = role
     return roles
 
@@ -908,7 +937,21 @@ class LaneDiag:
         so one buggy role degrades to a counted no-op."""
         if not _env_on(AUX_RULE_ENV) or not self.aux_roles:
             return
-        levels = inb_levels or {}
+        # R3-9 (Codex round-3, 2026-07-23): a bank read FAILURE arrives here as
+        # inb_levels is None. The old code did `inb_levels or {}` and then fed
+        # every AUX handler a level of False — turning an I²C read failure into
+        # a FALSE be_no_current / ball_return_missing / dist_index_stall fault.
+        # A bank we cannot read is UNKNOWN, not "all sensors deasserted": skip
+        # the handlers entirely (the bank_unavailable event carries the real
+        # condition) and reset the per-rule episode state so neither a stale
+        # latch survives the outage nor a spurious edge fires when the bank
+        # answers again.
+        if inb_levels is None:
+            self._suppress_aux_on_bank_unknown()
+            if self.ball_tracker is not None:
+                self.ball_tracker.poll(t)
+            return
+        levels = inb_levels
         for name, role in self.aux_roles.items():
             handler = AUX_ROLE_HANDLERS.get(role)
             if handler is None:
@@ -930,6 +973,16 @@ class LaneDiag:
                           role, exc_info=True)
         if self.ball_tracker is not None:
             self.ball_tracker.poll(t)
+
+    def _suppress_aux_on_bank_unknown(self):
+        """R3-9: the IN-B bank is unreadable this tick — hold every bank-derived
+        AUX rule in UNKNOWN. Clear the in-flight episode/edge state so the
+        outage neither confirms a latched fault nor manufactures an edge when
+        the bank recovers. Idempotent; never raises."""
+        self._be_deadline = None
+        self._be_quiet_warned = False
+        self._be_stuck_warned = False
+        self._dist_last_pulse = None
 
     def _note_pulse(self, name, t):
         """A pulse-role channel fired: reset its stale-channel episode."""
@@ -1042,14 +1095,131 @@ class PlatformHealth(threading.Thread):
         # R2-12: writer-stats promotion baselines (diag/http drop counters)
         self._prev_queue_drops = 0
         self._prev_http_drops = 0
+        # R3-2: periodic authenticated heartbeat/lease-renewal POST. Track-B
+        # controller sends NO scoring WS heartbeat, so without this a healthy
+        # quiet controller expired OFFLINE at the 90 s lease window.
+        self._hb_url = os.environ.get(SERVER_URL_ENV, "").strip().rstrip("/")
+        self._hb_token = os.environ.get("LANE_NODE_TOKEN", "").strip()
+        self._hb_interval = _env_float("WSL_MACHINE_HEARTBEAT_S", 20.0)
+        self._hb_last = 0.0
+        self._contract_sha = _read_contract_sha()
+        # R3-11: shared health-drop file (whichever mutually-exclusive service
+        # runs writes its own health class; whoever has transport ships both).
+        self._health_drop_path = os.path.join(self.dir, HEALTH_DROP_FILENAME)
+        self._last_foreign_age = {}   # service -> last-relayed drop age (dedup)
 
-    def _emit(self, severity, event_type, code=None, detail=None):
+    def _emit(self, severity, event_type, code=None, detail=None, lane=None):
         try:
             if self.writer is not None:
-                self.writer.emit(make_event(self._lane, severity, event_type,
-                                            code=code, detail=detail))
+                self.writer.emit(make_event(lane or self._lane, severity,
+                                            event_type, code=code,
+                                            detail=detail))
         except Exception:
             self.errors += 1
+
+    # ---- R3-5: firmware-identity re-request after a reboot -----------------
+    def _poll_identity(self):
+        """Drive each board's link.poll_identity() off-tick. When the budget
+        is spent with no id line on a board that should report it, emit ONE
+        fw_identity_missing (the tick's ARM gate inhibits arming in parallel)."""
+        for b in self.boards:
+            try:
+                if b.link.poll_identity() == "missing":
+                    self._emit("fault", "fw_identity_missing", code="no_id_line",
+                               detail={"board_rev": b.cfg.board_rev,
+                                       "retries": IDENTITY_MAX_RETRIES},
+                               lane=b.cfg.lane)
+            except Exception:
+                self.errors += 1
+
+    # ---- R3-11: shared health-drop hand-off between the two services -------
+    def _write_health_drop(self):
+        """Write this (controller/Track-B) service's platform-health snapshot
+        to the shared drop file so a Track-A run can ship it later."""
+        try:
+            payload = {
+                "service_starts": self.start_count,
+                "vcgencmd_missing": self._vcgencmd_missing,
+                "last_throttled": self._last_throttled,
+                "readonly_fs": self._readonly_warned,
+                "lanes": [b.cfg.lane for b in self.boards],
+                "writer": self.writer.stats() if self.writer else None,
+            }
+            health_drop.write_drop(self._health_drop_path,
+                                   SERVICE_CONTROLLER, payload)
+        except Exception:
+            self.errors += 1
+
+    def _ship_foreign_health(self):
+        """Ship the OTHER service's (camera/Track-A) last-known health drop to
+        the store, flagged with its age — so camera health is visible on the
+        desk even while only the controller service is running (R3-11)."""
+        try:
+            drops = health_drop.read_foreign_drops(self._health_drop_path,
+                                                   SERVICE_CONTROLLER)
+            for service, payload, age_s in drops:
+                if age_s == self._last_foreign_age.get(service):
+                    continue    # unchanged snapshot — don't re-emit every tick
+                self._last_foreign_age[service] = age_s
+                self._emit("info", "camera_health", code="drop_relay",
+                           detail={"from_service": service, "age_s": age_s,
+                                   "snapshot": payload})
+        except Exception:
+            self.errors += 1
+
+    # ---- R3-2: periodic authenticated heartbeat / lease renewal ------------
+    def _maybe_heartbeat(self):
+        """POST /api/machine/heartbeat per board on a fixed cadence WELL under
+        the lease window. Carries board revision + firmware build/config hashes
+        + the contract digest + outbox health. Never raises; a POST failure is
+        counted (self.errors) and retried next cadence."""
+        if not self._hb_url:
+            return
+        now = time.monotonic()
+        if now - self._hb_last < self._hb_interval:
+            return
+        self._hb_last = now
+        outbox = None
+        try:
+            if self.writer is not None and self.writer.outbox is not None:
+                outbox = self.writer.outbox.health()
+        except Exception:
+            outbox = None
+        for b in self.boards:
+            try:
+                ident = b.link.fw_identity() or {}
+                body = {
+                    "lane_id": b.cfg.lane,
+                    "board_rev": b.cfg.board_rev,
+                    "fw_build": ident.get("build"),
+                    "fw_cfg": ident.get("cfg"),
+                    "fw_version": b.link.fw_version(),
+                    "contract_sha256": self._contract_sha,
+                    "identity_ok": b.link.identity_ok(),
+                    # R3-10: a read-only FS blocks the JSONL outbox, so the
+                    # pi_fs_readonly EVENT can't be persisted — the heartbeat
+                    # (direct network POST, no disk) is the only channel left
+                    # to surface it. Pre-allocated flag, always sent.
+                    "ro_fs": bool(self._readonly_warned),
+                    "outbox": outbox,
+                }
+                self._post_heartbeat(body)
+            except Exception:
+                self.errors += 1
+
+    def _post_heartbeat(self, body):
+        import urllib.request
+        data = json.dumps({"heartbeat": body}).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if self._hb_token:
+            headers["X-Lane-Token"] = self._hb_token
+        req = urllib.request.Request(self._hb_url + "/api/machine/heartbeat",
+                                     data=data, method="POST", headers=headers)
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            resp.read(1024)
+            status = int(getattr(resp, "status", 200) or 200)
+            if status >= 300:
+                raise RuntimeError(f"heartbeat HTTP {status}")
 
     def stop(self, timeout=5.0):
         try:
@@ -1068,7 +1238,9 @@ class PlatformHealth(threading.Thread):
         while not self._stop_ev.is_set():
             for probe in (self._poll_throttled, self._poll_thermal,
                           self._poll_disk, self._poll_clock_drift,
-                          self._poll_writer_drops, self._poll_dir_retention):
+                          self._poll_writer_drops, self._poll_dir_retention,
+                          self._poll_identity, self._write_health_drop,
+                          self._ship_foreign_health, self._maybe_heartbeat):
                 try:
                     probe()
                 except Exception:
@@ -1449,6 +1621,8 @@ class BoardController:
             self._fsm_deb[name] = SlowDebounce(self._fsm_deb_n, initial=cur)
             self._diag_deb[name] = SlowDebounce(self._diag_deb_n, initial=cur)
         self._maxrun_refused = False   # review #30: one-time log latch for the arm refusal
+        self._identity_refused = False  # R3-5: one-time log latch for id arm refusal
+        self._identity_escape_logged = False  # R3-5: bench-escape warned once
         self._was_healthy = True
         self._prev_arm = False     # rail_drop emitter: last commanded arm value
         # machine_cycles row bookkeeping (assembled at cycle completion, shipped
@@ -1499,6 +1673,37 @@ class BoardController:
                 action()                                   # rising (debounce-stable) edge
             self._prev_slow[name] = cur
         return levels
+
+    def _identity_arm_ok(self):
+        """R3-5 ARM gate: is the firmware identity trustworthy enough to arm?
+        Returns (ok, reason). Bench escape WSL_ALLOW_IDENTITY_MISMATCH=1
+        (default off) forces ok. A KNOWN mismatch (wrong pcb rev, FI-1 image)
+        always refuses; a MISSING identity refuses only on a strapped board
+        (revD) that is expected to report it after retries — rev-B/rev-C boards
+        and pre-v1.2.2 firmware never sent an id line and keep working."""
+        if _env_on("WSL_ALLOW_IDENTITY_MISMATCH", default="0"):
+            if not self._identity_escape_logged:
+                log.warning("L%s: WSL_ALLOW_IDENTITY_MISMATCH=1 — firmware "
+                            "identity ARM gate DISABLED (bench only)",
+                            self.cfg.lane)
+                self._identity_escape_logged = True
+            return True, None
+        ident = self.link.fw_identity()
+        if ident is not None:
+            if ident.get("fi1"):
+                return False, "fi1_image"
+            pcb = ident.get("pcb")
+            declared = self.cfg.board_rev
+            expected = "unknown" if declared == "revC" else declared
+            if declared and pcb and pcb != expected:
+                return False, "pcb_rev_mismatch"
+            return True, None
+        # No identity heard. Only inhibit when it is EXPECTED (strapped revD
+        # board) and the re-request budget is spent — never punish a rev-C/B
+        # board or a firmware too old to answer ID.
+        if self.cfg.board_rev == "revD" and self.link.identity_missing():
+            return False, "identity_missing"
+        return True, None
 
     def tick(self):
         healthy = self.link.health_ok()
@@ -1559,11 +1764,36 @@ class BoardController:
                                      t=self.io.now())
             self._maxrun_refused = not mr_ok
             want_arm = mr_ok
+        # R3-5 (Codex round-3): a board whose firmware identity is MISSING
+        # (after retries, on a strapped board that should report it) or
+        # MISMATCHED (wrong pcb revision, or an FI-1 bench image) must NOT be
+        # armed — the daemon can no longer trust what silicon it is driving.
+        # Bench escape: WSL_ALLOW_IDENTITY_MISMATCH=1 (default off, loudly
+        # logged once). Never overrides the maxrun refusal above.
+        # The identity EVENTS are emitted by the dedicated paths
+        # (_consume_link_records for mismatch/FI-1, PlatformHealth._poll_identity
+        # for identity_missing) — the arm gate only enforces the CONTROL
+        # decision (inhibit + a one-time log) so it can't double-emit.
+        id_refused = False
+        if want_arm:
+            id_ok, id_reason = self._identity_arm_ok()
+            if not id_ok:
+                id_refused = True
+                want_arm = False
+                if not self._identity_refused:
+                    log.error("L%s: REFUSING to arm — firmware identity %s "
+                              "(set WSL_ALLOW_IDENTITY_MISMATCH=1 to override "
+                              "on the bench)", self.cfg.lane, id_reason)
+            elif self._identity_refused:
+                log.info("L%s: firmware identity resolved — arm no longer "
+                         "refused", self.cfg.lane)
+            self._identity_refused = id_refused
         reason = None
         if not want_arm:
             reason = (("fsm_" + self.fsm.state.value)
                       if self.fsm.state in DISARMED_STATES
-                      else ("maxrun_desync" if self._maxrun_refused else "unknown"))
+                      else ("maxrun_desync" if self._maxrun_refused
+                            else ("identity_" if id_refused else "unknown")))
         self._note_arm(want_arm, reason)
         self.io.arm(want_arm)
         self._observe()                       # instrumentation (idea #10/#15): never affects control
@@ -2078,6 +2308,27 @@ def _build_boards(configs, *, diag_writer=None, cycle_shipper=None):
     return boards
 
 
+def _make_quarantine_notifier(diag_writer):
+    """R3-1c: build the OutboxReplayer.on_quarantine callback that turns a
+    server per-record reject into an 'outbox_quarantine' warn event. Bounded,
+    never raises, log-throttled by the writer's own queue. The event carries
+    the reject count + a sample error; lane comes from the rejected row (falls
+    back to lane 1 so the event — which needs a valid 1-32 lane_id — still
+    lands and is visibly attributed to 'the outbox', not a machine)."""
+    def _notify(count, sample_lane, errors):
+        try:
+            lane = sample_lane if isinstance(sample_lane, int) \
+                and 1 <= sample_lane <= 32 else 1
+            ev = make_event(lane, "warn", "outbox_quarantine",
+                            code="server_reject",
+                            detail={"count": int(count),
+                                    "sample_errors": (errors or [])[:3]})
+            diag_writer.emit(ev)
+        except Exception:
+            log.debug("quarantine notify swallowed", exc_info=True)
+    return _notify
+
+
 def _wire_pair_diagnostics(boards):
     """Share ONE BallReturnTracker across the pair when any board maps an
     exit_beam AUX (the exit photoeye is one per PAIR — catalog §1.2). Every
@@ -2165,7 +2416,21 @@ def main(argv=None):
         diag_writer.start()
         http = next((s for s in diag_writer.sinks
                      if isinstance(s, HttpSink) and s.enabled), None)
-        if http is not None:
+        # R3-3 (2026-07-23): when the JSONL-as-outbox owns delivery, cycles
+        # ride the SAME durable file+replay path as events (emit_cycle tags
+        # them '_kind: cycle'; the OutboxReplayer routes them to
+        # /api/machine/cycles). This retires the lossy CycleShipper->post_cycle
+        # path, which had NO replay — a crash/outage between the tick and the
+        # POST lost the cycle outright. Only when the outbox is absent (a lone
+        # live sink, no durable file to replay) do we keep the direct POST.
+        if diag_writer.outbox_active():
+            cycle_shipper = CycleShipper(diag_writer.emit_cycle)
+            cycle_shipper.start()
+            # R3-1c: turn server per-record rejects into an outbox_quarantine
+            # event so a poison record is visible on the desk, not just counted.
+            diag_writer.outbox._on_quarantine = _make_quarantine_notifier(
+                diag_writer)
+        elif http is not None:
             cycle_shipper = CycleShipper(http.post_cycle)
             cycle_shipper.start()
 

@@ -264,22 +264,33 @@ def test_post_events_validation_rejects():
             ([make_event(code=123)], 'code non-string'),
             (['not-an-object'], 'event non-dict'),
         ]
+        # R3-1b (2026-07-23): ingest is PER-RECORD now — a bad record no
+        # longer 400s the whole batch (that was the poison-pill stall). A
+        # well-formed array with a single bad element returns 2xx with the
+        # element in 'rejected', so the client's cursor still advances.
         for payload, label in cases:
             status, body = http('POST', '/api/machine/events', payload)
-            assert_eq(status, 400, f"reject: {label}")
-            assert_eq(body.get('index'), 0, f"offending index: {label}")
-        # Second element bad → index 1, nothing inserted (all-or-nothing).
+            assert_eq(status, 200, f"per-record 2xx: {label}")
+            assert_eq(len(body['rejected']), 1, f"one rejected: {label}")
+            assert_eq(body['rejected'][0]['index'], 0,
+                      f"offending index: {label}")
+            assert_eq(body['inserted'], 0, f"bad-only batch inserts 0: {label}")
+        # Mixed batch: valid element inserts, bad element (index 1) rejected —
+        # NOT all-or-nothing (the R3-1 fix: one poison record can't block the
+        # rest and can't stall the cursor).
         status, body = http('POST', '/api/machine/events',
                             [make_event(), make_event(severity='nope')])
-        assert_eq(status, 400, "batch with one bad event rejected")
-        assert_eq(body['index'], 1, "index points at the bad element")
-        assert_eq(machine_store.health_counts()['events_total'], 0,
-                  "all-or-nothing: nothing inserted")
-        # Non-array bodies.
+        assert_eq(status, 200, "mixed batch is 2xx (cursor-ack)")
+        assert_eq(body['inserted'], 1, "valid element inserted")
+        assert_eq(len(body['rejected']), 1, "one element rejected")
+        assert_eq(body['rejected'][0]['index'], 1, "index points at the bad one")
+        assert_eq(machine_store.health_counts()['events_total'], 1,
+                  "per-record: the valid one survived")
+        # Non-array / empty bodies are still a hard 400 (malformed request).
         for payload in ({}, {'events': []}, {'events': 'x'}):
             status, _ = http('POST', '/api/machine/events', payload)
             assert_eq(status, 400, f"reject non-array body {payload!r}")
-        # Oversized batch.
+        # Oversized batch is still a 400 (a bug, not a backlog).
         status, body = http('POST', '/api/machine/events',
                             [make_event()
                              for _ in range(machine_store.MAX_EVENT_BATCH + 1)])
@@ -591,11 +602,15 @@ def test_event_ts_utc_is_honored_as_created_at():
         _, diag = http('GET', '/api/lane/22/diagnostics')
         assert_eq(diag['events'][0]['created_at'],
                   '2026-07-19T20:00:00.000+00:00', "created_at beats ts_utc")
-        # garbage ts_utc is a 400, not a silent receive-time stamp
-        status, _ = http('POST', '/api/machine/events', [{
+        # garbage ts_utc is NOT silently receive-time-stamped: it is a
+        # per-record reject (R3-1b — a 2xx cursor-ack with the record in
+        # 'rejected', never a whole-batch 400 that could stall the outbox).
+        status, body = http('POST', '/api/machine/events', [{
             'lane_id': 22, 'severity': 'info', 'event_type': 'recovered',
             'ts_utc': 'yesterday-ish'}])
-        assert_eq(status, 400, "garbage ts_utc rejected")
+        assert_eq(status, 200, "garbage ts_utc: 2xx cursor-ack")
+        assert_eq(len(body['rejected']), 1, "garbage ts_utc rejected per-record")
+        assert_eq(body['inserted'], 0, "garbage ts_utc not stored")
 
 
 # ---------------------------------------------------------------

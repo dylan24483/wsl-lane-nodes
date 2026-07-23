@@ -1,10 +1,10 @@
 {
   "contract": "wsl-phase8-machine-diagnostics",
   "contract_version": 1,
-  "contract_revision": "1.2 (2026-07-21 PM: R2-10 board lease/state fields + maintenance endpoint; R2-8 /api/health build identity; R2-12 delivery identity source_id/boot_id/seq + idempotent ingest + duplicates ack field)",
+  "contract_revision": "1.3 (2026-07-23 R3: event-type vocabulary is now the SINGLE SOURCE loaded by server machine_store AND client diag_events — the R3-1a never-again gate for cross-contract drift; adds fw_identity (the poison-pill type the daemon emitted but the vocab omitted, reopening R2-6/R2-12), fw_identity_missing, outbox_quarantine, maintenance_overdue; per-record ingest (rejected[] response, batch never all-or-nothing); heartbeat_post lease endpoint (R3-2); record_kinds for the durable JSONL outbox (events + cycles single write path, R3-3))",
   "delivery_identity": {
     "fields": ["source_id", "boot_id", "seq"],
-    "semantics": "R2-12 (2026-07-21): the Pi stamps every event + cycle record with a delivery identity — source_id (stable device id, default hostname; env WSL_DIAG_SOURCE_ID), boot_id (fresh uuid per daemon process start) and seq (process-wide monotonic counter). The daily diag JSONL file is the outbox: lane_node/diag_events.OutboxReplayer tails it with a persisted cursor advanced ONLY on a 2xx (cursor-ack). The server dedupes on UNIQUE(source_id, boot_id, seq) via INSERT OR IGNORE, so replay overlap after a drop or lost ack is idempotent. All-or-nothing per record: a record with only part of the identity is a 400; a record with none inserts as before (legacy live-sink era)."
+    "semantics": "R2-12 (2026-07-21): the Pi stamps every event + cycle record with a delivery identity — source_id (stable device id, default hostname; env WSL_DIAG_SOURCE_ID), boot_id (fresh uuid per daemon process start) and seq (process-wide monotonic counter). The daily diag JSONL file is the outbox: lane_node/diag_events.OutboxReplayer tails it with a persisted cursor advanced ONLY on a 2xx (cursor-ack). The server dedupes on UNIQUE(source_id, boot_id, seq) via INSERT OR IGNORE, so replay overlap after a drop or lost ack is idempotent. Identity is all-or-nothing WITHIN one record: a record carrying only part of the identity triple is rejected (per-record, into the R3-1b 'rejected' list — NOT a whole-batch 400); a record with none inserts as before (legacy live-sink era)."
   },
   "updated": "2026-07-21",
   "description": "SINGLE SOURCE OF TRUTH for the machine-diagnostics HTTP contract between the Pi lane-node daemon (client: lane_node/diag_events.py HttpSink), the :8766 lane-node server (server/lane_node_server.py + server/machine_store.py), and the WSL Systems bridge (wsl_phase8_bridge.py). Established closing Codex NO-GO audit finding H4 (2026-07-21): the cycle POST wrapper mismatch survived because each side's tests validated against their own fake. BOTH repos' test suites load this file and verify their side against it; change it only with a matching change on every consumer plus the recorded sha256 (server/machine_contract.sha256).",
@@ -24,7 +24,8 @@
       "event_required_fields": ["lane_id", "severity", "event_type"],
       "event_optional_fields": ["code", "cycle_id", "detail", "detail_json", "blackbox_file", "incident_id", "created_at", "ts_utc", "source_id", "boot_id", "seq"],
       "event_timestamp_precedence": ["created_at", "ts_utc", "server-receive-time"],
-      "response_ok_fields": ["ok", "inserted", "duplicates", "ids"]
+      "response_ok_fields": ["ok", "inserted", "duplicates", "ids", "rejected", "accepted"],
+      "ingest_semantics": "R3-1b (2026-07-23): PER-RECORD, never all-or-nothing. Every valid record in the batch inserts; every invalid record is returned in 'rejected' as {index, error} and does NOT block the rest. The response is always 2xx for a well-formed JSON array body (the cursor-ack), so a poison-pill record can never stall the outbox cursor — the client (lane_node/diag_events.OutboxReplayer) quarantines rejected records (quarantine file + counter + 'outbox_quarantine' event) and advances past them. A malformed BODY (not a JSON array/object) is still a 400."
     },
     "cycles_post": {
       "method": "POST",
@@ -63,7 +64,7 @@
       "body_required_fields": ["on"],
       "body_optional_fields": ["note"],
       "response_ok_fields": ["ok", "lane", "maintenance"],
-      "note": "mechanic flag; while on, the lane's health state is MAINTENANCE and WSL-side SMS alerting is suppressed"
+      "note": "mechanic flag; while on, the lane's health state is MAINTENANCE and WSL-side SMS alerting is suppressed. R3-10 (2026-07-23): maintenance is no longer indefinite — once it has been on longer than WSL_MACHINE_MAINTENANCE_MAX_S (default 43200s / 12h) the server emits ONE 'maintenance_overdue' warn event so a machine left flagged does not silently suppress alerts forever; the state stays MAINTENANCE (the mechanic must clear it), but the overdue event routes to the desk."
     },
     "health_get_identity": {
       "method": "GET",
@@ -75,6 +76,17 @@
       "method": "GET",
       "path_template": "/api/lane/<N>/diagnostics",
       "response_top_fields": ["ok", "lane", "open_faults", "events", "latest_cycle", "baseline"]
+    },
+    "heartbeat_post": {
+      "method": "POST",
+      "path": "/api/machine/heartbeat",
+      "request_wrapper_key": "heartbeat",
+      "request_wrapper_kind": "object",
+      "bare_body_tolerated": true,
+      "heartbeat_required_fields": ["lane_id"],
+      "heartbeat_optional_fields": ["board_rev", "fw_build", "fw_cfg", "fw_version", "contract_sha256", "identity_ok", "ro_fs", "outbox"],
+      "response_ok_fields": ["ok", "lane", "last_seen"],
+      "note": "R3-2 (2026-07-23): the controller_daemon posts this on a fixed cadence WELL UNDER the lease window (WSL_MACHINE_HEARTBEAT_S default 20s vs WSL_MACHINE_LEASE_S 90s) so a healthy-but-quiet Track-B controller — which sends NO scoring-WS heartbeat (that path is Track-A only, the R3-2/R2-10 wrong-topology bug) — keeps its lease fresh and reads HEALTHY, while a killed controller expires OFFLINE. The server touches machine_leases.last_seen identically to the WS HELLO/HEARTBEAT and ingest paths, and records the carried board/firmware/contract identity. 'outbox' is the R3-3 health block {oldest_unsent_age_s, backlog, cursor_ok, quarantined}. Behind the same X-Lane-Token gate; NOT gated by WSL_MACHINE_DIAG (liveness must survive a diagnostics-ingest kill-switch, same rule as touch_lanes)."
     }
   },
   "vocab": {
@@ -98,12 +110,16 @@
       "fsm_fault",
       "fw_config_mismatch",
       "fw_fault",
+      "fw_identity",
+      "fw_identity_missing",
       "fw_reboot",
       "gripper_disagree",
       "gs_camera_disagree",
       "http_sink_drops",
       "link_lost",
+      "maintenance_overdue",
       "manual_override",
+      "outbox_quarantine",
       "pi_clock_drift",
       "pi_disk_low",
       "pi_fs_readonly",
@@ -125,6 +141,8 @@
       "v5_out_of_range"
     ],
     "cycle_types": ["ball", "manual", "power_on", "reset", "test"],
+    "record_kinds": ["event", "cycle"],
+    "record_kinds_note": "R3-3 (2026-07-23): the daily JSONL file is the SINGLE durable write path for BOTH events and cycles. Each outbox line carries an optional '_kind' discriminator ('event' default when absent — the legacy shape; 'cycle' routes the line to /api/machine/cycles wrapped as {cycle: row}). This retires the lossy in-memory-only CycleShipper-without-replay: a cycle written to the outbox survives a crash/outage and replays with the same delivery-identity idempotency as events. The OutboxReplayer cursor recovery scans from the OLDEST file carrying unshipped records, never the newest (the R3-3 stranding bug).",
     "states": ["HEALTHY", "FAULT", "OFFLINE", "UNKNOWN", "MAINTENANCE"],
     "final_states": ["FAULT", "MANUAL_INTERVENTION", "READY"],
     "interval_columns": ["ss_to_guard_ms", "guard_to_table_ms", "table_to_ta2_ms", "ta2_to_sa_ms", "sa_to_ta1zero_ms", "bs_to_ta1zero_ms"],
