@@ -5,7 +5,7 @@ Comment,Designator,Footprint,Quantity,LCSC Part #,MFR Part #,Manufacturer,JLC Cl
 10uF 16V X5R +/-10% 0805 MLCC,C14,C_0805_2012Metric,1,C89827,CC0805KKX5R7BB106,YAGEO,Extended,Verify DC-bias derating remains acceptable on the 5V rail.
 "1N4148WS switching diode, SOD-323","D1,D3,D5,D7,D9,D11,D15,D16",D_SOD-323,8,C118873,1N4148WS,onsemi,Extended,
 "SS34 Schottky diode 40V 3A, SMA/DO-214AC",D17,D_SMA,1,C8678,SS34,MDD,Basic,HARD LOCK (FR-3): must be MDD C8678 in SMA. Any MPN substitution re-runs the footprint review.
-"PTC resettable fuse 200mA hold / 420mA trip / 24V, 1206",F1,Fuse_1206_3216Metric,1,C207035,1206L020YR,Littelfuse,Extended,"F_J16_5V current limit for the J16 module supply (R2-4). Any substitute must be 1206, hold >= 2x the 100mA module allowance and trip << the SS34 3A budget."
+"PTC resettable fuse 200mA hold / 420mA trip / 24V, 1206",F1,Fuse_1206_3216Metric,1,C207035,1206L020YR,Littelfuse,Extended,"F_J16_5V current limit for the J16 module supply (R2-4; allowance re-derived to 45mA @85C worst case per R3-7). Any substitute must be 1206, hold >= 2x the 45mA module allowance (i.e. >= 90mA hold; 1206L020 at 200mA/23C satisfies it hot) and trip << the SS34 3A budget."
 "G5LE-14 5VDC SPDT relay, wave solder","K1,K2,K3,K4,K5,K6",Relay_SPDT_Omron-G5LE-1,6,C116963,G5LE-14 5VDC,Omron Electronics,Extended,Critical: 5VDC coil. Do not substitute 9V/12V/24V coil.
 "MMBT3904 NPN BJT, SOT-23","Q1,Q2,Q3,Q4,Q5,Q6,Q15,Q16",SOT-23,8,C909754,MMBT3904,GOODWORK,Extended,
 "2N7002 N-channel MOSFET, SOT-23","Q8,Q9,Q10,Q11",SOT-23,4,C916396,2N7002,JSMSEMI,Extended,Qled_* lamp drivers ONLY. The Q_TAP_* rail-tap stages are MPN-locked to onsemi 2N7002LT1G (R2-3/FR-10) - do NOT merge the lines.

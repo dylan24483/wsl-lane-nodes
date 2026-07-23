@@ -42,8 +42,8 @@
     },
     {
       "path": "kicad/fab_revD_2026-07-21_r3/assembly/wsl-phase8b-revD-jlc-standard-pcba-bom.csv",
-      "bytes": 5017,
-      "sha256": "e7f42331f301cdb9d2f5f206f4745a32c311f887a1c9103c4d7e5a44348c1664"
+      "bytes": 5131,
+      "sha256": "43afcb62505bc41c351212f78e65d037bf8a9d33012542c03802c9d51e9db3f4"
     },
     {
       "path": "kicad/fab_revD_2026-07-21_r3/assembly/wsl-phase8b-revD-jlc-standard-pcba-cpl.csv",
@@ -57,8 +57,8 @@
     },
     {
       "path": "kicad/fab_revD_2026-07-21_r3/assembly/wsl-phase8b-revD-jlc-standard-pcba-part-lock.csv",
-      "bytes": 4604,
-      "sha256": "a1eddd135418e7e072ab796dc9c97f6db2c9a8199cfea7dacf7905ac28214019"
+      "bytes": 4718,
+      "sha256": "5ea3ab2f216e8279fc0228955d8ea96a25a68179eb88e6a90c63163354b484dc"
     },
     {
       "path": "kicad/fab_revD_2026-07-21_r3/assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-bom.csv",
@@ -227,8 +227,8 @@
     },
     {
       "path": "kicad/fab_revD_2026-07-21_r3/wsl-phase8b-revD-fab-package.zip",
-      "bytes": 2532955,
-      "sha256": "069787ecff8811685d6f77da9ba15ef907de9f1479e0aa7a3a8e69c3f1ec6316"
+      "bytes": 2533155,
+      "sha256": "5d66bdb496a4640ecb4804e438bb0864b96f3cc32ef4614a6e4255016274136c"
     },
     {
       "path": "kicad/fab_revD_2026-07-21_r3/wsl-phase8b-revD-gerber-drill.zip",
@@ -237,8 +237,8 @@
     },
     {
       "path": "kicad/fab_revD_2026-07-21_r3/wsl-phase8b-revD-jlc-standard-pcba-upload.zip",
-      "bytes": 438710,
-      "sha256": "cbfdb09c998f45d94f0b0c03716f6ecf0003353e14db0f9b96a4a0ac21695362"
+      "bytes": 438775,
+      "sha256": "d3a9a09f0947aa5b2946b6daad40273aafc66cdf0ede17465b3aa252c314a46e"
     }
   ]
 }

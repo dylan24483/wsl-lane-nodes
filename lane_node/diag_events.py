@@ -53,6 +53,7 @@ import socket
 import threading
 import time
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 
 log = logging.getLogger("diag_events")
@@ -89,6 +90,15 @@ DEFAULT_OUTBOX_POLL_S = 10.0
 OUTBOX_BATCH_MAX = 200          # lines read + POSTed per replay pass segment
 CURSOR_FILENAME = "outbox_cursor.json"
 QUARANTINE_FILENAME = "outbox_quarantine.jsonl"   # R3-1c: server-rejected rows
+# Quarantine growth bound (review fix): the quarantine file is append-only on
+# every server reject, its 'outbox_' prefix is NOT covered by JsonlSink._prune
+# (prefix 'diag-'), and a lost-ack replay of a mixed accepted+rejected segment
+# re-quarantines the same rows. Cap the file and rotate to a single .1 so total
+# on-disk stays <= ~2x the cap; dedup already-quarantined records by delivery
+# identity so a replay doesn't re-write (and re-emit) them.
+QUARANTINE_MAX_BYTES_ENV = "WSL_DIAG_QUARANTINE_MAX_BYTES"
+DEFAULT_QUARANTINE_MAX_BYTES = 256 * 1024
+QUARANTINE_DEDUP_MAX = 512        # bounded FIFO of recently-quarantined identities
 
 
 def _reject_nonfinite(const):
@@ -244,6 +254,15 @@ class DiagEvent:
     'writer-validated'): a bad severity / event_type raises ValueError right at
     the emitter, where the bug is — never downstream in the pipe. The detail
     dict is coerced JSON-safe here (bounded), so serialization can't fail later.
+
+    R3-1a (client half of the single-source vocab): BOTH the severity AND the
+    event_type are checked against the ONE contract file (server/machine_
+    contract.json) the server also validates against. When the contract loaded,
+    an unknown / typo'd event_type raises HERE at the emitter — it is NOT merely
+    caught after a server round-trip (rejected[]/quarantine). When the contract
+    was unreadable at import (EVENT_TYPES is None — an odd cwd / partial
+    checkout), the client defers to the server rather than second-guess a
+    taxonomy it could not load.
     """
 
     __slots__ = ("ts_utc", "ts_mono", "lane_id", "severity", "event_type",
@@ -255,13 +274,21 @@ class DiagEvent:
             raise ValueError(f"severity {severity!r} not in {SEVERITIES}")
         if not isinstance(event_type, str) or not event_type.strip():
             raise ValueError(f"event_type must be a non-empty string, got {event_type!r}")
+        et = event_type.strip()[:80]
+        # R3-1a: the event-type allow-set is load-bearing on the CLIENT, not
+        # just the server. This is what makes EVENT_TYPES an actual gate rather
+        # than dead-loaded state.
+        if EVENT_TYPES is not None and et not in EVENT_TYPES:
+            raise ValueError(
+                f"event_type {et!r} not in contract vocab.event_types "
+                f"(server/machine_contract.json) — the R3-1 drift class")
         if detail is not None and not isinstance(detail, dict):
             raise ValueError(f"detail must be a dict or None, got {type(detail).__name__}")
         self.ts_utc = str(ts_utc)
         self.ts_mono = float(ts_mono)
         self.lane_id = int(lane_id)
         self.severity = severity
-        self.event_type = event_type.strip()[:80]
+        self.event_type = et
         self.code = None if code is None else str(code)[:120]
         self.detail = _json_safe(detail) if detail else {}
 
@@ -568,6 +595,13 @@ class OutboxReplayer:
         self.cursor_path = cursor_path or os.path.join(self.dir,
                                                        CURSOR_FILENAME)
         self.quarantine_path = os.path.join(self.dir, QUARANTINE_FILENAME)
+        # Quarantine growth bound (review fix): cap + rotate the file, and dedup
+        # already-quarantined rows by delivery identity so a lost-ack replay
+        # can't re-write/re-emit them.
+        self._quar_max_bytes = _int_env(QUARANTINE_MAX_BYTES_ENV,
+                                        DEFAULT_QUARANTINE_MAX_BYTES)
+        self._quar_seen = deque()        # FIFO of (source_id, boot_id, seq)
+        self._quar_seen_set = set()      # membership mirror of _quar_seen
         # R3-1c: notified (count, sample_lane, errors) when the server
         # per-record-rejects rows — the daemon turns this into an
         # 'outbox_quarantine' event. Optional so the replayer stays usable
@@ -745,11 +779,46 @@ class OutboxReplayer:
         except Exception:
             return False
 
+    def _quar_key(self, row):
+        """Delivery identity of a row, or None if it lacks one."""
+        if not isinstance(row, dict):
+            return None
+        key = (row.get("source_id"), row.get("boot_id"), row.get("seq"))
+        return key if None not in key else None
+
+    def _remember_quarantined(self, key):
+        """Record a quarantined identity in the bounded FIFO dedup set."""
+        if key in self._quar_seen_set:
+            return
+        self._quar_seen.append(key)
+        self._quar_seen_set.add(key)
+        while len(self._quar_seen) > QUARANTINE_DEDUP_MAX:
+            self._quar_seen_set.discard(self._quar_seen.popleft())
+
+    def _rotate_quarantine_if_big(self):
+        """Rotate the quarantine file to a single .1 once it exceeds the cap so
+        total on-disk stays <= ~2x the cap (the file's 'outbox_' prefix is not
+        covered by JsonlSink._prune). Best-effort; never raises."""
+        try:
+            if os.path.getsize(self.quarantine_path) > self._quar_max_bytes:
+                os.replace(self.quarantine_path, self.quarantine_path + ".1")
+        except FileNotFoundError:
+            pass
+        except Exception:
+            self.errors += 1
+
     def _quarantine(self, rows, rejected):
         """Append server-rejected rows to the quarantine file, count them, and
         notify the daemon (which emits the 'outbox_quarantine' event). Never
-        raises — a quarantine-write failure must not stall the cursor."""
+        raises — a quarantine-write failure must not stall the cursor.
+
+        Bounded (review fix): rows already quarantined on a prior (lost-ack)
+        replay are skipped by delivery identity so the file and the
+        'outbox_quarantine' event stream can't grow without bound on a repeated
+        segment; the file itself is capped + rotated after each write."""
         sample_lane = None
+        written = 0
+        errors = []
         try:
             recs = []
             for r in rejected:
@@ -758,24 +827,33 @@ class OutboxReplayer:
                 idx = r.get("index")
                 row = rows[idx] if isinstance(idx, int) and 0 <= idx < len(rows) \
                     else None
+                key = self._quar_key(row)
+                if key is not None and key in self._quar_seen_set:
+                    continue    # already quarantined on a prior replay
                 if sample_lane is None and isinstance(row, dict):
                     lid = row.get("lane_id")
                     if isinstance(lid, int):
                         sample_lane = lid
-                recs.append({"error": r.get("error"), "row": row})
-            self.quarantined += len(recs)
-            os.makedirs(self.dir, exist_ok=True)
-            with open(self.quarantine_path, "a", encoding="utf-8") as f:
-                for rec in recs:
-                    f.write(json.dumps(rec, default=str) + "\n")
+                recs.append((key, {"error": r.get("error"), "row": row}))
+                errors.append(r.get("error"))
+            if recs:
+                self.quarantined += len(recs)
+                os.makedirs(self.dir, exist_ok=True)
+                with open(self.quarantine_path, "a", encoding="utf-8") as f:
+                    for key, rec in recs:
+                        f.write(json.dumps(rec, default=str) + "\n")
+                        if key is not None:
+                            self._remember_quarantined(key)
+                written = len(recs)
+                self._rotate_quarantine_if_big()
         except Exception:
             self.errors += 1
-        # Notify OUTSIDE the file write so a callback bug can't lose the count.
+        # Notify OUTSIDE the file write so a callback bug can't lose the count —
+        # but only for rows NEWLY quarantined this pass (a re-replayed segment
+        # whose rows were all already quarantined emits nothing).
         try:
-            if self._on_quarantine is not None and rejected:
-                self._on_quarantine(len(rejected), sample_lane,
-                                    [r.get("error") for r in rejected
-                                     if isinstance(r, dict)])
+            if self._on_quarantine is not None and written:
+                self._on_quarantine(written, sample_lane, errors)
         except Exception:
             self.errors += 1
 
@@ -1070,8 +1148,8 @@ if __name__ == "__main__":
     sink = JsonlSink(d, flush_n=2)
     w = DiagWriter(queue=DiagQueue(maxsize=16), sinks=[sink], enabled=True)
     w.start()
-    w.emit(make_event(21, "info", "smoke", code="s:1"))
-    w.emit(make_event(21, "warn", "smoke", detail={"k": 1}))
+    w.emit(make_event(21, "info", "recovered", code="s:1"))
+    w.emit(make_event(21, "warn", "recovered", detail={"k": 1}))
     w.stop()
     files = [n for n in os.listdir(d) if n.endswith(".jsonl")]
     assert files, "no jsonl written"
@@ -1079,7 +1157,7 @@ if __name__ == "__main__":
         rows = [json.loads(ln) for ln in f.read().splitlines() if ln]
     assert len(rows) == 2 and rows[0]["severity"] == "info", rows
     try:
-        make_event(21, "catastrophic", "smoke")
+        make_event(21, "catastrophic", "recovered")
     except ValueError:
         pass
     else:

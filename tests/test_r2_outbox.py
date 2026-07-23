@@ -193,6 +193,53 @@ def test_machine_store_dedupes_on_delivery_identity():
         ms.DB_PATH = old_db
 
 
+# ---- quarantine growth bound (review fix for finding 4) --------------------
+
+def test_quarantine_dedups_on_lost_ack_replay():
+    # The lost-ack hazard: a mixed accepted+rejected segment can replay (cursor
+    # didn't advance / a re-read), and the original _quarantine appended the
+    # rejected rows AND re-emitted the outbox_quarantine event every time —
+    # unbounded on a Pi SD card. The fix dedups by delivery identity.
+    d = tempfile.mkdtemp(prefix="outbox_q1_")
+    notified = []
+    rep = OutboxReplayer(d, "http://x:8766", post=lambda u, p: None,
+                         on_quarantine=lambda n, lane, errs: notified.append(n))
+    rows = [_row(1), _row(2)]
+    rejected = [{"index": 0, "error": "unknown_event_type"}]
+    rep._quarantine(rows, rejected)          # first receipt
+    rep._quarantine(rows, rejected)          # lost-ack replay: SAME rows again
+    rep._quarantine(rows, rejected)          # ...and again
+    qf = os.path.join(d, "outbox_quarantine.jsonl")
+    lines = [ln for ln in open(qf, encoding="utf-8").read().splitlines() if ln]
+    assert len(lines) == 1, f"row quarantined ONCE despite replays, got {len(lines)}"
+    assert rep.quarantined == 1, "quarantined counter not double-counted"
+    assert notified == [1], f"outbox_quarantine notified once, got {notified}"
+
+
+def test_quarantine_file_is_capped_and_rotated():
+    d = tempfile.mkdtemp(prefix="outbox_q2_")
+    prev = os.environ.get("WSL_DIAG_QUARANTINE_MAX_BYTES")
+    os.environ["WSL_DIAG_QUARANTINE_MAX_BYTES"] = "300"
+    try:
+        rep = OutboxReplayer(d, "http://x:8766", post=lambda u, p: None)
+        for i in range(300):     # DISTINCT identities -> no dedup, real growth
+            rep._quarantine([_row(i, detail={"pad": "y" * 40})],
+                            [{"index": 0, "error": "e"}])
+        qf = os.path.join(d, "outbox_quarantine.jsonl")
+        rotated = qf + ".1"
+        assert os.path.exists(rotated), "quarantine file never rotated to .1"
+        live = os.path.getsize(qf) if os.path.exists(qf) else 0
+        # total on disk stays bounded to ~2x the cap (live + one rotated .1),
+        # NOT 300 rows unbounded.
+        assert live <= 300 + 512, f"live quarantine file unbounded ({live} bytes)"
+        assert os.path.getsize(rotated) <= 300 + 512, "rotated file unbounded"
+    finally:
+        if prev is None:
+            os.environ.pop("WSL_DIAG_QUARANTINE_MAX_BYTES", None)
+        else:
+            os.environ["WSL_DIAG_QUARANTINE_MAX_BYTES"] = prev
+
+
 if __name__ == "__main__":
     fns = [(n, f) for n, f in sorted(globals().items())
            if n.startswith("test_") and callable(f)]

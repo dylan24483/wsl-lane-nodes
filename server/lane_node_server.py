@@ -2,6 +2,7 @@
 """WSL-SRV-side WebSocket + HTTP. Now with desk-app-simulator endpoints."""
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -92,12 +93,26 @@ def _build_identity():
 
 
 def _contract_sha256():
-    """sha256 recorded for the machine contract (server/machine_contract
-    .sha256 sidecar) — part of the R2-8 build identity so a deploy can
-    verify which cross-repo contract this server was shipped with."""
+    """sha256 of the machine contract this server actually SERVES — part of the
+    R2-8 build identity so a deploy can verify which cross-repo contract this
+    server was shipped with.
+
+    Review fix (R3-4/R3-8): hash the LIVE machine_contract.json bytes, do NOT
+    trust the co-located machine_contract.sha256 sidecar. The sidecar can go
+    stale against the served JSON (a partial deploy, a mid-copy truncation, a
+    manual patch); reporting the sidecar digest let deploy.ps1's cross-repo
+    compare pass GREEN while the server actually served different bytes. Hashing
+    the served file makes that divergence detectable at deploy, not only at test
+    time. If the JSON is unreadable we fall back to the sidecar (better a stale
+    digest than none), then to None."""
+    here = Path(__file__).resolve().parent
     try:
-        sidecar = Path(__file__).resolve().parent / 'machine_contract.sha256'
-        text = sidecar.read_text(encoding='utf-8').split()
+        raw = (here / 'machine_contract.json').read_bytes()
+        return hashlib.sha256(raw).hexdigest()
+    except Exception:
+        pass
+    try:
+        text = (here / 'machine_contract.sha256').read_text(encoding='utf-8').split()
         return text[0].strip() if text else None
     except Exception:
         return None

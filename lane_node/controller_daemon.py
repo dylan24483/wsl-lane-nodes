@@ -1102,6 +1102,14 @@ class PlatformHealth(threading.Thread):
         self._hb_token = os.environ.get("LANE_NODE_TOKEN", "").strip()
         self._hb_interval = _env_float("WSL_MACHINE_HEARTBEAT_S", 20.0)
         self._hb_last = 0.0
+        # R3-2 review fix: the heartbeat cadence must be INDEPENDENT of the
+        # (slow, default 60 s) platform-poll period. If the run loop only wakes
+        # every poll_s, the 20 s _hb_interval guard can never fire more often
+        # than poll_s, so a single slow/failed POST at t=poll_s pushes the next
+        # attempt to t=2*poll_s — past the 90 s lease window — and a healthy
+        # quiet Track-B lane false-expires OFFLINE. The loop now wakes on the
+        # SHORTER of the two and throttles the platform probes separately.
+        self._last_platform = 0.0
         self._contract_sha = _read_contract_sha()
         # R3-11: shared health-drop file (whichever mutually-exclusive service
         # runs writes its own health class; whoever has transport ships both).
@@ -1236,21 +1244,43 @@ class PlatformHealth(threading.Thread):
             self.errors += 1
             log.debug("PlatformHealth service-start count swallowed", exc_info=True)
         while not self._stop_ev.is_set():
-            for probe in (self._poll_throttled, self._poll_thermal,
-                          self._poll_disk, self._poll_clock_drift,
-                          self._poll_writer_drops, self._poll_dir_retention,
-                          self._poll_identity, self._write_health_drop,
-                          self._ship_foreign_health, self._maybe_heartbeat):
-                try:
-                    probe()
-                except Exception:
-                    self.errors += 1
-            for b in self.boards:
-                try:
-                    b.telemetry.maybe_persist()
-                except Exception:
-                    self.errors += 1
-            self._stop_ev.wait(self.poll_s)
+            now = time.monotonic()
+            # Platform probes stay on the slow poll_s cadence (they own their
+            # own baselines/latches and some spawn subprocesses — vcgencmd —
+            # that must NOT run 3x more often just because the loop woke early
+            # for a heartbeat). Throttled here rather than per-probe so the one
+            # guard covers them all.
+            if now - self._last_platform >= self.poll_s:
+                self._last_platform = now
+                for probe in (self._poll_throttled, self._poll_thermal,
+                              self._poll_disk, self._poll_clock_drift,
+                              self._poll_writer_drops, self._poll_dir_retention,
+                              self._poll_identity, self._write_health_drop,
+                              self._ship_foreign_health):
+                    try:
+                        probe()
+                    except Exception:
+                        self.errors += 1
+                for b in self.boards:
+                    try:
+                        b.telemetry.maybe_persist()
+                    except Exception:
+                        self.errors += 1
+            # R3-2: the lease-renewal heartbeat runs on its OWN cadence
+            # (_hb_interval, default 20 s << the 90 s lease window). It is
+            # self-throttled internally, so calling it every wake is cheap; the
+            # point is that the loop WAKES often enough for it to fire ~3x per
+            # lease window and tolerate a couple of missed POSTs.
+            try:
+                self._maybe_heartbeat()
+            except Exception:
+                self.errors += 1
+            wait = self.poll_s
+            if self._hb_url:
+                wait = min(wait, self._hb_interval)
+            # small floor guards a misconfigured near-zero heartbeat interval
+            # from busy-looping; the real default (20 s) is far above it.
+            self._stop_ev.wait(max(0.05, wait))
         # final persistence flush on the way out (still off-tick)
         for b in self.boards:
             try:

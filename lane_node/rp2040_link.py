@@ -292,6 +292,14 @@ class RP2040Link:
         # v1.2.2 identity (R2-6; None until an "id" line / hb "rid" is heard)
         self._identity = None       # last "id" line, sanitized dict
         self._rid = None            # last hb "rid" (REV_ID strap code; 255 = floating)
+        # v1.2.3 (R3-5): per-boot nonce "bn". Firmware emits it on the boot
+        # line, the id line AND every hb specifically so the Pi can detect a
+        # reboot even when the boot line itself was dropped and the uptime did
+        # NOT visibly regress (a quick double-reboot after a short uptime, or
+        # several missed hbs). A change in bn (from a non-None cached value)
+        # invalidates ALL cached identity/capability/extrema state. None until
+        # a v1.2.3 firmware is heard; older images simply never trip it.
+        self._boot_nonce = None
         # R3-5 identity-after-reboot re-request bookkeeping
         self._identity_boot_seen = False       # a boot happened => id expected
         self._identity_req_at = None           # monotonic of the last id request
@@ -504,12 +512,31 @@ class RP2040Link:
                 "t_fw":  self._num(ev, "t"),
             }
             with self._lock:
+                # R3-5: the id line also carries the per-boot nonce. If it
+                # changed from a known value we missed a reboot (no boot line,
+                # no uptime regression) — invalidate the stale caches + latch
+                # the safe-state relatch BEFORE adopting the fresh identity this
+                # same line carries. On the normal boot->id sequence the nonce
+                # already matches (boot cached it), so this is a no-op there.
+                nonce_reboot = self._nonce_reboot(ev)
+                if nonce_reboot:
+                    self._invalidate_identity_cache()
+                    self._last_up = None
+                    self._last_drp = None
+                    self._fault = REBOOT_FAULT
+                    self._rp_ok = False
+                    self.fw_clock.resync()
                 self._identity = ident
                 # R3-5: a fresh id line clears the after-reboot re-request state
                 # (and any latched 'missing') — identity is current again.
                 self._identity_missing_reported = False
                 self._identity_req_at = None
                 self._identity_retries = 0
+            if nonce_reboot:
+                log.error("RP2040 boot nonce changed on id line (0x%08x) — a "
+                          "reboot was missed; identity refreshed from this line "
+                          "and safe-state relatched; operator re-arm required",
+                          self._boot_nonce)
             if ident["fi1"]:
                 # An FI-1 bench fault-injection image must NEVER run at a lane
                 # (R1.9 / FA-11 step 3) — loudest available signal short of a trip.
@@ -542,19 +569,15 @@ class RP2040Link:
         lvl = bool(mask & bit)
         return lvl if self._trip == "f" else not lvl
 
-    def _on_boot(self, ev, notes, records=None):
-        rebooted = self._last_up is not None    # we had heartbeats before this boot
-        self._last_up = None                    # fresh uptime/drp baselines
-        self._last_drp = None
-        # R3-5 (Codex round-3): a reboot INVALIDATES all cached identity /
-        # capability / extrema state. Codex's repro flashed a v1.2.2 image,
-        # then rebooted into a v0.1 image that sends no id line — the STALE
-        # v1.2.2 identity (revision, build/config hashes, RID, MAXRUN, tap
-        # masks, V5 extrema) survived and the daemon armed against a board it
-        # could no longer identify. Clear it all here; the fresh boot event's
-        # own fields repopulate below, and the id line is re-requested so a
-        # firmware that still speaks v1.2.2 re-announces. What it CANNOT do is
-        # keep reading as the old image.
+    def _invalidate_identity_cache(self):
+        """R3-5: drop ALL cached identity / capability / extrema state so a
+        post-reboot image can never be read through the previous image's
+        identity (revision, build/config hashes, RID, MAXRUN, tap masks, V5
+        extrema, run/in masks, v1.1 posture). Callers repopulate from the boot
+        event and/or re-request the id line. Also re-arms the identity
+        re-request state machine (poll_identity, driven off-lock by the daemon,
+        issues the first ID request immediately and retries on a bounded
+        schedule — sending here on the reader thread mid-parse is avoided)."""
         self._identity = None
         self._rid = None
         self._maxrun_ms = None
@@ -564,14 +587,45 @@ class RP2040Link:
         self._in_mask = None
         self._run_mask = None
         self._v11 = None
-        # re-arm the identity re-request state machine. poll_identity (driven
-        # by the daemon off-tick) issues the first ID request immediately
-        # (req_at None) and retries on a bounded schedule; sending here, on the
-        # reader thread mid-parse, is avoided.
         self._identity_boot_seen = True
         self._identity_req_at = None
         self._identity_retries = 0
         self._identity_missing_reported = False
+
+    def _nonce_reboot(self, ev):
+        """v1.2.3 (R3-5): update the cached per-boot nonce from ev's "bn" and
+        return True iff it CHANGED from a previously-known value — i.e. the
+        firmware rebooted since our last cache even though the boot line and any
+        uptime regression were both missed. Returns False on the first nonce
+        seen (nothing to compare) and when the firmware sends no bn (older
+        image). Never raises."""
+        bn = self._num(ev, "bn")
+        if bn is None:
+            return False
+        try:
+            bn = int(bn) & 0xFFFFFFFF
+        except Exception:
+            return False
+        prev = self._boot_nonce
+        self._boot_nonce = bn
+        return prev is not None and bn != prev
+
+    def _on_boot(self, ev, notes, records=None):
+        rebooted = self._last_up is not None    # we had heartbeats before this boot
+        self._last_up = None                    # fresh uptime/drp baselines
+        self._last_drp = None
+        # R3-5 (Codex round-3): a reboot INVALIDATES all cached identity /
+        # capability / extrema state. Codex's repro flashed a v1.2.2 image,
+        # then rebooted into a v0.1 image that sends no id line — the STALE
+        # v1.2.2 identity survived and the daemon armed against a board it could
+        # no longer identify. Clear it all here; the fresh boot event's own
+        # fields repopulate below, and the id line is re-requested so a firmware
+        # that still speaks v1.2.2 re-announces. What it CANNOT do is keep
+        # reading as the old image.
+        self._invalidate_identity_cache()
+        # Cache this boot's nonce so a LATER hb (whose boot line we DID see) is
+        # only flagged if the nonce changes again.
+        self._nonce_reboot(ev)
         # fw ms clock restarted at 0 -> the learned offset is garbage. Resync on
         # EVERY boot event (first boot included: offset may predate a missed boot).
         self.fw_clock.resync()
@@ -650,6 +704,32 @@ class RP2040Link:
                           "safe-state relatch; operator re-arm required", (ev,)))
 
     def _on_hb(self, ev, notes, resends, records=None):
+        # v1.2.3 (R3-5): FIRST, before any of this hb's fields repopulate the
+        # cache, check the per-boot nonce. A changed "bn" means the firmware
+        # rebooted since our last cache even though we NEVER saw the boot line
+        # (dropped) AND the uptime may NOT have regressed (a quick double-reboot,
+        # or several missed hbs leaving up >= last). This is the exact gap the
+        # uptime-regression test below cannot cover. Treat it as a full reboot:
+        # invalidate the stale identity/capability cache and latch the same
+        # safe-state relatch a boot event would. The rest of this hb (rid/v5/in/
+        # run) then repopulates from the NEW image.
+        if self._nonce_reboot(ev):
+            self._invalidate_identity_cache()
+            self._last_up = None
+            self._last_drp = None
+            self._fault = REBOOT_FAULT
+            self._rp_ok = False
+            self.fw_clock.resync()
+            if records is not None:
+                records.append({"kind": "fw_boot", "t_pi": self.now(),
+                                "fw": self._fw_version, "wdt_reset": False,
+                                "ring_epoch": self._ring_epoch,
+                                "rebooted": True, "via": "nonce"})
+            notes.append((log.error,
+                          "RP2040 boot nonce changed to 0x%08x on hb — firmware "
+                          "REBOOTED (boot line missed, uptime did not regress); "
+                          "identity cache invalidated + safe-state relatch; "
+                          "operator re-arm required", (self._boot_nonce,)))
         # v1.2 hb fields (R2-11): tap levels, ring depth/epoch, VCC_5V window
         # extrema. Store-only at ~4 Hz — thresholding/alerting is the daemon's
         # job (v5_stats/tap_levels/ring_epoch accessors), so the hb path stays
@@ -717,10 +797,16 @@ class RP2040Link:
                 self._fault = REBOOT_FAULT
                 self._rp_ok = False
                 self.fw_clock.resync()     # fw ms clock restarted; offset is garbage
+                # R3-5: an uptime-regression reboot must ALSO invalidate the
+                # cached identity/capability state (the nonce path already did
+                # this above; this covers OLDER firmware that sends no "bn").
+                # Harmless if the nonce path just ran (double invalidation).
+                self._invalidate_identity_cache()
                 notes.append((log.error,
                               "RP2040 uptime regressed %s -> %s ms: firmware REBOOTED "
-                              "(boot line missed) — safe-state relatch; operator "
-                              "re-arm required", (self._last_up, up)))
+                              "(boot line missed) — identity cache invalidated + "
+                              "safe-state relatch; operator re-arm required",
+                              (self._last_up, up)))
             self._last_up = up
 
     def _reconcile_run(self, mask, notes, resends):

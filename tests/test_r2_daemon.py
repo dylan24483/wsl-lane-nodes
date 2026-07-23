@@ -450,6 +450,32 @@ def test_platform_writer_drop_promotion():
     assert len(w.of_type("http_sink_drops")) == 1
 
 
+def test_platform_heartbeat_cadence_decoupled_from_poll():
+    # R3-2 review fix: a quiet Track-B controller's ONLY liveness signal is the
+    # lease-renewal heartbeat. If the run loop waited the (default 60 s) platform
+    # poll period, the 20 s heartbeat guard could never fire more often than 60 s
+    # and a single slow/failed POST pushed the next attempt past the 90 s lease
+    # window -> false OFFLINE. The loop must WAKE at the heartbeat cadence while
+    # the platform probes stay throttled at poll_s.
+    import time
+    d = tempfile.mkdtemp(prefix="ph_hb_")
+    w = FakeWriter()
+    ph = PlatformHealth([], w, poll_s=60.0, dir_path=d)   # slow platform poll
+    ph._hb_url = "http://x:8766"                          # heartbeat enabled
+    ph._hb_interval = 0.01                                # fast lease renewal
+    hb = {"n": 0}
+    plat = {"n": 0}
+    ph._maybe_heartbeat = lambda: hb.__setitem__("n", hb["n"] + 1)
+    ph._poll_disk = lambda: plat.__setitem__("n", plat["n"] + 1)
+    ph.start()
+    time.sleep(0.25)
+    ph.stop(timeout=2.0)
+    # A 60 s wait would give exactly ONE heartbeat in a 0.25 s window.
+    assert hb["n"] >= 3, f"heartbeat ran only {hb['n']}x — loop still waits poll_s"
+    # ...while the platform probes stay throttled to poll_s (run ~once).
+    assert plat["n"] == 1, f"platform probes not throttled to poll_s (ran {plat['n']}x)"
+
+
 if __name__ == "__main__":
     fns = [(n, f) for n, f in sorted(globals().items())
            if n.startswith("test_") and callable(f)]

@@ -816,12 +816,27 @@ def test_contract_file_pins_server_vocab_and_shapes():
               "interval columns")
     # the recorded hash (the WSL Systems contract test asserts the same value)
     import hashlib
-    recorded = (REPO_ROOT / "server" / "machine_contract.sha256") \
-        .read_text(encoding='utf-8').split()[0].strip()
+    sidecar_path = REPO_ROOT / "server" / "machine_contract.sha256"
+    recorded = sidecar_path.read_text(encoding='utf-8').split()[0].strip()
     actual = hashlib.sha256(CONTRACT_PATH.read_bytes()).hexdigest()
     assert_eq(recorded, actual,
               "machine_contract.sha256 must match machine_contract.json "
               "(update BOTH + every consumer when the contract changes)")
+    # R3-8: the server's REPORTED build.contract_sha256 must be the hash of the
+    # JSON it SERVES, not the sidecar text. deploy.ps1 compares the WSL pin
+    # against this reported value, so a sidecar-trusting digest would let a
+    # served-JSON/sidecar divergence pass green. Prove it hashes live AND
+    # ignores a deliberately-wrong sidecar.
+    assert_eq(server._contract_sha256(), actual,
+              "server reports the LIVE machine_contract.json hash")
+    _orig = sidecar_path.read_text(encoding='utf-8')
+    try:
+        sidecar_path.write_text("0" * 64 + "\n", encoding='utf-8')
+        assert_eq(server._contract_sha256(), actual,
+                  "reported digest stays the live JSON hash despite a WRONG "
+                  "sidecar (R3-8: no sidecar-trusting blind spot)")
+    finally:
+        sidecar_path.write_text(_orig, encoding='utf-8')
 
 
 def test_machine_health_carries_bridge_contract_keys():

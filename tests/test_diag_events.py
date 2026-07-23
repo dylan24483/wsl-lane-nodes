@@ -105,7 +105,7 @@ def test_make_event_shape():
 
 def test_severity_validated_at_construction():
     for s in SEVERITIES:
-        make_event(1, s, "x")
+        make_event(1, s, "recovered")
     assert _raises(ValueError, make_event, 1, "catastrophic", "x")
     assert _raises(ValueError, make_event, 1, "INFO", "x")   # case-sensitive vocab
     assert _raises(ValueError, make_event, 1, None, "x")
@@ -116,8 +116,13 @@ def test_event_type_validated():
     assert _raises(ValueError, make_event, 1, "info", "   ")
     assert _raises(ValueError, make_event, 1, "info", None)
     assert _raises(ValueError, make_event, 1, "info", 42)
+    # R3-1a: the event-type allow-set is load-bearing on the CLIENT — a type
+    # absent from the contract vocab raises at the emitter (not only after a
+    # server round-trip); a valid contract type constructs fine.
+    assert _raises(ValueError, make_event, 1, "info", "definitely_not_a_type")
+    make_event(1, "info", "recovered")
     # detail must be a dict (or None)
-    assert _raises(ValueError, make_event, 1, "info", "x", detail=[1, 2])
+    assert _raises(ValueError, make_event, 1, "info", "recovered", detail=[1, 2])
 
 
 def test_detail_coerced_json_safe():
@@ -125,7 +130,7 @@ def test_detail_coerced_json_safe():
         def __repr__(self):
             return "<weird>"
     deep = {"a": {"b": {"c": {"d": {"e": {"f": 1}}}}}}
-    ev = make_event(3, "fault", "test", detail={
+    ev = make_event(3, "fault", "recovered", detail={
         "obj": Weird(), "deep": deep, "big": "x" * 2000,
         "list": list(range(100)),
     })
@@ -139,7 +144,7 @@ def test_detail_coerced_json_safe():
 # ---------------------------------------------------------------------------
 def test_queue_bounded_drops_and_counts():
     q = DiagQueue(maxsize=5)
-    ok = [q.emit(make_event(1, "info", "e", code=str(i))) for i in range(10)]
+    ok = [q.emit(make_event(1, "info", "recovered", code=str(i))) for i in range(10)]
     assert ok == [True] * 5 + [False] * 5
     assert q.drops == 5
     got = []
@@ -350,7 +355,7 @@ def test_writer_end_to_end():
     assert w.start() is True
     assert w.start() is True               # idempotent
     for i in range(5):
-        assert w.emit(make_event(21, "info", "tick", code=str(i))) is True
+        assert w.emit(make_event(21, "info", "recovered", code=str(i))) is True
     w.stop(timeout=5.0)
     assert len(fake.rows) == 5, f"writer must deliver every event (got {len(fake.rows)})"
     assert fake.rows[0]["code"] == "0" and fake.rows[-1]["code"] == "4"
@@ -366,7 +371,7 @@ def test_writer_kill_switch():
         w = DiagWriter(sinks=[fake])
         assert w.enabled is False
         assert w.start() is False
-        assert w.emit(make_event(1, "info", "x")) is False
+        assert w.emit(make_event(1, "info", "recovered")) is False
         w.stop()
         assert fake.rows == []
     # default (env absent) is ON — local logging is safe-on
@@ -381,7 +386,7 @@ def test_writer_raising_sink_isolated():
                    poll_s=0.02)
     w.start()
     for i in range(3):
-        w.emit(make_event(1, "warn", "boom", code=str(i)))
+        w.emit(make_event(1, "warn", "chatter", code=str(i)))
     w.stop(timeout=5.0)
     assert len(good.rows) == 3, "a raising sink must not starve the others"
     assert w.sink_errors >= 3
@@ -390,8 +395,8 @@ def test_writer_raising_sink_isolated():
 def test_writer_stop_without_start_still_flushes():
     fake = FakeSink()
     w = DiagWriter(queue=DiagQueue(maxsize=16), sinks=[fake], enabled=True)
-    w.emit(make_event(1, "info", "queued"))
-    w.emit(make_event(1, "info", "queued"))
+    w.emit(make_event(1, "info", "recovered"))
+    w.emit(make_event(1, "info", "recovered"))
     w.stop()                               # never started -> synchronous drain
     assert len(fake.rows) == 2 and fake.flushes >= 1
 
@@ -400,7 +405,7 @@ def test_writer_queue_overflow_counted():
     fake = FakeSink()
     w = DiagWriter(queue=DiagQueue(maxsize=2), sinks=[fake], enabled=True)
     for i in range(5):
-        w.emit(make_event(1, "info", "x", code=str(i)))   # never blocks
+        w.emit(make_event(1, "info", "recovered", code=str(i)))   # never blocks
     assert w.stats()["queue_drops"] == 3
     w.stop()
     assert len(fake.rows) == 2             # the queued two still delivered

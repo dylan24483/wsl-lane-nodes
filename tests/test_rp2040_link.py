@@ -255,6 +255,53 @@ link = mklink()
 link.feed_line('{"ev":"boot","fw":"x","wdt_reset":0,"rp_ok":0,"maxrun_ms":8000}')
 check(link.fault() == "", "session-start boot does NOT latch fw_reboot")
 
+# [E2] boot-nonce reboot detection (R3-5) --------------------------------------
+# Codex's stale-identity hazard: the ONLY missed-boot detection was the uptime
+# regression test, which FAILS exactly when a board reboots but by the next hb
+# reports up >= its last uptime (quick double-reboot, or several missed hbs).
+# The stale v1.2.2 identity then survived into a different flashed image and the
+# daemon could ARM against silicon it had misidentified. Firmware v1.2.3 emits a
+# per-boot nonce "bn" on boot/id/hb specifically to catch this; the Pi must
+# invalidate ALL cached identity/capability state when it changes.
+print("[E2] boot-nonce reboot detection (R3-5)")
+link = mklink()
+link.feed_line('{"ev":"boot","fw":"phase8b-rp2040 v1.2.3","bn":111,'
+               '"wdt_reset":0,"rp_ok":0,"maxrun_ms":8000}')
+link.feed_line('{"ev":"id","fw":"phase8b-rp2040 v1.2.3","bn":111,"pcb":"revD",'
+               '"rid":1,"uid":"ABC0000000000000","build":"g1234567","cfg":"deadbeef","fi1":0}')
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":1000,"bn":111}')
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":1250,"bn":111}')
+check(link.health_ok(), "(setup) v1.2.3 healthy, stable nonce")
+_ident = link.fw_identity()
+check(_ident is not None and _ident.get("build") == "g1234567",
+      "(setup) identity cached as the v1.2.3 build")
+cap.clear()
+# THE ADVERSARIAL CASE: nonce changes, uptime does NOT regress (1500 >= 1250).
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":1500,"bn":222}')
+check(not link.health_ok(), "nonce change w/o uptime regression -> NOT healthy")
+check(link.fault() == REBOOT_FAULT, "nonce change latches the fw_reboot fault")
+check(link.rp_ok() is False, "nonce change clears rp_ok")
+check(link.fw_identity() is None,
+      "STALE identity INVALIDATED on nonce change (R3-5 core: no ARM against "
+      "misidentified silicon)")
+check(any("nonce" in m.lower() for m in cap.msgs(logging.ERROR)),
+      "boot-nonce reboot logged LOUDLY (error)")
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":1750,"bn":222}')
+check(link.health_ok(), "stable nonce after the reboot: no repeated trip")
+# first nonce ever seen is NOT a trip (nothing to compare against)
+link = mklink()
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":100,"bn":999}')
+check(link.fault() == "", "first boot-nonce seen does NOT latch a reboot")
+# older firmware without "bn": the nonce path is inert; uptime regression still
+# catches reboots (backward-compat pinned).
+link = mklink()
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":500}')
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":750}')
+check(link.health_ok(), "(setup) pre-bn firmware healthy")
+link.feed_line('{"ev":"hb","ok":1,"flt":"","up":50}')
+check(link.fault() == REBOOT_FAULT,
+      "pre-bn firmware STILL trips on uptime regression (fallback intact)")
+
 # [F] RX buffer bound ------------------------------------------------------------
 print("[F] RX bound")
 link = mklink()
