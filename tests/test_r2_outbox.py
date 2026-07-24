@@ -64,6 +64,13 @@ def _row(seq, **kw):
     return r
 
 
+def _ack_events(payload):
+    """Strict server-shaped acknowledgement for fake transport tests."""
+    n = len(payload["events"])
+    return {"ok": True, "accepted": n, "inserted": n,
+            "duplicates": 0, "rejected": []}
+
+
 def test_replayer_ships_and_advances_cursor_only_on_ack():
     d = tempfile.mkdtemp(prefix="outbox_t2_")
     _write_outbox(d, [_row(1), _row(2)])
@@ -74,6 +81,7 @@ def test_replayer_ships_and_advances_cursor_only_on_ack():
         if fail["on"]:
             raise RuntimeError("server down")
         posted.append(payload)
+        return _ack_events(payload)
 
     rep = OutboxReplayer(d, "http://x:8766", post=post)
     assert rep.replay_once() == 0                  # post failed
@@ -97,8 +105,10 @@ def test_replayer_skips_identity_less_legacy_rows():
     legacy = {"lane_id": 21, "severity": "info", "event_type": "recovered"}
     _write_outbox(d, [legacy, _row(9)])
     posted = []
-    rep = OutboxReplayer(d, "http://x:8766",
-                         post=lambda u, p: posted.append(p))
+    def post(_url, payload):
+        posted.append(payload)
+        return _ack_events(payload)
+    rep = OutboxReplayer(d, "http://x:8766", post=post)
     assert rep.replay_once() == 1
     assert rep.skipped == 1
     assert posted[-1]["events"][0]["seq"] == 9
@@ -108,8 +118,10 @@ def test_replayer_rolls_to_the_next_daily_file():
     d = tempfile.mkdtemp(prefix="outbox_t4_")
     _write_outbox(d, [_row(1)], name="diag-20260720.jsonl")
     posted = []
-    rep = OutboxReplayer(d, "http://x:8766",
-                         post=lambda u, p: posted.append(p))
+    def post(_url, payload):
+        posted.append(payload)
+        return _ack_events(payload)
+    rep = OutboxReplayer(d, "http://x:8766", post=post)
     rep.replay_once()                               # cursor lands on day 1
     _write_outbox(d, [_row(2)], name="diag-20260721.jsonl")
     assert rep.replay_once() == 1                   # rolled to the new file
@@ -125,8 +137,10 @@ def test_partial_trailing_line_waits_for_the_flush():
         f.write(json.dumps(_row(1)) + "\n")
         f.write('{"half": "written')               # no newline
     posted = []
-    rep = OutboxReplayer(d, "http://x:8766",
-                         post=lambda u, p: posted.append(p))
+    def post(_url, payload):
+        posted.append(payload)
+        return _ack_events(payload)
+    rep = OutboxReplayer(d, "http://x:8766", post=post)
     assert rep.replay_once() == 1                  # only the complete line
     with open(path, "a", encoding="utf-8") as f:
         f.write('"}\n')                            # completes as junk (no id)
