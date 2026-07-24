@@ -1,12 +1,13 @@
 *** SUPERSEDED PACKAGE — DO NOT UPLOAD, DO NOT ORDER FROM THIS DIRECTORY ***
 
 This is the ROUND-1 rev-D fab package (exported 2026-07-21 17:15, pre-Codex-round-2).
-It is retained as immutable evidence only. The as-current package is:
+It is retained as immutable evidence only. The current package is:
 
-    kicad/fab_revD_2026-07-21_r3/        <- ORDER FROM HERE
+    kicad/fab_revD_2026-07-23_r5/        <- ORDER FROM HERE
 
 Known-retracted content that survives INSIDE this directory (kept verbatim because
-the package is hash-frozen; every item below is corrected in _r3):
+the package is hash-frozen; every item below is corrected in the current R5
+package; R3 was an intermediate package and is also tombstoned):
 
   - 262 parts: NO J16 protection stack (polyfuse/TCA4307/SRV05-4/solder link),
     NO REV_ID straps, NO tap probe pads TP17-TP24.

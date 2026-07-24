@@ -1,0 +1,253 @@
+{
+  "package": "phase8b rev-D as-ordered fab package",
+  "generated_at": "2026-07-23T14:05:53",
+  "source_board": "kicad/revD/wsl-phase8b-revD.kicad_pcb",
+  "source_board_sha256": "93972c28d07c8d37193ffecea4bfc3e012b934415fec1f85597d6e87edf7ea7b",
+  "source_netlist": "kicad/wsl-phase8b-revD.net",
+  "source_netlist_sha256": "1d5d36f26f24c91bcf30ae5c895ac053128f1608054e19410a1506b4741f291f",
+  "counts": {
+    "netlist_parts": 271,
+    "dnp": 28,
+    "placed": 243,
+    "jlc_placed": 226,
+    "jlc_lines": 27,
+    "hand_solder": 17
+  },
+  "d_prot_lock": "D17 = MDD SS34, LCSC C8678, SMA/DO-214AC (FR-3)",
+  "input_pullup_lock": "R4,R6,...,R82 = 40 x UNI-ROYAL 47k 0805W8F4702T5E, LCSC C17713; all unrelated 10k networks unchanged",
+  "input_bias_runtime_gate": "production RP2040 GP6-GP13 PUE=0/PDE=0; U1/U2 MCP23017 GPPUA=0x00/GPPUB=0x00 with readback; R_TAPPU_* 10k is separate",
+  "production_firmware": {
+    "version": "phase8b-rp2040 v1.2.3",
+    "build": "rel-0c746b5747143b8011b01d43",
+    "cfg": "05d808411db4bb0d",
+    "sha256": "d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae",
+    "manifest_sha256": "5bcbd2df1980acdd365865fc6527c96a3d0c1f51210a9d4a5fdd1f6cfcc279fd"
+  },
+  "files": [
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-bom-non-dnp.csv",
+      "bytes": 4881,
+      "sha256": "67efe29f0769b0ad9c04d381da10cd19bedfe86cacfeeced61745585b1bde421"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-cpl.csv",
+      "bytes": 17703,
+      "sha256": "9018c8ab454e394e5489836ca3c001d05317b7f7aea25130c94034d9d1903988"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-dnp-excluded.csv",
+      "bytes": 3124,
+      "sha256": "3accaf00cdeb471774160597a75848f7ead25364d955c4586a730b29a2b558a4"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-hand-solder-bom.csv",
+      "bytes": 3127,
+      "sha256": "1db9c2fb4ad5e39311b1d3e7e2879c829e8e3a072051b06944566d8a2e4621d0"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-harness-bom.csv",
+      "bytes": 4703,
+      "sha256": "915d8969e766163fda1ff1eb073e1691df6045a49c8b991bc8b33885fd25c99d"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-jlc-standard-pcba-bom.csv",
+      "bytes": 5363,
+      "sha256": "331c69d39e6d05d12c5bf0f36a80fe72d44bd648429a5b86777c0d42c792f489"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-jlc-standard-pcba-cpl.csv",
+      "bytes": 9154,
+      "sha256": "4e323b8a58253ad111f908eb46803c8d371284e42fefce073616ad4b94b03c31"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-jlc-standard-pcba-excluded.csv",
+      "bytes": 1841,
+      "sha256": "4aa9b90dbd3a5b9420443ce96818304665c93caff2dd3003bc96b05716655a23"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-jlc-standard-pcba-part-lock.csv",
+      "bytes": 4932,
+      "sha256": "d8528929f380f051b20089a588277a31675a3b5e8e89f76907198b9bd132f6bd"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-bom.csv",
+      "bytes": 2675,
+      "sha256": "f50c930a568e657fbe40ade33d3ba68c18977c086101317f49d4eab2a4fb8eba"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-B_Cu.gbl",
+      "bytes": 55708,
+      "sha256": "4b31d6435690053560341018dd312d5e04432c989f50297fc9ef915a4286922b"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-B_Mask.gbs",
+      "bytes": 11877,
+      "sha256": "09c6e9941d984c0c9225306796c27d0a3fdc647c20a72fe2750b9b5f9dc257af"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-B_Paste.gbp",
+      "bytes": 473,
+      "sha256": "df2848605a68679d06d63c2cc1d5ded58617129229851aeb75ff603ad9eaa8c4"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-B_Silkscreen.gbo",
+      "bytes": 11889,
+      "sha256": "3a3da620b14c4a3aae89664394944558d8156eb34e86ba43e544d30d10e82c76"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-Edge_Cuts.gm1",
+      "bytes": 654,
+      "sha256": "b4b133a57ae1fb901128186c33f8799c4287384e4a919ad2806c1560b40e85d5"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-F_Cu.gtl",
+      "bytes": 1431055,
+      "sha256": "9438d9b16242c0decf53a0dc02706d00d337034fb63c8fdd3d504bd6bc07dac1"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-F_Mask.gts",
+      "bytes": 39298,
+      "sha256": "3da23bd5a4d75a1e5471c6af32c713ac0b389a2d478b7344259ad978f6a06e4d"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-F_Paste.gtp",
+      "bytes": 23145,
+      "sha256": "cd9830236c2da9524f28eb216f0f6c0247051218b91ff3ad8c490a15fcdb7be9"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-F_Silkscreen.gto",
+      "bytes": 342314,
+      "sha256": "80cf2dee51cd098bc85351b54a2aa54efa836094f4da594b2599b3c98c5d1e35"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-In1_Cu.g1",
+      "bytes": 46287,
+      "sha256": "969f31f96d224c1c7e8fc56833fac628aeb5367961d7e4d5530a2941ca62598e"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-In2_Cu.g2",
+      "bytes": 46235,
+      "sha256": "61b275595ac33ba04596d5d5790d9047a6c9cc318a95ec1aa17bb343b24fdb24"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-job.gbrjob",
+      "bytes": 3886,
+      "sha256": "a72eda485eac15437b31cf3890ff0f94b3b20e6c2a0aa69420628487de7b55f9"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-NPTH-drl_map.pdf",
+      "bytes": 12204,
+      "sha256": "67abc618d9694577403da8cc78ad65038a269dfad2c49b7238f86ff2087d9127"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-NPTH.drl",
+      "bytes": 395,
+      "sha256": "a4bec1e05470b5403fe704a25462e9378f8cf6da5f1df2dec14dbc98fd3dfdba"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-PTH-drl_map.pdf",
+      "bytes": 44824,
+      "sha256": "c9b63355cdc5937295c22d21b92f67854aa6eac8a95f98e19f85a4a2f4dcbaf5"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/gerber_drill/wsl-phase8b-revD-PTH.drl",
+      "bytes": 13611,
+      "sha256": "49adf0dcbbb537b7d8d152093f09b7a2ac97d3d30b289c72f23bbd5962dd6eb1"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/README-fab-package.txt",
+      "bytes": 3910,
+      "sha256": "8757a61b0989d97a759af167b58e4b577aa8f341c3a3afdeddd6578c6e90eee7"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/audit-revD-board.log",
+      "bytes": 7524,
+      "sha256": "15e9fab99072cd189b3043fdbd029262b588b31ba8292dae1f6d1ebc4b4f2a2e"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/board-stats.json",
+      "bytes": 3438,
+      "sha256": "7bd2dd2ef35e3e00cc59adbf0960fd419474cc6ad94776c7200354c3dc62bae0"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/board-stats.txt",
+      "bytes": 2114,
+      "sha256": "bd39d7f8126b30320721724c2e129f8682edc1c81df258f1a053acf231355f1d"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/DRC-revD-fab-export.rpt",
+      "bytes": 529,
+      "sha256": "3cda4c967b8cf91bc846aa35c48612afbfb91bd5bfa357fdc89508f4227ff52b"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/drill-report.txt",
+      "bytes": 1025,
+      "sha256": "5a9952d78230ae2d1f0e9ffb4700eefa43b62e0a8acae5c6334d66650a76e4d6"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/export-drill.log",
+      "bytes": 511,
+      "sha256": "903ed34a369d0eb22d43677799bc42e2a412a83954edf893d624f1200717237b"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/export-gerbers.log",
+      "bytes": 1364,
+      "sha256": "d63d4b37ad9f89bde9be18dc670c759e20027bc36089614ff39e0d239bab58ff"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/export-ipcd356.log",
+      "bytes": 37,
+      "sha256": "77dbf37784bd990d67e3d8a4848a0d95f62d94e7e9bc65ee8dd1ded6caa364ba"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/export-pos.log",
+      "bytes": 128,
+      "sha256": "9d9170540f6508f60d13491413ed60817e76d8991af5c4ca82cf538466d50141"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/export-review-pdf.log",
+      "bytes": 131,
+      "sha256": "ccfe1ed4cc9ad115c7820000255c52a7cb5031110edc422b8336fc8b8644b3e5"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/export-stats-json.log",
+      "bytes": 122,
+      "sha256": "81deb30d69b1cfb798512f1fb60a3bd1d1fa1c26d920d079206e6928392f7efa"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/export-stats-report.log",
+      "bytes": 121,
+      "sha256": "1970164f4db06391023ebec72f86e799379ea8c5c6fe8e269b33ddcc2e38fe42"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/kicad-drc.log",
+      "bytes": 167,
+      "sha256": "38420a757157d382c3837231eb14227b90800018aad8bc264ce25549cdbd79ac"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/reports/wsl-phase8b-revD.ipc",
+      "bytes": 116398,
+      "sha256": "914aa9de66d555387188188adf1f212f4b111218af1b2555e367c19c19260d23"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/review/wsl-phase8b-revD-review-layers.pdf",
+      "bytes": 2746181,
+      "sha256": "00afd311785d500b9974546c0bd4840d7714f9ae9cbc7caa02e15a323c792696"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/wsl-phase8b-revD-fab-package.zip",
+      "bytes": 2535170,
+      "sha256": "b3ae254e54ec3efef5ea78daff4e70f73d068a8d2cef3b2d823c218312b71a87"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/wsl-phase8b-revD-gerber-drill.zip",
+      "bytes": 440448,
+      "sha256": "efe841d387e11886f1b7870a1d1f6802f04296d14fb404b5d88b27604e295f68"
+    },
+    {
+      "path": "kicad/fab_revD_2026-07-23_r5/wsl-phase8b-revD-jlc-standard-pcba-upload.zip",
+      "bytes": 439569,
+      "sha256": "789bec819c017bd841d0e853dc0038d03af040090e59761a6d104b7d2ce13fdc"
+    }
+  ]
+}

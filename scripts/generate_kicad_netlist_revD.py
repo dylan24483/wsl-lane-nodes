@@ -77,7 +77,7 @@ REV_ID straps) and +6 nets (J16_5V/J16_3V3/J16_SDA/J16_SCL/REV_ID0/REV_ID1)
 ERC baseline (waiver WVR-ERC-1, recorded in docs/phase8_revD_run_log.md):
 EXACTLY 1 ERC error — the Pico module's AGND (pin 33) vs GND (pin 3)
 POWER-OUT/POWER-OUT pin-type conflict, a SKiDL symbol artifact (both pins are
-grounds of the same module and MUST be tied; electrically benign) — plus 40
+grounds of the same module and MUST be tied; electrically benign) — plus 39
 baseline warnings. main() enforces this fail-closed: any second error, a
 different single error, or warning-count drift aborts the run, so a REAL
 future ERC error can never hide behind the known baseline.
@@ -356,7 +356,12 @@ def opto_input(name, logic_net, field_net):
     opto = Part("Isolator", "PC817", value=f"PC817 {name}", footprint=FP_PC817, tag=f"OPTO_{name}")
     parts[f"OPTO_{name}"] = opto
     rin = add_res(f"Rin_{name}", "2k2")
-    rpu = add_res(f"Rpu_{name}", "10k")
+    # Rev-D diagnostic hardening (2026-07-23): the selected UMW PC817B lot has
+    # no guaranteed CTR minimum at this design's ~1.7 mA LED current. A 47k
+    # collector pull-up lowers the MCP23017 VIL-threshold sink requirement to
+    # (3.3 V - 0.66 V) / 47k = 56 uA while keeping wetting current unchanged.
+    # This value is scoped only to the 40 Rpu_* parts.
+    rpu = add_res(f"Rpu_{name}", "47k")
     led_series = Net(f"FIELD_LED_{name}")
 
     # Dry-contact default: WET -> Rin -> opto LED -> field pin. The field
@@ -805,8 +810,9 @@ def block_j16_protection_and_revid(pico):
     polyfuse are NOT isolation-barrier parts — every pin lands on LOGIC
     nets; the PC817/G5LE barrier inventory is untouched):
       * F_J16_5V  — Littelfuse 1206L020YR polyfuse (200 mA hold / 420 mA
-        trip / 24 V @ 23 C), VCC_5V -> J16_5V -> J16 pin 1. Caps a shorted
-        module at its trip point (inside the FR-3 SS34 (3 A) budget). The
+        trip / 24 V @ 23 C), VCC_5V -> J16_5V -> J16 pin 1. Protects the
+        module branch; PPTC trip current is time/temperature dependent, not
+        a hard current clamp. The
         sanctioned steady module allowance is 45 mA (R3-7, re-derived from
         the 1206L020 temperature-derating table: I_hold falls to 90 mA @
         85 C worst-case enclosure temperature, and >=2x hold margin -> 45 mA;
@@ -1059,8 +1065,76 @@ def main():
     ERC()
     check_erc_waiver()
     generate_netlist(file_=out)
+    canonicalize_generated_artifacts(out)
     print(f"\nWROTE {out}")
     print(f"part registry count: {len(parts)}")
+
+
+def canonicalize_generated_artifacts(netlist_path):
+    """Remove SKiDL runtime volatility from the checked-in Rev-D artifacts.
+
+    SKiDL emits the wall-clock generation time in the legacy KiCad netlist
+    and iterates ERC diagnostics in hash-dependent order. Neither changes the
+    electrical design, but both previously changed source/package hashes on a
+    no-op regeneration. Keep the established R5 design timestamp and sort the
+    ERC rows so two clean generator runs are byte-identical.
+    """
+    import pathlib
+    import re
+
+    netlist = pathlib.Path(netlist_path)
+    netlist_bytes = netlist.read_bytes()
+    netlist_bytes, replacements = re.subn(
+        rb'\(date "[^"]+"\)',
+        b'(date "07/23/2026 01:36 PM")',
+        netlist_bytes,
+        count=1,
+    )
+    if replacements != 1:
+        raise RuntimeError("generated Rev-D netlist has no unique design date")
+    netlist.write_bytes(netlist_bytes)
+
+    stem = pathlib.Path(sys.argv[0]).stem or "generate_kicad_netlist_revD"
+    erc_candidates = [
+        pathlib.Path.cwd() / f"{stem}.erc",
+        pathlib.Path(__file__).resolve().parent / f"{stem}.erc",
+    ]
+    erc_path = next((path for path in erc_candidates if path.is_file()), None)
+    if erc_path is None:
+        raise RuntimeError(f"cannot canonicalize ERC artifact; looked at {erc_candidates}")
+
+    def _canonical_erc_line(line):
+        # SKiDL also orders the two operands INSIDE a pin-conflict
+        # diagnostic hash-dependently ("pin 3 <==> pin 33" vs
+        # "pin 33 <==> pin 3"); sorting whole lines cannot see that, so
+        # across environments the ERC artifact hash drifted while the
+        # netlist stayed byte-identical (round-4 audit). Order the two
+        # operands lexically — same waived electrical fact, one spelling.
+        match = re.fullmatch(
+            rb"(?P<head>ERC (?:ERROR|WARNING): .*?[,:] )"
+            rb"(?P<a>\S.*?) <==> (?P<b>\S.*?)"
+            rb"(?P<tail> \([^()]*\))?",
+            line,
+        )
+        if not match:
+            return line
+        first, second = sorted([match.group("a"), match.group("b")])
+        return (match.group("head") + first + b" <==> " + second
+                + (match.group("tail") or b""))
+
+    erc_lines = [
+        _canonical_erc_line(line)
+        for line in erc_path.read_bytes().splitlines()
+    ]
+    erc_lines.sort(
+        key=lambda line: (
+            0 if line.startswith(b"ERC ERROR") else
+            1 if line.startswith(b"ERC WARNING") else
+            2,
+            line,
+        )
+    )
+    erc_path.write_bytes(b"\r\n".join(erc_lines) + b"\r\n")
 
 
 if __name__ == "__main__":

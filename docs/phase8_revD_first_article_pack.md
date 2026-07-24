@@ -7,19 +7,22 @@
 > name WRONG parts on a rev-D board (46 refdes shifted) and MUST NOT be used here.
 >
 > Sources (sha256 at generation):
-> - `kicad/wsl-phase8b-revD.net` — `c95869eaf0f516ee…`
-> - `kicad/revD/wsl-phase8b-revD.kicad_pcb` — `66a42f4c2b58cf70…`
+> - `kicad/wsl-phase8b-revD.net` — `1d5d36f26f24c91b…`
+> - `kicad/revD/wsl-phase8b-revD.kicad_pcb` — `93972c28d07c8d37…`
 > - `kicad/revD/netlist_diff_revC_to_revD.txt` (REFDES_SHIFT cross-reference)
 > - `firmware/rp2040/config.h` FW_VERSION — `phase8b-rp2040 v1.2.3` (every firmware reference below)
+> - `firmware/rp2040/release/firmware_manifest.json` — `5bcbd2df1980acdd…`
+>   (FA-11 release `id.build=rel-0c746b5747143b8011b01d43`, `id.cfg=05d808411db4bb0d`)
 >
 > Companion: `docs/phase8_revD_first_article_refdes_map.csv` — the complete
-> 262-row refdes → function → value → location map (same generation run).
+> 271-row refdes → function → value → location map (same generation run).
 > Procedure authority: `phase8_revD_remediation_spec_2026-07-21.md` §R1.9/§R3/§R4 and
 > `phase8_revD_readiness_checklist.md` §2 — this pack is their per-board execution form.
 
 > **⚗️ EXPERIMENTAL FIRST-ARTICLE (R3-8).** These boards are a prototype validation run,
-> not a fleet release. The input front-end (PC817) margin is bounded arithmetic
-> (spec §R4-A), not a datasheet guarantee; fleet-release status is contingent on the
+> not a fleet release. The input front-end uses the Rev-D 47 kΩ hardening, but
+> the selected PC817 lot is not guaranteed at ~1.7 mA/hot (spec §R4);
+> fleet-release status is contingent on the
 > upgraded **FA-9 numeric V_CE / I_C-capability aging-reserve qualification** and the
 > at-temperature **FA-7 step 4 (OG-4)** passing on every populated channel of the real
 > boards. Do not scale to fleet quantity or field-deploy a lane on these boards until
@@ -35,8 +38,9 @@
 2. Bench PSU ≥ 1 A on J2 (6 × ~77 mA coils + logic). Never feed 5 V into J1 pin 1
    at the same time as J2.
 3. J14 bench jumper on 3-4 (Stop/CIS) is a **bench-only tool — remove before cutover.**
-4. DNP refs (27, listed in the CSV) must be EMPTY: 7 × Rsnub (100R), 7 × Csnub
-   (10nF X2), 7 × MOV, and the 6-part M1 channel (K7, J12, D13, Q7, R101, R102).
+4. DNP refs (28, listed in the CSV) must be EMPTY: 7 × Rsnub (100R), 7 × Csnub
+   (10nF X2), 7 × MOV, the 6-part M1 channel (K7, J12, D13, Q7, R101, R102),
+   and **JP1 (default-open ARM bypass)**.
    A populated snubber/MOV at first article means the board was built off-spec
    (sizing awaits the powered characterization session — readiness G7 item 7).
 
@@ -355,63 +359,78 @@ The header side of the code is made by removing the coding rib at the matching p
 4. Verify silk legibility at all four: "KEYED: NOT J15" / "NOT J3" / "NOT J16" /
    "NOT J13 LAMP" (1.2 mm silk).
 
-### FA-9 — PC817 input-channel NUMERIC qualification (remediation spec R4 + R2-7 + round-3 R3-8) — **EXPERIMENTAL FIRST-ARTICLE**
+### FA-9 — PC817 input-channel NUMERIC qualification (Rev-D 47 kΩ hardening) — **EXPERIMENTAL FIRST-ARTICLE**
 
-> **R3-8 upgrade (2026-07-21): this is the EXPERIMENTAL first-article gate.** The PC817
-> input-margin arithmetic (spec §R4-A) is *bounded evidence, not a datasheet guarantee* —
-> Sharp publishes no minimum CTR at the fleet's ~1.7 mA I_F. FA-9 is therefore no longer a
-> digital pass/fail: every populated channel is characterized with **NUMERIC V_CE(sat) and
-> a computed sink-margin against an aging reserve**, at the loaded-minimum FIELD_WET and
-> across the declared temperature range. Fleet-release status is contingent on this data
-> (readiness gate G15). Record every number in the run-log FA-9 table — a bare "PASS" is
-> not acceptable closure.
+> **Rev-D pull-up change (2026-07-23):** all 40 `Rpu_*` collector pull-ups are now
+> **47 kΩ**. The UMW PC817B selected as C5692981 guarantees its CTR rank only at the
+> manufacturer's stated test current/temperature; it does **not** guarantee minimum CTR
+> at this board's ~1.7 mA I_F and hot corner. The resistor change materially lowers the
+> required sink current, but it does not erase that lot uncertainty. Every populated
+> channel therefore remains subject to loaded-minimum-voltage and hot numeric
+> qualification. Record every number; a bare "PASS" is not acceptable closure.
+>
+> **Binding pull-configuration dependency:** the arithmetic below assumes each external
+> 47 kΩ `Rpu_*` is the channel's only pull-up. The production RP2040 build must leave
+> internal pulls disabled on all eight fast-input pads (GP6–GP13), and the deployed
+> MCP23017 setup must program and read back `GPPUA=0x00` and `GPPUB=0x00` on both
+> input expanders U1/U2. Any enabled internal pull changes the effective resistance
+> and invalidates this disposition. The four 10 kΩ diagnostic-tap drain pull-ups
+> `R_TAPPU_*` are separate MOSFET-drain networks; they are intentionally unchanged
+> and are not part of the PC817 `Rpu_*` calculation.
 
-**Threshold arithmetic (the numbers every measurement is scored against):**
-- The MCP23017 input flips ACTIVE-LOW when the collector node (= the 10 k logic pull-up
-  node, which IS V_CE of the phototransistor) is pulled below **V_IL ≈ 0.66 V** (0.2 × VDD
-  at 3.3 V).
-- In-circuit the collector current is **rail-limited by the 10 k pull-up**:
-  `I_C(in-circ) = (V_rail − V_CE)/10 kΩ`. Flip needs the node at 0.66 V →
-  **I_C(flip) ≈ 0.26 mA**; the pull-up can deliver at most **0.33 mA** (node at 0 V). That
-  native 0.33/0.26 ≈ **1.25× window is a fixed property of the 3.3 V/10 k front-end** — FA-9
-  cannot widen it; it can only prove each opto sits deep enough in saturation to keep the
-  read valid over life. Healthy hard-saturation shows **V_CE(sat) ≤ 0.30 V**.
-- **Why V_CE(sat) alone is not the reserve:** once the opto's capability CTR × I_F exceeds
-  the 0.33 mA pull-up limit the transistor saturates and V_CE pins low regardless of *how
-  much* extra capability exists — so in-circuit V_CE cannot distinguish "just saturating"
-  from "saturating with 3× headroom". The aging reserve therefore requires a **capability
-  measurement that is NOT rail-limited**: at the min-I_F/hot corner, temporarily load the
-  collector with a **diagnostic pull-up / current meter** (e.g. a bench 3.3 kΩ to the rail
-  or a µA meter in place of the 10 k) and read the collector current the opto can actually
-  sink, **I_C(cap)**.
-- **Aging reserve criterion (spec R4 end-of-life CTR factor ×0.70):** the fresh channel must
-  keep the in-circuit transistor in hard saturation even after a 30 % CTR loss, i.e. its
-  capability must still exceed the 0.33 mA pull-up max after aging:
-  **PASS ⟺ I_C(cap, hot, min-I_F) × 0.70 ≥ 0.33 mA ⟹ I_C(cap) ≥ 0.47 mA.**
-  A channel whose capability is only ~0.33–0.40 mA reads active-low *today* but has **no
-  aging reserve** and FAILS this gate.
+**Threshold, idle-high, and timing arithmetic:**
+- For the 32 MCP23017-received slow channels, GPIO V_IL(max) is 0.2 × VDD =
+  **0.66 V** at 3.3 V. With 47 kΩ as the sole pull-up, the
+  phototransistor need only sink `(3.3 − 0.66)/47 kΩ` = **56.2 µA** to cross the
+  guaranteed LOW threshold. The pull-up can supply at most `3.3/47 kΩ` =
+  **70.2 µA** at a zero-volt collector. Healthy hard saturation remains
+  **V_CE(on) ≤ 0.30 V**.
+- MCP23017 GPIO V_IH(min) is 0.8 × VDD = **2.64 V**. Its ±1 µA input-leakage
+  limit can pull a 47 kΩ idle node down by at most 47 mV, leaving
+  **3.253 V**, 0.613 V above V_IH. That calculation covers receiver leakage
+  only; FA-9 measures the assembled channel so optocoupler dark leakage,
+  contamination, and board leakage are included.
+- Using the MCP23017's 50 pF GPIO capacitance figure as a first-order node load,
+  `47 kΩ × 50 pF` = **2.35 µs**. Actual optocoupler, trace, and probe
+  capacitance add to it. The measured worst transition must remain **≤ 100 µs**,
+  at least 5× faster than the 500 µs fastest-input debounce.
+- **Why V_CE(on) alone is not the reserve:** once capability exceeds the
+  70.2 µA rail limit, V_CE pins low regardless of extra capability. Measure
+  non-rail-limited collector capability **I_C(cap)** with an adjustable
+  diagnostic load/current meter at the hot/min-I_F corner.
+- **Aging-reserve criterion:** after the existing 30% lifetime-loss planning
+  factor, capability must still exceed the 70.2 µA pull-up maximum:
+  **PASS ⟺ I_C(cap, hot, min-I_F) × 0.70 ≥ 70.2 µA ⟺ I_C(cap) ≥ 100.3 µA.**
 
 **Procedure — record numerics per channel, both temperature legs:**
-1. **V_CE(sat) census at nominal wetting (R4 trigger condition 1):** with the field
+1. **Fail-closed pull-configuration proof (before voltage arithmetic):** boot the exact
+   production release from FA-11. Record a runtime pad-register/self-check readback for
+   RP2040 **GP6–GP13** and require both PUE and PDE clear on every pad. Read the
+   MCP23017 `GPPUA` (`0x0C`) and `GPPUB` (`0x0D`) registers from input expanders
+   **U1/0x20 and U2/0x21** and require all four bytes = **`0x00`**. Any nonzero
+   value is a STOP-SHIP: do not apply the 47 kΩ sink/leakage/RC limits until fixed.
+2. **V_CE(sat) census at nominal wetting (R4 trigger condition 1):** with the field
    contact closed at nominal ~1.7 mA I_F, measure and RECORD **in-circuit V_CE(on) on every
    populated channel** (not a 3-channel sample any more). Flag any channel with
-   **V_CE(on) > 0.30 V** — it REOPENS the R4 disposition (forces Rin 2k2 → 1k ≈ 3.5 mA +
-   mandatory §H.3 wetting and §H.4 D17 re-runs).
-2. **Loaded-minimum FIELD_WET leg (R2-7, cold):** load the wetting rail to fleet worst case
+   **V_CE(on) > 0.30 V** — it blocks release and reopens the input-front-end disposition.
+3. **Loaded-minimum FIELD_WET leg (R2-7, cold):** load the wetting rail to fleet worst case
    (all populated contacts closed), confirm FIELD_WET_V at TP4 at its loaded minimum
    (≈ 4.5 V — FA-1 step 3). Per populated channel record **in-circuit V_CE(sat)** AND the
    **diagnostic-load capability I_C(cap)** (bench pull-up / µA meter as above); confirm the
-   MCP23017 bit reads ACTIVE-LOW. **Every populated channel.**
-3. **Temperature leg (R2-7 + R3-8 — the worst-case CTR corner):** heat the populated PC817
+   actual receiver bit reads ACTIVE-LOW. **Every populated channel.**
+4. **Temperature leg (R2-7 + R3-8 — the worst-case CTR corner):** heat the populated PC817
    input optos (§3 refdes map) to **≥ 70 °C case** (thermocouple-verified — same rig as
-   FA-7 step 4) and repeat step 2 at the loaded minimum field voltage, spanning the declared
-   range (25 °C ambient → ≥ 70 °C case). Hot + low-I_F is the corner the §R4-A curves cannot
-   guarantee. **Record per channel: V_CE(sat) cold, V_CE(sat) hot, I_C(cap) hot, the margin
-   ratio I_C(cap)/0.33 mA, aging-reserve PASS/FAIL (I_C(cap)×0.70 ≥ 0.33 mA), measured TP4
-   voltage, and case temperature.** The gate is the aging-reserve criterion evaluated at the
-   HOT/min-I_F numbers. Any failure lands under R4 reopen trigger 1 and blocks the G15
-   fleet-release acceptance (the order stays EXPERIMENTAL first-article until every populated
-   channel clears it).
+   FA-7 step 4) and repeat step 3 at the loaded minimum field voltage, spanning the declared
+   range (25 °C ambient → ≥ 70 °C case). **Record per channel: V_CE(on) cold,
+   V_CE(on) hot, I_C(cap) hot, I_C(cap)/100.3 µA, aging-reserve PASS/FAIL,
+   measured TP4 voltage, and case temperature.**
+5. **Idle-high/leakage and edge-time leg:** at ≥70 °C and with each contact open,
+   record its collector-node HIGH voltage and receiver state. Require
+   **V_node ≥ 2.84 V** (V_IH + 0.20 V service guard) and INACTIVE. At the
+   loaded-minimum field voltage, capture both assertion and release at the
+   collector; require the slower transition **≤100 µs**. Any channel failure
+   blocks G15 fleet release and requires component/contamination/root-cause
+   disposition before a resistor or optocoupler substitution.
 
 ### FA-10 — MCV header mechanical (FR-9, first connector only)
 Before reflowing/soldering the remaining six MCV headers, install and solder ONE
@@ -419,14 +438,27 @@ Before reflowing/soldering the remaining six MCV headers, install and solder ONE
 and solder fill is complete. Then proceed with the rest.
 
 ### FA-11 — Firmware posture assert (refuses the first-article pass if absent)
-1. Boot banner shows `phase8b-rp2040 v1.2.3` (config.h FW_VERSION at pack generation — a
-   different banner means the wrong image is flashed) and `tap:{ep,pre,n}` state.
-2. `tap_assert_input_only()` is active (heartbeat-tick OE/FUNCSEL readback); simulate
+1. Run `powershell -ExecutionPolicy Bypass -File firmware/rp2040/release.ps1
+   -VerifyOnly`; record manifest SHA-256
+   **`5bcbd2df1980acdd365865fc6527c96a3d0c1f51210a9d4a5fdd1f6cfcc279fd`**. Any verifier failure blocks flashing.
+2. Hash the exact release UF2 before flash and require
+   **`d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`**. After boot, request `ID` and require all four
+   values exactly: `fw="phase8b-rp2040 v1.2.3"`, `build="rel-0c746b5747143b8011b01d43"`,
+   `cfg="05d808411db4bb0d"`, `fi1=0`. A matching filename or version
+   banner alone is not image proof. Also confirm `tap:{ep,pre,n}` state.
+3. The lane deployment identity allowlists must contain those exact `build` and `cfg`
+   values from the manifest; no wildcard, prefix, Git hash, or manually typed substitute.
+4. Confirm the production build's fast-input pull invariant at runtime: RP2040
+   **GP6–GP13** must report PUE=0 and PDE=0. This is the firmware half of FA-9 step 1;
+   any enabled pull invalidates the 47 kΩ input-margin arithmetic.
+5. `tap_assert_input_only()` is active (heartbeat-tick OE/FUNCSEL readback); simulate
    nothing here — the host suite already proves the trip path; on-silicon just confirm
    no `tap_dir` fault is latched with the release build.
-3. Confirm the running build is NOT FI-1 (banner identity), and FI-1 refuses to run
-   without its physical jumper.
-4. Deliberate disarm drives ARM_PERMIT low (push-pull), never tristates.
+6. The bench-only FI-1 UF2 must hash
+   **`7c1daabad0a102f55fa61d617d3b4f0722705770f109e2d941b5356b3378ae6c`** and emit
+   `build="fi1-353b1dc6d323bcb0a1972580", fi1=1`; confirm it refuses to run without its
+   physical jumper. Never enter the FI-1 build in the deployment allowlist.
+7. Deliberate disarm drives ARM_PERMIT low (push-pull), never tristates.
 
 ### FA-12 — J16 SDA/SCL external-short recovery (round-2 R2-4)
 
@@ -474,6 +506,7 @@ relays exercising the FA-3 pattern.
 | FA-8 sacrificial pair + 4-way refusal | | |
 | FA-9 V_CE(sat) numeric census — every populated channel (R4) | | |
 | FA-9 per-channel I_C(cap) + aging-reserve PASS @ min FIELD_WET + ≥ 70 °C (R2-7 / R3-8) | | |
+| FA-9 per-channel hot idle-HIGH/leakage + ≤100 µs edge-time PASS | | |
 | FA-10 MCV insertion/solder fill | | |
-| FA-11 firmware `phase8b-rp2040 v1.2.3` posture | | |
+| FA-11 verified manifest + UF2 SHA + exact `id.build`/`id.cfg`/`fi1=0` posture | | |
 | FA-12 J16 SDA/SCL short recovery (U46, R2-4) | | |

@@ -54,6 +54,7 @@ EXPECTED_PARTS = 271
 # one gate + one drain pad per tap stage) -> 24 test pads.
 EXPECTED_TESTPADS = 24
 EXPECTED_MOUNTING = 4
+EXPECTED_OPTO_PULLUPS = {f"R{n}" for n in range(4, 83, 2)}
 
 # --pre-route: placement-stage board (no routing yet). Route-stage checks
 # (copper zone fills) are reported as WARN-expected instead of FAIL; every
@@ -326,6 +327,17 @@ def audit_netlist(path):
     need(j16[0] == "J_EXT_I2C" and j16[2] == "J_EXTI2C",
          f"J16 is J_EXT_I2C (tag J_EXTI2C) (got value={j16[0]!r} tag={j16[2]!r})")
 
+    # Rev-D input-margin hardening: tags prove the value change is limited
+    # to the 40 optocoupler collector pull-ups.
+    rpu = {r for r, (v, fp, t) in comp_info.items() if t.startswith("Rpu_")}
+    wrong_rpu = sorted((r, comp_info[r][0]) for r in rpu if comp_info[r][0] != "47k")
+    other_47k = sorted(r for r, (v, fp, t) in comp_info.items()
+                       if v == "47k" and not t.startswith("Rpu_"))
+    need(rpu == EXPECTED_OPTO_PULLUPS,
+         f"exactly 40 Rpu_* refs are R4,R6,...,R82 (got {sorted(rpu)})")
+    need(not wrong_rpu, f"every Rpu_* value is 47k (wrong: {wrong_rpu})")
+    need(not other_47k, f"no unrelated component was changed to 47k (got {other_47k})")
+
     # ---- M1 channel + arc suppression still DNP (by value marker) ----
     dnp = sorted(r for r, (v, fp, t) in comp_info.items() if "DNP" in v)
     print(f"[dnp] count={len(dnp)} {dnp}")
@@ -371,6 +383,16 @@ def audit_board(path):
     need(len(tp_refs) == EXPECTED_TESTPADS and len(mk_refs) == EXPECTED_MOUNTING,
          f"board extras: {EXPECTED_TESTPADS} test pads + {EXPECTED_MOUNTING} mounting holes "
          f"(got {len(tp_refs)} TP, {len(mk_refs)} MK)")
+    board_rpu = {fp.GetReference() for fp in fps
+                 if fp.GetReference() in EXPECTED_OPTO_PULLUPS and fp.GetValue() == "47k"}
+    board_other_47k = sorted(fp.GetReference() for fp in fps
+                             if fp.GetValue() == "47k"
+                             and fp.GetReference() not in EXPECTED_OPTO_PULLUPS)
+    need(board_rpu == EXPECTED_OPTO_PULLUPS,
+         f"board has exactly R4,R6,...,R82 as 47k PC817 pull-ups "
+         f"(got {sorted(board_rpu)})")
+    need(not board_other_47k,
+         f"board has no unrelated 47k footprints (got {board_other_47k})")
 
     # ---- netclass assignments on THIS board (the critical check: without
     #      them the .dru hasNetclass() isolation rules are vacuous) ----

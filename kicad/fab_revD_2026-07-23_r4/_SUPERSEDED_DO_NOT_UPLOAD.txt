@@ -1,0 +1,14 @@
+SUPERSEDED - DO NOT ORDER OR UPLOAD FROM THIS DIRECTORY
+
+This r4 package captured the 47k PC817 pull-up board/BOM change, but it
+predates the binding runtime-bias gate discovered during integration:
+
+- RP2040 GP6-GP13 internal PUE/PDE must be disabled.
+- U1/U2 MCP23017 GPPUA/GPPUB must be commanded and read back 0x00.
+- The package must bind the exact production firmware build/config/UF2 hash.
+
+Use only:
+  kicad/fab_revD_2026-07-23_r5/
+
+The original r4 manifest and zip hashes remain historical evidence. This
+marker is intentionally outside those immutable archives.

@@ -17,7 +17,7 @@ Contract (spec step I.7 / change-list P3 / remediation task H6):
   footprint on the board must exist in kicad/wsl-phase8b-revD.net with the same value and
   footprint, the DNP set must match the generator's DNP rule exactly, and the CPL refs must
   equal the placed (non-DNP) set exactly. Pinned counts: 271 parts / 28 DNP / 243 placed /
-  226 JLC-placed / 17 hand-solder.
+  226 JLC-placed / 27 JLC lines / 17 hand-solder.
   (History: 252 pre-remediation -> 262 after R1.7 -> 271 after the 2026-07-21 round-2
   batch: +9 parts for the R2-4 J16 protection stack and R2-6 REV_ID straps; the JP1
   default-OPEN solder link is the 28th DNP.)
@@ -26,11 +26,19 @@ Contract (spec step I.7 / change-list P3 / remediation task H6):
   U46 -> TCA4307DGKR C880333, U47 -> Semtech SRV05-4.TCT C13612, F1 -> Littelfuse
   1206L020YR C207035 (R2-4). Source paths DERIVE from --rev so a rev-D board can never
   be exported under another revision's label (R2-15).
+- Rev-D input-margin lock (2026-07-23): exactly R4,R6,...,R82 are 47k,
+  UNI-ROYAL 0805W8F4702T5E / LCSC C17713; no unrelated part may join that
+  line and the remaining 10k networks stay on C17414. The production
+  configuration must leave RP2040 GP6-GP13 internal pulls disabled and read
+  back MCP input GPPUA/GPPUB=0x00 so the external 47k is the sole bias.
 - D_PROT is HARD-LOCKED to MDD SS34, LCSC C8678, SMA/DO-214AC (run-log FR-3). The script
   fails if D17 is not SS34/D_SMA, if any SS14 survives anywhere, or if the JLC BOM line for
   SS34 carries anything but C8678/MDD/SMA.
-- Every file in the package lands in a sha256 manifest (manifest.json) so the as-ordered
-  package is hashable and reproducible.
+- Every file in the package lands in a sha256 manifest (manifest.json) so the exact
+  as-ordered package is immutable and independently verifiable. KiCad embeds generation
+  timestamps (and may vary serialization order) in several Gerber/drill/report/PDF
+  outputs, so a later clean export is expected to satisfy the same topology/BOM/count
+  gates but is not claimed to be byte-identical to the frozen package.
 - Also emits the hand-solder BOM and the HARNESS BOM (Codex H7): the harness CSV carries
   the Phoenix MC 1,5 termination data verbatim (7 mm strip, 0.22-0.25 N*m, max 0.5 mm^2
   with insulated ferrule) and the corrected coding-profile install rule (CP-MSTB 1734634
@@ -64,6 +72,7 @@ KICAD_CLI = Path(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe")
 # `--rev` freely renamed every emitted file). Any other --rev now fails on
 # "missing routed board" unless that revision's sources actually exist.
 DOCS_HARNESS_BOM = ROOT / "docs" / "phase8_revD_harness_bom.csv"
+FW_RELEASE_MANIFEST = ROOT / "firmware" / "rp2040" / "release" / "firmware_manifest.json"
 
 # ---- pinned release counts (fail closed on ANY drift) -------------------------------
 EXPECTED_NETLIST_PARTS = 271     # R1.7 (262) + round-2 R2-4/R2-6 (+9)
@@ -71,7 +80,7 @@ EXPECTED_DNP = 28                # 22 value-DNP + 5 M1-optional + JP1 (default-O
 EXPECTED_PLACED = 243            # 271 - 28
 EXPECTED_HAND_SOLDER = 17        # A1, J1-J11 (J12 is DNP), J13-J16, U45
 EXPECTED_JLC_PLACED = 226        # 243 - 17
-EXPECTED_JLC_LINES = 26          # 22 + 2N7002LT1G + TCA4307 + SRV05-4 + 1206L020YR
+EXPECTED_JLC_LINES = 27          # prior 26 + dedicated 47k PC817 collector-pull-up line
 
 GERBER_LAYERS = ",".join(
     [
@@ -183,12 +192,12 @@ PART_LOCK: dict[tuple[str, str], dict[str, str]] = {
     ("1206L020YR 200mA", "Fuse_1206_3216Metric"): {
         "lcsc": "C207035", "mpn": "1206L020YR", "manufacturer": "Littelfuse",
         "class": "Extended",
-        "locked_spec": "PTC resettable fuse 200mA hold / 420mA trip / 24V, 1206",
+        "locked_spec": "PTC resettable fuse 200mA hold @23C / 24V, 1206",
         "note": "F_J16_5V current limit for the J16 module supply (R2-4; "
                 "allowance re-derived to 45mA @85C worst case per R3-7). Any "
-                "substitute must be 1206, hold >= 2x the 45mA module allowance "
-                "(i.e. >= 90mA hold; 1206L020 at 200mA/23C satisfies it hot) "
-                "and trip << the SS34 3A budget.",
+                "substitute must be 1206 and have minimum Ihold at 85C >=90mA. "
+                "Trip-current equivalence is not an acceptance criterion: a PPTC "
+                "trip point is time/temperature dependent, not a hard clamp.",
     },
     ("TCA4307DGKR", "VSSOP-8_3x3mm_P0.65mm"): {
         "lcsc": "C880333", "mpn": "TCA4307DGKR", "manufacturer": "Texas Instruments",
@@ -227,6 +236,12 @@ PART_LOCK: dict[tuple[str, str], dict[str, str]] = {
     ("10k", "R_0805_2012Metric"): {
         "lcsc": "C17414", "mpn": "0805W8F1002T5E", "manufacturer": "UNI-ROYAL",
         "class": "Basic", "locked_spec": "10k 1% 1/8W 0805 resistor", "note": "",
+    },
+    ("47k", "R_0805_2012Metric"): {
+        "lcsc": "C17713", "mpn": "0805W8F4702T5E", "manufacturer": "UNI-ROYAL",
+        "class": "Basic", "locked_spec": "47k 1% 1/8W 0805 resistor",
+        "note": "Rev-D PC817 collector pull-ups only (Rpu_*, 40 channels). "
+                "Do not merge with or substitute for unrelated 10k networks.",
     },
     ("1k", "R_0805_2012Metric"): {
         "lcsc": "C17513", "mpn": "0805W8F1001T5E", "manufacturer": "UNI-ROYAL",
@@ -539,6 +554,44 @@ def zip_paths(zip_path: Path, files: list[Path], base: Path) -> None:
             z.write(path, path.relative_to(base).as_posix())
 
 
+def load_firmware_release_identity() -> dict[str, str]:
+    """Load and hash-check the one production image named by the release manifest."""
+    if not FW_RELEASE_MANIFEST.exists():
+        raise SystemExit(f"Missing firmware release manifest: {FW_RELEASE_MANIFEST}")
+    data = json.loads(FW_RELEASE_MANIFEST.read_text(encoding="utf-8"))
+    release_images = [
+        image for image in data.get("images", [])
+        if image.get("variant") == "release" and not image.get("bench_only", False)
+    ]
+    if len(release_images) != 1:
+        raise SystemExit(
+            "Firmware release identity gate failed: expected exactly one non-bench "
+            f"release image, got {len(release_images)}")
+    release = release_images[0]
+    identity = release.get("identity", {})
+    image = release.get("image", {})
+    build = str(identity.get("id.build", ""))
+    cfg = str(identity.get("id.cfg", ""))
+    sha = str(image.get("sha256", "")).lower()
+    image_path = FW_RELEASE_MANIFEST.parent / str(image.get("file", ""))
+    if not build or not cfg or not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise SystemExit("Firmware release manifest has incomplete build/cfg/image identity")
+    if not image_path.is_file() or sha256(image_path) != sha:
+        raise SystemExit(
+            f"Firmware release image missing or hash mismatch: {image_path}")
+    policy = data.get("deployment_identity", {})
+    if policy.get("build_allowlist") != [build] or policy.get("config_allowlist") != [cfg]:
+        raise SystemExit(
+            "Firmware release manifest allowlists do not exactly match the production image")
+    return {
+        "version": str(data.get("firmware_version", "")),
+        "build": build,
+        "cfg": cfg,
+        "sha256": sha,
+        "manifest_sha256": sha256(FW_RELEASE_MANIFEST),
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rev", default="D", help="board revision letter (default D)")
@@ -568,6 +621,7 @@ def main() -> int:
         raise SystemExit(f"Missing netlist for rev-{rev}: {NETLIST_PATH}")
     if not KICAD_CLI.exists():
         raise SystemExit(f"Missing KiCad CLI: {KICAD_CLI}")
+    fw_release = load_firmware_release_identity()
 
     # P3 / change-list item 12: NEVER overwrite an as-ordered package. No rmtree, ever.
     if out.exists():
@@ -790,6 +844,16 @@ def main() -> int:
             or str(r10m_line["Designator"]) != "R135,R138,R141"):
         raise SystemExit("R2-15 lock failed: R135/R138/R141 must map exactly to UNI-ROYAL "
                          f"0805W8F1005T5E LCSC C26108 (got {r10m_line})")
+    # Rev-D input-margin hardening: exactly the 40 optocoupler collector
+    # pull-ups, and no unrelated resistor, must ride the dedicated 47k line.
+    r47k_line = by_lcsc.get("C17713")
+    expected_rpu_refs = ",".join(f"R{n}" for n in range(4, 83, 2))
+    if (not r47k_line or str(r47k_line["MFR Part #"]) != "0805W8F4702T5E"
+            or str(r47k_line["Manufacturer"]) != "UNI-ROYAL"
+            or str(r47k_line["Designator"]) != expected_rpu_refs):
+        raise SystemExit(
+            "Rev-D input pull-up lock failed: R4,R6,...,R82 must map exactly "
+            f"to UNI-ROYAL 47k 0805W8F4702T5E LCSC C17713 (got {r47k_line})")
     if any(str(r["LCSC Part #"]) == "MATCH-AT-UPLOAD" for r in jlc_bom):
         raise SystemExit("R2-15: MATCH-AT-UPLOAD rows are forbidden - every JLC line needs a pinned C-number")
     # R2-4 hard locks: buffer + ESD + polyfuse identity.
@@ -887,6 +951,20 @@ def main() -> int:
         "  stock at order, OOS at LCSC retail 2026-07-21); U46 = TCA4307DGKR C880333;",
         "  U47 = Semtech SRV05-4.TCT C13612; F1 = Littelfuse 1206L020YR C207035.",
         "  JP1 (J16 3.3V solder link) is DNP: default-OPEN, no part fitted.",
+        "- Rev-D input-margin hardening (2026-07-23): exactly R4,R6,...,R82 = 47k,",
+        "  UNI-ROYAL 0805W8F4702T5E / LCSC C17713; unrelated 10k networks unchanged.",
+        "  Every populated PC817 channel still requires FA-9 at loaded-min FIELD_WET",
+        "  and temperature: C5692981 lacks a guaranteed CTR minimum at ~1.7mA IF.",
+        "  BINDING CONFIGURATION GATE: production RP2040 GP6-GP13 internal pulls must",
+        "  be disabled (PUE=0, PDE=0), and U1/U2 MCP23017 GPPUA/GPPUB must command",
+        "  and read back 0x00. An enabled internal pull invalidates the 47k-only",
+        "  sink/leakage/RC arithmetic and is STOP-SHIP. R_TAPPU_* 10k diagnostic-tap",
+        "  drain pull-ups are separate networks and remain intentionally unchanged.",
+        f"  Production firmware identity: {fw_release['version']};",
+        f"  build={fw_release['build']}; cfg={fw_release['cfg']};",
+        f"  release UF2 SHA-256={fw_release['sha256']}. Verify the release manifest",
+        f"  SHA-256={fw_release['manifest_sha256']} before flash; filename/version alone",
+        "  is not proof. FA-9/FA-11 require live pull-register confirmation.",
         "",
         "Uploads:",
         f"- {stem}-gerber-drill.zip  -> JLC PCB order (4-layer FR-4 1.6mm, 1oz/0.5oz,",
@@ -968,6 +1046,15 @@ def main() -> int:
             "hand_solder": len(hand_refs),
         },
         "d_prot_lock": "D17 = MDD SS34, LCSC C8678, SMA/DO-214AC (FR-3)",
+        "input_pullup_lock": (
+            "R4,R6,...,R82 = 40 x UNI-ROYAL 47k 0805W8F4702T5E, LCSC C17713; "
+            "all unrelated 10k networks unchanged"
+        ),
+        "input_bias_runtime_gate": (
+            "production RP2040 GP6-GP13 PUE=0/PDE=0; U1/U2 MCP23017 "
+            "GPPUA=0x00/GPPUB=0x00 with readback; R_TAPPU_* 10k is separate"
+        ),
+        "production_firmware": fw_release,
         "files": [{"path": rel(p) if str(p).startswith(str(ROOT)) else str(p),
                    "bytes": p.stat().st_size, "sha256": sha256(p)}
                   for p in sorted(all_files)],

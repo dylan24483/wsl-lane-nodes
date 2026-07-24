@@ -10,7 +10,8 @@ membership is therefore compared as (tag, pin) sets, not (ref, pin).
 
 Fails (exit 1) if anything OUTSIDE the documented rev-D contract changed:
   - any rev-C part removed, or its value/footprint changed (except the
-    ALLOWED_CHANGED_PARTS whitelist: D_PROT SS14->SS34 per spec §H.4)
+    ALLOWED_CHANGED_PARTS whitelist: D_PROT SS14->SS34, MCV drill updates,
+    and the 32 carried Rpu_* 10k->47k input-margin changes)
   - any rev-C net removed
   - any rev-C net changed other than the 11 documented touch-point nets
   - any touch-point net LOSING a rev-C node (additions only)
@@ -115,7 +116,7 @@ EXPECTED_ADDED_PART_SPECS = {
 for _i in range(4, 12):                                                # C: AUX bank
     EXPECTED_ADDED_PART_SPECS[f"OPTO_AUX{_i}"] = (f"PC817 AUX{_i}", _FP_DIP4)
     EXPECTED_ADDED_PART_SPECS[f"Rin_AUX{_i}"] = ("2k2", _FP_R)
-    EXPECTED_ADDED_PART_SPECS[f"Rpu_AUX{_i}"] = ("10k", _FP_R)
+    EXPECTED_ADDED_PART_SPECS[f"Rpu_AUX{_i}"] = ("47k", _FP_R)
 for _s in _TAP_SUFFIXES:                                               # E (R1)
     EXPECTED_ADDED_PART_SPECS[f"R_TAPIN_{_s}"] = ("1M", _FP_R)
     EXPECTED_ADDED_PART_SPECS[f"R_TAPPU_{_s}"] = ("10k", _FP_R)
@@ -238,6 +239,14 @@ def _mcv(n: int) -> tuple[str, str]:
 ALLOWED_CHANGED_PARTS = {
     "D_PROT": {("SS14", "Diode_SMD:D_SMA"): ("SS34", "Diode_SMD:D_SMA")},
 }
+for _tag in (
+        [f"Rpu_{name}" for name in
+         ("SA", "SB", "SC", "TA1", "TA2", "TB", "DIELL_L", "DIELL_R")]
+        + [f"Rpu_GS{i}" for i in range(1, 11)]
+        + [f"Rpu_{name}" for name in
+           ("GP", "OS", "BS", "PBZ", "PBC", "FOUL", "TENTH", "MAN_T",
+            "MAN_S", "MAN_SWS", "MAN_SWSR", "AUX1", "AUX2", "AUX3")]):
+    ALLOWED_CHANGED_PARTS[_tag] = {("10k", _FP_R): ("47k", _FP_R)}
 for _tag, _val, _n in (("J_FAST", "J_FAST_IN", 10), ("J_SLOWA", "J_SLOW_IN_A", 14),
                        ("J_SLOWB", "J_SLOW_IN_B", 12), ("J_LAMP", "J_LAMP_LED", 6),
                        ("J_SAFE", "J_SAFETY", 4)):
@@ -301,7 +310,10 @@ def main():
             changed_parts.append(t)
             lines.append(f"CHANGED_PART\t{t}\t{cval}|{cfp}\t->\t{dval}|{dfp}")
             if ALLOWED_CHANGED_PARTS.get(t, {}).get((cval, cfp)) == (dval, dfp):
-                lines.append(f"NOTE\tdocumented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9): {t}")
+                lines.append(
+                    "NOTE\tdocumented change (D_PROT: spec H.4/FR-3; "
+                    "MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: "
+                    f"remediation spec R4): {t}")
             else:
                 problems.append(f"rev-C part value/footprint changed: {t}")
         if cref != dref:

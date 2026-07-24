@@ -1,0 +1,13 @@
+SUPERSEDED 2026-07-23.
+
+Do not upload or order from this package.
+
+The current Rev-D fabrication package is:
+  kicad/fab_revD_2026-07-23_r5/
+
+Reason: r4 changes exactly the 40 PC817 collector pull-ups R4,R6,...,R82
+from 10k to 47k and carries the corresponding locked BOM, first-article
+acceptance, and J16 F1 substitution wording.
+
+r4 manifest sha256:
+  3abfb9ac830939339b2476a575215924d45b81b72cb764cbfd2df7d0b549a1bd

@@ -1,0 +1,28 @@
+Comment,Designator,Footprint,Quantity,LCSC Part #,MFR Part #,Manufacturer,JLC Class,Notes
+100nF 50V X7R +/-10% 0805 MLCC,"C1,C2,C3,C12,C15,C16",C_0805_2012Metric,6,C49678,CC0805KRX7R9BB104,YAGEO,Basic,
+"100uF 16V +/-20% SMD aluminum electrolytic, D6.3xL5.4mm",C11,CP_Elec_6.3x5.4,1,C19184134,CK1C101M-CRE54,RS,Extended,Polarized; verify positive mark and package preview before order.
+10nF 50V X7R +/-10% 0805 MLCC,C13,C_0805_2012Metric,1,C17702767,C0805B103K500NT,TORCH,Extended,
+10uF 16V X5R +/-10% 0805 MLCC,C14,C_0805_2012Metric,1,C89827,CC0805KKX5R7BB106,YAGEO,Extended,Verify DC-bias derating remains acceptable on the 5V rail.
+"1N4148WS switching diode, SOD-323","D1,D3,D5,D7,D9,D11,D15,D16",D_SOD-323,8,C118873,1N4148WS,onsemi,Extended,
+"SS34 Schottky diode 40V 3A, SMA/DO-214AC",D17,D_SMA,1,C8678,SS34,MDD,Basic,HARD LOCK (FR-3): must be MDD C8678 in SMA. Any MPN substitution re-runs the footprint review.
+"PTC resettable fuse 200mA hold @23C / 24V, 1206",F1,Fuse_1206_3216Metric,1,C207035,1206L020YR,Littelfuse,Extended,"F_J16_5V current limit for the J16 module supply (R2-4; allowance re-derived to 45mA @85C worst case per R3-7). Any substitute must be 1206 and have minimum Ihold at 85C >=90mA. Trip-current equivalence is not an acceptance criterion: a PPTC trip point is time/temperature dependent, not a hard clamp."
+"G5LE-14 5VDC SPDT relay, wave solder","K1,K2,K3,K4,K5,K6",Relay_SPDT_Omron-G5LE-1,6,C116963,G5LE-14 5VDC,Omron Electronics,Extended,Critical: 5VDC coil. Do not substitute 9V/12V/24V coil.
+"MMBT3904 NPN BJT, SOT-23","Q1,Q2,Q3,Q4,Q5,Q6,Q15,Q16",SOT-23,8,C909754,MMBT3904,GOODWORK,Extended,
+"2N7002 N-channel MOSFET, SOT-23","Q8,Q9,Q10,Q11",SOT-23,4,C916396,2N7002,JSMSEMI,Extended,Qled_* lamp drivers ONLY. The Q_TAP_* rail-tap stages are MPN-locked to onsemi 2N7002LT1G (R2-3/FR-10) - do NOT merge the lines.
+"AO3400A N-channel logic MOSFET, SOT-23","Q12,Q13",SOT-23,2,C20917,AO3400A,Alpha & Omega Semicon,Basic,
+"AO3401A P-channel MOSFET, SOT-23",Q14,SOT-23,1,C347476,AO3401A,UMW,Extended,
+"2N7002LT1G N-channel MOSFET 60V 115mA, SOT-23","Q17,Q18,Q19,Q20",SOT-23,4,C16338,2N7002LT1G,onsemi,Extended,HARD LOCK (R2-3/FR-10): tap stages Q17-Q20 only. Substitution requires a documented V_GS(th)/tempco datasheet review (Nexperia 2N7002-QR is the approved alternate).
+4.7k 1% 1/8W 0805 resistor,"R1,R2,R142,R143",R_0805_2012Metric,4,C17673,0805W8F4701T5E,UNI-ROYAL,Basic,
+2.2k 1% 1/8W 0805 resistor,"R3,R5,R7,R9,R11,R13,R15,R17,R19,R21,R23,R25,R27,R29,R31,R33,R35,R37,R39,R41,R43,R45,R47,R49,R51,R53,R55,R57,R59,R61,R63,R65,R67,R69,R71,R73,R75,R77,R79,R81,R122,R123",R_0805_2012Metric,42,C17520,0805W8F2201T5E,UNI-ROYAL,Basic,
+47k 1% 1/8W 0805 resistor,"R4,R6,R8,R10,R12,R14,R16,R18,R20,R22,R24,R26,R28,R30,R32,R34,R36,R38,R40,R42,R44,R46,R48,R50,R52,R54,R56,R58,R60,R62,R64,R66,R68,R70,R72,R74,R76,R78,R80,R82",R_0805_2012Metric,40,C17713,0805W8F4702T5E,UNI-ROYAL,Basic,"Rev-D PC817 collector pull-ups only (Rpu_*, 40 channels). Do not merge with or substitute for unrelated 10k networks."
+1k 1% 1/8W 0805 resistor,"R83,R86,R89,R92,R95,R98,R104,R107,R110,R113,R118,R120",R_0805_2012Metric,12,C17513,0805W8F1001T5E,UNI-ROYAL,Basic,
+100k 1% 1/8W 0805 resistor,"R84,R87,R90,R93,R96,R99,R105,R108,R111,R114,R116,R124,R126,R128",R_0805_2012Metric,14,C149504,0805W8F1003T5E,UNI-ROYAL,Basic,
+330R 1% 1/8W 0805 resistor,"R106,R109,R112,R115",R_0805_2012Metric,4,C17630,0805W8F3300T5E,UNI-ROYAL,Basic,
+10k 1% 1/8W 0805 resistor,"R117,R119,R121,R125,R127,R129,R130,R132,R134,R137,R140,R144,R145",R_0805_2012Metric,13,C17414,0805W8F1002T5E,UNI-ROYAL,Basic,
+1M 1% 1/8W 0805 resistor,"R131,R133,R136,R139",R_0805_2012Metric,4,C17514,0805W8F1004T5E,UNI-ROYAL,Basic,"R_TAPIN_* injection limiters (remediation R1.4 corrected: never reduce below 1M - the >=917k derated-onset floor; the old ~825k figure was retracted, Codex R2-2)."
+10M 1% 1/8W 0805 resistor,"R135,R138,R141",R_0805_2012Metric,3,C26108,0805W8F1005T5E,UNI-ROYAL,Extended,R_TAPG_* gate pulldowns (R135/R138/R141). Identity pinned C26108 (R2-15); verify stock at order time (OOS at LCSC retail 2026-07-21).
+"MCP23017 I2C I/O expander, SOIC-28-300mil","U1,U2,U3",SOIC-28W_7.5x17.9mm_P1.27mm,3,C47023,MCP23017-E/SO,Microchip Tech,Extended,"Critical: I2C MCP23017, not SPI MCP23S17."
+"PC817B optocoupler, DIP-4, wave solder","U4,U5,U6,U7,U8,U9,U10,U11,U12,U13,U14,U15,U16,U17,U18,U19,U20,U21,U22,U23,U24,U25,U26,U27,U28,U29,U30,U31,U32,U33,U34,U35,U36,U37,U38,U39,U40,U41,U42,U43",DIP-4_W7.62mm,40,C5692981,PC817B,UMW,Extended,B rank (CTR 130-260%) REQUIRED - remediation spec R4 disposition assumes the 130% class floor. Confirm DIP-4 preview/orientation.
+"NE555 bipolar timer, SOIC-8",U44,SOIC-8_3.9x4.9mm_P1.27mm,1,C7593,NE555DR,Texas Instruments,Extended,Bipolar 555 selected; avoid CMOS/TLC555 timing change unless revalidated.
+"TCA4307 hot-swap I2C buffer w/ stuck-bus recovery, VSSOP-8 (DGK)",U46,VSSOP-8_3x3mm_P0.65mm,1,C880333,TCA4307DGKR,Texas Instruments,Extended,"Critical: stuck-bus RECOVERY variant (TCA4307, 40ms + SCL pulses); do not substitute plain buffers (TCA9517 etc). Pinout verified vs TI SCPS270B (FR-13)."
+"SRV05-4 4-channel ESD/TVS array 5V, SOT-23-6",U47,SOT-23-6,1,C13612,SRV05-4.TCT,SEMTECH,Extended,Connector-side ESD for J16 (R2-4). Semtech original locked; clone SRV05-4s exist under the same marking - keep the Semtech line.

@@ -1,0 +1,18 @@
+Designator,Comment,Footprint,Reason
+A1,RP2040 Pico,RaspberryPi_Pico_SMD,Hand solder: Raspberry Pi Pico module
+J1,J_PI,IDC-Header_2x10_P2.54mm_Vertical,Hand solder: connector/header
+J2,J_PWR 5V,"TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal",Hand solder: connector/header
+J3,J_FAST_IN,"PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4",Hand solder: connector/header
+J4,J_SLOW_IN_A,"PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical_D1.4",Hand solder: connector/header
+J5,J_SLOW_IN_B,"PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical_D1.4",Hand solder: connector/header
+J6,J_MOTION_S 5.08mm,"TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",Hand solder: connector/header
+J7,J_MOTION_T 5.08mm,"TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",Hand solder: connector/header
+J8,J_MOTION_SP 5.08mm,"TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",Hand solder: connector/header
+J9,J_MOTION_BE 5.08mm,"TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",Hand solder: connector/header
+J10,J_MOTION_M 5.08mm,"TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",Hand solder: connector/header
+J11,J_MOTION_M2 5.08mm,"TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",Hand solder: connector/header
+J13,J_LAMP_LED,"PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4",Hand solder: connector/header
+J14,J_SAFETY,"PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical_D1.4",Hand solder: connector/header
+J15,J_SLOW_IN_C,"PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4",Hand solder: connector/header
+J16,J_EXT_I2C,"PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4",Hand solder: connector/header
+U45,TMA-0505S,Converter_DCDC_TRACO_TMA-05xxS_12xxS_Single_THT,Hand solder: TRACO TMA-0505S isolated DC/DC

@@ -48,27 +48,91 @@ ADDED_PART	Rin_AUX6	R71	2k2	Resistor_SMD:R_0805_2012Metric
 ADDED_PART	Rin_AUX7	R73	2k2	Resistor_SMD:R_0805_2012Metric
 ADDED_PART	Rin_AUX8	R75	2k2	Resistor_SMD:R_0805_2012Metric
 ADDED_PART	Rin_AUX9	R77	2k2	Resistor_SMD:R_0805_2012Metric
-ADDED_PART	Rpu_AUX10	R80	10k	Resistor_SMD:R_0805_2012Metric
-ADDED_PART	Rpu_AUX11	R82	10k	Resistor_SMD:R_0805_2012Metric
-ADDED_PART	Rpu_AUX4	R68	10k	Resistor_SMD:R_0805_2012Metric
-ADDED_PART	Rpu_AUX5	R70	10k	Resistor_SMD:R_0805_2012Metric
-ADDED_PART	Rpu_AUX6	R72	10k	Resistor_SMD:R_0805_2012Metric
-ADDED_PART	Rpu_AUX7	R74	10k	Resistor_SMD:R_0805_2012Metric
-ADDED_PART	Rpu_AUX8	R76	10k	Resistor_SMD:R_0805_2012Metric
-ADDED_PART	Rpu_AUX9	R78	10k	Resistor_SMD:R_0805_2012Metric
+ADDED_PART	Rpu_AUX10	R80	47k	Resistor_SMD:R_0805_2012Metric
+ADDED_PART	Rpu_AUX11	R82	47k	Resistor_SMD:R_0805_2012Metric
+ADDED_PART	Rpu_AUX4	R68	47k	Resistor_SMD:R_0805_2012Metric
+ADDED_PART	Rpu_AUX5	R70	47k	Resistor_SMD:R_0805_2012Metric
+ADDED_PART	Rpu_AUX6	R72	47k	Resistor_SMD:R_0805_2012Metric
+ADDED_PART	Rpu_AUX7	R74	47k	Resistor_SMD:R_0805_2012Metric
+ADDED_PART	Rpu_AUX8	R76	47k	Resistor_SMD:R_0805_2012Metric
+ADDED_PART	Rpu_AUX9	R78	47k	Resistor_SMD:R_0805_2012Metric
 ADDED_PART	U_I2C_BUF	U46	TCA4307DGKR	Package_SO:VSSOP-8_3x3mm_P0.65mm
 CHANGED_PART	D_PROT	SS14|Diode_SMD:D_SMA	->	SS34|Diode_SMD:D_SMA
-NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9): D_PROT
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): D_PROT
 CHANGED_PART	J_FAST	J_FAST_IN|Connector_Phoenix_MC:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical	->	J_FAST_IN|wsl_footprints:PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4
-NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9): J_FAST
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): J_FAST
 CHANGED_PART	J_LAMP	J_LAMP_LED|Connector_Phoenix_MC:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical	->	J_LAMP_LED|wsl_footprints:PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4
-NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9): J_LAMP
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): J_LAMP
 CHANGED_PART	J_SAFE	J_SAFETY|Connector_Phoenix_MC:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical	->	J_SAFETY|wsl_footprints:PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical_D1.4
-NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9): J_SAFE
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): J_SAFE
 CHANGED_PART	J_SLOWA	J_SLOW_IN_A|Connector_Phoenix_MC:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical	->	J_SLOW_IN_A|wsl_footprints:PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical_D1.4
-NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9): J_SLOWA
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): J_SLOWA
 CHANGED_PART	J_SLOWB	J_SLOW_IN_B|Connector_Phoenix_MC:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical	->	J_SLOW_IN_B|wsl_footprints:PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical_D1.4
-NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9): J_SLOWB
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): J_SLOWB
+CHANGED_PART	Rpu_AUX1	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_AUX1
+CHANGED_PART	Rpu_AUX2	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_AUX2
+CHANGED_PART	Rpu_AUX3	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_AUX3
+CHANGED_PART	Rpu_BS	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_BS
+CHANGED_PART	Rpu_DIELL_L	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_DIELL_L
+CHANGED_PART	Rpu_DIELL_R	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_DIELL_R
+CHANGED_PART	Rpu_FOUL	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_FOUL
+CHANGED_PART	Rpu_GP	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GP
+CHANGED_PART	Rpu_GS1	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS1
+CHANGED_PART	Rpu_GS10	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS10
+CHANGED_PART	Rpu_GS2	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS2
+CHANGED_PART	Rpu_GS3	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS3
+CHANGED_PART	Rpu_GS4	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS4
+CHANGED_PART	Rpu_GS5	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS5
+CHANGED_PART	Rpu_GS6	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS6
+CHANGED_PART	Rpu_GS7	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS7
+CHANGED_PART	Rpu_GS8	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS8
+CHANGED_PART	Rpu_GS9	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_GS9
+CHANGED_PART	Rpu_MAN_S	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_MAN_S
+CHANGED_PART	Rpu_MAN_SWS	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_MAN_SWS
+CHANGED_PART	Rpu_MAN_SWSR	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_MAN_SWSR
+CHANGED_PART	Rpu_MAN_T	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_MAN_T
+CHANGED_PART	Rpu_OS	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_OS
+CHANGED_PART	Rpu_PBC	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_PBC
+CHANGED_PART	Rpu_PBZ	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_PBZ
+CHANGED_PART	Rpu_SA	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_SA
+CHANGED_PART	Rpu_SB	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_SB
+CHANGED_PART	Rpu_SC	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_SC
+CHANGED_PART	Rpu_TA1	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_TA1
+CHANGED_PART	Rpu_TA2	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_TA2
+CHANGED_PART	Rpu_TB	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_TB
+CHANGED_PART	Rpu_TENTH	10k|Resistor_SMD:R_0805_2012Metric	->	47k|Resistor_SMD:R_0805_2012Metric
+NOTE	documented change (D_PROT: spec H.4/FR-3; MCV _D1.4: remediation R2.5/FR-9; Rpu_* 47k: remediation spec R4): Rpu_TENTH
 REFDES_SHIFT	ISO_WET	U37	U45
 REFDES_SHIFT	R_RAIL_GATE_PULLUP	R106	R124
 REFDES_SHIFT	R_WDOG_KICK_GATE	R102	R118
