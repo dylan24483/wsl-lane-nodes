@@ -10,7 +10,8 @@
  *
  * Electrical sense (from generate_kicad_netlist_revB.py opto_input()): every fast input is
  * opto-isolated and ACTIVE-LOW at the Pico — machine contact CLOSED (signal asserted) pulls
- * the GPIO LOW; idle is HIGH (on-board 10k pull-up to 3V3). RP2040_OK (GP2) drives an NPN in
+ * the GPIO LOW; idle is HIGH (rev-D: on-board 47k pull-up to 3V3; RP2040 internal pull
+ * DISABLED so it cannot reduce the qualified resistance). RP2040_OK (GP2) drives an NPN in
  * the relay-enable-rail AND chain: HIGH = permit motion, LOW = drop the rail. A 100k base
  * pulldown makes the rail fail-safe-dead whenever GP2 is Hi-Z (unpowered / in reset / pre-init).
  */
@@ -72,14 +73,16 @@
  * invariant (which can only ever latch_fault, i.e. fail-safe). See CHANGELOG.md. */
 #define FW_VERSION "phase8b-rp2040 v1.2.3"
 
-/* ---- v1.2.2 build identity (R2-6) ------------------------------------------------------- */
-/* The REAL values are generated at BUILD time (CMake gen_build_id.cmake writes build_id.h:
- * WSL_BUILD_GIT = `git describe --always --dirty`, WSL_CFG_SHA = sha256(config.h)[:8] —
- * regenerated every build, so a stale configure can never embed a stale identity). These
- * fallbacks exist for the host tests and any build without the generator. Reported in the
- * "id" line; a lane whose id line says build:"unknown" is running an untraceable image.   */
-#ifndef WSL_BUILD_GIT
-#define WSL_BUILD_GIT "unknown"
+/* ---- deterministic build identity ------------------------------------------------------- */
+/* CMake regenerates build_id.h at BUILD time. WSL_BUILD_ID is the variant-prefixed
+ * digest of the explicit firmware source/recipe inputs, image-affecting options, clean
+ * Pico SDK commit, and C compiler ID/version; WSL_CFG_SHA is exactly
+ * sha256(config.h)[:16]. Repository Git state, timestamps, and unrelated dirty files are
+ * excluded. release/firmware_manifest.json binds the full source/config hashes and both
+ * UF2 hashes to these exact on-wire values. The fallbacks exist only for host tests/builds
+ * without the generator; build:"unknown" is untraceable. */
+#ifndef WSL_BUILD_ID
+#define WSL_BUILD_ID "unknown"
 #endif
 #ifndef WSL_CFG_SHA
 #define WSL_CFG_SHA "unknown"

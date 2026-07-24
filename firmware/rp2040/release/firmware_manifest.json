@@ -1,0 +1,178 @@
+{
+  "deployment_identity": {
+    "build_allowlist": [
+      "rel-0c746b5747143b8011b01d43"
+    ],
+    "config_allowlist": [
+      "05d808411db4bb0d"
+    ]
+  },
+  "firmware_version": "phase8b-rp2040 v1.2.3",
+  "images": [
+    {
+      "bench_only": false,
+      "build_options": {
+        "build_type": "Release",
+        "debug_usb": false,
+        "fi1": false,
+        "pico_board": "pico",
+        "variant": "release"
+      },
+      "cmake": {
+        "cache_sha256": "8ec8f48a67e265910c89f5acfd2581d883d9e0672a59202a66be8e9cc84779c1",
+        "release_values": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "DEBUG_USB": "OFF",
+          "FI1_BUILD": "OFF",
+          "PICO_BOARD": "pico"
+        }
+      },
+      "identity": {
+        "id.build": "rel-0c746b5747143b8011b01d43",
+        "id.cfg": "05d808411db4bb0d",
+        "id.fi1": 0
+      },
+      "image": {
+        "bytes": 62976,
+        "file": "wsl_phase8b_rp2040.uf2",
+        "sha256": "d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae"
+      },
+      "runtime_identity_inputs": {
+        "c_compiler": "GNU-13.3.1",
+        "pico_sdk_commit": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779"
+      },
+      "source": {
+        "algorithm": "wsl-rp2040-controlled-inputs-v2",
+        "config_sha256": "05d808411db4bb0d2f9eb4ed2cefed2dea308a3996f31d484d062fb5f5de8614",
+        "inputs": [
+          {
+            "bytes": 4940,
+            "path": "CMakeLists.txt",
+            "sha256": "f9eef7c31fd055ff042ab4ef1cbea8f550e9214f0a1c2d9ba7db98c91bc4f1c5"
+          },
+          {
+            "bytes": 27742,
+            "path": "config.h",
+            "sha256": "05d808411db4bb0d2f9eb4ed2cefed2dea308a3996f31d484d062fb5f5de8614"
+          },
+          {
+            "bytes": 1532,
+            "path": "gen_build_id.cmake",
+            "sha256": "ce08c6dd891f992fddee967ce4d9c5ca9f9653addf99751ba26e4b442a71da75"
+          },
+          {
+            "bytes": 70838,
+            "path": "main.c",
+            "sha256": "c2df9c1c61c04d7f39f1388d3c37e4a3a4734ea38e106f821aad108077b07d31"
+          },
+          {
+            "bytes": 2691,
+            "path": "pico_sdk_import.cmake",
+            "sha256": "78cba62bd67693ad0b993b05c643e7f2b21feb76251a04a53ee473485745dbb1"
+          },
+          {
+            "bytes": 23555,
+            "path": "release_provenance.py",
+            "sha256": "f3b72ed55ecd181d4e5cb92dd9d1dd71a32cb1e6466c868cab5bb5aad29137a1"
+          }
+        ],
+        "sha256": "0c746b5747143b8011b01d43a0ee36e045dd63fc0dffd95efc267701509ca58a"
+      },
+      "variant": "release"
+    },
+    {
+      "bench_only": true,
+      "build_options": {
+        "build_type": "Release",
+        "debug_usb": false,
+        "fi1": true,
+        "pico_board": "pico",
+        "variant": "fi1"
+      },
+      "cmake": {
+        "cache_sha256": "d910c3d4ff825c89614c1d4a2c0528d1de847525ca5a4ea1b9d8cb212571d1c7",
+        "release_values": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "DEBUG_USB": "OFF",
+          "FI1_BUILD": "ON",
+          "PICO_BOARD": "pico"
+        }
+      },
+      "identity": {
+        "id.build": "fi1-353b1dc6d323bcb0a1972580",
+        "id.cfg": "05d808411db4bb0d",
+        "id.fi1": 1
+      },
+      "image": {
+        "bytes": 67072,
+        "file": "wsl_phase8b_rp2040_FI1.uf2",
+        "sha256": "7c1daabad0a102f55fa61d617d3b4f0722705770f109e2d941b5356b3378ae6c"
+      },
+      "runtime_identity_inputs": {
+        "c_compiler": "GNU-13.3.1",
+        "pico_sdk_commit": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779"
+      },
+      "source": {
+        "algorithm": "wsl-rp2040-controlled-inputs-v2",
+        "config_sha256": "05d808411db4bb0d2f9eb4ed2cefed2dea308a3996f31d484d062fb5f5de8614",
+        "inputs": [
+          {
+            "bytes": 4940,
+            "path": "CMakeLists.txt",
+            "sha256": "f9eef7c31fd055ff042ab4ef1cbea8f550e9214f0a1c2d9ba7db98c91bc4f1c5"
+          },
+          {
+            "bytes": 27742,
+            "path": "config.h",
+            "sha256": "05d808411db4bb0d2f9eb4ed2cefed2dea308a3996f31d484d062fb5f5de8614"
+          },
+          {
+            "bytes": 2407,
+            "path": "fi1_bootsel.c",
+            "sha256": "480f8b5fd627d6dd0d77c3efeba1717c2a9e64b0c039901fe61a6f5415e43e46"
+          },
+          {
+            "bytes": 1532,
+            "path": "gen_build_id.cmake",
+            "sha256": "ce08c6dd891f992fddee967ce4d9c5ca9f9653addf99751ba26e4b442a71da75"
+          },
+          {
+            "bytes": 70838,
+            "path": "main.c",
+            "sha256": "c2df9c1c61c04d7f39f1388d3c37e4a3a4734ea38e106f821aad108077b07d31"
+          },
+          {
+            "bytes": 2691,
+            "path": "pico_sdk_import.cmake",
+            "sha256": "78cba62bd67693ad0b993b05c643e7f2b21feb76251a04a53ee473485745dbb1"
+          },
+          {
+            "bytes": 23555,
+            "path": "release_provenance.py",
+            "sha256": "f3b72ed55ecd181d4e5cb92dd9d1dd71a32cb1e6466c868cab5bb5aad29137a1"
+          }
+        ],
+        "sha256": "353b1dc6d323bcb0a197258005ff3a42ff705e15e90b472065bbedc942a5d84e"
+      },
+      "variant": "fi1"
+    }
+  ],
+  "release_policy": {
+    "debug_usb": false,
+    "fi1_is_bench_only": true,
+    "pico_board": "pico",
+    "requires_clean_pico_sdk": true
+  },
+  "schema": "wsl-rp2040-release-manifest-v1",
+  "toolchain": {
+    "arm_none_eabi_gcc": "arm-none-eabi-gcc.exe (xPack GNU Arm Embedded GCC x86_64) 13.3.1 20240614",
+    "cmake": "cmake version 4.3.2",
+    "ninja": "1.13.2",
+    "pico_sdk": {
+      "git_commit": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779",
+      "git_dirty": false,
+      "pico_sdk_version_file_sha256": "4f6ab383065aa1f55680b4db84dc901700575f3276f8e482f0b19e169c0d085b"
+    },
+    "runtime_c_compiler_identity": "GNU-13.3.1"
+  }
+}

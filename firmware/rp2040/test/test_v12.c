@@ -381,6 +381,11 @@ int main(void) {
         locked = 1;
         for (size_t i = 0; i < N_INPUTS; i++) if (!pad_oe_locked(inputs[i].gpio)) locked = 0;
         CHECK(locked, "fast inputs GP6-13 pad-OE locked by init_inputs (R2-1 scope)");
+        bool fast_pulls_off = true;
+        for (size_t i = 0; i < N_INPUTS; i++)
+            if (mock_gpio_pull[inputs[i].gpio] != 0) fast_pulls_off = false;
+        CHECK(fast_pulls_off,
+              "fast-input internal pulls OFF (Rev-D external 47k remains authoritative)");
     }
     CHECK(tap_assert_input_only() && !fault_latched, "extended invariant passes on a clean init");
     /* mutation 1: OEOVER forced HIGH (output-enable at the pad, SIO dir untouched) */

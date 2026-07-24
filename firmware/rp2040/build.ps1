@@ -1,4 +1,7 @@
-# Build the RP2040 firmware -> build/wsl_phase8b_rp2040.uf2
+# Developer build -> build/wsl_phase8b_rp2040.uf2
+#
+# This does not create a controlled release bundle. For a flashable artifact,
+# use release.ps1, which builds both variants and verifies their manifest.
 #
 # One-command rebuild. Auto-discovers the toolchain bootstrapped 2026-06-03:
 #   - xpack arm-none-eabi-gcc   (C:\Users\Dylan DeYoung\arm-none-eabi-gcc\...)

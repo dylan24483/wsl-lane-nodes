@@ -61,7 +61,7 @@
 #include "hardware/structs/rosc.h"  /* v1.2.3: ROSC randombit entropy for the boot nonce (R3-5) */
 
 #ifdef WSL_EMBED_BUILD_ID
-#include "build_id.h"           /* generated per build: WSL_BUILD_GIT / WSL_CFG_SHA */
+#include "build_id.h"           /* controlled-input WSL_BUILD_ID / WSL_CFG_SHA */
 #endif
 
 #include "config.h"
@@ -229,7 +229,12 @@ static void init_inputs(void) {
         input_t *in = &inputs[i];
         gpio_init(in->gpio);
         gpio_set_dir(in->gpio, GPIO_IN);
-        gpio_pull_up(in->gpio);                 /* belt + suspenders with the on-board 10k */
+        /* Rev-D's external 47k is the authoritative pull-up. Enabling the
+         * RP2040's ~50-80k internal pull in parallel would cut the effective
+         * resistance to ~24-30k and invalidate the qualified optocoupler
+         * current margin. A missing external pull-up is a board fault, not a
+         * condition firmware should mask. */
+        gpio_disable_pulls(in->gpio);
         force_pad_input_only(in->gpio);         /* v1.2.2 R2-1: OEOVER=DISABLE, LAST (see lock section) */
         bool asserted = (gpio_get(in->gpio) == 0);   /* active-low */
         in->stable_asserted = asserted;
@@ -975,15 +980,15 @@ static void boot_nonce_init(void) {
 }
 
 /* The additive "id" line (R2-6): PCB revision (strap-read), Pico unique id,
- * build git-describe + config.h hash (build_id.h, "unknown" on hostless
- * builds), and the FI-1 posture (FA-11 step 3: an FI-1 image must be
+ * controlled source/toolchain build ID + config.h hash (build_id.h, "unknown" on
+ * host-only tests), and the FI-1 posture (FA-11 step 3: an FI-1 image must be
  * banner-identifiable). Emitted right after the boot line and on "ID". */
 static void emit_id(void) {
     emit("{\"ev\":\"id\",\"fw\":\"%s\",\"bn\":%lu,\"pcb\":\"%s\",\"rid\":%u,\"uid\":\"%.16s\","
          "\"build\":\"%.32s\",\"cfg\":\"%.16s\",\"fi1\":%d,\"t\":%lu}\n",
          FW_VERSION, (unsigned long)fw_boot_nonce,
          pcb_rev_name(), (unsigned)pcb_rev_code, fw_uid,
-         WSL_BUILD_GIT, WSL_CFG_SHA, FI1_ENABLED ? 1 : 0, (unsigned long)now_ms());
+         WSL_BUILD_ID, WSL_CFG_SHA, FI1_ENABLED ? 1 : 0, (unsigned long)now_ms());
 }
 
 #if FI1_ENABLED

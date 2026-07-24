@@ -55,10 +55,36 @@ see followups; the field is defined here and repeated on boot/id/hb).
   id ~206 B in the 256 B buffer; TXR_HEADROOM (320) still ≥ the worst flt+rp_ok+hb burst
   (~300 B). No safety path weakened — every new path is a fail-safe RELEASE or a REFUSAL.
 
+- **Deterministic release provenance.** `id.build` no longer uses repository-wide
+  `git describe --dirty`, where an unrelated document or KiCad edit changed the firmware
+  identity without changing the image. It is now a variant-prefixed digest over an explicit
+  firmware source/recipe allowlist, image-affecting build options, exact clean Pico SDK
+  commit, and C compiler ID/version. A different SDK/compiler therefore cannot announce
+  the allowlisted runtime identity. `id.cfg` is the exact 16-character prefix of the full
+  `config.h` SHA-256. `release.ps1` builds both
+  Release/DEBUG_USB-off images, refuses ambient compiler flags and a dirty Pico SDK, then
+  writes and verifies `release/firmware_manifest.json`: both UF2 SHA-256 values, their
+  embedded `id.build`/`id.cfg`/`id.fi1`, full source/config digests, CMake caches, compiler
+  versions, and clean SDK commit. The deployment allowlist contains only the release image;
+  FI-1 remains bench-only. Host provenance tests pin that unrelated files do not perturb
+  identity and that release/FI-1 identities are distinct.
+
+- **Rev-D 47 kΩ fast-input contract.** `init_inputs()` now disables RP2040 internal
+  pulls. Leaving the internal ~50–80 kΩ pull-up enabled in parallel would reduce the
+  effective pull-up to ~24–30 kΩ and invalidate the new optocoupler sink-current margin.
+  The external `Rpu_*` parts are authoritative; a missing pull-up is a board fault rather
+  than something firmware masks. Diagnostic taps remain separate and continue using
+  their 10 kΩ `Rtapd_*` drain pull-ups. `test_v12` now asserts all fast pulls are off.
+  ⚠️ **Silicon-side status (audit note 2026-07-24):** every rev-C bench/field validation
+  ran with 10 kΩ boards AND internal pulls enabled — the 47 kΩ/no-internal-pull input
+  path exists only in host tests and margin math until the FA-9 loaded-minimum and
+  hot-corner measurements pass on the assembled first article. Do not flash this build
+  onto a 10 kΩ (rev-C) board expecting validated input thresholds.
+
 **Build:** both ARM images rebuild clean (arm-none-eabi-gcc 13.3.1, 0 warnings on main.c):
 release `wsl_phase8b_rp2040.uf2` (61.5 KB) + bench `wsl_phase8b_rp2040_FI1.uf2` (65.5 KB,
 differently-named — release directory auditable by filename). Host suites: `test_main`
-**64/64** · `test_v11` **32/32** · `test_v12` **139/139** (+20) · `test_fi1` **44/44** (+16),
+**64/64** · `test_v11` **32/32** · `test_v12` **140/140** (+21) · `test_fi1` **44/44** (+16),
 all clean under `-Wall -Wextra -Werror` (gcc 16.1.0). **NOT flashed.**
 
 ## v1.2.2 — 2026-07-21 — Codex round-2 R2-1 + R2-13 (pad-OE lock, epoch classifier, FI-1, identity). NOT FLASHED.

@@ -1,7 +1,7 @@
 # WSL Phase 8b — RP2040 lane-controller firmware
 
-**v1.2.2 — DRAFT, bench-bring-up gated. Not for a live machine until validated per `docs/phase8b_pcb_revB_spec.md` §12.9. Full version history: `CHANGELOG.md`.**
-*(v1.2.2, 2026-07-21 — Codex round-2 R2-1/R2-13/R2-6 — **NOT flashed**: pad-level OEOVER output lock + `STATUS.OETOPAD` readback on EVERY input-contract pin (the SIO-only check had an override bypass), epoch-aware rail-drop classifier (pre-reboot ring entries are history-only, never fresh diagnosis), the bench-only FI-1 fault-injection build (compile-flag + BOOTSEL-jumper + arm-command gated; separate artifact name; zero code in release), and the identity line: REV_ID strap read (GP20/GP21), Pico unique id, per-build `git describe` + config.h hash, hb `rid` field. All additive; `rp2040_link.py` consumes id/rid.)*
+**v1.2.3 — controlled release artifacts built, but NOT FLASHED; bench/first-article gates remain mandatory before any live-machine use. Full version history and exact release provenance: `CHANGELOG.md` and `release/manifest.json`.**
+*(v1.2.2, 2026-07-21 — Codex round-2 R2-1/R2-13/R2-6 — **NOT flashed**: pad-level OEOVER output lock + `STATUS.OETOPAD` readback on EVERY input-contract pin (the SIO-only check had an override bypass), epoch-aware rail-drop classifier (pre-reboot ring entries are history-only, never fresh diagnosis), the bench-only FI-1 fault-injection build (compile-flag + BOOTSEL-jumper + arm-command gated; separate artifact name; zero code in release), and the identity line: REV_ID strap read (GP20/GP21), Pico unique id, deterministic controlled source/toolchain build ID + config hash, hb `rid` field. All additive; `rp2040_link.py` consumes id/rid.)*
 *(v1.2.0, 2026-07-21 — rev-D remediation R3, closes Codex C2 — **NOT yet flashed**: GP16-19 rev-D diagnostic taps get an ENFORCED input-only invariant (choke-point init + register readback each heartbeat + a host direction-invariant test that fails the build if any code path drives them), the INVERTED tap decode (2N7002 stage: raw 0 = observed HIGH, one `tap_read()` inversion point), a 1 ms-timestamped rail-drop edge ring in noinit RAM that survives reboot (magic + epoch; `TAPDUMP`/`TAPCLR`), and VCC_5V ADC sampling on GP26 folded into the heartbeat. **All additive**: v1.1 line formats + command grammar unchanged, all v1.1 enforcement flags still default OFF, safety-critical paths byte-for-byte logic-identical. Rev-D board only — on rev-B/rev-C these pins are unconnected (an IRQ storm guard keeps floating-pin noise harmless). Binding contract: `docs/phase8_revD_remediation_spec_2026-07-21.md` §R3.)*
 *(v1.1.1, 2026-07-06 review fixes (findings 37/56/58): boot `v11` enforcement-posture field; cam-stop grace arms on FIRST trip only; sliding chatter window. v1.1.0, 2026-06-10: cam-stop OVERRUN / SC-TB echo / motion-without-RUN, all default OFF. v0.2.0, 2026-06-10: audit hardening. See CHANGELOG.md.)*
 
@@ -53,21 +53,41 @@ Source of truth: `scripts/generate_kicad_netlist_revB.py` → `block_rp2040()` (
 | GP21 | 27 | REV_ID1 strap (v1.2.2, rev-D) | in (ENFORCED) | `REV_ID1` | 10k→GND on rev-D; `REV_ID[1:0]=GP21<<1\|GP20`, rev-D=0b01 |
 | GP26 | 31 | VCC_5V sense (v1.2, rev-D) | ADC0 | `ADC_VCC5_SENSE` | VCC_5V/2 via 10k/10k divider |
 
-All fast inputs are **active-low** at the Pico (machine contact closed → GPIO LOW); on-board 10k pull-up to 3V3, internal pull-up also enabled. The v1.2 tap pins (rev-D netlist `generate_kicad_netlist_revD.py block_diag()`) are configured in exactly ONE place (`tap_init()`), input-only with pulls OFF (the board's 10k drain pull-up defines the level), and the direction is an ENFORCED invariant: `tap_assert_input_only()` reads back the OE/function registers every heartbeat and latches a fail-safe `tap_dir` fault on drift; the host test fails the build if any code path ever drives them. **v1.2.2 (R2-1):** the invariant additionally forces + verifies the pad-level `CTRL.OEOVER=DISABLE` override and the live `STATUS.OETOPAD` bit on EVERY input-contract pin (taps, GP26, fast inputs, REV_ID) — the SIO-only readback had an OEOVER bypass; drift latches `pad_oe`.
+All fast inputs are **active-low** at the Pico (machine contact closed → GPIO LOW). Rev-D uses an on-board **47k** pull-up to 3V3; firmware explicitly disables the RP2040 internal pulls so their ~50–80k tolerance cannot sit in parallel and reduce the qualified optocoupler margin. A missing external pull-up is a board fault, not something firmware masks. The v1.2 diagnostic-tap pins are separate: they remain input-only with pulls OFF and use their own on-board **10k `Rtapd_*` drain pull-ups**. `tap_assert_input_only()` reads back the OE/function registers every heartbeat and latches a fail-safe `tap_dir` fault on drift; the host test fails the build if any code path ever drives them. **v1.2.2 (R2-1):** the invariant additionally forces + verifies the pad-level `CTRL.OEOVER=DISABLE` override and the live `STATUS.OETOPAD` bit on EVERY input-contract pin (taps, GP26, fast inputs, REV_ID) — the SIO-only readback had an OEOVER bypass; drift latches `pad_oe`.
 
 ## Build
 
 Needs the [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk) + `arm-none-eabi-gcc` + CMake.
 
-```bash
-export PICO_SDK_PATH=/path/to/pico-sdk          # or: cmake -DPICO_SDK_FETCH_FROM_GIT=ON
-cd firmware/rp2040
-cmake -B build -S .                              # add -DDEBUG_USB=ON to mirror events to USB-CDC
-cmake --build build
-# -> build/wsl_phase8b_rp2040.uf2
+```powershell
+# Controlled release path: host tests + clean release/FI-1 builds + manifest + verification
+powershell -ExecutionPolicy Bypass -File .\release.ps1
+
+# Re-verify an existing bundle before it is copied or flashed (no ARM toolchain needed)
+powershell -ExecutionPolicy Bypass -File .\release.ps1 -VerifyOnly
 ```
 
-On the Westside laptop, **`pwsh -File build.ps1`** does all of the above — it auto-discovers the bootstrapped toolchain (xpack `arm-none-eabi-gcc` 13.3.1 + WinLibs CMake/Ninja + the cloned pico-sdk). **Verified 2026-06-03:** clean cross-compile + link → `wsl_phase8b_rp2040.uf2` (40 KB; uses ~24 KB flash / 2.6 KB RAM of the RP2040's 2 MB / 264 KB). **v1.2.3 re-verified 2026-07-23:** both images rebuild 0-warning on main.c — release `wsl_phase8b_rp2040.uf2` (61.5 KB) + bench `wsl_phase8b_rp2040_FI1.uf2` (65.5 KB, `-DFI1_BUILD=ON`, differently-named). The growth over the 40 KB v1.x baseline is the v1.2.x tap ring / OEOVER readback / identity / FI-1 code, not a regression.
+`release.ps1` fixes `Release`, `PICO_BOARD=pico`, `DEBUG_USB=OFF`, refuses ambient
+compiler/linker flags and a dirty Pico SDK, builds the release and FI-1 variants, and
+writes `release/firmware_manifest.json`. The manifest binds both UF2 SHA-256 values to:
+
+- the exact on-wire `id.build`, `id.cfg`, and `id.fi1`;
+- full config/source-input SHA-256 values and the variant compile options;
+- the clean Pico SDK commit, ARM compiler/CMake/Ninja versions, and CMake-cache hashes.
+
+`id.build` is derived from the explicit firmware source/recipe allowlist,
+image-affecting options, exact clean Pico SDK commit, and C compiler ID/version. A
+different SDK/compiler therefore cannot announce the allowlisted identity. Application
+repository Git status, timestamps, and unrelated dirty files are not inputs. `id.cfg` is
+exactly the first 16 hex characters of `sha256(config.h)`. The manifest's
+`deployment_identity` lists contain exactly the release values accepted by the lane
+controller; the FI-1 identity is deliberately excluded.
+
+`build.ps1` and direct CMake remain useful for developer/debug builds, but their output is
+not a release artifact until the two-image manifest path above completes. **v1.2.3
+re-verified 2026-07-23:** both images built successfully and their embedded identities and
+hashes passed the independent manifest verifier. This is build evidence only, not flash or
+bench evidence.
 
 ## Host logic test (no hardware)
 
@@ -100,14 +120,23 @@ gcc -std=c11 -Wall -Wextra -Werror -I test -I test/stubs -DFI1_ENABLED=1 \
 ./test/test_fi1.exe         # exit 0 = all checks pass
 ```
 
-Last run: **64/64** (`test_main`) + **32/32** (`test_v11`) + **139/139** (`test_v12`) + **44/44** (`test_fi1`) checks passed (2026-07-23, gcc 16.1.0), all clean under `-Wall -Wextra -Werror` + the `printf`-format attribute (so the event format strings are compiler-verified too). The binaries share `test/mock_impl.h` (one mock-SDK implementation) so they can never drift. Sections F–I of `test_main` pin the v0.2.0 hardened semantics (UART fuzz/overrun-discard, duplicate-RUN, uint32 ms-wrap boot-settle latch, chatter guard + TX headroom, hb `in`/`run` masks); Section J pins that the v1.1 checks are **inert when the flags are OFF** (a default build = v0.2.0 enforcement); `test_v11.c` pins that each v1.1 fault path fires fail-safe when enabled (overrun latch + timely-STOP-cancels + per-motor disarm, SC∧TB echo, motion-without-RUN, and the non-trip-edge-is-inert guard). `test_v12.c` is the **C2 gate**: the mock SDK records every output-direction/write call per pin and the test FAILS if GP16-19/GP26 ever appear in one across init + operation + every fault path; it also tampers the mock OE register to prove `tap_assert_input_only()` trips, and covers the inverted decode, ring capture/wrap, reboot-persistence + epoch semantics, power-loss zeroing, TAPDUMP/TAPCLR + cause classification, ADC window, IRQ storm guard, and the RPOK cross-check (warn-only by default). **v1.2.3 (round-3)** adds `test_v12.c` section T (per-boot `bn` nonce: non-zero, differs across boots, id/hb-consistent, 0-reservation guard) and section U (the **R3-6 CLEAR pad-revalidation**: a violated input-only pad makes CLEAR a strict no-op — nak, fault stays latched, RP_OK stays low — while the fail-safe motor-stop half still runs), and `test_fi1.c` section E (the **FI-1 dead-man** release paths: arm timeout, drive timeout, UART loss, and the continuous `FI1 KA` token, plus a positive test that the 1 Hz bench KA cadence holds an injection with no false release).
+Last run: **64/64** (`test_main`) + **32/32** (`test_v11`) + **140/140** (`test_v12`) + **44/44** (`test_fi1`) checks passed (2026-07-23, gcc 16.1.0), all clean under `-Wall -Wextra -Werror` + the `printf`-format attribute (so the event format strings are compiler-verified too). The binaries share `test/mock_impl.h` (one mock-SDK implementation) so they can never drift. Sections F–I of `test_main` pin the v0.2.0 hardened semantics (UART fuzz/overrun-discard, duplicate-RUN, uint32 ms-wrap boot-settle latch, chatter guard + TX headroom, hb `in`/`run` masks); Section J pins that the v1.1 checks are **inert when the flags are OFF** (a default build = v0.2.0 enforcement); `test_v11.c` pins that each v1.1 fault path fires fail-safe when enabled (overrun latch + timely-STOP-cancels + per-motor disarm, SC∧TB echo, motion-without-RUN, and the non-trip-edge-is-inert guard). `test_v12.c` is the **C2 gate**: the mock SDK records every output-direction/write call per pin and the test FAILS if GP16-19/GP26 ever appear in one across init + operation + every fault path; it also requires all fast-input internal pulls OFF so Rev-D's qualified external 47k remains authoritative, tampers the mock OE register to prove `tap_assert_input_only()` trips, and covers the inverted decode, ring capture/wrap, reboot-persistence + epoch semantics, power-loss zeroing, TAPDUMP/TAPCLR + cause classification, ADC window, IRQ storm guard, and the RPOK cross-check (warn-only by default). **v1.2.3 (round-3)** adds `test_v12.c` section T (per-boot `bn` nonce: non-zero, differs across boots, id/hb-consistent, 0-reservation guard) and section U (the **R3-6 CLEAR pad-revalidation**: a violated input-only pad makes CLEAR a strict no-op — nak, fault stays latched, RP_OK stays low — while the fail-safe motor-stop half still runs), and `test_fi1.c` section E (the **FI-1 dead-man** release paths: arm timeout, drive timeout, UART loss, and the continuous `FI1 KA` token, plus a positive test that the 1 Hz bench KA cadence holds an injection with no false release).
 
 > ⚠️ **Bench-only gates (the host test CANNOT prove these):** watchdog timing (the 250 ms WDT vs real loop latency — the mock watchdog is a no-op), boot ordering (GP2 LOW before init), GPIO drive polarity/levels on real silicon, UART electricals/baud, and the DEBUG_USB stdio path. These are §12.9 bench bring-up items — a green host test is necessary, not sufficient.
 
 ## Flash
 
-- **USB BOOTSEL (preferred):** hold BOOTSEL on the Pico while connecting USB → it mounts as `RPI-RP2` → drag-drop `wsl_phase8b_rp2040.uf2`.
-- **SWD (fallback if USB isn't accessible once the module is soldered):** `picotool load -x build/wsl_phase8b_rp2040.uf2`, or OpenOCD via the board's SWD test points.
+1. Run `release.ps1 -VerifyOnly`. Do not flash if any source digest, UF2 SHA-256, or
+   embedded identity check fails.
+2. Record the release image SHA-256 plus `deployment_identity.build_allowlist[0]` and
+   `deployment_identity.config_allowlist[0]` from `release/firmware_manifest.json`.
+3. **USB BOOTSEL (preferred):** hold BOOTSEL while connecting USB; when `RPI-RP2`
+   mounts, drag-drop **`release/wsl_phase8b_rp2040.uf2`**. Never substitute the
+   `_FI1.uf2` bench image.
+4. **SWD fallback:** `picotool load -x release/wsl_phase8b_rp2040.uf2`, or OpenOCD via
+   the board's SWD test points.
+5. After boot, request `ID` and require `fw`, `build`, `cfg`, and `fi1:0` to match the
+   verified manifest exactly. A filename or version banner alone is not proof of the image.
 
 ## UART protocol (115200 8N1, newline-delimited)
 
@@ -125,7 +154,7 @@ Last run: **64/64** (`test_main`) + **32/32** (`test_v11`) + **139/139** (`test_
 {"ev":"flt","code":"tap_dir","m":"KICK","t":20000}            # v1.2: tap pin OE/function register drift (enforced invariant)
 {"ev":"flt","code":"pad_oe","m":"555","t":20000}              # v1.2.2: CTRL.OEOVER/STATUS.OETOPAD drift on an input-contract pin
 {"ev":"hb","ok":1,"flt":"","up":12500,"drp":0,"in":0,"run":0,"tap":0,"rd":0,"ep":1,"v5":4810,"v5n":4650,"v5x":4885,"rid":1}
-{"ev":"id","fw":"phase8b-rp2040 v1.2.2","pcb":"revD","rid":1,"uid":"E66038B713952A31","build":"10c3a26-dirty","cfg":"aa4ff333","fi1":0,"t":300}  # v1.2.2 identity (after boot + on ID)
+{"ev":"id","fw":"phase8b-rp2040 v1.2.3","pcb":"revD","rid":1,"uid":"E66038B713952A31","build":"rel-<24 hex>","cfg":"<16 hex>","fi1":0,"t":300}  # exact values come from release/firmware_manifest.json
 {"ev":"ack","cmd":"CLEAR","t":21000}
 {"ev":"tapdump","n":17,"ep":2,"br":2,"mut":0,"cause":"kick_starvation","t":30000}  # v1.2: TAPDUMP header
 {"ev":"tape","i":0,"t":29450,"p":1,"l":0,"ep":1}   # v1.2: one ring entry (p: 0=555,1=KICK,2=ARM,3=RPOK; l=post-inversion level AFTER the edge)
@@ -217,8 +246,11 @@ v1.2 tap fields: hb `tap` = post-inversion observed-net levels (bit 0..3 = 555, 
 - `config.h` — pin map (authoritative, cites the netlist), timing, protocol tokens, **v1.1 per-cam stop descriptors + enforcement flags (all default OFF/UNCONFIRMED)**, **v1.2 tap/ring/ADC constants** (binding contract: remediation spec §R3), **v1.2.2 REV_ID straps + FI1 gate + identity fallbacks**.
 - `main.c` — inputs/debounce, UART protocol + TX ring, safety supervisor (incl. the v1.1 cam-stop / SC-TB-echo / motion-without-RUN paths), **v1.2 tap section** (choke-point init, enforced direction invariant, edge ring + persistence, TAPDUMP/TAPCLR, ADC, storm guard), **v1.2.2** pad-OE lock (R2-1), epoch-aware classifier (R2-13), REV_ID/identity (R2-6), FI-1 hooks, main loop.
 - `fi1_bootsel.c` — FI-1 bench build ONLY: BOOTSEL physical-jumper gate (never linked into release).
-- `gen_build_id.cmake` — build-time generator for `build_id.h` (git describe + config.h sha256).
-- `CHANGELOG.md` — full version history (v0.1.0 → v1.2.2) with per-version flash status.
+- `gen_build_id.cmake` / `release_provenance.py` — deterministic controlled-input
+  `build_id.h` generation plus UF2/manifest verification.
+- `release.ps1` / `release/firmware_manifest.json` — the only controlled two-image
+  release path and its machine-readable artifact/source/toolchain record.
+- `CHANGELOG.md` — full version history (v0.1.0 → v1.2.3) with per-version flash status.
 - `test/mock_pico.h` / `test/mock_impl.h` — host-test mock SDK surface (declarations / one shared implementation; v1.2 adds per-pin direction/write recording + IRQ/ADC/sync mocks; v1.2.2 adds the IO_BANK0 OEOVER/OETOPAD register file with real-SDK whole-CTRL-rewrite semantics, pulls/floating, unique-id).
 - `test/test_main.c` — default host test (flags OFF) + Section J off-by-default inertness.
 - `test/test_v11.c` — v1.1 host test (flags forced ON via `-D`): each new fault path fires fail-safe.
@@ -232,6 +264,6 @@ v1.2 tap fields: hb `tap` = post-inversion observed-net levels (bit 0..3 = 555, 
 - **v1.1.0 SAFETY supervision written 2026-06-10** (fable-audit novel idea #13): cam-stop OVERRUN + SC/TB collision echo + motion-without-RUN, all default OFF behind per-cam config flags. Host tests **61/61** (`test_main`, incl. off-by-default inertness) + **28/28** (`test_v11`, flags forced on), both 0-warning under `-Wall -Wextra -Werror`; clean ARM cross-build re-verified (`.uf2` = 43.5 KB). **NOT yet flashed/bench-run; all v1.1 flags ship OFF** — so on-the-wire behavior is still exactly v0.2.0 until a board is armed cam-by-cam.
 - **v1.1.1 review fixes 2026-07-06** (phase8 fable review findings 37/56/58 + Pi-side 38): boot `v11` posture field, arm-once cam-stop grace, sliding chatter window; `rp2040_link.py` gains hb `run`-mask reconciliation (bounded re-sends + `run_mismatch()`) and `v11_posture()`. Host tests **64/64** (`test_main`) + **32/32** (`test_v11`), Pi-side self-tests green. **NOT yet flashed — owner review + re-flash pending; all v1.1 flags still ship OFF.**
 - **v1.2.0 rev-D tap telemetry 2026-07-21** (remediation spec R3 — closes Codex C2): enforced input-only invariant on GP16-19 (choke-point init + register readback + host direction-invariant test), inverted tap decode, noinit rail-drop edge ring with reboot persistence + `TAPDUMP`/`TAPCLR`, VCC_5V ADC in the heartbeat. Host tests **64/64 + 32/32 + 71/71** (new `test_v12`), all `-Werror`-clean; ARM cross-build verified (`.uf2` = 56 KB, 32.7 KB flash / 5.4 KB RAM; `.map` confirms `tap_ring` in `.uninitialized_data`, outside crt0 zero-fill). `rp2040_link.py` verified compatible unmodified (38/38 + v1.2-line feed check). **NOT yet flashed.** Bench gates: real-silicon reboot persistence, ADC-vs-DMM, `TAP_KICK_STARVE_MS` vs measured NE555 window (v1.2.1: 2000 ms, derived from the real 1 Hz Pi kick cadence — v1.2.0's 300 ms was sized against a nonexistent "~250 ms kick" and misclassified live-train 555 drops), and the R1.9 fault-injection procedure.
-- **v1.2.2 Codex round-2 slice 2026-07-21** (R2-1 + R2-13 + R2-6): pad-level OEOVER lock + `OETOPAD` readback on every input-contract pin (the R2-1 override bypass — with the mandated OEOVER *mutation* test), epoch-aware rail-drop classifier (pre-reboot edges history-only), the FI-1 bench fault-injection build (compile-flag + BOOTSEL-jumper + arm-gated; **separate artifact name `wsl_phase8b_rp2040_FI1.uf2`; zero FI-1 code in release** — the R1.9 target that was previously "not yet written"), and the identity line (REV_ID strap read GP20/21 with floating detection, Pico unique id, per-build `git describe` + config.h sha via `build_id.h`, hb `rid`). Host tests **64/64 + 32/32 + 111/111 + 28/28** (`test_fi1` new), `-Werror`-clean; ARM cross-builds verified: release `.uf2` = 60.5 KB (real build identity embedded, `tap_ring` still noinit) + FI-1 bench 63 KB. Pi-side `rp2040_link.py` consumes `id`/`rid` (self-test 45/45; `tests/test_fw_identity_line.py`). **NOT flashed.** New bench gates: BOOTSEL-read on silicon, REV_ID strap levels, FA-7 OEOVER/pad behavior on real pads.
+- **v1.2.2 Codex round-2 slice 2026-07-21** (R2-1 + R2-13 + R2-6): pad-level OEOVER lock + `OETOPAD` readback on every input-contract pin (the R2-1 override bypass — with the mandated OEOVER *mutation* test), epoch-aware rail-drop classifier (pre-reboot edges history-only), the FI-1 bench fault-injection build (compile-flag + BOOTSEL-jumper + arm-gated; **separate artifact name `wsl_phase8b_rp2040_FI1.uf2`; zero FI-1 code in release** — the R1.9 target that was previously "not yet written"), and the identity line (REV_ID strap read GP20/21 with floating detection, Pico unique id, deterministic controlled-source build ID + config hash via `build_id.h`, hb `rid`). Host tests **64/64 + 32/32 + 111/111 + 28/28** (`test_fi1` new), `-Werror`-clean; ARM cross-builds verified: release `.uf2` = 60.5 KB (real build identity embedded, `tap_ring` still noinit) + FI-1 bench 63 KB. Pi-side `rp2040_link.py` consumes `id`/`rid` (self-test 45/45; `tests/test_fw_identity_line.py`). **NOT flashed.** New bench gates: BOOTSEL-read on silicon, REV_ID strap levels, FA-7 OEOVER/pad behavior on real pads.
 - ⚠️ **NOT cutover-ready.** "Done" = host-logic + build only. The cutover runbook's **G3 cam-stop rail-drop gate** now has its firmware *logic*, but the **enforcement is gated OFF** pending the per-cam edge→angle polarity field capture (runbook §3.2). A stock build still provides only health + the motion **max-run backstop**.
 - Next: build/flash, bench bring-up steps 1–4 (above), wire the Pi-side reader (contract above), then **bench step 5**: capture cam polarity (§3.2), set `CAM_*_TRIP` + flip `*_ENABLED` cam-by-cam, re-flash, and run the G3 cam-stop drop sub-test per cam.
