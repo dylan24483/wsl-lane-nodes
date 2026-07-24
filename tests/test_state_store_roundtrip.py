@@ -5,9 +5,8 @@ throwaway script:
   1. JSON round-trip of single-lane AND cross-lane scoring state
      (scores, cursor, queues, cross-lane object identity, byte-stable
      re-save).
-  2. One-time legacy pickle -> JSON migration: a pre-2026-06 pickle blob
-     loads once, is immediately rewritten as versioned JSON, and the
-     pickle path is never taken again.
+  2. Legacy pickle is rejected without execution; only strict versioned
+     JSON is accepted by the runtime.
   3. Corrupted / unknown-version blobs start fresh (empty state, no
      exception) instead of crashing the server at boot.
 
@@ -152,7 +151,7 @@ def test_json_roundtrip_single_and_cross():
 
         state_store.save_lanes(lane_scoring, ball_counters)
         st = state_store.get_save_status()
-        assert_true(st['ok'], "save reported ok")
+        assert_true(st['save_ok'], "save reported ok")
 
         blob = read_blob()
         assert_eq(blob.lstrip()[:1], b'{', "stored blob is JSON, not pickle")
@@ -198,9 +197,52 @@ def test_json_roundtrip_single_and_cross():
 
 
 # ---------------------------------------------------------------
-# 2. One-time legacy pickle -> JSON migration
+# 1b. A v1 (pre scoring_epoch) production snapshot upgrades in place —
+#     the first boot after the v2 deploy must NOT wipe open lanes.
 # ---------------------------------------------------------------
-def test_legacy_pickle_migrates_to_json_once():
+def test_v1_snapshot_upgrades_without_discarding_state():
+    with fresh_db():
+        ls21 = make_single_lane(21)
+        cross = make_cross_lane(23, 24)
+        lane_scoring = {21: ls21, 23: cross, 24: cross}
+        ball_counters = {21: 4, 23: 3, 24: 2}
+        state_store.save_lanes(lane_scoring, ball_counters)
+
+        # Rewrite the stored v2 snapshot as the exact v1 shape the previous
+        # deployed build wrote: version 1, no scoring_epoch on objects.
+        data = json.loads(read_blob())
+        assert_eq(data['version'], 2, "fixture starts as a v2 snapshot")
+        data['version'] = 1
+        for obj in data['objects']:
+            del obj['scoring_epoch']
+        write_blob(json.dumps(data, allow_nan=False).encode('utf-8'))
+
+        loaded, counters = state_store.load_lanes()
+        assert_eq(set(loaded), {21, 23, 24}, "v1 snapshot lanes restored")
+        assert_eq(counters, ball_counters, "v1 ball counters restored")
+        assert_true(loaded[23] is loaded[24],
+                    "cross-lane identity survives the v1 upgrade")
+        for lid in (21, 23, 24):
+            assert_eq(strip_ts(loaded[lid].to_scoring_response(lid)),
+                      strip_ts(lane_scoring[lid].to_scoring_response(lid)),
+                      f"lane {lid} scoring response identical after upgrade")
+        assert_true(loaded[21].scoring_epoch is None,
+                    "v1 objects restore with scoring_epoch=None")
+        status = state_store.get_save_status()
+        assert_true(status['load_ok'], "v1 upgrade is health-green")
+        assert_true(not status['state_discarded'],
+                    "v1 upgrade discards nothing")
+
+        # The next save persists v2 — the upgrade is one-way and durable.
+        state_store.save_lanes(loaded, counters)
+        assert_eq(json.loads(read_blob())['version'], 2,
+                  "re-save after upgrade persists a v2 snapshot")
+
+
+# ---------------------------------------------------------------
+# 2. Legacy executable formats are rejected
+# ---------------------------------------------------------------
+def test_legacy_pickle_is_rejected_without_execution():
     with fresh_db():
         ls21 = make_single_lane(21)
         cross = make_cross_lane(23, 24)
@@ -212,28 +254,13 @@ def test_legacy_pickle_migrates_to_json_once():
         assert_true(read_blob().lstrip()[:1] != b'{', "planted blob is pickle")
 
         loaded, counters = state_store.load_lanes()
-        assert_eq(set(loaded), {21, 23, 24}, "legacy pickle state restored")
-        assert_eq(counters, {21: 4, 23: 3, 24: 2},
-                  "legacy ball counters restored")
-        assert_true(loaded[23] is loaded[24],
-                    "cross-lane identity preserved through migration")
-
-        # The blob must have been rewritten as versioned JSON immediately
-        new_blob = read_blob()
-        assert_eq(new_blob.lstrip()[:1], b'{', "blob rewritten as JSON")
-        data = json.loads(new_blob.decode('utf-8'))
-        assert_eq(data['format'], 'wsl-lane-state', "rewritten format tag")
-        assert_eq(data['version'], state_store.STATE_FORMAT_VERSION,
-                  "rewritten format version")
-
-        # Second load takes the JSON path and yields identical state
-        loaded2, counters2 = state_store.load_lanes()
-        assert_eq(counters2, counters, "counters identical on JSON re-load")
-        for lid in (21, 23, 24):
-            assert_eq(strip_ts(loaded2[lid].to_scoring_response(lid)),
-                      strip_ts(loaded[lid].to_scoring_response(lid)),
-                      f"lane {lid} identical on JSON re-load")
-        assert_eq(read_blob(), new_blob, "no second rewrite on JSON re-load")
+        assert_eq(loaded, {}, "legacy pickle state rejected")
+        assert_eq(counters, {}, "legacy pickle counters rejected")
+        assert_eq(read_blob(), legacy, "legacy evidence remains untouched")
+        status = state_store.get_save_status()
+        assert_true(not status["load_ok"], "legacy rejection is health-visible")
+        assert_true(status["state_discarded"],
+                    "legacy state is marked discarded")
 
 
 # ---------------------------------------------------------------
@@ -332,9 +359,8 @@ def test_completed_games_survive_roundtrip():
                   "scoring response (incl. completed_games) identical")
 
 
-def test_old_snapshot_without_new_fields_loads_cleanly():
-    # A snapshot written BEFORE completed_games / mask_before_synthetic
-    # were serialized must load with the defaults ([], False).
+def test_old_snapshot_without_required_fields_is_rejected():
+    # Version 2 never silently invents missing scoring state.
     with fresh_db():
         ls = make_finished_single(25)
         state_store.save_lanes({25: ls}, {25: 12})
@@ -347,16 +373,13 @@ def test_old_snapshot_without_new_fields_loads_cleanly():
         write_blob(json.dumps(data).encode('utf-8'))
 
         loaded, counters = state_store.load_lanes()
-        assert_eq(counters, {25: 12}, "old snapshot still loads")
-        assert_eq(loaded[25].completed_games, [],
-                  "missing completed_games defaults to []")
-        assert_eq(loaded[25].bowlers[0].mask_before_synthetic, False,
-                  "missing mask_before_synthetic defaults to False")
+        assert_eq(loaded, {}, "missing required fields reject whole snapshot")
+        assert_eq(counters, {}, "no counters survive a rejected snapshot")
+        assert_true(not state_store.get_save_status()["load_ok"],
+                    "missing fields are health-visible")
 
 
-def test_oversized_completed_games_truncated_on_load():
-    # Foreign / hand-edited snapshots can't balloon the in-memory archive:
-    # restore keeps only the most recent _COMPLETED_GAMES_MAX entries.
+def test_oversized_completed_games_rejects_whole_snapshot():
     with fresh_db():
         ls = make_finished_single(25)
         state_store.save_lanes({25: ls}, {})
@@ -366,14 +389,11 @@ def test_oversized_completed_games_truncated_on_load():
                                      for i in range(1, 31)]
         write_blob(json.dumps(data).encode('utf-8'))
 
-        loaded, _ = state_store.load_lanes()
-        cg = loaded[25].completed_games
-        assert_eq(len(cg), state_store._COMPLETED_GAMES_MAX,
-                  "oversized archive truncated on load")
-        assert_eq(cg[-1]['game_number'], 30, "most recent games kept")
-        assert_eq(cg[0]['game_number'],
-                  31 - state_store._COMPLETED_GAMES_MAX,
-                  "oldest surplus games dropped")
+        loaded, counters = state_store.load_lanes()
+        assert_eq(loaded, {}, "oversized archive rejects whole snapshot")
+        assert_eq(counters, {}, "oversized archive cannot leak counters")
+        assert_true(not state_store.get_save_status()["load_ok"],
+                    "oversized archive is health-visible")
 
 
 def test_mask_before_synthetic_survives_roundtrip():
@@ -406,12 +426,12 @@ def test_mask_before_synthetic_survives_roundtrip():
 # ---------------------------------------------------------------
 TESTS = [
     test_json_roundtrip_single_and_cross,
-    test_legacy_pickle_migrates_to_json_once,
+    test_legacy_pickle_is_rejected_without_execution,
     test_corrupted_blob_starts_fresh,
     test_missing_db_starts_fresh,
     test_completed_games_survive_roundtrip,
-    test_old_snapshot_without_new_fields_loads_cleanly,
-    test_oversized_completed_games_truncated_on_load,
+    test_old_snapshot_without_required_fields_is_rejected,
+    test_oversized_completed_games_rejects_whole_snapshot,
     test_mask_before_synthetic_survives_roundtrip,
 ]
 

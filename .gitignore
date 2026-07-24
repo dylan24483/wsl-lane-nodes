@@ -36,5 +36,9 @@ kicad/revD/*.bak
 # Runtime stores + diag artifacts (created by local test runs / the Pi daemons;
 # the production DBs live on the deployed hosts, never in git)
 machine_diag.db
+machine_diag.db-wal
+machine_diag.db-shm
 lane_state.db
+lane_state.db-wal
+lane_state.db-shm
 diag_logs/

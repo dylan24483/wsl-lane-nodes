@@ -1,12 +1,16 @@
 """Contract tests for the isolated lane-FX transport and event payload."""
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
 import tempfile
+import time
 import types
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -47,6 +51,25 @@ from wsl_scoring_engine import LaneScoring  # noqa: E402
 # put the real one back when this module is done so later test modules
 # (e.g. test_machine_diagnostics hitting /api/health) see the real object.
 _REAL_FX_PUBLISHER = server.fx_publisher
+
+
+@pytest.fixture(autouse=True)
+def _isolate_scoring_topology(monkeypatch):
+    monkeypatch.setenv(
+        "WSL_SCORING_NODE_TOPOLOGY", "test-pair-21-22=21,22")
+
+
+@pytest.fixture(autouse=True)
+def _drop_orphaned_background_command_tasks():
+    """Cross-module isolation (round-4 audit): each case here runs under its
+    own asyncio.run() loop. A ball-cycle finalizer task still pending when
+    that loop closes can never complete, so it would sit forever in the
+    module-global server._background_command_tasks set and poison a later
+    module's gather over that set ("future belongs to a different loop").
+    Production has one loop for the process lifetime, so this is test-only
+    litter — drop it here, at the polluter."""
+    yield
+    server._background_command_tasks.clear()
 
 
 def teardown_module(_module):
@@ -109,6 +132,7 @@ class FakeLaneNodeSocket:
     def __init__(self, frames, order):
         self.frames = list(frames)
         self.order = order
+        self.sent = []
         self.remote_address = ("127.0.0.1", 12345)
 
     def __aiter__(self):
@@ -121,10 +145,93 @@ class FakeLaneNodeSocket:
 
     async def send(self, message):
         decoded = json.loads(message)
+        self.sent.append(decoded)
         self.order.append(decoded["type"])
+        if decoded.get("command_id"):
+            self.frames.append({
+                "type": server.Msg.COMMAND_ACK,
+                "ts": time.time(),
+                "command_id": decoded["command_id"],
+                "status": "completed",
+                "completed_at": time.time(),
+            })
+        await asyncio.sleep(0)
 
     async def close(self, code, reason):
         self.order.append(f"close:{code}")
+
+
+class MutatingLaneNodeSocket(FakeLaneNodeSocket):
+    def __init__(self, frames, order, mutate_before_frame):
+        super().__init__(frames, order)
+        self.mutate_before_frame = mutate_before_frame
+        self._index = 0
+
+    async def __anext__(self):
+        if self._index == 1:
+            self.mutate_before_frame()
+        self._index += 1
+        return await super().__anext__()
+
+
+def node_hello(node="test-node", lanes=None, protocol=None, session=None):
+    os.environ["WSL_SCORING_NODE_TOPOLOGY"] = f"{node}=21,22"
+    return {
+        "type": "hello",
+        "node": node,
+        "lanes": [21, 22] if lanes is None else lanes,
+        "protocol_version": (
+            server.PROTOCOL_VERSION if protocol is None else protocol),
+        "scoring_boot_id": "test-scoring-boot",
+        "scoring_session_id": session or f"{node}-session",
+        "heartbeat_seq": 0,
+        "scoring_mode": "camera",
+        "camera_calibrated": True,
+        "camera_ok": True,
+        "camera_code": "healthy",
+        "outbox": {
+            "cursor_ok": True,
+            "error": False,
+            "oldest_unsent_age_s": None,
+            "backlog": 0,
+            "backlog_bytes": 0,
+            "pending_writes": 0,
+            "dropped": 0,
+            "quarantined": 0,
+            "cycles_quarantined": 0,
+            "post_errors": 0,
+            "write_errors": 0,
+            "sink_errors": 0,
+            "scoring_event_queue_depth": 0,
+            "scoring_event_queue_capacity": 128,
+            "scoring_event_oldest_age_s": None,
+            "scoring_capture_jobs": 0,
+            "scoring_capture_oldest_age_s": None,
+            "scoring_clock_observed": True,
+            "scoring_clock_anomaly_latched": False,
+            "scoring_clock_high_water_epoch": 1.0,
+            "scoring_clock_observed_epoch": 1.0,
+            "scoring_event_durable": True,
+            "scoring_event_error": False,
+            "scoring_event_overdue": False,
+            "scoring_event_drops": 0,
+            "scoring_event_expired": 0,
+            "scoring_event_max_age_s": 30.0,
+        },
+        "node_ball_lockout_s": 8.0,
+    }
+
+
+def fake_scoring_commit(touched):
+    def commit(lanes, metadata, **_kwargs):
+        touched.append(list(lanes))
+        return {
+            "committed_at": "2026-07-23T00:00:00+00:00",
+            "lanes": list(lanes),
+            "scoring_session_id": metadata["scoring_session_id"],
+            "heartbeat_seq": metadata["heartbeat_seq"],
+        }
+    return commit
 
 
 def _reset_server_lane(publisher=None):
@@ -139,6 +246,7 @@ def _open_single_bowler_lane(lane=21, name="A"):
     scorer = LaneScoring(lane)
     scorer.add_bowler(name, number=1)
     scorer.start()
+    scorer.scoring_epoch = "test-scoring-epoch"
     with server.state_lock:
         server.lane_scoring[lane] = scorer
     return scorer
@@ -251,19 +359,504 @@ def test_camera_ball_sends_cycle_before_cosmetic_event():
         _open_single_bowler_lane()
         order = []
         websocket = FakeLaneNodeSocket([
-            {"type": "hello", "node": "test-node",
-             "lanes": [21], "protocol_version": server.PROTOCOL_VERSION},
-            {"type": "ball_event", "lane": 21, "pin_mask": 0},
+            node_hello(),
+            {"type": "ball_event", "ts": time.time(),
+             "lane": 21, "pin_mask": 0,
+             "event_id": "test-ball-event",
+             "event_created_at": time.time(),
+             "scoring_epoch": "test-scoring-epoch"},
         ], order)
         original_emit = server._emit_fx_event
+        original_touch = server.machine_store.touch_scoring_lanes
         try:
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit([]))
             server._emit_fx_event = lambda payload: order.append("fx")
             await server.handle_node(websocket)
         finally:
             server._emit_fx_event = original_emit
-        assert order[-2:] == [server.Msg.CYCLE, "fx"]
+            server.machine_store.touch_scoring_lanes = original_touch
+        assert order.index(server.Msg.CYCLE) < order.index("fx")
+        assert server.Msg.SCORING_EVENT_ACK in order
 
     asyncio.run(run_case())
+
+
+def test_duplicate_committed_ball_retries_same_cycle_before_receipt():
+    async def run_case():
+        _reset_server_lane(CapturePublisher())
+        scorer = _open_single_bowler_lane()
+        created = time.time()
+        frame = {
+            "type": "ball_event",
+            "ts": created,
+            "lane": 21,
+            "pin_mask": 0,
+            "event_id": "committed-ball-cycle-retry",
+            "event_created_at": created,
+            "scoring_epoch": "test-scoring-epoch",
+        }
+        server.record_scoring_event_receipt(
+            server._scoring_receipt("cycle-retry-node", frame, "accepted"))
+        order = []
+        websocket = FakeLaneNodeSocket([
+            node_hello(
+                node="cycle-retry-node",
+                session="cycle-retry-session"),
+            frame,
+        ], order)
+        original_touch = server.machine_store.touch_scoring_lanes
+        try:
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit([]))
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.touch_scoring_lanes = original_touch
+        assert len(scorer.bowlers[0].frames[0].bowls) == 0
+        assert order.count(server.Msg.CYCLE) == 1
+        assert order.index(server.Msg.CYCLE) < order.index(
+            server.Msg.SCORING_EVENT_ACK)
+        cycle = next(
+            item for item in websocket.sent
+            if item["type"] == server.Msg.CYCLE)
+        assert cycle["command_id"] == (
+            "ball-cycle:" + hashlib.sha256(
+                frame["event_id"].encode("utf-8")).hexdigest())
+        assert len(cycle["command_id"]) <= 128
+        assert cycle["issued_at"] == created
+
+    asyncio.run(run_case())
+
+
+def test_old_committed_ball_opens_incident_instead_of_stale_cycle(
+        monkeypatch, tmp_path):
+    async def run_case():
+        monkeypatch.setattr(
+            server.state_store_module, "DB_PATH",
+            tmp_path / "lane_state.db")
+        _reset_server_lane(CapturePublisher())
+        _open_single_bowler_lane()
+        created = time.time() - (
+            server.SCORING_EVENT_AUTO_APPLY_MAX_AGE_S + 1)
+        frame = {
+            "type": "ball_event",
+            "ts": created,
+            "lane": 21,
+            "pin_mask": 0,
+            "event_id": "committed-ball-cycle-expired",
+            "event_created_at": created,
+            "scoring_epoch": "test-scoring-epoch",
+        }
+        server.record_scoring_event_receipt(
+            server._scoring_receipt("cycle-expired-node", frame, "accepted"))
+        order = []
+        websocket = FakeLaneNodeSocket([
+            node_hello(
+                node="cycle-expired-node",
+                session="cycle-expired-session"),
+            frame,
+        ], order)
+        original_touch = server.machine_store.touch_scoring_lanes
+        try:
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit([]))
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.touch_scoring_lanes = original_touch
+        assert server.Msg.CYCLE not in order
+        assert server.Msg.SCORING_EVENT_ACK in order
+        incidents = (
+            server.state_store_module.pending_diagnostic_incidents())
+        assert len(incidents) == 1
+        event = json.loads(incidents[0]["payload_json"])
+        assert event["severity"] == "fault"
+        assert event["code"] == "cycle_delivery_indeterminate"
+        assert event["detail"]["reason"] == (
+            "authorization_window_expired")
+        assert event["detail"]["requires_manual_reconciliation"] is True
+
+    asyncio.run(run_case())
+
+
+def test_duplicate_ball_ignored_while_closed_never_gains_cycle_side_effect():
+    async def run_case():
+        _reset_server_lane(CapturePublisher())
+        created = time.time()
+        frame = {
+            "type": "ball_event",
+            "ts": created,
+            "lane": 21,
+            "pin_mask": 0,
+            "event_id": "closed-ball-duplicate",
+            "event_created_at": created,
+            "scoring_epoch": None,
+        }
+        server.record_scoring_event_receipt(server._scoring_receipt(
+            "closed-ball-node", frame, "ignored_lane_closed"))
+        order = []
+        incidents = []
+        websocket = FakeLaneNodeSocket([
+            node_hello(
+                node="closed-ball-node",
+                session="closed-ball-session"),
+            frame,
+        ], order)
+        original_touch = server.machine_store.touch_scoring_lanes
+        original_insert = server.machine_store.insert_events
+        try:
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit([]))
+            server.machine_store.insert_events = (
+                lambda events: incidents.extend(events))
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.touch_scoring_lanes = original_touch
+            server.machine_store.insert_events = original_insert
+        assert server.Msg.CYCLE not in order
+        assert server.Msg.SCORING_EVENT_ACK in order
+        assert incidents == []
+
+    asyncio.run(run_case())
+
+
+def test_first_ball_while_closed_is_persisted_and_never_cycles():
+    async def run_case():
+        _reset_server_lane(CapturePublisher())
+        created = time.time()
+        frame = {
+            "type": "ball_event",
+            "ts": created,
+            "lane": 21,
+            "pin_mask": 0,
+            "event_id": "closed-ball-first-seen",
+            "event_created_at": created,
+            "scoring_epoch": None,
+        }
+        order = []
+        websocket = FakeLaneNodeSocket([
+            node_hello(
+                node="closed-first-node",
+                session="closed-first-session"),
+            frame,
+        ], order)
+        original_touch = server.machine_store.touch_scoring_lanes
+        try:
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit([]))
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.touch_scoring_lanes = original_touch
+        assert server.Msg.CYCLE not in order
+        assert server.Msg.SCORING_EVENT_ACK in order
+        receipt = server.scoring_event_receipt(frame["event_id"])
+        assert receipt["disposition"] == "ignored_lane_closed"
+
+    asyncio.run(run_case())
+
+
+def test_malformed_scoring_events_have_zero_side_effects():
+    now = time.time()
+    ball_base = {
+        "type": "ball_event",
+        "ts": now,
+        "lane": 21,
+        "pin_mask": 0,
+    }
+    invalid_ball_frames = [
+        {**ball_base, "lane": True},
+        {**ball_base, "awaiting_manual": "true"},
+        {**ball_base, "pin_mask": True},
+        {**ball_base, "pin_mask": "0"},
+        {**ball_base, "pin_mask": -1},
+        {**ball_base, "pin_mask": 0x400},
+        {**ball_base, "pin_mask": None},
+        {**ball_base, "pin_mask": 0, "awaiting_manual": True},
+        {**ball_base, "unknown": "field"},
+        {**ball_base, "ts": now + 301.0},
+    ]
+    foul_base = {"type": "foul_event", "ts": now, "lane": 21}
+    invalid_foul_frames = [
+        {**foul_base, "lane": True},
+        {**foul_base, "unknown": "field"},
+        {**foul_base, "ts": now + 301.0},
+    ]
+
+    async def run_case(frame, index):
+        publisher = CapturePublisher()
+        _reset_server_lane(publisher)
+        scorer = _open_single_bowler_lane()
+        order = []
+        node = f"invalid-event-node-{index}"
+        websocket = FakeLaneNodeSocket([
+            node_hello(node=node, session=f"invalid-session-{index}"),
+            frame,
+        ], order)
+        original_boot = server.machine_store.accept_scoring_boot
+        original_touch = server.machine_store.touch_scoring_lanes
+        try:
+            server.machine_store.accept_scoring_boot = (
+                lambda *_args, **_kwargs: None)
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit([]))
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.accept_scoring_boot = original_boot
+            server.machine_store.touch_scoring_lanes = original_touch
+
+        assert order == [server.Msg.HEARTBEAT_ACK]
+        assert len(scorer.bowlers[0].frames[0].bowls) == 0
+        assert server.ball_counters == {}
+        assert server.pending_foul == {}
+        assert publisher.events == []
+
+    async def run_all():
+        frames = invalid_ball_frames + invalid_foul_frames
+        for index, frame in enumerate(frames):
+            await run_case(frame, index)
+
+    asyncio.run(run_all())
+
+
+def test_lane_command_routing_is_current_fresh_owner_only():
+    class CountingSocket:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, message):
+            self.sent.append(message)
+            frame = json.loads(message)
+            waiter = server._command_ack_waiters[frame["command_id"]]
+            waiter["future"].set_result({
+                "command_id": frame["command_id"],
+                "status": "completed",
+                "original_status": None,
+                "completed_at": time.time(),
+            })
+
+    async def run_case():
+        server._routing_lock = None
+        no_owner = CountingSocket()
+        stale = CountingSocket()
+        older = CountingSocket()
+        newest = CountingSocket()
+        try:
+            with server.clients_lock:
+                server.clients.clear()
+                server.client_metadata.clear()
+
+            assert await server._send_to_current_lane(21, "no-owner") == 0
+            assert no_owner.sent == []
+
+            old = time.time() - server.HEARTBEAT_FRESH_S - 1.0
+            with server.clients_lock:
+                server.clients["stale-node"] = stale
+                server.client_metadata["stale-node"] = {
+                    "lanes": [21],
+                    "connected_at": old,
+                    "last_heartbeat": old,
+                }
+            assert await server._send_to_current_lane(21, "stale") == 0
+            assert stale.sent == []
+
+            now = time.time()
+            with server.clients_lock:
+                server.clients.clear()
+                server.client_metadata.clear()
+                server.clients.update({
+                    "older-node": older,
+                    "newest-node": newest,
+                })
+                server.client_metadata.update({
+                    "older-node": {
+                        "lanes": [21],
+                        "connected_at": now - 2.0,
+                        "last_heartbeat": now,
+                    },
+                    "newest-node": {
+                        "lanes": [21],
+                        "connected_at": now - 1.0,
+                        "last_heartbeat": now,
+                    },
+                })
+            command = server.encode_command(
+                server.Msg.RESET, 21, command_id="route-test")
+            assert await server._send_to_current_lane(21, command) == 0
+            assert older.sent == []
+            assert newest.sent == []
+        finally:
+            with server.clients_lock:
+                server.clients.clear()
+                server.client_metadata.clear()
+            # Never retain a lock bound to asyncio.run()'s now-closed loop.
+            server._routing_lock = None
+
+    asyncio.run(run_case())
+
+
+def test_scoring_hello_must_match_protocol_before_renewing_lease():
+    async def run_case():
+        order = []
+        touched = []
+        websocket = FakeLaneNodeSocket([
+            node_hello(
+                node="wrong-protocol",
+                protocol=server.PROTOCOL_VERSION + 1)
+        ], order)
+        original_touch = server.machine_store.touch_scoring_lanes
+        try:
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit(touched))
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.touch_scoring_lanes = original_touch
+        assert order == ["close:4400"]
+        assert touched == []
+        assert "wrong-protocol" not in server.clients
+
+    asyncio.run(run_case())
+
+
+def test_scoring_heartbeat_is_bound_to_registered_connection_identity():
+    async def run_case():
+        order = []
+        touched = []
+        websocket = FakeLaneNodeSocket([
+            node_hello(node="bound-node"),
+            {"type": "heartbeat", "node": "spoofed-node"},
+        ], order)
+        original_touch = server.machine_store.touch_scoring_lanes
+        try:
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit(touched))
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.touch_scoring_lanes = original_touch
+        # Valid HELLO renews once; the spoofed heartbeat renews nothing.
+        assert touched == [[21, 22]]
+        assert order == [server.Msg.HEARTBEAT_ACK]
+
+    asyncio.run(run_case())
+
+
+def test_superseded_same_id_socket_cannot_renew_scoring_lease():
+    async def run_case():
+        order = []
+        touched = []
+        replacement = object()
+
+        def supersede():
+            with server.clients_lock:
+                server.clients["bound-node"] = replacement
+
+        websocket = MutatingLaneNodeSocket([
+            node_hello(node="bound-node"),
+            {"type": "heartbeat", "node": "bound-node"},
+        ], order, supersede)
+        original_touch = server.machine_store.touch_scoring_lanes
+        try:
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit(touched))
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.touch_scoring_lanes = original_touch
+            with server.clients_lock:
+                server.clients.pop("bound-node", None)
+                server.client_metadata.pop("bound-node", None)
+        assert touched == [[21, 22]]
+        assert order == [server.Msg.HEARTBEAT_ACK, "close:4400"]
+
+    asyncio.run(run_case())
+
+
+def test_newest_lane_claimant_is_only_inbound_ball_owner():
+    async def run_case():
+        order = []
+        newer_socket = object()
+
+        def add_newer_claimant():
+            with server.clients_lock:
+                server.clients["newer-node"] = newer_socket
+                server.client_metadata["newer-node"] = {
+                    "lanes": [21],
+                    "protocol_version": server.PROTOCOL_VERSION,
+                    "connected_at": time.time() + 10.0,
+                    "last_heartbeat": time.time(),
+                }
+
+        websocket = MutatingLaneNodeSocket([
+            node_hello(node="older-node"),
+            {"type": "ball_event", "ts": time.time(),
+             "lane": 21, "pin_mask": 0},
+        ], order, add_newer_claimant)
+        try:
+            await server.handle_node(websocket)
+        finally:
+            with server.clients_lock:
+                server.clients.pop("newer-node", None)
+                server.client_metadata.pop("newer-node", None)
+        assert server.Msg.CYCLE not in order
+
+    asyncio.run(run_case())
+
+
+def test_scoring_hello_rejects_duplicate_or_out_of_scope_lane_claims():
+    async def run_case(lanes):
+        order = []
+        touched = []
+        websocket = FakeLaneNodeSocket([
+            node_hello(node="bad-lanes", lanes=lanes)
+        ], order)
+        original_touch = server.machine_store.touch_scoring_lanes
+        try:
+            server.machine_store.touch_scoring_lanes = (
+                fake_scoring_commit(touched))
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.touch_scoring_lanes = original_touch
+        assert order == ["close:4400"]
+        assert touched == []
+
+    asyncio.run(run_case([21, 21]))
+    asyncio.run(run_case([21, 33]))
+
+
+def test_scoring_lease_commit_failure_closes_connection_fail_closed():
+    async def run_case(fail_heartbeat):
+        order = []
+        calls = {"n": 0}
+        hello = node_hello(node="commit-node")
+        frames = [hello]
+        if fail_heartbeat:
+            heartbeat = dict(hello)
+            heartbeat.update({"type": "heartbeat", "heartbeat_seq": 1})
+            frames.append(heartbeat)
+        websocket = FakeLaneNodeSocket(frames, order)
+        original_touch = server.machine_store.touch_scoring_lanes
+
+        def commit(lanes, metadata, **_kwargs):
+            calls["n"] += 1
+            if not fail_heartbeat or calls["n"] > 1:
+                raise OSError("simulated SQLite commit failure")
+            return {
+                "committed_at": "2026-07-23T00:00:00+00:00",
+                "lanes": list(lanes),
+                "scoring_session_id": metadata["scoring_session_id"],
+                "heartbeat_seq": metadata["heartbeat_seq"],
+            }
+
+        try:
+            server.machine_store.touch_scoring_lanes = commit
+            await server.handle_node(websocket)
+        finally:
+            server.machine_store.touch_scoring_lanes = original_touch
+        expected = (
+            [server.Msg.HEARTBEAT_ACK, "close:1011"]
+            if fail_heartbeat else ["close:1011"])
+        assert order == expected
+        assert "commit-node" not in server.clients
+
+    asyncio.run(run_case(False))
+    asyncio.run(run_case(True))
 
 
 def test_gateway_stream_epoch_and_replay_contract():
