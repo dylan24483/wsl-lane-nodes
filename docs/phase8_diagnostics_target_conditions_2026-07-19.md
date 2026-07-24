@@ -239,6 +239,8 @@ What sensors do **not** add: detection on the S/T motion path — stalls, cam fa
 
 **Deferred/research:** carpet-shaft pulse pickup (slip localization once BE current exists; take it when GPB channels exist) · vibration accelerometer (honest trend instrument, real commissioning cost; only clean if gated to READY-idle windows) · USB mic (zero-isolation research channel for the Layer-3 anomaly stack — never a committed detector).
 
+**Supply supervision amendment (2026-07-24):** Rev-D **AUX10 / J15-7** is reserved for `sensor_24v_ok`. The canonical contact type, field landing, multi-board isolation rule, and powered open/restore acceptance test are in `phase8_revD_first_article_pack.md` FA-5. In short: use only an external undervoltage monitor's galvanically isolated, energize-to-prove, healthy-when-closed dry contact returning to J15-9/10 FIELD_GND; never apply 24 V to J15. Loss/open-wire emits `sensor_supply_lost` and pauses only the dependent exit/index timers; restoration emits `sensor_supply_restored` and resumes from a level baseline. Software and contract transport are implemented; hardware remains uninstalled/unproven, and AUX10 stays unmapped until the first-article plus harness gate passes.
+
 ### Skip these (reasons)
 
 - **Table/sweep shaft encoders** — duplicate the six cam-timing intervals cam_telemetry already trends; the only vacant fast input is contested; full quadrature has no compliant path.
@@ -304,9 +306,10 @@ P1 machine-side conditions surfaced by the round-2 review, extending §1 (not do
 **AUX4–11 role priority list (recorded per R2-16; roles are dormant until `WSL_DIAG_AUX_ROLES` maps them — seed-flag lesson applies: query the env before re-reading the logic):**
 
 1. **`field_wet_ok` (AUX11) — FIRST.** Loopback of the field wetting supply through a spare input: kills the whole false-alarm class where every field input "opens" at once because the wetting rail died. **Software (role + suppression semantics: while `field_wet_ok` reads lost, suppress per-input open/stuck faults and emit `field_wet_lost`; `field_wet_restored` on return) lands NOW** — the physical loopback jumper is a harness item at install. Event types are already in the store vocabulary.
-2. `s_manual` / `t_manual` dry-contact rear-panel switch observation (manual-intervention attribution — MANUAL_INTERVENTION cycles stop being blind).
-3. `klixon_aux` thermal-cutout aux contacts (if the parts-manual open item confirms they exist) — motor-protection attribution.
-4. `door_switch` guard/door interlock observation (alert-only).
-5. `ac24_sense` 24 VAC control-power presence (manual-population option row).
-6. `ss_observe` — the §6 P1-11 cushion observer option.
-7. Remainder spare / bench fault-injection (FI-1 pairing).
+2. **`sensor_24v_ok` (AUX10) — SECOND.** External healthy-when-closed dry undervoltage contact for the separate isolated sensor supply. Software/contract semantics are implemented; keep unmapped until the first-article and powered harness gate pass.
+3. `s_manual` / `t_manual` dry-contact rear-panel switch observation (manual-intervention attribution — MANUAL_INTERVENTION cycles stop being blind).
+4. `klixon_aux` thermal-cutout aux contacts (if the parts-manual open item confirms they exist) — motor-protection attribution.
+5. `door_switch` guard/door interlock observation (alert-only).
+6. `ac24_sense` 24 VAC control-power presence (manual-population option row).
+7. `ss_observe` — the §6 P1-11 cushion observer option.
+8. Remainder spare / bench fault-injection (FI-1 pairing).

@@ -274,6 +274,24 @@ reachable; UF2 drag-drop flash of firmware `phase8b-rp2040 v1.2.3` succeeds WITH
 3. Software path: `controller_io` with `board_rev="revD"` (`IN_B_MAP_REVD`) — a rev-C
    `board_rev` never reads port B; that is a config error, not a board fault.
 
+**Canonical field allocation after FA-5 and FA-9 both PASS:**
+
+- Reserve **J15-7 / AUX10 / GPB6** for `sensor_24v_ok`, supervising the separate
+  isolated 24 VDC supply that powers the exit photoeye and distributor prox.
+- Land only a galvanically isolated undervoltage relay's
+  **energize-to-prove, healthy-when-closed dry contact** between J15-7 and one
+  J15-9/10 FIELD_GND terminal. **Never apply 24 V to J15.**
+- Map the role on every board carrying an `exit_beam` or `dist_index` sensor
+  powered by that supply. If one supply spans a lane pair, use one independently
+  isolated contact pole per board; never join or parallel the boards' field
+  domains.
+- Before enabling `aux10=sensor_24v_ok`, prove and record: healthy supply =
+  stable asserted input; removing sensor power/fuse or either contact lead =
+  exactly one `sensor_supply_lost` and no `ball_return_missing`,
+  `dist_index_stall`, or `stale_channel` cascade; restoration = exactly one
+  `sensor_supply_restored` and no immediate dependent fault. Repeat pickup and
+  dropout at the FA-9 hot condition. Leave AUX10 unmapped until this passes.
+
 ### FA-6 — VCC_5V ADC (item D)
 1. GP26/ADC0 reads VCC_5V/2 via R129/R130; the `phase8b-rp2040 v1.2.3` heartbeat carries
    VCC_5V as `v5` (latest) / `v5n` (window min) / `v5x` (window max), all mV

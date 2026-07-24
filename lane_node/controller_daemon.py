@@ -294,6 +294,13 @@ STUCK_EXEMPT = ("BS", "MAN_T", "MAN_S", "MAN_SWS", "MAN_SWSR") \
 # ---------------------------------------------------------------------------
 AUX_ROLE_HANDLERS = {}
 
+# The externally-isolated 24 VDC diagnostics supply powers the exit photoeye
+# and distributor prox.  Its health contact is a separate dry input; loss
+# makes those two signals UNKNOWN, not deasserted.  Keep this list narrow:
+# current switches and other dry contacts may be self-powered.
+SENSOR_24V_ROLE = "sensor_24v_ok"
+SENSOR_24V_DEPENDENT_ROLES = frozenset(("exit_beam", "dist_index"))
+
 
 def register_aux_role(role, handler):
     """Register (or override) an AUX sensor role handler. Returns handler so
@@ -872,6 +879,12 @@ class BallReturnTracker:
 
     def on_ball(self, lane, t):
         with self._lock:
+            # A ball observed while the exit-photoeye source is UNKNOWN may
+            # return unseen.  Do not turn that blind interval into a fabricated
+            # missing-ball timer; the source/supply fault is the evidence.
+            if self._sources and any(v is not True
+                                     for v in self._sources.values()):
+                return
             dq = self._pending.get(lane)
             if dq is not None:
                 dq.append(t)
@@ -1014,6 +1027,11 @@ class LaneDiag:
         self._be_stuck_warned = False
         self._dist_last_pulse = None
         self._dist_warned_cycle = False
+        # One union-of-unavailability clock for the distributor observation.
+        # Bank UNKNOWN, FIELD_WET loss, and external sensor-24V loss may
+        # overlap; a single state prevents additive/conditional timer shifts.
+        self._dist_source_available = None
+        self._dist_pause_since = None
         # R2-16 field_wet_ok loopback role (AUX11 jumper = harness item; the
         # software side lands now and stays dormant until the role is mapped)
         self._field_wet_input = next(
@@ -1022,6 +1040,15 @@ class LaneDiag:
         self._field_wet_lost = False     # True while the wetting supply is down
         self._field_wet_lost_t = None
         self._field_wet_seen = False     # first-sample baseline taken
+        # External sensor-supply supervision. Rev-D reserves AUX10 for an
+        # externally isolated undervoltage relay's dry, healthy-when-closed
+        # contact. The rule remains dormant until explicitly mapped.
+        self._sensor_24v_input = next(
+            (n for n, r in self.aux_roles.items() if r == SENSOR_24V_ROLE),
+            None)
+        self._sensor_24v_lost = False
+        self._sensor_24v_lost_t = None
+        self._sensor_24v_seen = False
         # R2-12 stale-channel + role-missing bookkeeping
         self._cycles_since_pulse = {}    # pulse-role input -> completed cycles
         self._stale_warned = set()
@@ -1083,7 +1110,10 @@ class LaneDiag:
 
     def on_ball(self, t):
         """A cycle started (ball event)."""
-        self._cycle_start_t = t
+        # A cycle starting while its supply-backed index sensor is blind has no
+        # defensible timer anchor. Skip that one diagnostic episode.
+        self._cycle_start_t = (
+            None if not self._dist_source_is_available() else t)
         self._dist_warned_cycle = False
         if self.ball_tracker is not None:
             self.ball_tracker.on_ball(self.lane, t)
@@ -1100,7 +1130,8 @@ class LaneDiag:
         for name, role in self.aux_roles.items():
             if role not in ("exit_beam", "dist_index"):
                 continue
-            if name in self._aux_unavailable:
+            if (name in self._aux_unavailable
+                    or self._sensor_24v_blocks(role)):
                 continue
             n = self._cycles_since_pulse.get(name, 0) + 1
             self._cycles_since_pulse[name] = n
@@ -1118,7 +1149,6 @@ class LaneDiag:
             return
         try:
             self._update_aux_availability(t, inb_levels)
-            edges = self._track_levels(t, slow_levels, inb_levels)
             # R2-16 FIELD_WET loopback FIRST: when the field wetting supply is
             # down, every field-side input reads deasserted at once — the
             # cascade of stuck/beam/aux alerts would bury the one real root
@@ -1128,6 +1158,15 @@ class LaneDiag:
                 return
             if self._field_wet_lost:
                 return
+            # This supply is distinct from FIELD_WET_V. Evaluate it before
+            # edge tracking so recovery levels cannot become synthetic pulses.
+            self._sensor_24v_rule(t, inb_levels)
+            # Reconcile once more after both supply monitors have consumed the
+            # same sample. This prevents a same-timestamp false recovery when
+            # FIELD_WET returns while the external sensor supply remains low.
+            self._sync_exit_source_availability(t)
+            self._sync_dist_source_availability(t)
+            edges = self._track_levels(t, slow_levels, inb_levels)
             self._manual_rule(t, edges, slow_levels, inb_levels)
             self._stuck_rule(t, ready, slow_levels, inb_levels)
             self._beam_rule(t, ready, diell_levels)
@@ -1159,8 +1198,6 @@ class LaneDiag:
                 # real sample becomes a baseline rather than an edge.
                 self._prev_levels.pop(name, None)
                 self._assert_since.pop(name, None)
-                if role == "exit_beam" and self.ball_tracker is not None:
-                    self.ball_tracker.set_source_available(self.lane, False, t)
                 if (inb_levels is not None
                         and name not in self._role_missing_warned):
                     self._role_missing_warned.add(name)
@@ -1184,8 +1221,8 @@ class LaneDiag:
                         "info", "recovered", code="configured_role_missing",
                         detail={"input": name, "role": role,
                                 "unknown_s": round(dt, 3)}, t=t)
-            if role == "exit_beam" and self.ball_tracker is not None:
-                self.ball_tracker.set_source_available(self.lane, True, t)
+        self._sync_exit_source_availability(t)
+        self._sync_dist_source_availability(t)
 
     def _shift_aux_timers(self, role, since, dt):
         """Exclude an UNKNOWN interval from a role's logical timer budget."""
@@ -1203,9 +1240,138 @@ class LaneDiag:
             if self._be_deadline is not None:
                 self._be_deadline += dt
             self._last_activity = shifted(self._last_activity)
-        elif role == "dist_index":
-            self._cycle_start_t = shifted(self._cycle_start_t)
-            self._dist_last_pulse = shifted(self._dist_last_pulse)
+
+    def _sensor_24v_blocks(self, role):
+        """Whether a supply-backed role must currently be UNKNOWN.
+
+        With no sensor-supply role mapped, legacy behavior is unchanged. Once
+        mapped, startup, a missing health channel, lost FIELD_WET_V, or an open
+        health contact all fail closed for only exit_beam and dist_index.
+        """
+        if role not in SENSOR_24V_DEPENDENT_ROLES:
+            return False
+        if (self._field_wet_input is not None
+                and (self._field_wet_input in self._aux_unavailable
+                     or not self._field_wet_seen
+                     or self._field_wet_lost)):
+            return True
+        if self._sensor_24v_input is None:
+            return False
+        return (self._sensor_24v_input in self._aux_unavailable
+                or not self._sensor_24v_seen
+                or self._sensor_24v_lost)
+
+    def _sync_exit_source_availability(self, t):
+        """Drive the shared ball-return tracker's logical source gate."""
+        if self.ball_tracker is None:
+            return
+        names = [n for n, role in self.aux_roles.items()
+                 if role == "exit_beam"]
+        if not names:
+            return
+        available = (all(n not in self._aux_unavailable for n in names)
+                     and not self._sensor_24v_blocks("exit_beam"))
+        self.ball_tracker.set_source_available(self.lane, available, t)
+
+    def _dist_source_is_available(self):
+        """Current effective availability of every distributor-index source."""
+        names = [n for n, role in self.aux_roles.items()
+                 if role == "dist_index"]
+        if not names:
+            return True
+        return (all(n not in self._aux_unavailable for n in names)
+                and not self._sensor_24v_blocks("dist_index"))
+
+    def _sync_dist_source_availability(self, t):
+        """Pause/resume distributor timers across the UNION of source outages."""
+        if "dist_index" not in self.aux_roles.values():
+            return
+        available = self._dist_source_is_available()
+        previous = self._dist_source_available
+        self._dist_source_available = available
+        if previous is None or available == previous:
+            return
+        if not available:
+            self._dist_pause_since = t
+            return
+        since = self._dist_pause_since
+        self._dist_pause_since = None
+        if since is None:
+            return
+        dt = max(0.0, t - since)
+        if self._cycle_start_t is not None:
+            self._cycle_start_t += dt
+        if self._dist_last_pulse is not None:
+            self._dist_last_pulse += dt
+
+    def _baseline_sensor_24v_dependents(self, t, inb_levels):
+        """Make first post-outage sensor samples levels, never edges."""
+        levels = inb_levels or {}
+        for name, role in self.aux_roles.items():
+            if role not in SENSOR_24V_DEPENDENT_ROLES or name not in levels:
+                continue
+            level = bool(levels[name])
+            self._prev_levels[name] = level
+            if level:
+                self._assert_since[name] = t
+            else:
+                self._assert_since.pop(name, None)
+
+    def _sensor_24v_rule(self, t, inb_levels):
+        """Supervise external sensor 24 VDC through an isolated dry contact.
+
+        Asserted means healthy. The input must be driven only by an external
+        undervoltage-monitor relay contact; 24 V must never touch AUX directly.
+        Loss inhibits exit_beam/dist_index timers and emits one root-cause
+        fault until a healthy sample returns.
+        """
+        name = self._sensor_24v_input
+        if name is None or not _env_on(AUX_RULE_ENV):
+            return
+        if inb_levels is None or name not in inb_levels:
+            self._sync_exit_source_availability(t)
+            self._sync_dist_source_availability(t)
+            return
+        level = bool(inb_levels[name])
+        detail = {
+            "input": name,
+            "supply": "external_24vdc",
+            "dependent_roles": sorted(SENSOR_24V_DEPENDENT_ROLES),
+        }
+        if not self._sensor_24v_seen:
+            self._sensor_24v_seen = True
+            if not level:
+                self._sensor_24v_lost = True
+                self._sensor_24v_lost_t = t
+                detail["at_startup"] = True
+                self.emit_event(
+                    "fault", "sensor_supply_lost", code=f"aux:{name}",
+                    detail=detail, t=t)
+            if not level:
+                self._sync_exit_source_availability(t)
+                self._sync_dist_source_availability(t)
+            return
+        if level and self._sensor_24v_lost:
+            since = self._sensor_24v_lost_t
+            dt = max(0.0, t - since) if since is not None else 0.0
+            self._baseline_sensor_24v_dependents(t, inb_levels)
+            self._sensor_24v_lost = False
+            self._sensor_24v_lost_t = None
+            self._sync_exit_source_availability(t)
+            self._sync_dist_source_availability(t)
+            detail["outage_s"] = None if since is None else round(dt, 1)
+            self.emit_event(
+                "info", "sensor_supply_restored", code=f"aux:{name}",
+                detail=detail, t=t)
+        elif not level and not self._sensor_24v_lost:
+            self._sensor_24v_lost = True
+            self._sensor_24v_lost_t = t
+            self._sync_exit_source_availability(t)
+            self._sync_dist_source_availability(t)
+            detail["at_startup"] = False
+            self.emit_event(
+                "fault", "sensor_supply_lost", code=f"aux:{name}",
+                detail=detail, t=t)
 
     def _field_wet_rule(self, t, inb_levels):
         """R2-16: AUX11 FIELD_WET loopback (a harness jumper wired straight
@@ -1230,6 +1396,8 @@ class LaneDiag:
                 self.emit_event("fault", "field_wet_lost", code=f"aux:{name}",
                                 detail={"input": name, "at_startup": True},
                                 t=t)
+            self._sync_exit_source_availability(t)
+            self._sync_dist_source_availability(t)
             return
         if level and self._field_wet_lost:
             outage = None if self._field_wet_lost_t is None \
@@ -1239,6 +1407,7 @@ class LaneDiag:
             # Re-baseline the input rules: every field input deasserted during
             # the outage; their re-assertion must not read as fresh edges or
             # stale asserts.
+            self._prev_levels.clear()
             self._assert_since.clear()
             self._stuck_warned.clear()
             self._beam_warned.clear()
@@ -1247,6 +1416,8 @@ class LaneDiag:
         elif not level and not self._field_wet_lost:
             self._field_wet_lost = True
             self._field_wet_lost_t = t
+            self._sync_exit_source_availability(t)
+            self._sync_dist_source_availability(t)
             self.emit_event("fault", "field_wet_lost", code=f"aux:{name}",
                             detail={"input": name, "at_startup": False}, t=t)
 
@@ -1394,6 +1565,8 @@ class LaneDiag:
             # never appears in it — a config/map mismatch, once per input.
             if name not in levels:
                 continue
+            if self._sensor_24v_blocks(role):
+                continue
             try:
                 handler(self, t, name, bool(levels[name]),
                         in_motion=in_motion, rising=rising)
@@ -1485,10 +1658,16 @@ def _role_field_wet(diag, t, name, level, *, in_motion, rising):
     return
 
 
+def _role_sensor_24v(diag, t, name, level, *, in_motion, rising):
+    # The supply rule runs before edge tracking and gates dependent roles.
+    return
+
+
 register_aux_role("be_current", _role_be_current)
 register_aux_role("exit_beam", _role_exit_beam)
 register_aux_role("dist_index", _role_dist_index)
 register_aux_role("field_wet_ok", _role_field_wet)
+register_aux_role(SENSOR_24V_ROLE, _role_sensor_24v)
 
 # Back-compat alias: some tests/docs referenced the old whitelist tuple.
 AUX_ROLE_VALID = aux_roles_valid()

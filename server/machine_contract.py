@@ -116,6 +116,7 @@ _FALLBACK_VOCAB = {
         "pi_disk_low", "pi_fs_readonly", "pi_thermal",
         "pi_undervoltage", "rail_drop", "recovered",
         "rp2040_serial_corrupt", "rp2040_wdt_reset", "run_mismatch",
+        "sensor_supply_lost", "sensor_supply_restored",
         "scoring_server_ack_stalled", "scoring_event_transport",
         "service_restart",
         "service_restart_loop", "short_rack",

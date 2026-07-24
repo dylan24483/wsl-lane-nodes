@@ -190,6 +190,254 @@ def test_field_wet_down_at_startup_alerts_as_baseline():
     assert len(lost) == 1 and lost[0].detail.get("at_startup") is True
 
 
+def test_field_wet_outage_pauses_pair_exit_source_and_ignores_blind_ball():
+    w = FakeWriter()
+    lane21 = cd.LaneDiag(
+        21, writer=w,
+        aux_roles={"AUX2": "exit_beam", "AUX11": "field_wet_ok"})
+    lane22 = cd.LaneDiag(22, writer=w, aux_roles={})
+    tracker = cd.BallReturnTracker([21, 22], timeout_s=5.0)
+    lane21.set_ball_tracker(tracker)
+    lane22.set_ball_tracker(tracker)
+
+    healthy = {"AUX2": False, "AUX11": True}
+    wet_lost = {"AUX2": False, "AUX11": False}
+    lane21.poll(0.0, ready=True, in_motion=False,
+                slow_levels={}, inb_levels=healthy)
+    assert tracker._sources == {21: True}
+
+    # Preserve one pre-outage timer, then make the shared source blind.
+    lane21.on_ball(0.0)
+    lane21.poll(1.0, ready=True, in_motion=False,
+                slow_levels={}, inb_levels=wet_lost)
+    assert tracker._sources == {21: False}
+    assert tracker._pause_since == 1.0
+
+    # A pair-mate ball during the blind interval may return unseen, so it must
+    # not be queued and later blamed on lane 22.
+    lane22.on_ball(2.0)
+    assert list(tracker._pending[22]) == []
+    lane21.poll(9.0, ready=True, in_motion=False,
+                slow_levels={}, inb_levels=wet_lost)
+    assert w.of_type("ball_return_missing") == []
+
+    # Restoration resumes the pre-outage timer with only its remaining budget.
+    lane21.poll(10.0, ready=True, in_motion=False,
+                slow_levels={}, inb_levels=healthy)
+    assert tracker._sources == {21: True}
+    assert list(tracker._pending[21]) == [9.0]
+    lane21.poll(14.0, ready=True, in_motion=False,
+                slow_levels={}, inb_levels=healthy)
+    assert w.of_type("ball_return_missing") == []
+    lane21.poll(14.1, ready=True, in_motion=False,
+                slow_levels={}, inb_levels=healthy)
+    missing = w.of_type("ball_return_missing")
+    assert len(missing) == 1 and missing[0].lane_id == 21
+    assert tracker.missing_total[22] == 0
+
+
+def test_sensor_24v_loss_pauses_exit_and_index_diagnostics():
+    old_gap = os.environ.get("WSL_DIAG_DIST_GAP_S")
+    old_stale = os.environ.get("WSL_DIAG_STALE_CHANNEL_CYCLES")
+    os.environ["WSL_DIAG_DIST_GAP_S"] = "3"
+    os.environ["WSL_DIAG_STALE_CHANNEL_CYCLES"] = "1"
+    try:
+        w = FakeWriter()
+        diag = cd.LaneDiag(
+            21, writer=w,
+            aux_roles={"AUX2": "exit_beam", "AUX3": "dist_index",
+                       "AUX10": "sensor_24v_ok"})
+        tracker = cd.BallReturnTracker([21], timeout_s=5.0)
+        diag.set_ball_tracker(tracker)
+        healthy = {"AUX2": False, "AUX3": False, "AUX10": True}
+        lost = dict(healthy, AUX10=False)
+
+        diag.poll(0.0, ready=True, in_motion=False,
+                  slow_levels={}, inb_levels=healthy)
+        diag.on_ball(0.0)
+        diag.poll(0.5, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        diag.poll(1.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=lost)
+        events = w.of_type("sensor_supply_lost")
+        assert len(events) == 1
+        assert events[0].severity == "fault"
+        assert events[0].detail["at_startup"] is False
+
+        # Wall time and completed cycles while blind consume no dependent
+        # timeout/stale budget.
+        for t in (10.0, 50.0, 100.0):
+            diag.note_cycle_complete(t)
+            diag.poll(t, ready=False, in_motion=True,
+                      slow_levels={}, inb_levels=lost)
+        assert w.of_type("dist_index_stall") == []
+        assert w.of_type("ball_return_missing") == []
+        assert w.of_type("stale_channel") == []
+
+        # Recovery is a level baseline. The pre-outage timers resume with
+        # their remaining logical budgets instead of firing immediately.
+        diag.poll(101.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        restored = w.of_type("sensor_supply_restored")
+        assert len(restored) == 1
+        assert restored[0].detail["outage_s"] == 100.0
+        diag.poll(103.1, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        assert len(w.of_type("dist_index_stall")) == 1
+        assert w.of_type("ball_return_missing") == []
+        diag.poll(105.1, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        assert len(w.of_type("ball_return_missing")) == 1
+    finally:
+        if old_gap is None:
+            os.environ.pop("WSL_DIAG_DIST_GAP_S", None)
+        else:
+            os.environ["WSL_DIAG_DIST_GAP_S"] = old_gap
+        if old_stale is None:
+            os.environ.pop("WSL_DIAG_STALE_CHANNEL_CYCLES", None)
+        else:
+            os.environ["WSL_DIAG_STALE_CHANNEL_CYCLES"] = old_stale
+
+
+def test_dist_timer_uses_union_sensor_then_bank_outage():
+    old_gap = os.environ.get("WSL_DIAG_DIST_GAP_S")
+    os.environ["WSL_DIAG_DIST_GAP_S"] = "3"
+    try:
+        w = FakeWriter()
+        diag = cd.LaneDiag(
+            21, writer=w,
+            aux_roles={"AUX3": "dist_index",
+                       "AUX10": "sensor_24v_ok"})
+        healthy = {"AUX3": False, "AUX10": True}
+        supply_lost = {"AUX3": False, "AUX10": False}
+        diag.poll(0.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        diag.on_ball(0.0)
+
+        # External supply is lost first, then the whole bank is UNKNOWN.
+        diag.poll(1.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=supply_lost)
+        diag.poll(2.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=None)
+        diag.poll(100.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=supply_lost)
+        assert diag._dist_pause_since == 1.0
+        assert diag._cycle_start_t == 0.0
+        assert w.of_type("dist_index_stall") == []
+
+        # Final recovery shifts the anchor by the UNION (1..101), exactly once.
+        diag.poll(101.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        assert diag._dist_pause_since is None
+        assert diag._cycle_start_t == 100.0
+        diag.poll(103.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        assert w.of_type("dist_index_stall") == []
+        diag.poll(103.1, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        assert len(w.of_type("dist_index_stall")) == 1
+    finally:
+        if old_gap is None:
+            os.environ.pop("WSL_DIAG_DIST_GAP_S", None)
+        else:
+            os.environ["WSL_DIAG_DIST_GAP_S"] = old_gap
+
+
+def test_dist_timer_uses_union_field_bank_then_sensor_outage():
+    old_gap = os.environ.get("WSL_DIAG_DIST_GAP_S")
+    os.environ["WSL_DIAG_DIST_GAP_S"] = "3"
+    try:
+        w = FakeWriter()
+        diag = cd.LaneDiag(
+            21, writer=w,
+            aux_roles={"AUX3": "dist_index",
+                       "AUX10": "sensor_24v_ok",
+                       "AUX11": "field_wet_ok"})
+        healthy = {"AUX3": False, "AUX10": True, "AUX11": True}
+        all_low = {"AUX3": False, "AUX10": False, "AUX11": False}
+        sensor_low = {"AUX3": False, "AUX10": False, "AUX11": True}
+        diag.poll(0.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        diag.on_ball(0.0)
+
+        # FIELD_WET loss starts the union; bank UNKNOWN overlaps it. On bank
+        # recovery FIELD_WET is still low, so no timer can resume.
+        diag.poll(1.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=all_low)
+        diag.poll(2.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=None)
+        diag.poll(50.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=all_low)
+        assert diag._dist_pause_since == 1.0
+
+        # FIELD_WET returns while external sensor 24 V remains low. The single
+        # union state must stay paused instead of shifting/restarting at t=60.
+        diag.poll(60.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=sensor_low)
+        assert diag._dist_pause_since == 1.0
+        assert diag._cycle_start_t == 0.0
+        assert w.of_type("dist_index_stall") == []
+
+        # The final source recovers at t=100: one 99 s union shift.
+        diag.poll(100.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        assert diag._dist_pause_since is None
+        assert diag._cycle_start_t == 99.0
+        diag.poll(102.0, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        assert w.of_type("dist_index_stall") == []
+        diag.poll(102.1, ready=False, in_motion=True,
+                  slow_levels={}, inb_levels=healthy)
+        assert len(w.of_type("dist_index_stall")) == 1
+    finally:
+        if old_gap is None:
+            os.environ.pop("WSL_DIAG_DIST_GAP_S", None)
+        else:
+            os.environ["WSL_DIAG_DIST_GAP_S"] = old_gap
+
+
+def test_sensor_24v_blind_interval_does_not_create_ball_timer():
+    w = FakeWriter()
+    diag = cd.LaneDiag(
+        21, writer=w,
+        aux_roles={"AUX2": "exit_beam", "AUX10": "sensor_24v_ok"})
+    tracker = cd.BallReturnTracker([21], timeout_s=1.0)
+    diag.set_ball_tracker(tracker)
+    diag.poll(0.0, ready=True, in_motion=False, slow_levels={},
+              inb_levels={"AUX2": False, "AUX10": True})
+    diag.poll(1.0, ready=True, in_motion=False, slow_levels={},
+              inb_levels={"AUX2": False, "AUX10": False})
+    diag.on_ball(2.0)
+    assert list(tracker._pending[21]) == []
+    diag.poll(20.0, ready=True, in_motion=False, slow_levels={},
+              inb_levels={"AUX2": False, "AUX10": True})
+    diag.poll(30.0, ready=True, in_motion=False, slow_levels={},
+              inb_levels={"AUX2": False, "AUX10": True})
+    assert w.of_type("ball_return_missing") == []
+
+
+def test_field_wet_loss_owns_cascade_before_sensor_24v():
+    w = FakeWriter()
+    diag = cd.LaneDiag(
+        21, writer=w,
+        aux_roles={"AUX2": "exit_beam", "AUX10": "sensor_24v_ok",
+                   "AUX11": "field_wet_ok"})
+    diag.poll(0.0, ready=True, in_motion=False, slow_levels={},
+              inb_levels={"AUX2": False, "AUX10": True, "AUX11": True})
+    # FIELD_WET_V loss deasserts every opto even when external 24 V remains
+    # healthy. Only the field-wetting root cause may fire.
+    diag.poll(1.0, ready=True, in_motion=False, slow_levels={},
+              inb_levels={"AUX2": False, "AUX10": False, "AUX11": False})
+    assert len(w.of_type("field_wet_lost")) == 1
+    assert w.of_type("sensor_supply_lost") == []
+    # Once FIELD_WET_V is restored, an actually-open sensor-supply contact is
+    # independently visible.
+    diag.poll(2.0, ready=True, in_motion=False, slow_levels={},
+              inb_levels={"AUX2": False, "AUX10": False, "AUX11": True})
+    assert len(w.of_type("field_wet_restored")) == 1
+    assert len(w.of_type("sensor_supply_lost")) == 1
+
+
 def test_role_registry_is_extensible():
     calls = []
     register_aux_role("test_role_x", lambda diag, t, name, level, **kw:

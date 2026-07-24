@@ -1,7 +1,7 @@
 {
   "contract": "wsl-phase8-machine-diagnostics",
   "contract_version": 3,
-  "contract_revision": "3.1 (2026-07-24 R5: controller output mode, live-output acknowledgement, ARM/FSM/manual-rearm posture, identity assurance, exact qualified firmware tuple, and four-channel safety-tap evidence are mandatory heartbeat and health-drop facts; all prior R4 protocol-v3 durability, fencing, identity, lease, persistence, and health invariants remain required)",
+  "contract_revision": "3.2 (2026-07-24 R5: adds external sensor-supply loss/restoration event vocabulary; controller output mode, live-output acknowledgement, ARM/FSM/manual-rearm posture, identity assurance, exact qualified firmware tuple, and four-channel safety-tap evidence remain mandatory heartbeat and health-drop facts; all prior R4 protocol-v3 durability, fencing, identity, lease, persistence, and health invariants remain required)",
   "delivery_identity": {
     "fields": ["source_id", "boot_id", "seq"],
     "semantics": "R2-12 (2026-07-21): the Pi stamps every event + cycle record with a delivery identity — source_id (stable device id, default hostname; env WSL_DIAG_SOURCE_ID), boot_id (fresh uuid per daemon process start) and seq (process-wide monotonic counter). The daily diag JSONL file is the outbox: lane_node/diag_events.OutboxReplayer tails it with a persisted cursor advanced ONLY on a 2xx (cursor-ack). The server dedupes on UNIQUE(source_id, boot_id, seq) via INSERT OR IGNORE, so replay overlap after a drop or lost ack is idempotent. Identity is all-or-nothing WITHIN one record: a record carrying only part of the identity triple is rejected (per-record, into the R3-1b 'rejected' list — NOT a whole-batch 400); a record with none inserts as before (legacy live-sink era)."
@@ -333,6 +333,8 @@
       "rp2040_serial_corrupt",
       "rp2040_wdt_reset",
       "run_mismatch",
+      "sensor_supply_lost",
+      "sensor_supply_restored",
       "scoring_server_ack_stalled",
       "scoring_event_transport",
       "service_restart",

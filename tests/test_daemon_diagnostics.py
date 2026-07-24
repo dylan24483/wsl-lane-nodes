@@ -959,6 +959,8 @@ def test_parse_aux_roles():
     # H3 (2026-07-21): aux4-aux11 (rev-D GPB bank) are valid role keys
     assert _parse_aux_roles("aux4=exit_beam,aux11=dist_index") == {
         "AUX4": "exit_beam", "AUX11": "dist_index"}
+    assert _parse_aux_roles("aux10=sensor_24v_ok") == {
+        "AUX10": "sensor_24v_ok"}
     # R3-9 (Codex round-3, 2026-07-23): an unrecognized role string, unknown
     # AUX key, or malformed token now REFUSES startup loudly — it is NEVER
     # silently skipped (the seed-flag-matched-by-name time bomb). Each raises
