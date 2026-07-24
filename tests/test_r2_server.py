@@ -40,6 +40,10 @@ _TMP = tempfile.TemporaryDirectory()
 os.environ.setdefault("STATE_DB_PATH", str(Path(_TMP.name) / "lane_state.db"))
 os.environ.setdefault("MACHINE_DB_PATH",
                       str(Path(_TMP.name) / "machine_diag.db"))
+os.environ.setdefault("WSL_MACHINE_LANES", "21,22")
+os.environ.setdefault(
+    "WSL_SCORING_NODE_TOPOLOGY", "test-pair-21-22=21,22")
+os.environ.setdefault("WSL_ALLOW_UNAUTHENTICATED_BENCH", "1")
 os.environ.pop("WSL_MACHINE_DIAG", None)
 
 import machine_store  # noqa: E402
