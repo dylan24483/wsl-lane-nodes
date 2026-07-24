@@ -21,18 +21,24 @@ loopback HTTP server). Run under pytest or standalone.
 """
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import threading
 import types
+import urllib.error
 import urllib.request
+from contextlib import closing
 from http.server import HTTPServer
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SERVER_DIR = REPO_ROOT / "server"
 LANE_DIR = REPO_ROOT / "lane_node"
-for path in (str(REPO_ROOT), str(SERVER_DIR), str(LANE_DIR)):
+# Keep lane_node as the repository namespace package. Adding the lane_node
+# directory itself to sys.path would let lane_node/lane_node.py shadow that
+# package when the server imports lane_node.strict_json.
+for path in (str(SERVER_DIR), str(REPO_ROOT)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -52,12 +58,16 @@ except ModuleNotFoundError:
 _TMP = tempfile.TemporaryDirectory()
 os.environ.setdefault("STATE_DB_PATH", str(Path(_TMP.name) / "lane_state.db"))
 os.environ.setdefault("MACHINE_DB_PATH", str(Path(_TMP.name) / "machine.db"))
+os.environ.setdefault("WSL_MACHINE_LANES", "21,22")
+os.environ.setdefault(
+    "WSL_SCORING_NODE_TOPOLOGY", "test-pair-21-22=21,22")
+os.environ.setdefault("WSL_ALLOW_UNAUTHENTICATED_BENCH", "1")
 os.environ.pop("WSL_MACHINE_DIAG", None)
 
 import machine_store  # noqa: E402
 import lane_node_server as server  # noqa: E402
-import diag_events as de  # noqa: E402
-from rp2040_link import RP2040Link  # noqa: E402
+from lane_node import diag_events as de  # noqa: E402
+from lane_node.rp2040_link import RP2040Link  # noqa: E402
 
 _httpd = HTTPServer(('127.0.0.1', 0), server.HttpHandler)
 PORT = _httpd.server_address[1]
@@ -90,6 +100,52 @@ def _ev(seq, event_type="recovered", **kw):
          "source_id": "r3-src", "boot_id": "boot-r3", "seq": seq}
     r.update(kw)
     return r
+
+
+def _heartbeat(lane=21, *, heartbeat_seq=1, control_loop_seq=1, **kw):
+    digest = machine_store.contract_status()["sha256"]
+    row = {
+        "lane_id": lane,
+        "controller_boot_id": "test-controller-boot",
+        "heartbeat_seq": heartbeat_seq,
+        "control_loop_seq": control_loop_seq,
+        "board_rev": "revD",
+        "contract_sha256": digest,
+        "contract_loaded": True,
+        "identity_ok": True,
+        "ro_fs": False,
+        "outbox": {
+            "oldest_unsent_age_s": None,
+            "backlog": 0,
+            "backlog_bytes": 0,
+            "cursor_ok": True,
+            "error": False,
+            "pending_writes": 0,
+            "quarantined": 0,
+            "cycles_quarantined": 0,
+            "write_errors": 0,
+            "sink_errors": 0,
+            "dropped": 0,
+        },
+        "platform": {
+            "ok": True,
+            "reasons": [],
+            "pi_probes_required": True,
+        },
+        "observed_pcb": "revD",
+        "observed_rid": "revD",
+        "observed_uid": "test-pico-uid",
+        "fw_build": "deadbeef",
+        "fw_cfg": "aa4ff333",
+        "fw_version": "1.2.3",
+        "serial_parse_errors": 0,
+        "diag_record_drops": 0,
+    }
+    outbox_override = kw.pop("outbox", None)
+    row.update(kw)
+    if outbox_override is not None:
+        row["outbox"].update(outbox_override)
+    return {"heartbeat": row}
 
 
 # ── 1. R3-1 poison-pill replay ─────────────────────────────────────────────
@@ -178,13 +234,16 @@ def test_reboot_invalidates_stale_firmware_identity():
     link = RP2040Link(now=lambda: clock["t"])
     # v1.2.2 identity announced
     link.feed_line(json.dumps({
-        "ev": "id", "fw": "1.2.2", "pcb": "revD", "rid": 1,
+        "ev": "boot", "fw": "1.2.3", "bn": 111, "rp_ok": 0}))
+    link.feed_line(json.dumps({
+        "ev": "id", "fw": "1.2.3", "bn": 111, "pcb": "revD", "rid": 1,
         "uid": "abc123", "build": "deadbeef", "cfg": "aa4ff333", "fi1": 0}))
     ident = link.fw_identity()
-    assert ident is not None and ident["fw"] == "1.2.2", "identity captured"
+    assert ident is not None and ident["fw"] == "1.2.3", "identity captured"
     assert link.identity_ok() is True
     # establish a heartbeat so the next boot is a real REBOOT (rebooted=True)
-    link.feed_line(json.dumps({"ev": "hb", "ok": 1, "flt": "", "up": 5000}))
+    link.feed_line(json.dumps({
+        "ev": "hb", "ok": 1, "flt": "", "up": 5000, "bn": 111}))
     # reboot into a v0.1 image — a boot event with NO id follow-up
     clock["t"] = 1001.0
     link.feed_line(json.dumps({"ev": "boot", "fw": "0.1.0", "rp_ok": 0}))
@@ -209,12 +268,14 @@ def test_fresh_id_after_reboot_clears_missing():
     link = RP2040Link(now=lambda: clock["t"])
     link.feed_line(json.dumps({"ev": "hb", "ok": 1, "flt": "", "up": 5000}))
     clock["t"] = 1.0
-    link.feed_line(json.dumps({"ev": "boot", "fw": "1.2.2", "rp_ok": 0}))
+    link.feed_line(json.dumps({
+        "ev": "boot", "fw": "1.2.3", "bn": 222, "rp_ok": 0}))
     assert link.fw_identity() is None, "cleared on reboot"
     # the firmware re-announces after boot
     link.feed_line(json.dumps({
-        "ev": "id", "fw": "1.2.2", "pcb": "revD", "rid": 1,
-        "build": "cafef00d", "cfg": "aa4ff333", "fi1": 0}))
+        "ev": "id", "fw": "1.2.3", "bn": 222, "pcb": "revD", "rid": 1,
+        "uid": "abc123", "build": "cafef00d", "cfg": "aa4ff333",
+        "fi1": 0}))
     assert link.identity_ok() is True, "identity current again"
     assert link.identity_missing() is False
     assert link.poll_identity() is None, "no missing report once id is heard"
@@ -249,20 +310,162 @@ def test_cycle_row_rides_the_durable_outbox():
 
 def test_heartbeat_touches_lease_and_records_identity():
     _fresh_db("r3_hb.db")
-    status, body = _http('POST', '/api/machine/heartbeat', {"heartbeat": {
-        "lane_id": 21, "board_rev": "revD", "fw_build": "deadbeef",
-        "fw_cfg": "aa4ff333", "contract_sha256": "x" * 64,
-        "identity_ok": True, "ro_fs": False,
-        "outbox": {"backlog_bytes": 0, "cursor_ok": True}}})
+    status, body = _http(
+        'POST', '/api/machine/heartbeat', _heartbeat())
     assert status == 200 and body["ok"] is True
+    assert body["committed"] is True
     assert body["last_seen"], "heartbeat stamped the lease"
-    # the lane now has a fresh lease -> HEALTHY (not UNKNOWN/OFFLINE)
+    # The controller track is fresh. The combined service remains DEGRADED
+    # because this HTTP-only harness deliberately has no live scoring node;
+    # mandatory topology must not be hidden by a healthy controller lease.
     _, health = _http('GET', '/api/machine/health')
-    assert health['lanes']['21']['state'] == 'HEALTHY', \
-        "a quiet controller's heartbeat keeps the lane HEALTHY (R3-2)"
-    # a bare object (no wrapper) is tolerated
-    status, _ = _http('POST', '/api/machine/heartbeat', {"lane_id": 22})
+    entry = health['lanes']['21']
+    assert entry['state'] == 'DEGRADED'
+    assert entry['last_seen'] is not None
+    assert entry['degraded_reasons'] == [
+        'scoring_node_topology_unhealthy']
+    # a bare object is not controller-liveness proof
+    try:
+        _http('POST', '/api/machine/heartbeat', {"lane_id": 22})
+        raise AssertionError("bare heartbeat unexpectedly accepted")
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 400
+
+
+def test_bad_controller_health_is_visible_and_degraded():
+    _fresh_db("r4_bad_hb.db")
+    status, _ = _http(
+        'POST', '/api/machine/heartbeat',
+        _heartbeat(
+            identity_ok=False,
+            identity_reason="forced_test_mismatch",
+            ro_fs=True,
+            outbox={
+                "oldest_unsent_age_s": 999,
+                "backlog": 2,
+                "backlog_bytes": 200,
+                "cursor_ok": False,
+                "quarantined": 1,
+                "write_errors": 1,
+                "sink_errors": 0,
+                "dropped": 0,
+            }))
     assert status == 200
+    _, health = _http('GET', '/api/machine/health')
+    entry = health['lanes']['21']
+    assert entry['state'] == 'DEGRADED'
+    assert entry['identity_ok'] is False
+    assert entry['ro_fs'] is True
+    assert entry['outbox']['cursor_ok'] is False
+    assert 'identity' in entry['degraded_reasons']
+    assert 'read_only_filesystem' in entry['degraded_reasons']
+    assert 'outbox_cursor' in entry['degraded_reasons']
+
+
+def test_recovered_outbox_retry_is_not_permanent_degraded():
+    _fresh_db("r4_recovered_outbox.db")
+    status, _ = _http(
+        'POST', '/api/machine/heartbeat',
+        _heartbeat(
+            outbox={
+                "oldest_unsent_age_s": None,
+                "backlog": 0,
+                "backlog_bytes": 0,
+                "cursor_ok": True,
+                "quarantined": 0,
+                "write_errors": 7,
+                "sink_errors": 3,
+                "post_errors": 4,
+                "pending_writes": 0,
+                "dropped": 0,
+                "error": False,
+            }))
+    assert status == 200
+    _, health = _http('GET', '/api/machine/health')
+    entry = health['lanes']['21']
+    assert entry['state'] == 'DEGRADED'
+    assert entry['degraded_reasons'] == [
+        'scoring_node_topology_unhealthy']
+
+
+def test_live_pending_outbox_write_is_degraded():
+    _fresh_db("r4_pending_outbox.db")
+    status, _ = _http(
+        'POST', '/api/machine/heartbeat',
+        _heartbeat(
+            outbox={
+                "oldest_unsent_age_s": 1,
+                "backlog": 1,
+                "backlog_bytes": 100,
+                "cursor_ok": True,
+                "pending_writes": 1,
+                "write_errors": 1,
+                "sink_errors": 0,
+                "dropped": 0,
+                "error": False,
+            }))
+    assert status == 200
+    _, health = _http('GET', '/api/machine/health')
+    entry = health['lanes']['21']
+    assert entry['state'] == 'DEGRADED'
+    assert 'outbox_pending_writes' in entry['degraded_reasons']
+
+
+def test_replay_activity_cannot_renew_controller_lease():
+    _fresh_db("r4_distinct_lease.db")
+    status, _ = _http('POST', '/api/machine/cycles', {
+        'cycle': {'lane_id': 21, 'final_state': 'READY'}})
+    assert status == 200
+    _, health = _http('GET', '/api/machine/health')
+    assert health['lanes']['21']['activity_seen_at']
+    assert health['lanes']['21']['last_seen'] is None
+    assert health['lanes']['21']['state'] == 'DEGRADED'
+    assert health['lanes']['21']['degraded_reasons'] == [
+        'scoring_node_topology_unhealthy']
+
+
+def test_retired_controller_boot_replay_cannot_renew_lease():
+    _fresh_db("r4_retired_boot_replay.db")
+    status, _ = _http(
+        'POST', '/api/machine/heartbeat',
+        _heartbeat(controller_boot_id='boot-A', heartbeat_seq=1))
+    assert status == 200
+    status, _ = _http(
+        'POST', '/api/machine/heartbeat',
+        _heartbeat(controller_boot_id='boot-B', heartbeat_seq=1))
+    assert status == 200
+    try:
+        _http(
+            'POST', '/api/machine/heartbeat',
+            _heartbeat(controller_boot_id='boot-A', heartbeat_seq=2))
+        raise AssertionError("retired controller boot replay was accepted")
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 400
+        assert b"already retired" in exc.read()
+    _, health = _http('GET', '/api/machine/health')
+    assert health['lanes']['21']['controller_boot_id'] == 'boot-B'
+    assert health['lanes']['21']['heartbeat_seq'] == 1
+    assert health['lanes']['21']['state'] == 'DEGRADED'
+    assert health['lanes']['21']['degraded_reasons'] == [
+        'scoring_node_topology_unhealthy']
+
+
+def test_control_loop_stall_degrades_even_with_fresh_heartbeat():
+    from datetime import datetime, timedelta, timezone
+    _fresh_db("r4_loop_stall.db")
+    _http('POST', '/api/machine/heartbeat', _heartbeat())
+    old = machine_store._normalize_utc_iso(
+        datetime.now(timezone.utc)
+        - timedelta(seconds=machine_store.lease_window_s() + 5))
+    with closing(sqlite3.connect(machine_store.DB_PATH)) as conn:
+        conn.execute(
+            "UPDATE machine_leases SET control_loop_progress_at = ? "
+            "WHERE lane_id = 21", (old,))
+        conn.commit()
+    _, health = _http('GET', '/api/machine/health')
+    entry = health['lanes']['21']
+    assert entry['state'] == 'DEGRADED'
+    assert 'control_loop_stalled' in entry['degraded_reasons']
 
 
 # ── R3-10 robustness: hardened serial parsing ──────────────────────────────
@@ -301,7 +504,8 @@ def test_maintenance_overdue_emits_once_then_stays_maintenance():
     old = os.environ.get("WSL_MACHINE_MAINTENANCE_MAX_S")
     os.environ["WSL_MACHINE_MAINTENANCE_MAX_S"] = "10"
     try:
-        machine_store.set_maintenance(21, True, note="mech on it")
+        machine_store.set_maintenance(
+            21, True, note="mech on it", changed_by=17)
         assert machine_store.sweep_maintenance_overdue() == 0, "fresh: not due"
         future = datetime.now(timezone.utc) + timedelta(seconds=20)
         assert machine_store.sweep_maintenance_overdue(now=future) == 1, \
@@ -315,8 +519,8 @@ def test_maintenance_overdue_emits_once_then_stays_maintenance():
         assert any(e['event_type'] == 'maintenance_overdue'
                    for e in diag['events']), "the overdue event is on the lane"
         # clearing + re-arming maintenance resets the overdue latch
-        machine_store.set_maintenance(21, False)
-        machine_store.set_maintenance(21, True)
+        machine_store.set_maintenance(21, False, changed_by=17)
+        machine_store.set_maintenance(21, True, changed_by=17)
         assert machine_store.sweep_maintenance_overdue(now=future) == 1, \
             "a fresh maintenance window can alert again"
     finally:
@@ -324,6 +528,66 @@ def test_maintenance_overdue_emits_once_then_stays_maintenance():
             os.environ.pop("WSL_MACHINE_MAINTENANCE_MAX_S", None)
         else:
             os.environ["WSL_MACHINE_MAINTENANCE_MAX_S"] = old
+
+
+def test_maintenance_overdue_retries_after_diagnostics_disabled():
+    from datetime import datetime, timezone, timedelta
+    _fresh_db("r4_maint_retry.db")
+    old_limit = os.environ.get("WSL_MACHINE_MAINTENANCE_MAX_S")
+    old_diag = os.environ.get("WSL_MACHINE_DIAG")
+    os.environ["WSL_MACHINE_MAINTENANCE_MAX_S"] = "1"
+    try:
+        machine_store.set_maintenance(21, True, changed_by=17)
+        future = datetime.now(timezone.utc) + timedelta(seconds=2)
+        os.environ["WSL_MACHINE_DIAG"] = "0"
+        assert machine_store.sweep_maintenance_overdue(now=future) == 0
+        with closing(sqlite3.connect(machine_store.DB_PATH)) as conn:
+            latch = conn.execute(
+                "SELECT overdue_alerted_at FROM machine_leases "
+                "WHERE lane_id=21").fetchone()[0]
+        assert latch is None
+        os.environ["WSL_MACHINE_DIAG"] = "1"
+        assert machine_store.sweep_maintenance_overdue(now=future) == 1
+        _, health = _http('GET', '/api/machine/health')
+        assert health['lanes']['21']['maintenance_overdue'] is True
+    finally:
+        if old_limit is None:
+            os.environ.pop("WSL_MACHINE_MAINTENANCE_MAX_S", None)
+        else:
+            os.environ["WSL_MACHINE_MAINTENANCE_MAX_S"] = old_limit
+        if old_diag is None:
+            os.environ.pop("WSL_MACHINE_DIAG", None)
+        else:
+            os.environ["WSL_MACHINE_DIAG"] = old_diag
+
+
+def test_future_maintenance_timestamp_cannot_extend_alert_suppression():
+    from datetime import datetime, timezone, timedelta
+    _fresh_db("r4_maint_future.db")
+    old_limit = os.environ.get("WSL_MACHINE_MAINTENANCE_MAX_S")
+    os.environ["WSL_MACHINE_MAINTENANCE_MAX_S"] = "3600"
+    try:
+        machine_store.set_maintenance(21, True, changed_by=17)
+        future = datetime.now(timezone.utc) + timedelta(days=30)
+        with closing(sqlite3.connect(machine_store.DB_PATH)) as conn:
+            conn.execute(
+                "UPDATE machine_leases SET maintenance_changed_at = ? "
+                "WHERE lane_id = 21", (future.isoformat(),))
+            conn.commit()
+        assert machine_store.sweep_maintenance_overdue() == 1
+        diag = machine_store.lane_diagnostics(21)
+        events = [
+            event for event in diag['events']
+            if event['event_type'] == 'maintenance_overdue']
+        assert len(events) == 1
+        detail = json.loads(events[0]['detail_json'])
+        assert detail['timestamp_error'] == 'maintenance_timestamp_future'
+        assert detail['age_s'] is None
+    finally:
+        if old_limit is None:
+            os.environ.pop("WSL_MACHINE_MAINTENANCE_MAX_S", None)
+        else:
+            os.environ["WSL_MACHINE_MAINTENANCE_MAX_S"] = old_limit
 
 
 if __name__ == "__main__":

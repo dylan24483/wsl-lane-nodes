@@ -152,13 +152,24 @@ class _MCP23017:
         self.bus = bus
         self.addr = addr
         self._olat = [0x00, 0x00]   # cached OLATA/OLATB
-        # 1 = input, 0 = output (MCP convention)
-        bus.write_byte_data(addr, _IODIRA, dir_mask_a)
-        bus.write_byte_data(addr, _IODIRB, dir_mask_b)
-        bus.write_byte_data(addr, _GPPUA, pullup_a)
-        bus.write_byte_data(addr, _GPPUB, pullup_b)
+        # 1 = input, 0 = output (MCP convention). Configuration is part of
+        # the safety boundary: verify the live registers and fail construction
+        # if an I2C write was ignored or the device is not the expected part.
+        self._write_config(_IODIRA, dir_mask_a, "IODIRA")
+        self._write_config(_IODIRB, dir_mask_b, "IODIRB")
+        self._write_config(_GPPUA, pullup_a, "GPPUA")
+        self._write_config(_GPPUB, pullup_b, "GPPUB")
         bus.write_byte_data(addr, _OLATA, 0x00)
         bus.write_byte_data(addr, _OLATB, 0x00)
+
+    def _write_config(self, reg, value, name):
+        value &= 0xFF
+        self.bus.write_byte_data(self.addr, reg, value)
+        readback = self.bus.read_byte_data(self.addr, reg)
+        if readback != value:
+            raise IOError(
+                f"MCP@{self.addr:#04x} {name} readback "
+                f"{readback:#04x} != commanded {value:#04x}")
 
     def read_port(self, port):
         return self.bus.read_byte_data(self.addr, _GPIOA if port == 0 else _GPIOB)
@@ -241,12 +252,15 @@ class MachineIO:
         self.bus = smbus.SMBus(bus_id)
 
         # IODIR: 1=input. IN-A/IN-B all-inputs (0xFF); OUT-A all-outputs (0x00).
+        # Rev-D's external 47k Rpu network is the sole input bias. Enabling the
+        # MCP's nominal 100k GPPU would put it in parallel, invalidate the
+        # qualified sink-current/rise-time envelope, and hide an open Rpu.
         self.in_a = _MCP23017(self.bus, ADDR_IN_A, dir_mask_a=0xFF, dir_mask_b=0xFF,
-                              pullup_a=0xFF, pullup_b=0xFF)
+                              pullup_a=0x00, pullup_b=0x00)
         # IN-B (0x21): present on the Rev-B board (10th/manual/spare inputs). Initialized
         # so all 3 board MCP23017s are configured; not yet READ by the current FSM.
         self.in_b = _MCP23017(self.bus, ADDR_IN_B, dir_mask_a=0xFF, dir_mask_b=0xFF,
-                              pullup_a=0xFF, pullup_b=0xFF)
+                              pullup_a=0x00, pullup_b=0x00)
         self.out_a = _MCP23017(self.bus, ADDR_OUT_A, dir_mask_a=0x00, dir_mask_b=0x00)
         self.out_b = None
         if enable_pin_lamps:

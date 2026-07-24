@@ -26,6 +26,7 @@ from controller_daemon import (BoardController, BoardConfig, PlatformHealth,
                                _parse_board_revs, register_aux_role,
                                AUX_ROLE_HANDLERS)
 from cycle_control_8270 import State
+from diag_events import DiagWriter, JsonlSink, OutboxReplayer
 
 
 class FakeWriter:
@@ -49,6 +50,13 @@ class FakeShipper:
         return True
 
 
+class FakeBoardIdentity:
+    """Minimal board shape used by service-topology relay tests."""
+
+    def __init__(self, lane):
+        self.cfg = type("Cfg", (), {"lane": lane})()
+
+
 def mk_board(roles=None, writer=None, shipper=None, board_rev="revC"):
     return BoardController(
         BoardConfig(21, 1, "sim", 0, 0, board_rev=board_rev), sim=True,
@@ -57,7 +65,15 @@ def mk_board(roles=None, writer=None, shipper=None, board_rev="revC"):
 
 
 def hb(bc, extra=""):
-    bc.link.feed_line('{"ev":"hb","ok":1%s}' % extra)
+    fields = json.loads("{" + extra.lstrip(",") + "}") if extra else {}
+    if "up" not in fields:
+        fields["up"] = max(
+            getattr(bc, "_test_hb_up", 0),
+            int(bc.io.now() * 1000))
+    bc._test_hb_up = max(
+        getattr(bc, "_test_hb_up", 0), int(fields["up"]))
+    fields.update({"ev": "hb", "ok": 1, "bn": 123})
+    bc.link.feed_line(json.dumps(fields, separators=(",", ":")))
 
 
 def to_ready(bc):
@@ -195,18 +211,20 @@ def test_run_mismatch_promotes_to_fault_after_hold():
     bc.link.run("S")
     bc.link.stop("S")
     for i in range(5):     # firmware keeps showing S running (lost STOP)
-        bc.link.feed_line('{"ev":"hb","ok":1,"flt":"","up":%d,"run":1}'
+        bc.link.feed_line('{"ev":"hb","ok":1,"bn":123,"flt":"","up":%d,"run":1}'
                           % (100 + 250 * i))
         bc.tick()
     assert w.of_type("run_mismatch") == []   # hold time not yet elapsed
     bc.io.advance(4.0)
-    bc.link.feed_line('{"ev":"hb","ok":1,"flt":"","up":2000,"run":1}')
+    bc.link.feed_line(
+        '{"ev":"hb","ok":1,"bn":123,"flt":"","up":2000,"run":1}')
     bc.tick()
     evs = w.of_type("run_mismatch")
     assert len(evs) == 1 and evs[0].severity == "fault"
     assert "S" in evs[0].detail["motors"]
     # firmware reconciles -> recovered
-    bc.link.feed_line('{"ev":"hb","ok":1,"flt":"","up":2300,"run":0}')
+    bc.link.feed_line(
+        '{"ev":"hb","ok":1,"bn":123,"flt":"","up":2300,"run":0}')
     bc.tick()
     assert [e for e in w.of_type("recovered") if e.code == "run_mismatch"]
 
@@ -275,7 +293,7 @@ def test_uart_drops_event():
     assert len(evs) == 1 and evs[0].detail["lost"] == 3
 
 
-ID_LINE = ('{"ev":"id","fw":"phase8b-rp2040 v1.2.2","pcb":"%s","rid":%s,'
+ID_LINE = ('{"ev":"id","fw":"phase8b-rp2040 v1.2.3","bn":123,"pcb":"%s","rid":%s,'
            '"uid":"E66038B713952A31","build":"abc1234","cfg":"aa4ff333",'
            '"fi1":%d,"t":1234}')
 
@@ -417,13 +435,38 @@ def test_platform_storage_retention_probe():
                      "diag-20260721.jsonl"):
             with open(os.path.join(d, name), "w") as f:
                 f.write("x" * 4096)
-        w = FakeWriter()
+        sink = JsonlSink(d, flush_n=1, today=lambda: "20260721")
+        # Model the production linkage: once a replayer owns this JSONL, no
+        # byte-cap retention may delete data without cursor proof.
+        replayer = OutboxReplayer(d, "http://unused", sink=sink)
+        w = DiagWriter(sinks=[sink], enabled=True)
+        w.outbox = replayer
+        replayer._writer = w
+        recorded = []
+        original_emit = w.emit
+
+        def record_emit(event):
+            recorded.append(event)
+            return original_emit(event)
+
+        w.emit = record_emit
         ph = PlatformHealth([], w, dir_path=d)
         ph._poll_dir_retention()
         left = sorted(n for n in os.listdir(d) if n.endswith(".jsonl"))
-        assert "diag-20260721.jsonl" in left       # newest never pruned
-        assert len(left) < 3
-        evs = w.of_type("diag_storage_pruned")
+        assert len(left) == 3
+        assert sink.prune_deferred == 1
+
+        # A validated cursor at the newest file makes only its predecessors
+        # eligible and the coordinated cap probe can now prune them.
+        assert replayer._save_cursor({
+            "file": "diag-20260721.jsonl",
+            "pos": 0,
+        })
+        ph._poll_dir_retention()
+        left = sorted(n for n in os.listdir(d) if n.endswith(".jsonl"))
+        assert left == ["diag-20260721.jsonl"]
+        evs = [event for event in recorded
+               if event.event_type == "diag_storage_pruned"]
         assert len(evs) == 1 and evs[0].detail["pruned"]
     finally:
         os.environ.pop("WSL_DIAG_DIR_MAX_MB", None)
@@ -448,6 +491,28 @@ def test_platform_writer_drop_promotion():
     w.fake["sinks"] = {"HttpSink": {"dropped": 2}}
     ph._poll_writer_drops()
     assert len(w.of_type("http_sink_drops")) == 1
+
+    w.fake["sinks"]["JsonlSink"] = {
+        "write_errors": 2,
+        "retry_batches": 1,
+        "prune_deferred": 3,
+        "repaired_tails": 1,
+    }
+    w.fake["outbox"] = {
+        "corrupt_rows": 1,
+        "cursor_errors": 1,
+        "cursor_resets": 1,
+        "quarantine_errors": 1,
+        "post_errors": 1,
+        "repaired_tails": 1,
+    }
+    ph._poll_writer_drops()
+    assert len(w.of_type("diag_storage_error")) >= 5
+    assert len(w.of_type("diag_corrupt_row")) == 3
+    # Polling unchanged cumulative counters must not duplicate events.
+    count = len(w.events)
+    ph._poll_writer_drops()
+    assert len(w.events) == count
 
 
 def test_platform_heartbeat_cadence_decoupled_from_poll():
@@ -474,6 +539,75 @@ def test_platform_heartbeat_cadence_decoupled_from_poll():
     assert hb["n"] >= 3, f"heartbeat ran only {hb['n']}x — loop still waits poll_s"
     # ...while the platform probes stay throttled to poll_s (run ~once).
     assert plat["n"] == 1, f"platform probes not throttled to poll_s (ran {plat['n']}x)"
+
+
+def test_foreign_camera_health_is_typed_per_lane_and_recovers_once():
+    d = tempfile.mkdtemp(prefix="ph_drop_")
+    w = FakeWriter()
+    ph = PlatformHealth(
+        [FakeBoardIdentity(21), FakeBoardIdentity(22)], w, dir_path=d)
+    old_required = os.environ.get("WSL_PHASE8_REQUIRED_SERVICES")
+    os.environ["WSL_PHASE8_REQUIRED_SERVICES"] = (
+        "21=scoring;22=scoring")
+    try:
+        assert cd.health_drop.write_drop(
+            ph._health_drop_path, cd.SERVICE_CAMERA, {
+                "ok": False,
+                "camera": {
+                    "ok": False, "code": "frozen", "lanes": [21, 22]},
+                "platform": {"ok": True, "reasons": []},
+            })
+        ph._ship_foreign_health()
+        faults = w.of_type("camera_health")
+        assert [(ev.lane_id, ev.severity, ev.code) for ev in faults] == [
+            (21, "warn", "frozen"), (22, "warn", "frozen")]
+        ph._ship_foreign_health()
+        assert len(w.of_type("camera_health")) == 2
+
+        assert cd.health_drop.write_drop(
+            ph._health_drop_path, cd.SERVICE_CAMERA, {
+                "ok": True,
+                "camera": {
+                    "ok": True, "code": "healthy", "lanes": [21, 22]},
+                "platform": {"ok": True, "reasons": []},
+            })
+        ph._ship_foreign_health()
+        recovered = w.of_type("recovered")
+        assert [(ev.lane_id, ev.code) for ev in recovered] == [
+            (21, "camera_health"), (22, "camera_health")]
+        ph._ship_foreign_health()
+        assert len(w.of_type("recovered")) == 2
+    finally:
+        if old_required is None:
+            os.environ.pop("WSL_PHASE8_REQUIRED_SERVICES", None)
+        else:
+            os.environ["WSL_PHASE8_REQUIRED_SERVICES"] = old_required
+
+
+def test_dormant_foreign_service_is_not_reported_as_a_live_fault():
+    d = tempfile.mkdtemp(prefix="ph_drop_dormant_")
+    w = FakeWriter()
+    ph = PlatformHealth(
+        [FakeBoardIdentity(21), FakeBoardIdentity(22)], w, dir_path=d)
+    old_required = os.environ.get("WSL_PHASE8_REQUIRED_SERVICES")
+    os.environ["WSL_PHASE8_REQUIRED_SERVICES"] = (
+        "21=controller;22=controller")
+    try:
+        assert cd.health_drop.write_drop(
+            ph._health_drop_path, cd.SERVICE_CAMERA, {
+                "ok": False,
+                "camera": {
+                    "ok": False, "code": "frozen", "lanes": [21, 22]},
+                "platform": {"ok": True, "reasons": []},
+            })
+        ph._ship_foreign_health()
+        assert w.of_type("camera_health") == []
+        assert w.of_type("health_drop_stale") == []
+    finally:
+        if old_required is None:
+            os.environ.pop("WSL_PHASE8_REQUIRED_SERVICES", None)
+        else:
+            os.environ["WSL_PHASE8_REQUIRED_SERVICES"] = old_required
 
 
 if __name__ == "__main__":

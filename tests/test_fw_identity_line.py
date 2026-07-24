@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__),
 from rp2040_link import RP2040Link
 
 
-ID_LINE = ('{"ev":"id","fw":"phase8b-rp2040 v1.2.2","pcb":"revD","rid":1,'
+ID_LINE = ('{"ev":"id","fw":"phase8b-rp2040 v1.2.3","bn":123,"pcb":"revD","rid":1,'
            '"uid":"E66038B713952A31","build":"10c3a26-dirty","cfg":"aa4ff333",'
            '"fi1":0,"t":1234}')
 
@@ -36,7 +36,8 @@ def test_id_line_stored_sanitized_and_recorded():
     link, _ = mk_link()
     link.feed_line(ID_LINE)
     ident = link.fw_identity()
-    assert ident["fw"] == "phase8b-rp2040 v1.2.2"
+    assert ident["fw"] == "phase8b-rp2040 v1.2.3"
+    assert ident["bn"] == 123
     assert ident["pcb"] == "revD"
     assert ident["rid"] == 1
     assert ident["uid"] == "E66038B713952A31"
@@ -64,7 +65,7 @@ def test_hb_rid_field_stored():
 
 def test_fi1_bench_image_flagged():
     link, _ = mk_link()
-    link.feed_line('{"ev":"id","fw":"phase8b-rp2040 v1.2.2","pcb":"revD",'
+    link.feed_line('{"ev":"id","fw":"phase8b-rp2040 v1.2.3","bn":123,"pcb":"revD",'
                    '"rid":1,"uid":"X","build":"bench","cfg":"c","fi1":1}')
     assert link.fw_identity()["fi1"] is True
     recs = [r for r in link.drain_diag_records() if r["kind"] == "fw_identity"]

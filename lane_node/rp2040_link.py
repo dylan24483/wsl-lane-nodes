@@ -300,8 +300,16 @@ class RP2040Link:
         # invalidates ALL cached identity/capability/extrema state. None until
         # a v1.2.3 firmware is heard; older images simply never trip it.
         self._boot_nonce = None
+        # A boot/hb observation (not an ID line by itself) confirms that the
+        # nonce belongs to the currently live firmware stream. This prevents a
+        # buffered/stale ID response from establishing trust on its own after a
+        # daemon restart.
+        self._confirmed_boot_nonce = None
         # R3-5 identity-after-reboot re-request bookkeeping
-        self._identity_boot_seen = False       # a boot happened => id expected
+        # A daemon/service restart normally leaves the Pico powered, so
+        # identity acquisition must begin at PROCESS start rather than waiting
+        # for a firmware boot event that may never arrive.
+        self._identity_boot_seen = True        # current process requires an id
         self._identity_req_at = None           # monotonic of the last id request
         self._identity_retries = 0             # re-requests this reboot
         self._identity_missing_reported = False  # 'missing' returned once
@@ -461,7 +469,23 @@ class RP2040Link:
             resends = []  # run-state resync commands — sent AFTER the lock is released
             records = []  # typed diag records — pushed AFTER the lock is released
             with self._lock:
-                self._last_hb = self.now()
+                if kind == "hb":
+                    self._validate_hb(ev)
+                elif kind == "rp_ok":
+                    if self._status_bit(ev.get("v")) is None:
+                        raise ValueError(
+                            "rp_ok v must be JSON bool or integer 0/1")
+                elif kind == "boot":
+                    if ("rp_ok" in ev
+                            and self._status_bit(ev.get("rp_ok")) is None):
+                        raise ValueError(
+                            "boot rp_ok must be JSON bool or integer 0/1")
+                    if ("wdt_reset" in ev
+                            and self._status_bit(ev.get("wdt_reset")) is None):
+                        raise ValueError(
+                            "boot wdt_reset must be JSON bool or integer 0/1")
+                elif kind == "flt" and not isinstance(ev.get("code"), str):
+                    raise ValueError("fault code must be a string")
                 if kind == "flt":
                     # An explicit firmware fault => NOT healthy, immediately — even if the
                     # paired rp_ok:0 line is delayed or dropped on a lossy UART. Cleared by
@@ -469,18 +493,21 @@ class RP2040Link:
                     self._fault = ev.get("code", "")
                     self._rp_ok = False
                 else:
-                    if "v" in ev:
-                        self._rp_ok = bool(ev["v"])
-                    elif "ok" in ev:
-                        self._rp_ok = bool(ev["ok"])
-                    elif "rp_ok" in ev:
-                        self._rp_ok = bool(ev["rp_ok"])
-                    if "flt" in ev:
+                    if kind == "rp_ok":
+                        self._rp_ok = self._status_bit(ev["v"])
+                    elif kind == "hb":
+                        self._rp_ok = self._status_bit(ev["ok"])
+                    elif kind == "boot" and "rp_ok" in ev:
+                        self._rp_ok = self._status_bit(ev["rp_ok"])
+                    if kind == "hb" and "flt" in ev:
                         self._fault = ev.get("flt", "")
                     if kind == "boot":
                         self._on_boot(ev, notes, records)
                     elif kind == "hb":
                         self._on_hb(ev, notes, resends, records)
+                        # ACK/boot/rp_ok/fault traffic proves bytes are moving,
+                        # not that the supervised heartbeat loop is alive.
+                        self._last_hb = self.now()
             for log_fn, msg, args in notes:
                 log_fn(msg, *args)
             for line in resends:   # _send takes the lock itself; must run unlocked
@@ -501,14 +528,19 @@ class RP2040Link:
             # Stored (fw_identity()) + promoted to a typed 'fw_identity' record
             # so the daemon can persist it and alert on mismatches (board rev
             # vs configured BoardConfig revision, unknown build, FI-1 image).
+            fi1_raw = ev.get("fi1")
+            fi1 = (bool(fi1_raw)
+                   if isinstance(fi1_raw, (bool, int))
+                   and fi1_raw in (False, True, 0, 1) else None)
             ident = {
-                "fw":    (str(ev.get("fw", ""))[:80] or None),
-                "pcb":   (str(ev.get("pcb", ""))[:16] or None),
-                "rid":   self._num(ev, "rid"),
-                "uid":   (str(ev.get("uid", ""))[:32] or None),
-                "build": (str(ev.get("build", ""))[:64] or None),
-                "cfg":   (str(ev.get("cfg", ""))[:32] or None),
-                "fi1":   bool(ev.get("fi1")),
+                "fw":    self._identity_text(ev.get("fw"), 80),
+                "bn":    self._identity_uint(ev.get("bn"), nonzero=True),
+                "pcb":   self._identity_text(ev.get("pcb"), 16),
+                "rid":   self._identity_uint(ev.get("rid")),
+                "uid":   self._identity_text(ev.get("uid"), 32),
+                "build": self._identity_text(ev.get("build"), 64),
+                "cfg":   self._identity_text(ev.get("cfg"), 32),
+                "fi1":   fi1,
                 "t_fw":  self._num(ev, "t"),
             }
             with self._lock:
@@ -527,11 +559,12 @@ class RP2040Link:
                     self._rp_ok = False
                     self.fw_clock.resync()
                 self._identity = ident
-                # R3-5: a fresh id line clears the after-reboot re-request state
-                # (and any latched 'missing') — identity is current again.
-                self._identity_missing_reported = False
-                self._identity_req_at = None
-                self._identity_retries = 0
+                # Acquisition clears only when the ID is complete and its
+                # nonce has also been observed on a current boot/heartbeat.
+                if self._identity_status_locked()[0]:
+                    self._identity_missing_reported = False
+                    self._identity_req_at = None
+                    self._identity_retries = 0
             if nonce_reboot:
                 log.error("RP2040 boot nonce changed on id line (0x%08x) — a "
                           "reboot was missed; identity refreshed from this line "
@@ -562,6 +595,51 @@ class RP2040Link:
             return v
         return None
 
+    @staticmethod
+    def _identity_text(value, max_len):
+        """Strict identity-string sanitizer."""
+        if not isinstance(value, str):
+            return None
+        value = value.strip()
+        return value[:max_len] if value else None
+
+    @staticmethod
+    def _identity_uint(value, *, nonzero=False):
+        """Return an exact uint32 JSON integer, else None (bool excluded)."""
+        if not isinstance(value, int) or isinstance(value, bool):
+            return None
+        if value < (1 if nonzero else 0) or value > 0xFFFFFFFF:
+            return None
+        return int(value)
+
+    @staticmethod
+    def _status_bit(value):
+        """Strict JSON boolean/0-or-1 decoder; strings never become true."""
+        if isinstance(value, bool):
+            return bool(value)
+        if (isinstance(value, int) and not isinstance(value, bool)
+                and value in (0, 1)):
+            return bool(value)
+        return None
+
+    def _validate_hb(self, ev):
+        """Validate the only record allowed to renew heartbeat liveness."""
+        if self._status_bit(ev.get("ok")) is None:
+            raise ValueError("heartbeat ok must be JSON bool or integer 0/1")
+        if self._identity_uint(ev.get("up")) is None:
+            raise ValueError("heartbeat up must be uint32")
+        if "flt" in ev and not isinstance(ev.get("flt"), str):
+            raise ValueError("heartbeat flt must be a string")
+        for key in ("drp", "in", "run", "tap", "rd", "ep",
+                    "v5", "v5n", "v5x", "rid"):
+            if key in ev and self._identity_uint(ev.get(key)) is None:
+                raise ValueError(f"heartbeat {key} must be uint32")
+        if "bn" in ev:
+            if self._identity_uint(ev.get("bn"), nonzero=True) is None:
+                raise ValueError("heartbeat bn must be a nonzero uint32")
+        elif self._boot_nonce is not None:
+            raise ValueError("heartbeat omitted the known boot nonce")
+
     def _mask_danger(self, mask, bit):
         # hb "in" bits are debounced ASSERTED levels. Map level -> danger flag the
         # same way cam edges do: trip_edge 'f' => asserted == in-window (default,
@@ -569,7 +647,7 @@ class RP2040Link:
         lvl = bool(mask & bit)
         return lvl if self._trip == "f" else not lvl
 
-    def _invalidate_identity_cache(self):
+    def _invalidate_identity_cache(self, *, clear_nonce=False):
         """R3-5: drop ALL cached identity / capability / extrema state so a
         post-reboot image can never be read through the previous image's
         identity (revision, build/config hashes, RID, MAXRUN, tap masks, V5
@@ -587,6 +665,9 @@ class RP2040Link:
         self._in_mask = None
         self._run_mask = None
         self._v11 = None
+        self._confirmed_boot_nonce = None
+        if clear_nonce:
+            self._boot_nonce = None
         self._identity_boot_seen = True
         self._identity_req_at = None
         self._identity_retries = 0
@@ -599,16 +680,22 @@ class RP2040Link:
         uptime regression were both missed. Returns False on the first nonce
         seen (nothing to compare) and when the firmware sends no bn (older
         image). Never raises."""
-        bn = self._num(ev, "bn")
+        bn = self._identity_uint(ev.get("bn"), nonzero=True)
         if bn is None:
-            return False
-        try:
-            bn = int(bn) & 0xFFFFFFFF
-        except Exception:
             return False
         prev = self._boot_nonce
         self._boot_nonce = bn
         return prev is not None and bn != prev
+
+    def _confirm_boot_nonce(self, ev):
+        """Confirm a nonce observed on a boot/heartbeat line."""
+        bn = self._identity_uint(ev.get("bn"), nonzero=True)
+        if bn is not None and bn == self._boot_nonce:
+            self._confirmed_boot_nonce = bn
+            if self._identity_status_locked()[0]:
+                self._identity_missing_reported = False
+                self._identity_req_at = None
+                self._identity_retries = 0
 
     def _on_boot(self, ev, notes, records=None):
         rebooted = self._last_up is not None    # we had heartbeats before this boot
@@ -622,10 +709,11 @@ class RP2040Link:
         # fields repopulate below, and the id line is re-requested so a firmware
         # that still speaks v1.2.2 re-announces. What it CANNOT do is keep
         # reading as the old image.
-        self._invalidate_identity_cache()
+        self._invalidate_identity_cache(clear_nonce=True)
         # Cache this boot's nonce so a LATER hb (whose boot line we DID see) is
         # only flagged if the nonce changes again.
         self._nonce_reboot(ev)
+        self._confirm_boot_nonce(ev)
         # fw ms clock restarted at 0 -> the learned offset is garbage. Resync on
         # EVERY boot event (first boot included: offset may predate a missed boot).
         self.fw_clock.resync()
@@ -730,6 +818,7 @@ class RP2040Link:
                           "REBOOTED (boot line missed, uptime did not regress); "
                           "identity cache invalidated + safe-state relatch; "
                           "operator re-arm required", (self._boot_nonce,)))
+        self._confirm_boot_nonce(ev)
         # v1.2 hb fields (R2-11): tap levels, ring depth/epoch, VCC_5V window
         # extrema. Store-only at ~4 Hz — thresholding/alerting is the daemon's
         # job (v5_stats/tap_levels/ring_epoch accessors), so the hb path stays
@@ -801,7 +890,9 @@ class RP2040Link:
                 # cached identity/capability state (the nonce path already did
                 # this above; this covers OLDER firmware that sends no "bn").
                 # Harmless if the nonce path just ran (double invalidation).
-                self._invalidate_identity_cache()
+                self._invalidate_identity_cache(clear_nonce=True)
+                self._nonce_reboot(ev)
+                self._confirm_boot_nonce(ev)
                 notes.append((log.error,
                               "RP2040 uptime regressed %s -> %s ms: firmware REBOOTED "
                               "(boot line missed) — identity cache invalidated + "
@@ -1087,7 +1178,7 @@ class RP2040Link:
             return self._ring_depth
 
     def fw_identity(self):
-        """The firmware's v1.2.2 "id" line (R2-6), sanitized: {"fw","pcb","rid",
+        """The firmware identity line, sanitized: {"fw","bn","pcb","rid",
         "uid","build","cfg","fi1","t_fw"} — or None if never heard (<= v1.2.1
         firmware). pcb is the STRAP-read board revision ("revD"/"legacy"/
         "future"/"unknown"), independent of what image is flashed; fi1 True
@@ -1103,22 +1194,66 @@ class RP2040Link:
             return self._rid
 
     def identity_ok(self):
-        """True once the firmware's id line has been heard AND is still valid
-        for the current boot (R3-5: a reboot clears it). False before the
-        first id line, and after any reboot until the id is re-heard."""
+        """True only for a complete, non-FI1 identity bound to this boot nonce."""
         with self._lock:
-            return self._identity is not None
+            return self._identity_status_locked()[0]
+
+    def _identity_status_locked(self):
+        """Return the protocol-level ``(ok, reason)`` with ``_lock`` held."""
+        ident = self._identity
+        if ident is None:
+            return False, ("identity_missing" if self._identity_missing_reported
+                           else "identity_not_received")
+        for key in ("fw", "pcb", "uid", "build", "cfg"):
+            if not ident.get(key):
+                return False, f"{key}_missing"
+        if ident.get("rid") is None:
+            return False, "rid_missing"
+        if ident.get("fi1") is None:
+            return False, "fi1_missing"
+        if ident.get("fi1") is True:
+            return False, "fi1_image"
+        nonce = ident.get("bn")
+        if nonce is None:
+            return False, "boot_nonce_missing"
+        if self._boot_nonce is None or nonce != self._boot_nonce:
+            return False, "boot_nonce_mismatch"
+        if nonce != self._confirmed_boot_nonce:
+            return False, "boot_nonce_unconfirmed"
+        return True, None
+
+    def identity_status(self):
+        """Public protocol-level identity verdict as ``(ok, reason)``."""
+        with self._lock:
+            return self._identity_status_locked()
+
+    def parse_health(self):
+        """Snapshot parser/typed-record loss counters for health reporting."""
+        with self._lock:
+            parse_errors = int(self.parse_errors)
+            quarantined = len(self._quar_lines)
+        with self._dr_lock:
+            record_drops = int(self.diag_record_drops)
+            pending_records = len(self._diag_records)
+        return {
+            "parse_errors": parse_errors,
+            "quarantined_lines": quarantined,
+            "diag_record_drops": record_drops,
+            "pending_diag_records": pending_records,
+        }
 
     def identity_missing(self):
         """True once poll_identity has exhausted its re-request budget after a
         reboot with no id line (a firmware too old to answer ID, or a dead
         UART). Latched until the next successful id line / reboot."""
         with self._lock:
-            return self._identity_missing_reported and self._identity is None
+            return (self._identity_missing_reported
+                    and not self._identity_status_locked()[0])
 
     def poll_identity(self, now=None):
-        """Off-tick driver for the R3-5 identity re-request. Issues an ID
-        request after a reboot and retries on a bounded schedule; returns
+        """Off-tick driver for identity acquisition. Issues an ID request from
+        process start and after every reboot, then retries on a bounded
+        schedule; returns
         'missing' EXACTLY ONCE when the budget is spent with no id line (the
         daemon turns that into an 'fw_identity_missing' event + ARM inhibit),
         else None. Never raises. Safe to call every platform-health tick."""
@@ -1128,7 +1263,7 @@ class RP2040Link:
         result = None
         try:
             with self._lock:
-                if (self._identity is not None
+                if (self._identity_status_locked()[0]
                         or not self._identity_boot_seen
                         or self._identity_missing_reported):
                     return None
@@ -1185,7 +1320,7 @@ class RP2040Link:
         self._reader.start()
         # Round-3: learn the board's identity even when WE are the one that
         # (re)started — the firmware only volunteers `id` at its own boot.
-        self.request_identity()
+        self.poll_identity(now=self._now())
 
     def _read_loop(self):
         while not self._stop:
@@ -1195,6 +1330,10 @@ class RP2040Link:
                 log.warning("RP2040 serial read error: %s", e)
                 time.sleep(0.5)
                 continue
+            # The serial reader exists regardless of the optional diagnostics
+            # platform thread, so it owns the retry cadence as a backstop.
+            # poll_identity is lock-bounded and sends only every retry interval.
+            self.poll_identity()
             if not data:
                 continue
             self._ingest(data)
@@ -1260,7 +1399,7 @@ if __name__ == "__main__":
     link = RP2040Link(now=fake_now, hb_timeout=1.0)
     link.feed_line('{"ev":"boot","fw":"x","wdt_reset":0,"rp_ok":0}')
     check(link.rp_ok() is False, "boot sets rp_ok False")
-    check(link.is_alive(), "boot counts as a sign of life")
+    check(not link.is_alive(), "boot cannot renew supervised heartbeat liveness")
     link.feed_line('{"ev":"hb","ok":1,"flt":"","up":10}')
     check(link.rp_ok() is True and link.health_ok(), "hb ok:1 -> rp_ok True + health_ok")
     link.feed_line('{"ev":"rp_ok","v":0}')
@@ -1335,12 +1474,12 @@ if __name__ == "__main__":
     # [F] a bare firmware fault marks unhealthy without a paired rp_ok:0 (P2 fix) ----
     print("[F] fault -> unhealthy")
     link = RP2040Link(now=fake_now, hb_timeout=1.0)
-    link.feed_line('{"ev":"hb","ok":1}')
+    link.feed_line('{"ev":"hb","ok":1,"up":10}')
     check(link.health_ok(), "(setup) healthy after hb ok:1")
     link.feed_line('{"ev":"flt","code":"motion_timeout","m":"S"}')   # NO paired rp_ok:0
     check(not link.health_ok(), "bare flt event -> NOT healthy")
     check(link.rp_ok() is False, "flt also clears rp_ok")
-    link.feed_line('{"ev":"hb","ok":1,"flt":""}')                    # post-CLEAR heartbeat
+    link.feed_line('{"ev":"hb","ok":1,"flt":"","up":20}')          # post-CLEAR heartbeat
     check(link.health_ok(), "hb ok:1 flt:'' clears the fault -> healthy again")
 
     # [G] v1.1.1: boot v11 posture + hb run-mask reconciliation ---------------

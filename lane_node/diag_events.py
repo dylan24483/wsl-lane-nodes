@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import queue
 import socket
@@ -90,6 +91,8 @@ DEFAULT_OUTBOX_POLL_S = 10.0
 OUTBOX_BATCH_MAX = 200          # lines read + POSTed per replay pass segment
 CURSOR_FILENAME = "outbox_cursor.json"
 QUARANTINE_FILENAME = "outbox_quarantine.jsonl"   # R3-1c: server-rejected rows
+QUARANTINE_STATE_FILENAME = "outbox_quarantine_state.json"
+QUARANTINE_CLEAR_AUDIT_FILENAME = "outbox_quarantine_clear.jsonl"
 # Quarantine growth bound (review fix): the quarantine file is append-only on
 # every server reject, its 'outbox_' prefix is NOT covered by JsonlSink._prune
 # (prefix 'diag-'), and a lost-ack replay of a mixed accepted+rejected segment
@@ -106,6 +109,20 @@ def _reject_nonfinite(const):
     -Infinity in a stored line are treated as corruption, not silently
     turned into float('nan') that then poisons downstream math."""
     raise ValueError(f"non-finite JSON constant {const!r}")
+
+
+def _fsync_parent(path):
+    """Persist a created/replaced directory entry on the deployed POSIX host."""
+    if os.name != "posix":
+        return
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(directory, flags)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
 
 DEFAULT_QUEUE_MAX = 1000
 DEFAULT_DIR = "./diag_logs"
@@ -223,8 +240,15 @@ def _json_safe(v, _depth=0):
     """Coerce an arbitrary value into something json.dumps can always take.
     Bounded in string length, container size and nesting depth so one
     pathological detail dict can't bloat the pipe."""
-    if v is None or isinstance(v, bool) or isinstance(v, (int, float)):
+    if v is None or isinstance(v, bool) or isinstance(v, int):
         return v
+    if isinstance(v, float):
+        # Python's json encoder emits NaN/Infinity by default even though they
+        # are not JSON.  Those tokens used to land in the durable file and the
+        # strict replayer then consumed them as corrupt rows.  Keep numeric
+        # fields numeric when finite; represent a non-finite observation as
+        # unknown instead of writing invalid JSON.
+        return v if math.isfinite(v) else None
     if isinstance(v, str):
         return v if len(v) <= _MAX_STR else v[:_MAX_STR] + "...(truncated)"
     if _depth < _MAX_DEPTH:
@@ -320,6 +344,29 @@ def make_event(lane_id, severity, event_type, code=None, detail=None, *,
                      code=code, detail=detail)
 
 
+def _outbox_row_age_s(row, now_epoch):
+    """Return age from an immutable timestamp carried by an outbox row."""
+    if not isinstance(row, dict):
+        raise ValueError("outbox row is not an object")
+    raw = None
+    for key in ("created_at", "ts_utc", "ended_at", "started_at"):
+        if key in row:
+            raw = row.get(key)
+            break
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError("outbox row has no immutable timestamp")
+    text = raw.strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    stamp = datetime.fromisoformat(text)
+    if stamp.tzinfo is None or stamp.utcoffset() is None:
+        raise ValueError("outbox timestamp is not timezone-aware")
+    age = float(now_epoch) - stamp.timestamp()
+    if age < -300.0:
+        raise ValueError("outbox timestamp is implausibly in the future")
+    return max(0.0, age)
+
+
 # ---- the bounded, never-blocking queue -----------------------------------------
 class DiagQueue:
     """Hard-capped producer queue. emit() NEVER blocks and NEVER raises: a full
@@ -370,8 +417,10 @@ class JsonlSink:
     UTC date), pruned to `max_files`, and BATCHED: rows buffer in memory and hit
     the disk in one open/write per flush (every `flush_n` events or `flush_s`
     seconds — the SD-wear rule). All methods swallow their own exceptions and
-    count failures in `write_errors`; rows in a failed batch are dropped, never
-    retried into an unbounded backlog."""
+    count failures in `write_errors`.  A failed batch remains resident and is
+    retried; the buffer is capped at one flush batch, so later arrivals are
+    explicitly counted in `dropped` rather than silently growing memory or
+    replacing the oldest durable candidates."""
 
     FILE_PREFIX = "diag-"
     FILE_SUFFIX = ".jsonl"
@@ -387,21 +436,54 @@ class JsonlSink:
         self._now = now or time.monotonic
         # UTC date for rotation (injectable in tests)
         self._today = today or (lambda: time.strftime("%Y%m%d", time.gmtime()))
+        # Shared with OutboxReplayer when this sink is the durable outbox.
+        # Appends and rollover-tail repair must never race: a partial line in
+        # the CURRENT daily file may simply be an append in progress, while a
+        # partial line in an INACTIVE (older) file is crash residue that must
+        # be sealed or it will block every newer daily file forever.
+        self._io_lock = threading.RLock()
         self._buf = []
         self._last_flush = self._now()
         self._last_day = None
         self.write_errors = 0
+        self.retry_batches = 0
+        self.dropped = 0
+        self.prune_deferred = 0
+        self.repaired_tails = 0
+        # Enabled by DiagWriter/OutboxReplayer when these files are the durable
+        # delivery queue. Local-log-only users retain ordinary max_files
+        # pruning because no acknowledgement cursor exists for them.
+        self.protect_unacked = False
         self.written = 0
+        # A crash during append can leave a non-newline tail. Seal it now so
+        # the next valid record cannot be concatenated into—and lost inside—
+        # that corrupt fragment. The replayer will quarantine the sealed row.
+        try:
+            self._repair_tail(os.path.join(
+                self.dir,
+                f"{self.FILE_PREFIX}{self._today()}{self.FILE_SUFFIX}"))
+        except Exception:
+            self.write_errors += 1
 
     def emit(self, row):
         """Buffer one JSON-safe dict; flush when the batch is full. Never raises."""
         try:
-            self._buf.append(row)
+            # If a prior full batch failed, retry it before accepting another
+            # row.  This retains the oldest-first ordering and bounds memory.
             if len(self._buf) >= self.flush_n:
                 self.flush()
+            if len(self._buf) >= self.flush_n:
+                self.dropped += 1
+                return False
+            self._buf.append(_json_safe(row))
+            if len(self._buf) >= self.flush_n:
+                self.flush()
+            return True
         except Exception:
             self.write_errors += 1
+            self.dropped += 1
             log.debug("JsonlSink.emit swallowed", exc_info=True)
+            return False
 
     def maybe_flush(self):
         """Time-based flush check (called each writer loop). Never raises."""
@@ -413,42 +495,215 @@ class JsonlSink:
 
     def flush(self):
         """Write the whole buffer in ONE append-open (SD-wear rule). Never raises."""
-        rows, self._buf = self._buf, []
-        self._last_flush = self._now()
-        if not rows:
-            return
-        try:
-            day = self._today()
-            os.makedirs(self.dir, exist_ok=True)
-            path = os.path.join(self.dir, f"{self.FILE_PREFIX}{day}{self.FILE_SUFFIX}")
-            lines = []
-            for r in rows:
-                try:
-                    lines.append(json.dumps(r, separators=(",", ":")))
-                except Exception:
-                    lines.append(json.dumps({"unserializable": str(type(r).__name__)}))
-            with open(path, "a", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
-            self.written += len(rows)
-            if day != self._last_day:          # new file appeared -> prune old ones
-                self._last_day = day
-                self._prune()
-        except Exception:
-            self.write_errors += 1
-            log.debug("JsonlSink.flush dropped %d rows", len(rows), exc_info=True)
+        with self._io_lock:
+            self._last_flush = self._now()
+            rows = list(self._buf)
+            if not rows:
+                return True
+            try:
+                day = self._today()
+                os.makedirs(self.dir, exist_ok=True)
+                path = os.path.join(
+                    self.dir, f"{self.FILE_PREFIX}{day}{self.FILE_SUFFIX}")
+                if not self._repair_tail(path):
+                    raise OSError("could not seal partial JSONL tail")
+                lines = [json.dumps(_json_safe(r), separators=(",", ":"),
+                                    allow_nan=False) for r in rows]
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write("\n".join(lines) + "\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+                _fsync_parent(path)
+                # Clear only after the append completed.  A partial/failed
+                # append can duplicate rows on retry, which is safe because
+                # every outbox row has a delivery identity and the server
+                # deduplicates it.
+                del self._buf[:len(rows)]
+                self.written += len(rows)
+                if day != self._last_day:      # new file appeared -> prune old
+                    self._last_day = day
+                    self._prune()
+                return True
+            except Exception:
+                self.write_errors += 1
+                self.retry_batches += 1
+                log.debug("JsonlSink.flush retained %d rows for retry",
+                          len(rows), exc_info=True)
+                return False
+
+    @property
+    def pending_writes(self):
+        return len(self._buf)
+
+    def _repair_tail(self, path):
+        """Seal a prior partial append with a newline. Returns False only when
+        a non-newline tail was found but could not be sealed."""
+        with self._io_lock:
+            try:
+                size = os.path.getsize(path)
+                if size <= 0:
+                    return True
+                with open(path, "rb") as f:
+                    f.seek(-1, os.SEEK_END)
+                    if f.read(1) == b"\n":
+                        return True
+                with open(path, "ab") as f:
+                    f.write(b"\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+                _fsync_parent(path)
+                self.repaired_tails += 1
+                return True
+            except FileNotFoundError:
+                return True
+            except Exception:
+                self.write_errors += 1
+                return False
+
+    def seal_inactive_tail(self, name):
+        """Seal a torn tail only when ``name`` is not this sink's current UTC
+        daily file.
+
+        OutboxReplayer calls this only for a file that has a newer successor.
+        The shared lock serializes the proof and repair with ``flush()``.  A
+        standalone replayer without its writer's sink deliberately cannot use
+        this operation: failing closed is preferable to appending a newline to
+        a line an uncoordinated writer may still be extending.
+        """
+        if (not isinstance(name, str) or os.path.basename(name) != name
+                or not name.startswith(self.FILE_PREFIX)
+                or not name.endswith(self.FILE_SUFFIX)):
+            return False
+        with self._io_lock:
+            active = f"{self.FILE_PREFIX}{self._today()}{self.FILE_SUFFIX}"
+            if name == active:
+                return False
+            return self._repair_tail(os.path.join(self.dir, name))
 
     def _prune(self):
-        """Keep at most max_files diag-*.jsonl (dates sort lexically). Best-effort."""
+        """Keep at most max_files daily logs without deleting unacked outbox
+        data. In outbox mode only files strictly older than the persisted
+        cursor are proven fully resolved and eligible for removal."""
+        with self._io_lock:
+            try:
+                names = sorted(
+                    n for n in os.listdir(self.dir)
+                    if n.startswith(self.FILE_PREFIX)
+                    and n.endswith(self.FILE_SUFFIX))
+                excess = max(0, len(names) - self.max_files)
+                if not excess:
+                    return
+                candidates = names[:-self.max_files]
+                if self.protect_unacked:
+                    cursor = self._validated_cursor_file(names)
+                    # Missing/invalid cursor proves nothing was delivered.
+                    candidates = (
+                        [name for name in candidates if name < cursor]
+                        if cursor is not None else [])
+                    if len(candidates) < excess:
+                        self.prune_deferred += excess - len(candidates)
+                for old in candidates[:excess]:
+                    try:
+                        path = os.path.join(self.dir, old)
+                        os.remove(path)
+                        _fsync_parent(path)
+                    except Exception:
+                        self.prune_deferred += 1
+            except Exception:
+                self.prune_deferred += 1
+
+    def _validated_cursor_file(self, names):
+        """Return the cursor filename only after full boundary validation."""
         try:
-            names = sorted(n for n in os.listdir(self.dir)
-                           if n.startswith(self.FILE_PREFIX) and n.endswith(self.FILE_SUFFIX))
-            for old in names[:-self.max_files]:
-                try:
-                    os.remove(os.path.join(self.dir, old))
-                except Exception:
-                    pass
+            with open(os.path.join(self.dir, CURSOR_FILENAME),
+                      encoding="utf-8") as f:
+                raw = json.load(f)
+            if (not isinstance(raw, dict)
+                    or not isinstance(raw.get("file"), str)
+                    or raw["file"] not in names
+                    or not isinstance(raw.get("pos"), int)
+                    or isinstance(raw.get("pos"), bool)
+                    or raw["pos"] < 0):
+                return None
+            cursor_path = os.path.join(self.dir, raw["file"])
+            size = os.path.getsize(cursor_path)
+            if raw["pos"] > size:
+                return None
+            if raw["pos"] == 0:
+                return raw["file"]
+            with open(cursor_path, "rb") as cursor_file:
+                cursor_file.seek(raw["pos"] - 1)
+                return (raw["file"]
+                        if cursor_file.read(1) == b"\n" else None)
         except Exception:
-            pass
+            return None
+
+    def prune_to_size(self, max_bytes):
+        """Prune daily files to a byte cap without deleting unacked data.
+
+        In outbox mode, only files strictly older than a validated persisted
+        cursor are eligible. The cursor file and every newer file are retained
+        even when that means the cap cannot be met. Local-log-only mode keeps
+        the active and newest daily files. Returns an observable result dict;
+        failures and an unmet cap increment ``prune_deferred``.
+        """
+        result = {
+            "pruned": [],
+            "freed_bytes": 0,
+            "total_bytes": 0,
+            "cap_bytes": max(0, int(max_bytes)),
+            "deferred": False,
+        }
+        with self._io_lock:
+            try:
+                names = sorted(
+                    n for n in os.listdir(self.dir)
+                    if n.startswith(self.FILE_PREFIX)
+                    and n.endswith(self.FILE_SUFFIX))
+                sizes = {}
+                for name in names:
+                    sizes[name] = os.path.getsize(
+                        os.path.join(self.dir, name))
+                total = sum(sizes.values())
+                result["total_bytes"] = total
+                if total <= result["cap_bytes"] or not names:
+                    return result
+
+                if self.protect_unacked:
+                    cursor = self._validated_cursor_file(names)
+                    candidates = ([name for name in names if name < cursor]
+                                  if cursor is not None else [])
+                else:
+                    active = (
+                        f"{self.FILE_PREFIX}{self._today()}{self.FILE_SUFFIX}")
+                    protected = {active, names[-1]}
+                    candidates = [
+                        name for name in names if name not in protected]
+
+                for name in candidates:
+                    if total <= result["cap_bytes"]:
+                        break
+                    path = os.path.join(self.dir, name)
+                    try:
+                        os.remove(path)
+                        _fsync_parent(path)
+                        freed = sizes[name]
+                        total -= freed
+                        result["freed_bytes"] += freed
+                        result["pruned"].append(name)
+                    except Exception:
+                        result["deferred"] = True
+
+                result["total_bytes"] = total
+                if total > result["cap_bytes"]:
+                    result["deferred"] = True
+                if result["deferred"]:
+                    self.prune_deferred += 1
+                return result
+            except Exception:
+                self.prune_deferred += 1
+                result["deferred"] = True
+                return result
 
 
 class HttpSink:
@@ -551,7 +806,7 @@ class HttpSink:
 
     def _urllib_post(self, url, payload):
         import urllib.request
-        data = json.dumps(payload).encode("utf-8")
+        data = json.dumps(_json_safe(payload), allow_nan=False).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.token:
             headers["X-Lane-Token"] = self.token
@@ -583,7 +838,7 @@ class OutboxReplayer:
 
     def __init__(self, dir_path, base_url, *, post=None, token=None,
                  poll_s=None, timeout=DEFAULT_HTTP_TIMEOUT_S,
-                 cursor_path=None, on_quarantine=None):
+                 cursor_path=None, on_quarantine=None, sink=None):
         self.dir = dir_path or DEFAULT_DIR
         self.base_url = str(base_url or "").strip().rstrip("/")
         tok = token if token is not None else os.environ.get(TOKEN_ENV, "")
@@ -595,6 +850,10 @@ class OutboxReplayer:
         self.cursor_path = cursor_path or os.path.join(self.dir,
                                                        CURSOR_FILENAME)
         self.quarantine_path = os.path.join(self.dir, QUARANTINE_FILENAME)
+        self.quarantine_state_path = os.path.join(
+            self.dir, QUARANTINE_STATE_FILENAME)
+        self.quarantine_clear_audit_path = os.path.join(
+            self.dir, QUARANTINE_CLEAR_AUDIT_FILENAME)
         # Quarantine growth bound (review fix): cap + rotate the file, and dedup
         # already-quarantined rows by delivery identity so a lost-ack replay
         # can't re-write/re-emit them.
@@ -608,44 +867,249 @@ class OutboxReplayer:
         # standalone (tests).
         self._on_quarantine = on_quarantine
         self._post = post or self._urllib_post
+        # DiagWriter supplies these links so heartbeat health includes the
+        # persistence leg, not merely the HTTP tailer. They remain optional for
+        # standalone use and focused tests.
+        self._sink = sink
+        if self._sink is not None:
+            self._sink.protect_unacked = True
+        self._writer = None
         self.shipped = 0        # rows POSTed + acked (cursor advanced past)
         self.skipped = 0        # rows without delivery identity (not replayable)
-        self.quarantined = 0    # R3-1c: rows the server per-record-rejected
+        self.quarantined = 0    # unresolved durable data-loss latch/count
         self.cycles_shipped = 0  # R3-3: durable machine_cycles rows shipped
+        self.cycles_quarantined = 0
+        self.corrupt_rows = 0
         self.post_errors = 0    # failed POST attempts (cursor NOT advanced)
+        self.cursor_errors = 0
+        self.cursor_resets = 0
+        self.quarantine_errors = 0
+        self.scan_errors = 0
         self.errors = 0         # swallowed internal errors
+        self._loss_seq = 0
+        self._cleared_through_loss_seq = 0
+        self._restore_quarantine_state()
         self._stop_ev = threading.Event()
         self._wake = threading.Event()
         self._thread = None
+
+    # -- durable quarantine latch -----------------------------------------
+    def _quarantine_artifact_records(self):
+        """Yield parseable evidence from both bounded quarantine generations."""
+        for path in (self.quarantine_path + ".1", self.quarantine_path):
+            try:
+                with open(path, encoding="utf-8") as source:
+                    for line in source:
+                        try:
+                            rec = json.loads(
+                                line, parse_constant=_reject_nonfinite)
+                            if isinstance(rec, dict):
+                                yield rec
+                        except Exception:
+                            # A corrupt evidence row is itself unresolved loss.
+                            yield {"reason": "quarantine_evidence_corrupt"}
+            except FileNotFoundError:
+                continue
+            except OSError:
+                self.quarantine_errors += 1
+                self.errors += 1
+
+    def _persist_quarantine_state(self):
+        """Atomically persist the unresolved loss count before cursor advance."""
+        try:
+            os.makedirs(self.dir, exist_ok=True)
+            tmp = self.quarantine_state_path + ".tmp"
+            payload = {
+                "version": 2,
+                "unresolved_quarantined": int(self.quarantined),
+                "unresolved_cycles_quarantined": int(
+                    self.cycles_quarantined),
+                "last_loss_seq": int(self._loss_seq),
+                "cleared_through_loss_seq": int(
+                    self._cleared_through_loss_seq),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            with open(tmp, "w", encoding="utf-8") as state_file:
+                json.dump(payload, state_file, separators=(",", ":"),
+                          sort_keys=True, allow_nan=False)
+                state_file.flush()
+                os.fsync(state_file.fileno())
+            os.replace(tmp, self.quarantine_state_path)
+            _fsync_parent(self.quarantine_state_path)
+            return True
+        except Exception:
+            self.quarantine_errors += 1
+            self.errors += 1
+            return False
+
+    def _restore_quarantine_state(self):
+        """Restore a loss latch and recent dedupe keys across daemon restarts."""
+        records = list(self._quarantine_artifact_records())
+        artifact_count = len(records)
+        artifact_cycles = 0
+        artifact_max_seq = 0
+        for rec in records:
+            row = rec.get("row") if isinstance(rec, dict) else None
+            loss_seq = rec.get("loss_seq") if isinstance(rec, dict) else None
+            if (isinstance(loss_seq, int) and not isinstance(loss_seq, bool)
+                    and loss_seq > 0):
+                artifact_max_seq = max(artifact_max_seq, loss_seq)
+            if isinstance(row, dict):
+                key = self._quar_key(row)
+                if key is not None:
+                    self._remember_quarantined(key)
+                if row.get("_kind") == "cycle":
+                    artifact_cycles += 1
+        state = None
+        try:
+            with open(self.quarantine_state_path, encoding="utf-8") as source:
+                candidate = json.load(
+                    source, parse_constant=_reject_nonfinite)
+            q = candidate.get("unresolved_quarantined")
+            cq = candidate.get("unresolved_cycles_quarantined")
+            last_seq = candidate.get("last_loss_seq")
+            cleared = candidate.get("cleared_through_loss_seq")
+            if (isinstance(candidate, dict) and candidate.get("version") == 2
+                    and isinstance(q, int) and not isinstance(q, bool)
+                    and q >= 0 and isinstance(cq, int)
+                    and not isinstance(cq, bool) and 0 <= cq <= q
+                    and isinstance(last_seq, int)
+                    and not isinstance(last_seq, bool) and last_seq >= 0
+                    and isinstance(cleared, int)
+                    and not isinstance(cleared, bool)
+                    and 0 <= cleared <= last_seq):
+                state = (q, cq, last_seq, cleared)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            self.quarantine_errors += 1
+            self.errors += 1
+        if state is None:
+            self.quarantined = artifact_count
+            self.cycles_quarantined = artifact_cycles
+            self._loss_seq = artifact_max_seq or artifact_count
+            if artifact_count:
+                self._persist_quarantine_state()
+        else:
+            self.quarantined = state[0]
+            self.cycles_quarantined = state[1]
+            self._loss_seq = state[2]
+            self._cleared_through_loss_seq = state[3]
+            # Crash-window recovery: evidence is fsynced before the state
+            # replace. Any artifact sequence newer than the state watermark is
+            # unresolved even when a prior audited clear made the old count 0.
+            for rec in records:
+                seq = rec.get("loss_seq") if isinstance(rec, dict) else None
+                if (isinstance(seq, int) and not isinstance(seq, bool)
+                        and seq > self._loss_seq):
+                    self.quarantined += 1
+                    row = rec.get("row")
+                    if isinstance(row, dict) and row.get("_kind") == "cycle":
+                        self.cycles_quarantined += 1
+                    self._loss_seq = max(self._loss_seq, seq)
+            if self._loss_seq != state[2]:
+                self._persist_quarantine_state()
+
+    def _next_loss_seq(self):
+        self._loss_seq += 1
+        return self._loss_seq
+
+    def clear_quarantine_latch(self, actor, reason):
+        """Audited operator acknowledgement; evidence files are never deleted."""
+        if (not isinstance(actor, str) or not actor.strip()
+                or len(actor.strip()) > 128):
+            raise ValueError("actor must be 1..128 characters")
+        if (not isinstance(reason, str) or not reason.strip()
+                or len(reason.strip()) > 500):
+            raise ValueError("reason must be 1..500 characters")
+        prior = (self.quarantined, self.cycles_quarantined)
+        record = {
+            "cleared_at": datetime.now(timezone.utc).isoformat(),
+            "actor": actor.strip(),
+            "reason": reason.strip(),
+            "quarantined": prior[0],
+            "cycles_quarantined": prior[1],
+            "cleared_through_loss_seq": self._loss_seq,
+        }
+        os.makedirs(self.dir, exist_ok=True)
+        with open(self.quarantine_clear_audit_path, "a",
+                  encoding="utf-8") as audit:
+            audit.write(json.dumps(
+                record, separators=(",", ":"), sort_keys=True,
+                allow_nan=False) + "\n")
+            audit.flush()
+            os.fsync(audit.fileno())
+        _fsync_parent(self.quarantine_clear_audit_path)
+        self.quarantined = 0
+        self.cycles_quarantined = 0
+        self._cleared_through_loss_seq = self._loss_seq
+        if not self._persist_quarantine_state():
+            self.quarantined, self.cycles_quarantined = prior
+            raise OSError("quarantine latch state could not be persisted")
+        return record
 
     # -- cursor ------------------------------------------------------------
     def _load_cursor(self):
         try:
             with open(self.cursor_path, encoding="utf-8") as f:
                 c = json.load(f)
-            if isinstance(c, dict) and isinstance(c.get("file"), str):
-                return {"file": c["file"], "pos": int(c.get("pos", 0))}
+            pos = c.get("pos") if isinstance(c, dict) else None
+            if (isinstance(c, dict) and isinstance(c.get("file"), str)
+                    and isinstance(pos, int) and not isinstance(pos, bool)):
+                return {"file": c["file"], "pos": pos}
         except Exception:
             pass
         return None
+
+    def _cursor_valid(self, cur, files):
+        """True only for a current file, in-bounds byte offset, and JSONL
+        record boundary."""
+        try:
+            if not isinstance(cur, dict) or cur.get("file") not in files:
+                return False
+            pos = cur.get("pos")
+            if not isinstance(pos, int) or isinstance(pos, bool) or pos < 0:
+                return False
+            path = os.path.join(self.dir, cur["file"])
+            size = os.path.getsize(path)
+            if pos > size:
+                return False
+            if pos == 0:
+                return True
+            with open(path, "rb") as f:
+                f.seek(pos - 1)
+                return f.read(1) == b"\n"
+        except Exception:
+            return False
 
     def _save_cursor(self, cur):
         try:
             os.makedirs(self.dir, exist_ok=True)
             tmp = self.cursor_path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(cur, f)
+                json.dump(cur, f, allow_nan=False)
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, self.cursor_path)
+            _fsync_parent(self.cursor_path)
+            return True
         except Exception:
+            self.cursor_errors += 1
             self.errors += 1
+            return False
 
     def _outbox_files(self):
-        """Sorted diag-*.jsonl names (dates sort lexically). Never raises."""
+        """Sorted diag-*.jsonl names (dates sort lexically).
+
+        A genuinely absent directory is an empty outbox. Other enumeration
+        failures propagate to the replay/health guards and are reported as
+        errors instead of being misreported as a healthy empty queue.
+        """
         try:
             return sorted(n for n in os.listdir(self.dir)
                           if n.startswith(JsonlSink.FILE_PREFIX)
                           and n.endswith(JsonlSink.FILE_SUFFIX))
-        except Exception:
+        except FileNotFoundError:
             return []
 
     # -- one replay pass ---------------------------------------------------
@@ -660,7 +1124,8 @@ class OutboxReplayer:
             if not files:
                 return 0
             cur = self._load_cursor()
-            if cur is None or cur["file"] not in files:
+            had_cursor = os.path.exists(self.cursor_path)
+            if not self._cursor_valid(cur, files):
                 # R3-3 (Codex round-3): a missing/invalid cursor (first run, or
                 # the cursor's file was pruned) recovers from the OLDEST file,
                 # NOT the newest. The old code started at files[-1], which
@@ -669,17 +1134,33 @@ class OutboxReplayer:
                 # server dedupes replays, so re-scanning from the oldest loses
                 # nothing and strands nothing.
                 cur = {"file": files[0], "pos": 0}
+                if had_cursor:
+                    self.cursor_errors += 1
+                    self.cursor_resets += 1
+                    self._save_cursor(cur)
             while True:
-                rows, kind, new_pos, eof = self._read_batch(cur["file"],
-                                                            cur["pos"])
+                rows, kind, new_pos, eof, blocked = self._read_batch(
+                    cur["file"], cur["pos"])
                 if rows:
-                    if not self._ship(kind, rows):
+                    ok, delivered = self._ship(kind, rows)
+                    if not ok:
                         self.post_errors += 1
                         return acked          # cursor stays; retry next pass
-                    self.shipped += len(rows)
+                    self.shipped += delivered
                     acked += len(rows)
                 cur = {"file": cur["file"], "pos": new_pos}
                 self._save_cursor(cur)
+                if blocked:
+                    # A crash just before UTC rollover can leave yesterday's
+                    # final JSON object without a newline.  Waiting is correct
+                    # for the actively-written current file, but waiting on an
+                    # older file forever strands every newer file.  Ask the
+                    # linked JsonlSink to prove (under its append lock) that
+                    # this is no longer its active daily file and seal it.
+                    # Standalone/uncoordinated replayers fail closed.
+                    if self._seal_rollover_tail(cur["file"], files):
+                        continue
+                    return acked
                 if not eof:
                     continue                  # more in this file (or a kind run)
                 # at EOF: roll to the next file if one exists, else done
@@ -694,13 +1175,26 @@ class OutboxReplayer:
             log.debug("OutboxReplayer.replay_once swallowed", exc_info=True)
             return acked
 
+    def _seal_rollover_tail(self, name, files):
+        """Repair a blocking tail only on a non-newest file and only through
+        the writer-linked sink's append/repair coordination."""
+        try:
+            if files.index(name) + 1 >= len(files):
+                return False
+            seal = getattr(self._sink, "seal_inactive_tail", None)
+            return bool(seal(name)) if callable(seal) else False
+        except Exception:
+            self.errors += 1
+            return False
+
     def _read_batch(self, name, pos):
         """Read up to OUTBOX_BATCH_MAX replayable rows of ONE kind ('event' or
         'cycle') from `name` starting at byte `pos`. Returns
-        (rows, kind, new_pos, eof). A record of a different kind ends the run
+        (rows, kind, new_pos, eof, blocked). A record of a different kind ends the run
         WITHOUT being consumed (new_pos points at it, eof False) so the next
         read picks it up. Partial trailing lines (a flush in progress) are left
-        for the next pass. Identity-less legacy lines are skipped + counted."""
+        for the next pass. Corrupt complete and identity-less rows are durably
+        quarantined before the cursor can cross their bytes."""
         rows = []
         kind = None
         path = os.path.join(self.dir, name)
@@ -711,73 +1205,137 @@ class OutboxReplayer:
                     before = f.tell()
                     line = f.readline()
                     if not line:
-                        return rows, kind, before, True
+                        return rows, kind, before, True, False
                     if not line.endswith(b"\n"):
-                        return rows, kind, before, True    # partial — wait
+                        return rows, kind, before, False, True
                     try:
                         row = json.loads(line.decode("utf-8"),
                                          parse_constant=_reject_nonfinite)
-                    except Exception:
-                        continue                    # corrupt line: skip (consumed)
+                    except Exception as exc:
+                        if rows:
+                            return rows, kind, before, False, False
+                        if not self._quarantine_local(
+                                name, before, line, "corrupt_json",
+                                error=str(exc)):
+                            return rows, kind, pos, False, True
+                        self.corrupt_rows += 1
+                        return rows, kind, f.tell(), False, False
                     if not (isinstance(row, dict) and row.get("source_id")
                             and row.get("boot_id")
                             and row.get("seq") is not None):
+                        if rows:
+                            return rows, kind, before, False, False
+                        if not self._quarantine_local(
+                                name, before, line,
+                                "missing_delivery_identity", row=row):
+                            return rows, kind, pos, False, True
                         self.skipped += 1
-                        continue                    # identity-less: consumed
+                        return rows, kind, f.tell(), False, False
                     rk = "cycle" if row.get("_kind") == "cycle" else "event"
                     if kind is None:
                         kind = rk
                     elif rk != kind:
                         # kind boundary: leave this line for the next read
-                        return rows, kind, before, False
+                        return rows, kind, before, False, False
                     rows.append(row)
-                return rows, kind, f.tell(), False
+                return rows, kind, f.tell(), False, False
         except FileNotFoundError:
-            return rows, kind, pos, True
+            return rows, kind, pos, True, False
         except Exception:
             self.errors += 1
-            return rows, kind, pos, True
+            return rows, kind, pos, False, True
 
     def _ship(self, kind, rows):
         """Ship one homogeneous run. Events go as one batch to the events
         endpoint; cycles go one-at-a-time to the cycles endpoint (R3-3 durable
-        cycle path). Returns True only if the WHOLE run was accepted (2xx) so
-        the cursor advances past exactly what shipped."""
+        cycle path). Returns (resolved, delivered_count); resolved is true only
+        if every row was accepted/deduplicated or durably quarantined."""
         if kind == "cycle":
-            ok = True
+            delivered = 0
             for row in rows:
-                if not self._post_cycle(row):
-                    ok = False
-                    break
-                self.cycles_shipped += 1
-            return ok
+                ok, was_delivered = self._post_cycle(row)
+                if not ok:
+                    return False, delivered
+                if was_delivered:
+                    delivered += 1
+            self.cycles_shipped += delivered
+            return True, delivered
         return self._post_batch(rows)
 
     def _post_cycle(self, row):
         try:
             body = {k: v for k, v in row.items() if k != "_kind"}
-            self._post(self.base_url + HttpSink.CYCLES_PATH, {"cycle": body})
-            return True
+            resp = self._post(self.base_url + HttpSink.CYCLES_PATH,
+                              {"cycle": body})
+            if not isinstance(resp, dict):
+                return False, False
+            status = resp.get("_http_status", 200)
+            accepted = resp.get("accepted")
+            duplicates = resp.get("duplicates")
+            rejected = resp.get("rejected")
+            if (not isinstance(status, int) or not 200 <= status < 300
+                    or resp.get("ok") is not True
+                    or not isinstance(accepted, int)
+                    or isinstance(accepted, bool) or accepted < 0
+                    or not isinstance(duplicates, int)
+                    or isinstance(duplicates, bool) or duplicates < 0
+                    or not isinstance(rejected, list)
+                    or accepted + duplicates + len(rejected) != 1):
+                return False, False
+            if rejected:
+                rec = rejected[0]
+                if (not isinstance(rec, dict)
+                        or rec.get("index") != 0
+                        or not self._quarantine([row], rejected)):
+                    return False, False
+                return True, False
+            if resp.get("id") is None:
+                return False, False
+            return True, True
         except Exception:
-            return False
+            return False, False
 
     def _post_batch(self, rows):
         try:
             resp = self._post(self.base_url + HttpSink.EVENTS_PATH,
                               {"events": rows})
-            # R3-1c: the server per-record-rejects poison records (2xx with a
-            # 'rejected' list). The POST is a cursor-ack either way — the run
-            # advances — but the rejected rows are quarantined (file + counter
-            # + 'outbox_quarantine' event) instead of replaying forever. A
-            # None response (a fake, or a server that predates the field) means
-            # "no per-record info" — nothing to quarantine.
-            if isinstance(resp, dict):
-                rejected = resp.get("rejected")
-                if rejected:
-                    self._quarantine(rows, rejected)
-            return True
+            # HTTP 2xx alone is not an acknowledgement. Require a complete,
+            # internally-consistent disposition for every row.
+            if not isinstance(resp, dict) or resp.get("ok") is not True:
+                return False, 0
+            status = resp.get("_http_status", 200)
+            if (not isinstance(status, int) or isinstance(status, bool)
+                    or not 200 <= status < 300):
+                return False, 0
+            accepted = resp.get("accepted")
+            inserted = resp.get("inserted")
+            duplicates = resp.get("duplicates")
+            rejected = resp.get("rejected")
+            counts = (accepted, duplicates)
+            if (any(not isinstance(v, int) or isinstance(v, bool) or v < 0
+                    for v in counts)
+                    or not isinstance(rejected, list)):
+                return False, 0
+            if inserted is not None and (
+                    not isinstance(inserted, int) or isinstance(inserted, bool)
+                    or inserted != accepted):
+                return False, 0
+            reject_indices = []
+            for rec in rejected:
+                idx = rec.get("index") if isinstance(rec, dict) else None
+                if (not isinstance(idx, int) or isinstance(idx, bool)
+                        or idx < 0 or idx >= len(rows)):
+                    return False, 0
+                reject_indices.append(idx)
+            if len(set(reject_indices)) != len(reject_indices):
+                return False, 0
+            if accepted + duplicates + len(rejected) != len(rows):
+                return False, 0
+            if rejected and not self._quarantine(rows, rejected):
+                return False, 0
+            return True, accepted + duplicates
         except Exception:
-            return False
+            return False, 0
 
     def _quar_key(self, row):
         """Delivery identity of a row, or None if it lacks one."""
@@ -802,15 +1360,66 @@ class OutboxReplayer:
         try:
             if os.path.getsize(self.quarantine_path) > self._quar_max_bytes:
                 os.replace(self.quarantine_path, self.quarantine_path + ".1")
+                _fsync_parent(self.quarantine_path + ".1")
         except FileNotFoundError:
             pass
         except Exception:
             self.errors += 1
 
+    def _quarantine_local(self, name, offset, raw, reason, *,
+                          error=None, row=None):
+        """Durably quarantine one locally unreadable/unreplayable complete
+        JSONL row. The stable file/offset key prevents repeated writes while a
+        cursor-save or later POST is retried in this process."""
+        key = ("local", str(name), int(offset), str(reason))
+        if key in self._quar_seen_set:
+            return self._persist_quarantine_state()
+        raw_text = None
+        try:
+            raw_text = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+        except Exception:
+            raw_text = repr(raw)
+        rec = {
+            "loss_seq": self._next_loss_seq(),
+            "error": str(error or reason)[:_MAX_STR],
+            "reason": str(reason),
+            "source_file": str(name),
+            "byte_offset": int(offset),
+            "raw": _json_safe(raw_text),
+            "row": _json_safe(row) if row is not None else None,
+        }
+        try:
+            os.makedirs(self.dir, exist_ok=True)
+            line = json.dumps(rec, separators=(",", ":"), allow_nan=False)
+            with open(self.quarantine_path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            _fsync_parent(self.quarantine_path)
+            self._remember_quarantined(key)
+            self.quarantined += 1
+            if isinstance(row, dict) and row.get("_kind") == "cycle":
+                self.cycles_quarantined += 1
+            if not self._persist_quarantine_state():
+                return False
+            self._rotate_quarantine_if_big()
+            try:
+                if self._on_quarantine is not None:
+                    lane = row.get("lane_id") if isinstance(row, dict) else None
+                    self._on_quarantine(1, lane, [str(reason)])
+            except Exception:
+                self.errors += 1
+            return True
+        except Exception:
+            self.quarantine_errors += 1
+            self.errors += 1
+            return False
+
     def _quarantine(self, rows, rejected):
         """Append server-rejected rows to the quarantine file, count them, and
         notify the daemon (which emits the 'outbox_quarantine' event). Never
-        raises — a quarantine-write failure must not stall the cursor.
+        raises. Returns True only when every new quarantine record was written;
+        a write failure leaves the outbox cursor in place for retry.
 
         Bounded (review fix): rows already quarantined on a prior (lost-ack)
         replay are skipped by delivery identity so the file and the
@@ -819,6 +1428,7 @@ class OutboxReplayer:
         sample_lane = None
         written = 0
         errors = []
+        success = True
         try:
             recs = []
             for r in rejected:
@@ -834,20 +1444,43 @@ class OutboxReplayer:
                     lid = row.get("lane_id")
                     if isinstance(lid, int):
                         sample_lane = lid
-                recs.append((key, {"error": r.get("error"), "row": row}))
-                errors.append(r.get("error"))
+                recs.append((key, {
+                    "loss_seq": self._next_loss_seq(),
+                    "error": r.get("error"), "row": row},
+                             r.get("error")))
             if recs:
-                self.quarantined += len(recs)
                 os.makedirs(self.dir, exist_ok=True)
                 with open(self.quarantine_path, "a", encoding="utf-8") as f:
-                    for key, rec in recs:
-                        f.write(json.dumps(rec, default=str) + "\n")
-                        if key is not None:
-                            self._remember_quarantined(key)
-                written = len(recs)
+                    for key, rec, rec_error in recs:
+                        f.write(json.dumps(_json_safe(rec), separators=(",", ":"),
+                                           allow_nan=False) + "\n")
+                    # The cursor may advance only after the quarantine evidence
+                    # is stable. Remember/count records after this barrier, not
+                    # while they are still buffered.
+                    f.flush()
+                    os.fsync(f.fileno())
+                _fsync_parent(self.quarantine_path)
+                for key, rec, rec_error in recs:
+                    if key is not None:
+                        self._remember_quarantined(key)
+                    self.quarantined += 1
+                    row = rec.get("row") if isinstance(rec, dict) else None
+                    if isinstance(row, dict) and row.get("_kind") == "cycle":
+                        self.cycles_quarantined += 1
+                    written += 1
+                    errors.append(rec_error)
+                if not self._persist_quarantine_state():
+                    success = False
                 self._rotate_quarantine_if_big()
+            elif rejected:
+                # A retry may find every delivery identity in the evidence
+                # dedupe set after an earlier state-write failure. Do not let
+                # the cursor cross until the durable latch is now persisted.
+                success = self._persist_quarantine_state()
         except Exception:
+            self.quarantine_errors += 1
             self.errors += 1
+            success = False
         # Notify OUTSIDE the file write so a callback bug can't lose the count —
         # but only for rows NEWLY quarantined this pass (a re-replayed segment
         # whose rows were all already quarantined emits nothing).
@@ -856,67 +1489,146 @@ class OutboxReplayer:
                 self._on_quarantine(written, sample_lane, errors)
         except Exception:
             self.errors += 1
+        return success
 
     def _urllib_post(self, url, payload):
+        import urllib.error
         import urllib.request
-        data = json.dumps(payload).encode("utf-8")
+        data = json.dumps(_json_safe(payload), allow_nan=False).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if self.token:
             headers["X-Lane-Token"] = self.token
         req = urllib.request.Request(url, data=data, method="POST",
                                      headers=headers)
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            body = resp.read(65536)
-            status = int(getattr(resp, "status", 200) or 200)
-            if status >= 300:
-                raise RuntimeError(f"HTTP {status} from {url}")
-            try:
-                return json.loads(body.decode("utf-8")) if body else None
-            except Exception:
-                return None
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                body = resp.read(65536)
+                status = int(getattr(resp, "status", 200) or 200)
+        except urllib.error.HTTPError as exc:
+            # Preserve the status/body for strict acknowledgement validation.
+            # Non-2xx responses fail closed in the caller and retain the cursor.
+            status = int(exc.code)
+            body = exc.read(65536)
+        try:
+            parsed = json.loads(body.decode("utf-8")) if body else {}
+        except Exception:
+            parsed = {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+        parsed["_http_status"] = status
+        return parsed
 
     def health(self):
         """R3-3 outbox health telemetry: oldest-unsent age, backlog depth,
         cursor health, quarantined count. Best-effort; never raises. Feeds the
         controller heartbeat (R3-2) and can be event-emitted on threshold."""
+        base = {
+            "oldest_unsent_age_s": None,
+            "backlog": 0,
+            "backlog_bytes": 0,
+            "cursor_ok": False,
+            "quarantined": self.quarantined,
+            "corrupt_rows": self.corrupt_rows,
+            "skipped": self.skipped,
+            "shipped": self.shipped,
+            "cycles_shipped": self.cycles_shipped,
+            "cycles_quarantined": self.cycles_quarantined,
+            "post_errors": self.post_errors,
+            "cursor_errors": self.cursor_errors,
+            "cursor_resets": self.cursor_resets,
+            "quarantine_errors": self.quarantine_errors,
+            "scan_errors": self.scan_errors,
+            "errors": self.errors,
+            "write_errors": int(getattr(self._sink, "write_errors", 0) or 0),
+            "sink_errors": int(getattr(self._writer, "sink_errors", 0) or 0),
+            "dropped": (int(getattr(self._sink, "dropped", 0) or 0)
+                        + int(getattr(
+                            getattr(self._writer, "queue", None),
+                            "drops", 0) or 0)),
+            "pending_writes": int(
+                getattr(self._sink, "pending_writes", 0) or 0),
+            "prune_deferred": int(
+                getattr(self._sink, "prune_deferred", 0) or 0),
+            "repaired_tails": int(
+                getattr(self._sink, "repaired_tails", 0) or 0),
+            "error": False,
+        }
         try:
             files = self._outbox_files()
             cur = self._load_cursor()
-            cursor_ok = (not files) or (cur is not None
-                                        and cur.get("file") in files)
+            cursor_exists = os.path.exists(self.cursor_path)
+            cursor_ok = (not files and not cursor_exists) \
+                or self._cursor_valid(cur, files)
             backlog_bytes = 0
+            backlog = 0
             oldest_age = None
+            timestamp_error = False
+            scan_error = False
             if files:
                 start_idx, start_pos = 0, 0
-                if cur and cur.get("file") in files:
+                if cursor_ok and cur and cur.get("file") in files:
                     start_idx = files.index(cur["file"])
                     start_pos = int(cur.get("pos", 0) or 0)
                 for i in range(start_idx, len(files)):
                     path = os.path.join(self.dir, files[i])
                     try:
                         size = os.path.getsize(path)
-                        remaining = size - (start_pos if i == start_idx else 0)
+                        offset = start_pos if i == start_idx else 0
+                        remaining = max(0, size - offset)
                         if remaining > 0:
                             backlog_bytes += remaining
-                            if oldest_age is None:
-                                oldest_age = max(
-                                    0.0, time.time() - os.path.getmtime(path))
+                            with open(path, "rb") as f:
+                                f.seek(offset)
+                                if oldest_age is None and not timestamp_error:
+                                    first = f.readline()
+                                    if first.endswith(b"\n"):
+                                        try:
+                                            row = json.loads(
+                                                first.decode("utf-8"),
+                                                parse_constant=_reject_nonfinite)
+                                            oldest_age = _outbox_row_age_s(
+                                                row, time.time())
+                                        except Exception:
+                                            # A complete unacked row whose
+                                            # immutable age cannot be proven is
+                                            # a health fault, not "young".
+                                            timestamp_error = True
+                                    else:
+                                        # A partial active append is transient.
+                                        # The sink seals it before any later
+                                        # append can refresh this mtime.
+                                        oldest_age = max(
+                                            0.0,
+                                            time.time()
+                                            - os.path.getmtime(path))
+                                    f.seek(offset)
+                                while True:
+                                    chunk = f.read(65536)
+                                    if not chunk:
+                                        break
+                                    backlog += chunk.count(b"\n")
                     except OSError:
-                        continue
-            return {
+                        self.scan_errors += 1
+                        scan_error = True
+                        break
+            if timestamp_error or scan_error:
+                cursor_ok = False
+                base["error"] = True
+            base.update({
                 "oldest_unsent_age_s": (round(oldest_age, 1)
                                         if oldest_age is not None else None),
+                "backlog": backlog,
                 "backlog_bytes": backlog_bytes,
                 "cursor_ok": bool(cursor_ok),
-                "quarantined": self.quarantined,
-                "shipped": self.shipped,
-                "skipped": self.skipped,
-                "cycles_shipped": self.cycles_shipped,
-                "post_errors": self.post_errors,
-            }
+                "scan_errors": self.scan_errors,
+            })
+            return base
         except Exception:
-            return {"cursor_ok": False, "quarantined": self.quarantined,
-                    "error": True}
+            self.scan_errors += 1
+            base["cursor_ok"] = False
+            base["scan_errors"] = self.scan_errors
+            base["error"] = True
+            return base
 
     # -- lifecycle ---------------------------------------------------------
     def start(self):
@@ -951,10 +1663,76 @@ class OutboxReplayer:
             self._wake.clear()
 
     def stats(self):
-        return {"shipped": self.shipped, "skipped": self.skipped,
-                "quarantined": self.quarantined,
-                "cycles_shipped": self.cycles_shipped,
-                "post_errors": self.post_errors, "errors": self.errors}
+        return {
+            "shipped": self.shipped,
+            "skipped": self.skipped,
+            "quarantined": self.quarantined,
+            "corrupt_rows": self.corrupt_rows,
+            "cycles_shipped": self.cycles_shipped,
+            "cycles_quarantined": self.cycles_quarantined,
+            "post_errors": self.post_errors,
+            "cursor_errors": self.cursor_errors,
+            "cursor_resets": self.cursor_resets,
+            "quarantine_errors": self.quarantine_errors,
+            "scan_errors": self.scan_errors,
+            "write_errors": int(getattr(self._sink, "write_errors", 0) or 0),
+            "dropped": (int(getattr(self._sink, "dropped", 0) or 0)
+                        + int(getattr(
+                            getattr(self._writer, "queue", None),
+                            "drops", 0) or 0)),
+            "pending_writes": int(
+                getattr(self._sink, "pending_writes", 0) or 0),
+            "prune_deferred": int(
+                getattr(self._sink, "prune_deferred", 0) or 0),
+            "repaired_tails": int(
+                getattr(self._sink, "repaired_tails", 0) or 0),
+            "errors": self.errors,
+        }
+
+
+class _DisabledOutboxStatus:
+    """Health-only sentinel for a kill-switched diagnostics stack.
+
+    This is deliberately not an OutboxReplayer and owns no sink, file, thread,
+    URL, or delivery method.  PlatformHealth already reads ``writer.outbox``
+    for the heartbeat, so keeping an explicit unavailable status here prevents
+    a disabled writer from advertising an apparently green default outbox.
+    """
+
+    _STATUS = {
+        "enabled": False,
+        "diagnostics_disabled": True,
+        "health_unavailable": True,
+        "oldest_unsent_age_s": None,
+        "backlog": 0,
+        "backlog_bytes": 0,
+        "cursor_ok": False,
+        "quarantined": 0,
+        "corrupt_rows": 0,
+        "skipped": 0,
+        "shipped": 0,
+        "cycles_shipped": 0,
+        "cycles_quarantined": 0,
+        "post_errors": 0,
+        "cursor_errors": 0,
+        "cursor_resets": 0,
+        "quarantine_errors": 0,
+        "scan_errors": 0,
+        "errors": 0,
+        "write_errors": 0,
+        "sink_errors": 0,
+        "dropped": 0,
+        "pending_writes": 0,
+        "prune_deferred": 0,
+        "repaired_tails": 0,
+        "error": True,
+    }
+
+    def health(self):
+        return dict(self._STATUS)
+
+    def stats(self):
+        return dict(self._STATUS)
 
 
 # ---- the writer thread ---------------------------------------------------------
@@ -973,8 +1751,14 @@ class DiagWriter:
     def __init__(self, *, queue=None, sinks=None, enabled=None, poll_s=0.25):
         self.enabled = _enabled_from_env() if enabled is None else bool(enabled)
         self.queue = queue or DiagQueue()
-        self.outbox = None      # OutboxReplayer when the outbox HTTP leg is on
-        if sinks is None:
+        self.outbox = None      # OutboxReplayer, disabled health sentinel, or None
+        if not self.enabled:
+            # Fail closed before constructing any persistence/network leg.
+            # The health-only sentinel is consumed by PlatformHealth's
+            # heartbeat and can never be mistaken for an active outbox.
+            sinks = []
+            self.outbox = _DisabledOutboxStatus()
+        elif sinks is None:
             jsonl = JsonlSink()
             sinks = [jsonl]
             url = os.environ.get(SERVER_URL_ENV, "").strip()
@@ -986,12 +1770,14 @@ class DiagWriter:
                     # ack-advanced cursor (idempotent server inserts make
                     # replay overlap safe).
                     sinks.append(HttpSink(url, events_enabled=False))
-                    self.outbox = OutboxReplayer(jsonl.dir, url)
+                    self.outbox = OutboxReplayer(jsonl.dir, url, sink=jsonl)
                 else:
                     sinks.append(HttpSink(url))
         self.sinks = list(sinks)
         self.poll_s = float(poll_s)
         self.sink_errors = 0
+        if self.outbox_active():
+            self.outbox._writer = self
         self._stop = threading.Event()
         self._thread = None
         if self.enabled:
@@ -1011,7 +1797,7 @@ class DiagWriter:
         """True when the JSONL-as-outbox HTTP leg owns delivery (R3-3 durable
         path). The daemon uses this to decide whether cycles ride the durable
         outbox (emit_cycle) or the legacy live CycleShipper->post_cycle."""
-        return self.outbox is not None
+        return self.enabled and isinstance(self.outbox, OutboxReplayer)
 
     def emit_cycle(self, row):
         """R3-3: durable machine_cycles delivery. In outbox mode the cycle row
@@ -1022,7 +1808,7 @@ class DiagWriter:
         the outbox is NOT active this returns False so the caller keeps the
         legacy direct-POST CycleShipper path — a lone live sink has no durable
         file to replay from.)"""
-        if not self.enabled or self.outbox is None:
+        if not self.outbox_active():
             return False
         try:
             r = dict(row)
@@ -1050,6 +1836,8 @@ class DiagWriter:
         """Signal the thread, wait for it to drain + flush. If the thread was
         never started (or already dead), drain + flush synchronously so queued
         events are never silently lost. Never raises."""
+        if not self.enabled:
+            return
         try:
             self._stop.set()
             t = self._thread
@@ -1072,6 +1860,7 @@ class DiagWriter:
             # JSONL outbox included) carries (source_id, boot_id, seq), so the
             # server can dedupe replays after drops.
             stamp_delivery(row)
+            row = _json_safe(row)
         except Exception:
             self.sink_errors += 1
             return
@@ -1127,11 +1916,18 @@ class DiagWriter:
             "sink_errors": self.sink_errors,
             "sinks": {},
         }
+        if not self.enabled:
+            d.update({
+                "diagnostics_disabled": True,
+                "health_unavailable": True,
+            })
         for s in self.sinks:
             name = type(s).__name__
             d["sinks"][name] = {
                 k: getattr(s, k) for k in
-                ("written", "write_errors", "posted", "dropped", "post_errors")
+                ("written", "write_errors", "retry_batches", "pending_writes",
+                 "prune_deferred", "repaired_tails", "posted", "dropped",
+                 "post_errors")
                 if hasattr(s, k)
             }
         if self.outbox is not None:

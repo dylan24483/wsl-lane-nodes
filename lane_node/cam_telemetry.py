@@ -525,6 +525,18 @@ class CycleShipper:
     def __init__(self, post_cycle, *, maxsize=64, poll_s=0.25):
         self._post = post_cycle
         self._q = queue.Queue(maxsize=max(1, int(maxsize)))
+        owner = getattr(post_cycle, "__self__", None)
+        try:
+            # DiagWriter.emit_cycle is already a non-blocking enqueue into the
+            # single durable JSONL path. Do not put another lossy queue in
+            # front of it.
+            self.direct_to_durable = (
+                getattr(post_cycle, "__name__", "") == "emit_cycle"
+                and owner is not None
+                and callable(getattr(owner, "outbox_active", None))
+                and bool(owner.outbox_active()))
+        except Exception:
+            self.direct_to_durable = False
         self.poll_s = float(poll_s)
         self.drops = 0
         self.shipped = 0
@@ -534,6 +546,17 @@ class CycleShipper:
 
     def offer(self, row):
         """Enqueue one row. Returns True if queued; False (counted) if dropped."""
+        if self.direct_to_durable:
+            try:
+                ok = bool(self._post(row))
+                if ok:
+                    self.shipped += 1
+                else:
+                    self.drops += 1
+                return ok
+            except Exception:
+                self.errors += 1
+                return False
         try:
             self._q.put_nowait(row)
             return True
@@ -542,6 +565,8 @@ class CycleShipper:
             return False
 
     def start(self):
+        if self.direct_to_durable:
+            return True
         if self._thread is not None and self._thread.is_alive():
             return True
         self._stop.clear()
@@ -553,6 +578,8 @@ class CycleShipper:
     def stop(self, timeout=5.0):
         """Signal + join; anything still queued is shipped synchronously
         (bounded by the queue cap). Never raises."""
+        if self.direct_to_durable:
+            return
         try:
             self._stop.set()
             t = self._thread
@@ -597,6 +624,20 @@ class CycleShipper:
             log.warning("CycleShipper thread swallowed an exception", exc_info=True)
         finally:
             self._drain()
+
+    def stats(self):
+        """Stable honesty counters for platform-health reporting."""
+        try:
+            pending = 0 if self.direct_to_durable else self._q.qsize()
+        except Exception:
+            pending = 0
+        return {
+            "direct_to_durable": bool(self.direct_to_durable),
+            "pending": pending,
+            "drops": self.drops,
+            "shipped": self.shipped,
+            "errors": self.errors,
+        }
 
 
 if __name__ == "__main__":

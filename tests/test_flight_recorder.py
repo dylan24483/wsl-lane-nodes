@@ -376,9 +376,9 @@ check(bc.telemetry.enabled, "daemon builds enabled cam telemetry by default")
 check(bc.shadow is False, "daemon is NOT in shadow mode by default (env unset)")
 
 # drive a full strike cycle through tick() and confirm the recorder captured outputs
-bc.link.feed_line('{"ev":"hb","ok":1}'); bc.tick()
+bc.link.feed_line('{"ev":"hb","ok":1,"up":250}'); bc.tick()
 bc.io.slow["PBZ"] = True; bc.tick(); bc.io.slow["PBZ"] = False
-bc.link.feed_line('{"ev":"hb","ok":1}'); bc.tick()
+bc.link.feed_line('{"ev":"hb","ok":1,"up":500}'); bc.tick()
 bc.io.grippers = 0
 bc.link.feed_line('{"ev":"ball","src":"L"}'); bc.tick()   # READY -> SWEEP_TO_GUARD (sweep ON)
 check(bc.fsm.state.value == "sweep_to_guard", "ball started a cycle (setup)")
@@ -393,7 +393,7 @@ check(any(e[1] == "out" and e[2] == "S" and e[3] is True for e in snap),
 # In SWEEP_TO_GUARD the MAX_MOTION_S backstop in poll() latches FAULT.
 from cycle_control_8270 import MAX_MOTION_S
 bc.io.advance(MAX_MOTION_S + 1.0)
-bc.link.feed_line('{"ev":"hb","ok":1}'); bc.tick()       # poll backstop -> FAULT -> observe() dumps
+bc.link.feed_line('{"ev":"hb","ok":1,"up":750}'); bc.tick()       # poll backstop -> FAULT -> observe() dumps
 check(bc.fsm.state.value == "fault", "stuck motion faults (setup)")
 bc.recorder.flush()   # daemon dumps via dump_async (review #21/#54) — join the writer first
 dumps = [n for n in os.listdir(bc.recorder._dump_dir) if "fsm_fault" in n]
@@ -410,7 +410,7 @@ check(isinstance(bc.telemetry.baselines(), dict), "telemetry baselines queryable
 # SHADOW gate: a BoardController with shadow=True wraps io in ShadowIO and drives nothing
 bc_sh = cd.BoardController(cd.BoardConfig(21, 1, "sim", 0, 0, board_rev="revC"), sim=True, shadow=True)
 check(isinstance(bc_sh.io, ShadowIO), "shadow=True wraps the io in ShadowIO")
-bc_sh.link.feed_line('{"ev":"hb","ok":1}'); bc_sh.tick()
+bc_sh.link.feed_line('{"ev":"hb","ok":1,"up":250}'); bc_sh.tick()
 bc_sh.io.slow = {}                                  # ShadowIO delegates slow to underlying RecordingIO
 # In shadow, the underlying RecordingIO must show NO motor outputs driven on:
 under = bc_sh.io._io

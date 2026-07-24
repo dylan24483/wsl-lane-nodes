@@ -118,11 +118,38 @@ print("== rp2040_link bench test (audit P3 Pi-side) ==")
 print("[A] v0.1.0 backward compat")
 link = mklink()
 link.feed_line('{"ev":"boot","fw":"phase8b-rp2040 v0.1.0","wdt_reset":0,"rp_ok":0}')
-check(link.rp_ok() is False and link.is_alive(), "v0.1.0 boot parses (rp_ok False, alive)")
+check(link.rp_ok() is False and not link.is_alive(),
+      "v0.1.0 boot parses but cannot renew heartbeat liveness")
 link.feed_line('{"ev":"hb","ok":1,"flt":"","up":10}')
 check(link.health_ok(), "v0.1.0 hb (no in/run/drp) -> healthy")
 check(link.input_levels() is None, "no in-mask ever heard -> input_levels() None")
 check(link.running_motors() is None, "no run-mask ever heard -> running_motors() None")
+
+# Only a schema-valid heartbeat renews the supervision lease. Serial command
+# replies and malformed/status-string records cannot mask a stalled firmware
+# heartbeat loop.
+clk["t"] += 0.6
+link.feed_line('{"ev":"ack","cmd":"CLEAR","t":20}')
+link.feed_line('{"ev":"hb"}')
+link.feed_line('{"ev":"hb","ok":"false","flt":"","up":20}')
+clk["t"] += 0.5
+link.feed_line('{"ev":"ack","cmd":"TAPCLR","t":30}')
+check(not link.is_alive() and not link.health_ok(),
+      "ACK flood + malformed/string-false hb cannot renew heartbeat lease")
+
+# A known v1.2.3 boot nonce is mandatory on subsequent heartbeats.
+nonce_link = mklink()
+nonce_link.feed_line(
+    '{"ev":"boot","fw":"phase8b-rp2040 v1.2.3","bn":111,'
+    '"wdt_reset":0,"rp_ok":0}')
+nonce_link.feed_line(
+    '{"ev":"hb","ok":1,"flt":"","up":10,"bn":111}')
+check(nonce_link.health_ok(), "nonce-bearing heartbeat establishes health")
+clk["t"] += 0.6
+nonce_link.feed_line('{"ev":"hb","ok":1,"flt":"","up":20}')
+clk["t"] += 0.5
+check(not nonce_link.is_alive(),
+      "heartbeat missing a known boot nonce cannot renew liveness")
 check(link.maxrun_ms() is None, "v0.1.0 boot advertises no maxrun_ms")
 check(link.maxrun_ok() is True, "maxrun_ok() True when unknown (v0.1.0 must still arm)")
 link.feed_line('{"ev":"cam","id":"SC","e":"f"}')

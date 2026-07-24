@@ -78,7 +78,15 @@ def mk_board(roles=None, writer=None, shipper=None, cam_sink=None,
 
 
 def hb(bc, extra=""):
-    bc.link.feed_line('{"ev":"hb","ok":1%s}' % extra)
+    fields = json.loads("{" + extra.lstrip(",") + "}") if extra else {}
+    if "up" not in fields:
+        fields["up"] = max(
+            getattr(bc, "_test_hb_up", 0),
+            int(bc.io.now() * 1000))
+    bc._test_hb_up = max(
+        getattr(bc, "_test_hb_up", 0), int(fields["up"]))
+    fields.update({"ev": "hb", "ok": 1})
+    bc.link.feed_line(json.dumps(fields, separators=(",", ":")))
 
 
 def to_ready(bc):
@@ -168,6 +176,12 @@ def test_manual_override_event_and_suppression_gating():
     assert ev.severity == "info" and ev.detail["suppressed"] is True
     assert ev.detail["orig_severity"] == "warn"
     assert bc.diag.suppressed_count == 1
+    # Safety/control faults are never hidden by a mechanic nuisance window.
+    bc.diag.emit_event(
+        "fault", "fsm_fault", code="state:FAULT", t=bc.io.now())
+    safety = w.of_type("fsm_fault")[-1]
+    assert safety.severity == "fault"
+    assert "suppressed" not in (safety.detail or {})
     # held switch keeps refreshing; release + expire -> warns pass again
     bc.io.slow["MAN_T"] = False
     bc.tick()
@@ -310,17 +324,17 @@ def test_beam_blocked_from_hb_in_mask():
     w = FakeWriter()
     bc = mk_board(writer=w)
     to_ready(bc)
-    bc.link.feed_line('{"ev":"hb","ok":1,"in":%d}' % diell_bit)
+    hb(bc, extra=',"in":%d' % diell_bit)
     bc.tick()
     advance(bc, 31.0)                          # default threshold 30 s
-    bc.link.feed_line('{"ev":"hb","ok":1,"in":%d}' % diell_bit)
+    hb(bc, extra=',"in":%d' % diell_bit)
     bc.tick()
     beams = w.of_type("beam_blocked")
     assert len(beams) == 1 and beams[0].code == "diell:DIELL_L"
     bc.tick()
     assert len(w.of_type("beam_blocked")) == 1, "once per blocked episode"
     # beam clears -> episode ends
-    bc.link.feed_line('{"ev":"hb","ok":1,"in":0}')
+    hb(bc, extra=',"in":0')
     bc.tick()
     assert "DIELL_L" not in bc.diag._beam_warned
 

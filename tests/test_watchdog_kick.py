@@ -29,10 +29,14 @@ and trigger the exact same code path: main_task.cancel().
 """
 
 import asyncio
+import json
 import os
 import sys
+import tempfile
 import time
 import types
+
+import pytest
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 LANE_NODE_DIR = os.path.join(REPO, 'lane_node')
@@ -90,6 +94,7 @@ sys.modules['gpiozero'] = fake_gpiozero
 # ---------------------------------------------------------------
 WS_SCRIPT = []          # per-test: FakeWS instances handed out in order
 CONNECT_REFUSALS = [0]  # count of refused connect attempts
+_TRANSPORT_TMPS = []    # retain each per-import SQLite directory for the test
 
 
 class FakeWS:
@@ -141,13 +146,17 @@ def fake_connect(url, **kw):
 
 _ws_client = types.ModuleType('websockets.asyncio.client')
 _ws_client.connect = fake_connect
+_ws_server = types.ModuleType('websockets.asyncio.server')
+_ws_server.serve = None
 _ws_asyncio = types.ModuleType('websockets.asyncio')
 _ws_asyncio.client = _ws_client
+_ws_asyncio.server = _ws_server
 _ws_root = types.ModuleType('websockets')
 _ws_root.asyncio = _ws_asyncio
 sys.modules['websockets'] = _ws_root
 sys.modules['websockets.asyncio'] = _ws_asyncio
 sys.modules['websockets.asyncio.client'] = _ws_client
+sys.modules['websockets.asyncio.server'] = _ws_server
 
 
 # ---------------------------------------------------------------
@@ -162,9 +171,43 @@ def fresh_lane_node():
     """(Re-)import lane_node with fresh fake devices + module state."""
     WS_SCRIPT.clear()
     CONNECT_REFUSALS[0] = 0
+    transport_tmp = tempfile.TemporaryDirectory()
+    _TRANSPORT_TMPS.append(transport_tmp)
+    os.environ["WSL_SCORING_TRANSPORT_DB"] = os.path.join(
+        transport_tmp.name, "reliable_transport.sqlite3")
     sys.modules.pop('lane_node', None)   # force re-exec: fresh fake devices/state
     import lane_node
     return lane_node
+
+
+def test_physical_node_identity_and_pair_have_no_unsafe_fallback():
+    ln = fresh_lane_node()
+    assert ln._required_node_id("pi-lane21-22") == "pi-lane21-22"
+    assert ln._required_node_id("n" * 121) == "n" * 121
+    assert ln._required_node_id("n" * 128) == "n" * 128
+    for value in (None, "", "dev", "dev-pair-21-22",
+                  "pair-21-22-dev", "lane-node-dev-pair-21-22",
+                  "n" * 129, "contains space"):
+        with pytest.raises(SystemExit):
+            ln._required_node_id(value)
+    assert ln._canonical_diag_source(
+        "pi-lane21-22", "pi-lane21-22") == "pi-lane21-22"
+    assert ln._canonical_diag_source(
+        "pi-lane21-22", "") == "pi-lane21-22"
+    with pytest.raises(SystemExit):
+        ln._canonical_diag_source("pi-lane21-22", "other-node")
+    assert ln._scoring_node_token(
+        "unique-node-secret", False) == "unique-node-secret"
+    with pytest.raises(SystemExit):
+        ln._scoring_node_token(
+            "shared-control-secret", False, "shared-control-secret")
+    assert ln._scoring_node_token("", True) == ""
+    with pytest.raises(SystemExit):
+        ln._scoring_node_token("", False)
+    assert ln._parse_lanes("22,21") == [21, 22]
+    for value in (None, "", "21", "21,23", "22,23", "21,22,23"):
+        with pytest.raises(SystemExit):
+            ln._parse_lanes(value)
 
 
 def run_scenario(scenario_coro_fn):
@@ -264,9 +307,11 @@ def test_kicks_survive_ws_death_and_no_orphan_sender():
         # go out, on ws2. (Pre-fix: the orphaned event_sender from ws1 is
         # first in the queue's waiter list — it steals the event and burns
         # it on the dead socket.)
-        marker = ln.encode(ln.Msg.BALL_EVENT, lane=ln.LANES[0], pin_mask=None,
-                           awaiting_manual=True, test_marker="wdog-test-2")
-        ln.event_queue.put_nowait(marker)
+        marker = ln._encode_scoring_event(
+            ln.Msg.BALL_EVENT, lane=ln.LANES[0], pin_mask=None,
+            awaiting_manual=True, test_marker="wdog-test-2")
+        assert_true(await ln._admit_scoring_event(marker),
+                    "marker was not admitted to the durable scoring outbox")
         await wait_until(
             lambda: sum("wdog-test-2" in m for m in ws2.sent) >= 1,
             3.0, "marker event delivered on ws2")
@@ -347,8 +392,491 @@ def test_daemon_kill_stops_kicks_and_safes_outputs():
     print("ok  test_daemon_kill_stops_kicks_and_safes_outputs")
 
 
+def test_camera_init_failure_is_immediately_unhealthy_on_both_lanes():
+    ln = fresh_lane_node()
+
+    class CaptureWriter:
+        def __init__(self):
+            self.events = []
+
+        def emit(self, event):
+            self.events.append(event)
+            return True
+
+    class FailedCamera:
+        def __init__(self, **_kwargs):
+            raise RuntimeError("forced init failure")
+
+    ln.SCORING_MODE = "camera"
+    ln.camera.PairCamera = FailedCamera
+    ln._init_camera()
+    assert_true(ln._last_camera_health["ok"] is False,
+                "camera init failure started false-green")
+    assert_true(ln._last_camera_health["code"] == "dead",
+                "camera init failure did not record dead state")
+
+    writer = CaptureWriter()
+    ln._DIAG_WRITER = writer
+    ln._health_drop_hop = lambda _health: None
+    ln._cam_health_warned = False
+    asyncio.run(ln._camera_health_probe_once())
+    alerts = [event for event in writer.events
+              if event.event_type == "camera_health"]
+    assert_true(
+        [(event.lane_id, event.severity, event.code) for event in alerts]
+        == [(21, "warn", "dead"), (22, "warn", "dead")],
+        f"pair-wide immediate camera fault missing: {alerts!r}")
+    print("ok  test_camera_init_failure_is_immediately_unhealthy_on_both_lanes")
+
+
+def test_camera_timeout_latches_manual_without_worker_accumulation():
+    ln = fresh_lane_node()
+
+    class CaptureWriter:
+        def __init__(self):
+            self.events = []
+
+        def emit(self, event):
+            self.events.append(event)
+            return True
+
+    calls = {"score": 0, "health": 0}
+    published = []
+    loop_errors = []
+
+    def slow_capture(_lane):
+        calls["score"] += 1
+        time.sleep(0.20)
+        raise RuntimeError("late native capture failure")
+
+    class Camera:
+        ready = True
+
+        def frame_health(self):
+            calls["health"] += 1
+            return {"ok": True, "grabbed": True}
+
+    async def scenario():
+        ln.SCORING_MODE = "camera"
+        ln.camera.SETTLE_S = 0
+        ln._PAIR_CAMERA = Camera()
+        ln.detect_current_pins = slow_capture
+        ln._DIAG_WRITER = CaptureWriter()
+        ln._health_drop_hop = lambda health: published.append(dict(health))
+        ln._cam_health_warned = False
+        ln._camera_poisoned = False
+        ln._camera_poison_reason = None
+        ln._camera_worker_task = None
+        ln.event_queue = asyncio.Queue()
+        ln.main_loop = asyncio.get_running_loop()
+        ln.main_loop.set_exception_handler(
+            lambda _loop, context: loop_errors.append(context))
+        os.environ[ln.CAM_CAPTURE_TIMEOUT_ENV] = "0.05"
+
+        ln._capture_in_flight[21] = True
+        await ln._settle_capture_emit(21)
+        first = json.loads(await ln.event_queue.get())
+        assert_true(first["awaiting_manual"] is True,
+                    "timed-out ball did not enter manual fallback")
+        assert_true(ln._camera_poisoned is True,
+                    "camera timeout did not latch camera unavailable")
+        assert_true(ln._last_camera_health["ok"] is False
+                    and ln._last_camera_health["code"] == "capture_stalled",
+                    "timeout left camera health green")
+        retained_worker = ln._camera_worker_task
+        assert_true(retained_worker is not None,
+                    "timed-out native worker was forgotten")
+
+        # A second ball must not submit another native call.
+        ln._capture_in_flight[22] = True
+        await ln._settle_capture_emit(22)
+        second = json.loads(await ln.event_queue.get())
+        assert_true(second["awaiting_manual"] is True,
+                    "poisoned camera did not keep manual fallback")
+        assert_true(calls["score"] == 1,
+                    f"camera workers accumulated: {calls['score']}")
+        assert_true(ln._camera_worker_task is retained_worker,
+                    "timed-out worker supervision was replaced")
+
+        # Health polling must preserve the fault and never race the worker.
+        await ln._camera_health_probe_once()
+        assert_true(calls["health"] == 0,
+                    "health probe raced a timed-out camera worker")
+        alerts = [
+            event for event in ln._DIAG_WRITER.events
+            if event.event_type == "camera_health"
+            and event.code == "capture_stalled"]
+        assert_true(
+            [(event.lane_id, event.severity) for event in alerts]
+            == [(21, "warn"), (22, "warn")],
+            f"capture-stalled episode was not pair-wide/once: {alerts!r}")
+        assert_true(any(not health["ok"] for health in published),
+                    "capture timeout was not published to shared health")
+        await asyncio.sleep(0.25)  # let finite test worker return cleanly
+        assert_true(loop_errors == [],
+                    f"late worker exception was not consumed: {loop_errors!r}")
+
+    try:
+        import json
+        asyncio.run(scenario())
+    finally:
+        os.environ.pop("WSL_CAM_CAPTURE_TIMEOUT_S", None)
+    print("ok  test_camera_timeout_latches_manual_without_worker_accumulation")
+
+
+def test_scoring_unit_restart_gap_exceeds_watchdog_expiry():
+    unit = open(
+        os.path.join(REPO, "systemd", "lane-node.service"),
+        encoding="utf-8").read()
+    assert_true("RestartSec=15" in unit,
+                "Track-A restart can resume kicks before NE555 expiry")
+    assert_true("StartLimitIntervalSec=120" in unit
+                and "StartLimitBurst=4" in unit,
+                "Track-A crash loop is not bounded")
+    print("ok  test_scoring_unit_restart_gap_exceeds_watchdog_expiry")
+
+
+class FiniteFrameSocket:
+    """Minimal finite inbound stream for command_handler protocol tests."""
+
+    def __init__(self, frames):
+        self.frames = iter(frames)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self.frames)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
+def _ack_frame(ln, session_id, seq, committed_at):
+    fields = {
+        "type": ln.Msg.HEARTBEAT_ACK,
+        "node": ln.NODE_ID,
+        "scoring_session_id": session_id,
+        "heartbeat_seq": seq,
+        "committed_at": committed_at,
+        "scoring_epochs": {
+            str(lane): ln._scoring_epochs[lane] for lane in ln.LANES
+        },
+    }
+    if ln.LANE_NODE_TOKEN:
+        fields["token"] = ln.LANE_NODE_TOKEN
+    return json.dumps(fields)
+
+
+def _fixed_scoring_status(session_id, heartbeat_seq):
+    return {
+        "scoring_boot_id": "test-boot",
+        "scoring_session_id": session_id,
+        "heartbeat_seq": heartbeat_seq,
+        "scoring_mode": "manual",
+        "camera_calibrated": False,
+        "camera_ok": False,
+        "camera_code": "manual",
+        "outbox": {
+            "cursor_ok": True,
+            "error": False,
+            "oldest_unsent_age_s": None,
+            "backlog": 0,
+            "backlog_bytes": 0,
+            "pending_writes": 0,
+            "dropped": 0,
+            "quarantined": 0,
+            "cycles_quarantined": 0,
+            "post_errors": 0,
+            "write_errors": 0,
+            "sink_errors": 0,
+        },
+        "node_ball_lockout_s": 8.0,
+    }
+
+
+def test_heartbeat_no_ack_trips_connection_deadman_once():
+    ln = fresh_lane_node()
+    ack_state = {
+        "session_id": "no-ack-session",
+        "sent_seq": 0,
+        # Model a valid HELLO ACK so this proves the steady-state heartbeat
+        # boundary, not merely a missing registration receipt.
+        "acked_seq": 0,
+    }
+    sent = []
+    diagnostics = []
+    original_sleep = ln.asyncio.sleep
+    original_payload = ln._scoring_status_payload
+    original_diag = ln._diag_emit_lanes
+
+    async def no_delay(_seconds):
+        return None
+
+    async def fixed_payload(session_id, heartbeat_seq):
+        return _fixed_scoring_status(session_id, heartbeat_seq)
+
+    class SilentServerSocket:
+        async def send(self, raw):
+            sent.append(json.loads(raw)["heartbeat_seq"])
+
+    async def scenario(state):
+        try:
+            await ln.heartbeat_loop(SilentServerSocket(), state)
+        except ConnectionError as exc:
+            assert_true(
+                "heartbeat ACK stalled" in str(exc),
+                "dead-man raised the wrong connection failure")
+            return
+        raise AssertionError("heartbeat loop did not fail a no-ACK connection")
+
+    try:
+        ln.asyncio.sleep = no_delay
+        ln._scoring_status_payload = fixed_payload
+        ln._diag_emit_lanes = lambda *a, **kw: diagnostics.append((a, kw))
+        ln._scoring_ack_stalled = False
+        asyncio.run(scenario(ack_state))
+        assert_true(
+            sent == [1, 2, 3],
+            "dead-man did not allow exactly the bounded three-heartbeat ACK lag")
+        # A persistently non-ACKing server causes another connection attempt,
+        # but remains the same fault episode and must not flood the outbox.
+        asyncio.run(scenario({
+            "session_id": "no-ack-session-reconnect",
+            "sent_seq": 0,
+            "acked_seq": 0,
+        }))
+    finally:
+        ln.asyncio.sleep = original_sleep
+        ln._scoring_status_payload = original_payload
+        ln._diag_emit_lanes = original_diag
+
+    assert_true(
+        sent == [1, 2, 3, 1, 2, 3],
+        "reconnect did not retain the same bounded ACK-lag behavior")
+    assert_true(len(diagnostics) == 1,
+                "one ACK-stall episode must emit exactly one diagnostic")
+    args, kwargs = diagnostics[0]
+    assert_true(args[:2] == ("fault", "scoring_server_ack_stalled"),
+                "ACK stall diagnostic did not use its typed event")
+    assert_true(kwargs["code"] == "scoring_server_ack_stalled",
+                "ACK stall diagnostic code is not stable")
+    assert_true(kwargs["detail"]["ack_lag"] == 3,
+                "ACK stall diagnostic omitted the exact sequence lag")
+    assert_true(ln._scoring_ack_stalled is True,
+                "ACK stall episode latch was not retained across reconnect")
+    print("ok  test_heartbeat_no_ack_trips_connection_deadman_once")
+
+
+def test_heartbeat_delayed_ack_below_threshold_keeps_connection_alive():
+    ln = fresh_lane_node()
+    ack_state = {
+        "session_id": "delayed-ack-session",
+        "sent_seq": 0,
+        "acked_seq": 0,
+    }
+    sent = []
+    diagnostics = []
+    committed_at = "2026-07-23T00:00:00Z"
+    original_sleep = ln.asyncio.sleep
+    original_payload = ln._scoring_status_payload
+    original_diag = ln._diag_emit_lanes
+
+    async def no_delay(_seconds):
+        return None
+
+    async def fixed_payload(session_id, heartbeat_seq):
+        return _fixed_scoring_status(session_id, heartbeat_seq)
+
+    class DelayedAckSocket:
+        async def send(self, raw):
+            seq = json.loads(raw)["heartbeat_seq"]
+            sent.append(seq)
+            if seq == 2:
+                await ln.command_handler(FiniteFrameSocket([
+                    _ack_frame(
+                        ln, ack_state["session_id"], seq, committed_at)
+                ]), ack_state)
+            if seq == 4:
+                raise ConnectionError("test completed below lag threshold")
+
+    async def scenario():
+        try:
+            await ln.heartbeat_loop(DelayedAckSocket(), ack_state)
+        except ConnectionError as exc:
+            assert_true(
+                str(exc) == "test completed below lag threshold",
+                "delayed ACK unexpectedly tripped the dead-man")
+
+    try:
+        ln.asyncio.sleep = no_delay
+        ln._scoring_status_payload = fixed_payload
+        ln._diag_emit_lanes = lambda *a, **kw: diagnostics.append((a, kw))
+        ln._scoring_ack_stalled = False
+        asyncio.run(scenario())
+    finally:
+        ln.asyncio.sleep = original_sleep
+        ln._scoring_status_payload = original_payload
+        ln._diag_emit_lanes = original_diag
+
+    assert_true(sent == [1, 2, 3, 4],
+                "delayed valid ACK did not reset the bounded lag")
+    assert_true(ack_state["acked_seq"] == 2,
+                "delayed valid ACK did not advance ACK state")
+    assert_true(not diagnostics,
+                "sub-threshold delayed ACK emitted a false stall diagnostic")
+    print("ok  test_heartbeat_delayed_ack_below_threshold_keeps_connection_alive")
+
+
+def test_heartbeat_ack_after_stall_emits_recovery_once():
+    ln = fresh_lane_node()
+    ack_state = {
+        "session_id": "recovered-ack-session",
+        "sent_seq": 0,
+        "acked_seq": -1,
+    }
+    committed_at = "2026-07-23T00:00:00Z"
+    diagnostics = []
+    original_diag = ln._diag_emit_lanes
+    try:
+        ln._diag_emit_lanes = lambda *a, **kw: diagnostics.append((a, kw))
+        ln._scoring_ack_stalled = True
+        asyncio.run(ln.command_handler(FiniteFrameSocket([
+            _ack_frame(ln, ack_state["session_id"], 0, committed_at),
+        ]), ack_state))
+    finally:
+        ln._diag_emit_lanes = original_diag
+
+    assert_true(ack_state["acked_seq"] == 0,
+                "valid reconnect ACK did not advance ACK state")
+    assert_true(ln._scoring_ack_stalled is False,
+                "valid reconnect ACK did not clear the stall episode latch")
+    assert_true(len(diagnostics) == 1,
+                "valid reconnect ACK must emit one recovery breadcrumb")
+    args, kwargs = diagnostics[0]
+    assert_true(args[:2] == ("info", "recovered"),
+                "ACK recovery did not use the safe recovery event type")
+    assert_true(kwargs["code"] == "scoring_server_ack_stalled",
+                "ACK recovery does not bind to the stalled incident code")
+    assert_true(
+        kwargs["detail"]["recovery"] == "durably_committed_heartbeat_ack",
+        "ACK recovery lacks durable-commit evidence")
+    print("ok  test_heartbeat_ack_after_stall_emits_recovery_once")
+
+
+def test_heartbeat_ack_can_interleave_inside_send():
+    ln = fresh_lane_node()
+    ack_state = {
+        "session_id": "ack-race-session",
+        "sent_seq": 0,
+        "acked_seq": -1,
+    }
+    committed_at = "2026-07-23T00:00:00+00:00"
+    original_sleep = ln.asyncio.sleep
+    original_payload = ln._scoring_status_payload
+
+    async def no_delay(_seconds):
+        return None
+
+    async def fixed_payload(session_id, heartbeat_seq):
+        return {
+            "scoring_boot_id": "test-boot",
+            "scoring_session_id": session_id,
+            "heartbeat_seq": heartbeat_seq,
+            "scoring_mode": "manual",
+            "camera_calibrated": False,
+            "camera_ok": False,
+            "camera_code": "manual",
+            "outbox": {
+                "cursor_ok": True,
+                "error": False,
+                "oldest_unsent_age_s": None,
+                "backlog": 0,
+                "backlog_bytes": 0,
+                "pending_writes": 0,
+                "dropped": 0,
+                "quarantined": 0,
+                "cycles_quarantined": 0,
+                "post_errors": 0,
+                "write_errors": 0,
+                "sink_errors": 0,
+            },
+            "node_ball_lockout_s": 8.0,
+        }
+
+    class InterleavingSocket:
+        async def send(self, raw):
+            sent = json.loads(raw)
+            assert sent["heartbeat_seq"] == 1
+            inbound = FiniteFrameSocket([
+                _ack_frame(
+                    ln, ack_state["session_id"], 1, committed_at)
+            ])
+            # Deterministically deliver the ACK while heartbeat_loop is
+            # suspended in this send() call.
+            await ln.command_handler(inbound, ack_state)
+            raise ConnectionError("stop after first heartbeat")
+
+    async def scenario():
+        try:
+            await ln.heartbeat_loop(InterleavingSocket(), ack_state)
+        except ConnectionError:
+            pass
+
+    try:
+        ln.asyncio.sleep = no_delay
+        ln._scoring_status_payload = fixed_payload
+        asyncio.run(scenario())
+    finally:
+        ln.asyncio.sleep = original_sleep
+        ln._scoring_status_payload = original_payload
+
+    assert_true(ack_state["acked_seq"] == 1,
+                "valid interleaved ACK was rejected as ahead of sent_seq")
+    assert_true(ln._last_scoring_ack["committed_at"] == committed_at,
+                "accepted interleaved ACK was not retained")
+    print("ok  test_heartbeat_ack_can_interleave_inside_send")
+
+
+def test_heartbeat_ack_requires_strict_utc_committed_at():
+    ln = fresh_lane_node()
+    ack_state = {
+        "session_id": "ack-time-session",
+        "sent_seq": 1,
+        "acked_seq": -1,
+    }
+    valid = "2026-07-23T00:00:00Z"
+    invalid = [
+        None,
+        "",
+        " 2026-07-23T00:00:00Z",
+        "2026-07-23",
+        "not-a-timestamp",
+        "2026-07-23T01:00:00+01:00",
+    ]
+    frames = [
+        _ack_frame(ln, ack_state["session_id"], 1, value)
+        for value in invalid
+    ]
+    frames.append(_ack_frame(ln, ack_state["session_id"], 1, valid))
+    asyncio.run(ln.command_handler(FiniteFrameSocket(frames), ack_state))
+    assert_true(ack_state["acked_seq"] == 1,
+                "valid UTC committed_at was not accepted")
+    assert_true(ln._last_scoring_ack["committed_at"] == valid,
+                "invalid committed_at mutated retained ACK state")
+    print("ok  test_heartbeat_ack_requires_strict_utc_committed_at")
+
+
 if __name__ == '__main__':
     test_kicks_survive_unreachable_server()
     test_kicks_survive_ws_death_and_no_orphan_sender()
     test_daemon_kill_stops_kicks_and_safes_outputs()
+    test_camera_init_failure_is_immediately_unhealthy_on_both_lanes()
+    test_camera_timeout_latches_manual_without_worker_accumulation()
+    test_scoring_unit_restart_gap_exceeds_watchdog_expiry()
+    test_heartbeat_no_ack_trips_connection_deadman_once()
+    test_heartbeat_delayed_ack_below_threshold_keeps_connection_alive()
+    test_heartbeat_ack_after_stall_emits_recovery_once()
+    test_heartbeat_ack_can_interleave_inside_send()
+    test_heartbeat_ack_requires_strict_utc_committed_at()
     print("\nALL WATCHDOG-KICK TESTS PASSED")
