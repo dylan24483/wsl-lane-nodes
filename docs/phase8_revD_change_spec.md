@@ -14,6 +14,17 @@
 > Reminder: **every rev-C artifact carries a revB filename** — `generate_kicad_netlist_revB.py`
 > IS the rev-C generator; `kicad/fab_revB_routed_manual/` IS the rev-C-as-ordered package
 > (see its `PROVENANCE.md`).
+>
+> **IMPLEMENTED CURRENT DELTA (2026-07-23):** exactly the 40 PC817 collector
+> pull-ups `Rpu_*` (`R4,R6,…,R82`) are **47 kΩ**, not 10 kΩ. All unrelated
+> 10 kΩ networks remain unchanged. Current package:
+> `kicad/fab_revD_2026-07-23_r5/`. The binding electrical analysis and
+> every-channel FA-9 acceptance are in
+> `phase8_revD_remediation_spec_2026-07-21.md` §R4; that section supersedes
+> older 10 kΩ PC817 arithmetic in historical review records. Its calculations
+> require RP2040 GP6–GP13 PUE/PDE disabled and U1/U2 MCP23017 GPPUA/GPPUB
+> commanded and read back `0x00`, so the external 47 kΩ is the sole bias.
+> `R_TAPPU_*` remains an unrelated 10 kΩ diagnostic-tap drain network.
 
 ---
 
@@ -185,10 +196,11 @@ AUX3 on GPA7).
 
 Confirmed from the generator (lines 235–255) and `08_opto-inputs.md` §8.2: per channel
 **PC817B** (UMW, LCSC C5692981, `Package_DIP:DIP-4_W7.62mm`) + **Rin 2k2** (0805, FIELD side,
-from `FIELD_WET_V`) + **Rpu 10k** (0805, LOGIC side, to `VCC_3V3`). Dry-contact default: WET →
+from `FIELD_WET_V`) + **Rpu 47k** (0805, LOGIC side, to `VCC_3V3`). Dry-contact default: WET →
 Rin → opto LED → field pin; field contact closes to FIELD_GND at the harness. Logic side pulls
-the MCP pin low through the phototransistor; active-low. **No RC anywhere** (catalog constraint
-8 — debounce lives in firmware; these are ms-class MCP channels anyway).
+the MCP pin low through the phototransistor; active-low. **No fitted RC network**
+(catalog constraint 8 — debounce lives in firmware; the unavoidable first-order
+47 kΩ × 50 pF receiver-node estimate is 2.35 µs).
 
 ### C.2 Netlist delta
 
@@ -208,7 +220,7 @@ existing refdes don't shift):
 
 (MCP23017 pin map per the generator's verified comment: GPB0–7 = pins 1–8.)
 
-**Parts: 8 × (OPTO_AUXn PC817B + Rin_AUXn 2k2 + Rpu_AUXn 10k) = 24 parts**, plus the connector
+**Parts: 8 × (OPTO_AUXn PC817B + Rin_AUXn 2k2 + Rpu_AUXn 47k) = 24 parts**, plus the connector
 (C.3) = **25 parts**. **New nets: 24** (8 SLOW_, 8 FIELD_SLOW_, 8 FIELD_LED_).
 
 ### C.3 New field connector — J15 / `J_SLOW_IN_C`
@@ -609,10 +621,10 @@ Rev-D additions on VCC_5V:
 | Source | Δ |
 |---|---|
 | TMA input for +18.3 mA of new secondary load (bleed + 8 channels), η≈0.75, Vin≈4.7 V | ≈ +26 mA |
-| 8 new 10k logic pullups (all optos on) via Pico 3V3 | ≈ +3 mA |
+| 8 new 47k logic pull-ups (all optos on) via Pico 3V3 | ≈ +0.56 mA |
 | ADC divider | +0.25 mA |
 | Taps (R1 stages, 2026-07-21: 4 × 10k drain pull-ups, worst = all four observed nets high → FETs on, 4 × 0.33 mA on VCC_3V3 through the Pico regulator) | ≈ +1.3 mA |
-| **Total Δ** | **≈ +31 mA** |
+| **Total Δ** | **≈ +29 mA** |
 
 New worst case ≈ **0.73–0.93 A — still under 1 A but the margin was already thin and rev-D
 consumes ~3 % more**. **IMPLEMENTED in the rev-D generator (2026-07-20, run-log FR-3): `D_PROT` value
@@ -642,6 +654,9 @@ SS14 decision. **If any J16 module (≤ 45 mA cap) ever populates, re-run this t
 **Polyfuse — TAKEN (Codex R2-4, round 2):** the "open option" below is now the fitted
 F1 (`1206L020YR`, VCC_5V → J16 pin 1) plus the TCA4307/SRV05-4/JP1 stack. Historical
 note retained: *the pre-round-2 spec listed a series polyfuse as an untaken option.*
+Any F1 substitute must have **minimum Ihold at 85 °C ≥90 mA**. Matching the
+nominal trip current is not sufficient: PPTC trip behavior depends on time and
+temperature and is not a hard current clamp.
 
 **rev-D.1 upgrade path (recorded, NOT this spin — needs copper):** replace the PPTC + ESD
 with a current-limiting **eFuse / e-load-switch that has a hardware-programmable current

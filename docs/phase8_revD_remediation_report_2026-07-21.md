@@ -1,5 +1,11 @@
 # Phase 8 Rev-D — Codex NO-GO Remediation Report (2026-07-21)
 
+> **HISTORICAL CAMPAIGN RECORD — current hardware/fab pointer changed
+> 2026-07-23.** The live board now uses exactly 40 × 47 kΩ PC817 collector
+> pull-ups. Current electrical acceptance is remediation spec §R4 and current
+> immutable fabrication output is `kicad/fab_revD_2026-07-23_r5/`; `_r4/`
+> is superseded because it predates the binding RP2040/MCP internal-pull-zero gate.
+
 > **SUPERSESSION NOTE (2026-07-21, later):** Codex re-audited this campaign under a
 > fabrication-readiness bar and issued round-2 findings (R2-1…R2-17); the 15/2/1
 > tally below is therefore the ROUND-1 closing state, not the final word.

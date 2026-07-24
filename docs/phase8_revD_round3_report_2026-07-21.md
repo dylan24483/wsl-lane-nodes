@@ -1,5 +1,13 @@
 # Phase 8 Rev-D — Round-3 Remediation Report (Codex third audit)
 
+> **SUPERSEDED FOR PC817/FAB ORDERING BY THE 2026-07-23 R4 BOARD RECORD.**
+> This file remains the historical round-3 audit record. Its 10 kΩ / 0.26 mA /
+> 0.47 mA FA-9 arithmetic and `_r3` package pointer are not current. The live
+> board uses exactly 40 × 47 kΩ PC817 collector pull-ups; use remediation spec
+> §R4, the regenerated first-article pack, and
+> `kicad/fab_revD_2026-07-23_r5/`; `_r4/` predates the binding
+> RP2040/MCP internal-pull-zero gate and is also superseded.
+
 > **FINAL — 2026-07-23. All 12 round-3 criteria CLOSED; one forward-alert sub-item PARTIAL
 > (dormant-by-design, v1.4 lockstep). Closure bar this round was the *adversarial reproduction
 > Codex ran*, not a unit test — the verification pass re-ran every reproduction (poison replay,

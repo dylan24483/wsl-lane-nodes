@@ -20,6 +20,23 @@
 
 ## 0. STATUS — done vs. gates remaining (2026-07-20)
 
+> **2026-07-23 CURRENT INPUT-MARGIN UPDATE — this block supersedes older package
+> and PC817 pull-up statements below.** Exactly the 40 `Rpu_*` parts
+> (`R4,R6,…,R82`) are **47 kΩ**; unrelated 10 kΩ networks are unchanged.
+> The board stays 271 parts / 223 nets with unchanged copper and netclasses.
+> Current immutable package: **`kicad/fab_revD_2026-07-23_r5/`**, 271 / 28 DNP /
+> 243 placed / 226 JLC / **27 JLC lines** / 17 hand-solder. The dedicated
+> pull-up line is UNI-ROYAL `0805W8F4702T5E`, LCSC C17713. Electrical basis
+> and binding per-channel physical gate: remediation spec §R4 + FA-9. The
+> external 47 kΩ network is authoritative only with RP2040 GP6–GP13 PUE/PDE
+> disabled and U1/U2 MCP23017 GPPUA/GPPUB commanded and read back `0x00`;
+> any mismatch is STOP-SHIP. `R_TAPPU_*` remains a distinct 10 kΩ tap-drain
+> network. Production firmware identity is build `rel-0c746b5747143b8011b01d43`,
+> cfg `05d808411db4bb0d`, UF2 SHA-256
+> `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`.
+> `_r4/` and every older package are tombstoned; never upload from them.
+> Never order from any older rev-D package.
+
 > **⚠⚠ ROUND-2 + ROUND-3 + FINALIZE UPDATE 2026-07-21 (Codex round-2 findings
 > R2-1…R2-17, then Codex re-review findings 1–8) — this block wins over BOTH blocks
 > below.** Closing record = **`phase8_revD_round2_report_2026-07-21.md`** (final
@@ -211,7 +228,8 @@ owner decisions, physical/powered sessions, or export steps — no open design w
 - Catalog §2 item 3: breaks the ≥5-sensors-for-3-AUX-channels contention deadlock (BE Klixon
   aux, ball-return exit photoeye, distributor prox, door/service switches, index pulses).
 - 8 channels on MCP_IN_B (0x21) GPB0–7, cloning the proven `opto_input()` pattern exactly
-  (PC817B + Rin 2k2 FIELD + Rpu 10k LOGIC, dry-contact default, active-low, **no RC** —
+  (PC817B + Rin 2k2 FIELD + **Rpu 47k LOGIC**, dry-contact default, active-low, no
+  fitted capacitor — the first-order 47k × 50 pF receiver node is ~2.35 µs and
   debounce lives in firmware). Appended at the END of `SLOW_INPUT_PINS` so no existing refdes
   shifted.
 - **J15 / `J_SLOW_IN_C`** — Phoenix MCV 1×10 (same proven class as J3), pins 1–8 signals,

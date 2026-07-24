@@ -313,7 +313,9 @@ The scoring engine (`wsl_scoring_engine.LaneScoring` / `CrossLaneScoring`) consu
 | `WSL_LANE_EMPTY_REF` | `lane_node/empty_ref.png` | Path to the per-install empty-reference PNG. |
 | `WSL_LANE_CAMERA_STUB` | `0` | `1` = synthetic masks — **bench only, never on a live lane.** |
 | `WSL_LANE_SERVER_URL` | `ws://localhost:8765` | The scoring server. Production: `ws://<WSL-SRV-IP>:8765`. |
-| `WSL_LANE_NODE_ID` | `lane-node-dev-pair-21-22` | Node identifier sent in `HELLO`. |
+| `WSL_LANE_NODE_ID` | **required** | Stable node identifier sent in `HELLO`; must equal `WSL_DIAG_SOURCE_ID`. |
+| `WSL_LANES` | **required** | Exact odd/even pair assigned to this Pi, such as `21,22`. |
+| `WSL_SCORING_NODE_TOKEN` | **required** | Unique per-Pi HELLO credential, distinct from the shared server-command token. |
 
 > **(VERIFY: current WSL-SRV IP.)** The go-live runbook uses `192.168.4.103:8765/:8766` (post-2026-06-03 eero router swap; the old `192.168.86.36` is dead and a DHCP reservation was still TODO). **Confirm the live WSL-SRV IP and reserve it before go-live**, and set `WSL_LANE_SERVER_URL` to match. Do not treat any hardcoded IP in older docs as current.
 

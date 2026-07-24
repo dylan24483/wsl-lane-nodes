@@ -116,9 +116,11 @@ numbers used in `config.h` exactly as below.
 **Electrical sense of the fast inputs.** Every fast input is **opto-isolated** (a
 **PC817B** optocoupler per channel — LCSC **C5692981**; see the Opto-Input section)
 and is **active-low at the Pico**: the machine contact closing (signal asserted)
-pulls the GPIO **LOW**; idle is **HIGH**. There is an on-board **10 kΩ pull-up to
-3V3** on each line, and the firmware additionally enables the RP2040's internal
-pull-up (`gpio_pull_up()` in `init_inputs()`) — "belt + suspenders."
+pulls the GPIO **LOW**; idle is **HIGH**. Rev-D has an on-board **47 kΩ pull-up
+to 3V3** on each fast-input line. Firmware explicitly disables the RP2040
+internal pulls: their ~50–80 kΩ tolerance in parallel would reduce the effective
+resistance and invalidate the qualified optocoupler-current margin. A missing
+external pull-up is a board fault, not a condition firmware masks.
 
 **Electrical sense of `RP2040_OK`.** GP2 drives an NPN (`Q_AND_RP_OK`, an MMBT3904)
 that is one transistor in the relay-enable-rail series AND chain. A **100 kΩ base
@@ -352,9 +354,11 @@ lines).
 
 The Pi side (`RP2040Link` in `lane_node/rp2040_link.py`) consumes this:
 
-- **Liveness** (`is_alive()`): a heartbeat (or any `hb`/`boot`/`rp_ok`/`flt`/`ack`
-  line) must have arrived within `hb_timeout` (default **1.0 s**, i.e. ~4 missed
-  heartbeats).
+- **Liveness** (`is_alive()`): a schema-valid `hb` must have arrived within
+  `hb_timeout` (default **1.0 s**, i.e. ~4 missed heartbeats).
+  `boot`/`rp_ok`/`flt`/`ack` lines update state but cannot renew this lease.
+  `ok` is an exact JSON boolean or integer 0/1, `up` is a uint32, and once a
+  v1.2.3 boot nonce is known every heartbeat must carry it.
 - **Health** (`health_ok()`): alive **AND** `rp_ok` true **AND** no latched fault. An
   `flt` line marks the RP2040 unhealthy *immediately*, even if the paired `rp_ok:0` is
   delayed or dropped on a lossy UART; the fault is only cleared by a subsequent `hb`
@@ -427,28 +431,31 @@ gate list.)*
 Requires the [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk),
 `arm-none-eabi-gcc`, CMake, and Ninja (or Make).
 
-```bash
-export PICO_SDK_PATH=/path/to/pico-sdk     # or: cmake -DPICO_SDK_FETCH_FROM_GIT=ON
-cd firmware/rp2040
-cmake -B build -S .                          # add -DDEBUG_USB=ON to mirror events to USB-CDC
-cmake --build build
-# -> build/wsl_phase8b_rp2040.uf2
+```powershell
+# From firmware/rp2040:
+powershell -ExecutionPolicy Bypass -File .\release.ps1
+
+# Before copying or flashing an existing bundle:
+powershell -ExecutionPolicy Bypass -File .\release.ps1 -VerifyOnly
 ```
 
-On the Westside laptop, **`pwsh -File build.ps1`** does all of the above — it
-auto-discovers the bootstrapped toolchain (xpack `arm-none-eabi-gcc` 13.3.1 + WinLibs
-CMake/Ninja + the cloned pico-sdk).
-
-**Verified 2026-06-03:** clean cross-compile + link → `wsl_phase8b_rp2040.uf2`,
-**~40 KB**, using **~24 KB flash / ~2.6 KB RAM** of the RP2040's 2 MB flash / 264 KB
-RAM. (Huge headroom — this is a tiny, deterministic firmware.)
+The controlled release script fixes the release options, runs the host tests, builds both
+the production and bench-only FI-1 images, and writes
+`release/firmware_manifest.json`. The manifest binds each UF2 SHA-256 to its exact
+on-wire `id.build`, `id.cfg`, and `id.fi1`, the complete controlled-source/config hashes,
+and the clean Pico SDK/toolchain inputs. The verifier also reconstructs each UF2 payload
+and proves those identity strings are embedded. `build.ps1` and direct CMake builds are
+developer outputs; do not flash them as release artifacts.
 
 #### 15.10.2 Flash
 
 | Method | When | How |
 |---|---|---|
-| **USB BOOTSEL** (preferred) | Bench, before the module is buried | Hold **BOOTSEL** on the Pico while connecting USB → it mounts as a mass-storage device **`RPI-RP2`** → drag-drop `wsl_phase8b_rp2040.uf2`. |
-| **SWD** (fallback) | Once the module is soldered and USB isn't accessible | `picotool load -x build/wsl_phase8b_rp2040.uf2`, or OpenOCD via the board's SWD test points. |
+| **USB BOOTSEL** (preferred) | Bench, before the module is buried | First pass `release.ps1 -VerifyOnly`; hold **BOOTSEL** while connecting USB, then drag-drop **`release/wsl_phase8b_rp2040.uf2`**. Never substitute `_FI1.uf2`. |
+| **SWD** (fallback) | Once the module is soldered and USB isn't accessible | After the same verification, `picotool load -x release/wsl_phase8b_rp2040.uf2`, or OpenOCD via the board's SWD test points. |
+
+After every flash, request `ID` and require `fw`, `build`, `cfg`, and `fi1:0` to equal
+the verified manifest. A matching filename or version banner alone is not image proof.
 
 #### 15.10.3 Host logic test (no hardware)
 

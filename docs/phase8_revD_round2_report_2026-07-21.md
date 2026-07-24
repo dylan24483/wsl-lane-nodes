@@ -1,5 +1,12 @@
 # Phase 8 Rev-D — Codex ROUND-2 Remediation Report (2026-07-21, closing record)
 
+> **HISTORICAL RECORD — superseded for PC817/FAB ordering on 2026-07-23.**
+> The live Rev-D board changes exactly the 40 PC817 collector pull-ups to
+> 47 kΩ. Do not use this report's 10 kΩ arithmetic or `_r3` package pointer;
+> use remediation spec §R4, the current first-article pack, and
+> `kicad/fab_revD_2026-07-23_r5/`; `_r4/` predates the binding
+> RP2040/MCP internal-pull-zero gate and is also superseded.
+
 **Scope.** Codex re-audited the remediated rev-D package (2026-07-21 PM) under a
 **fabrication-readiness bar**, rejected the round-1 15/2/1 tally (its re-grade: 7
 closed / 9 partial / 2 open), and issued 17 concrete findings **R2-1 … R2-17**.

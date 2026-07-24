@@ -132,17 +132,18 @@ Every node-side knob is an environment variable, read in `lane_node/lane_node.py
 | Variable | Default | Read in | Meaning |
 |---|---|---|---|
 | `WSL_LANE_SERVER_URL` | `ws://localhost:8765` | `lane_node.py` | The server WS URL. **Production must override this to the live WSL-SRV IP** (§ 20.4). |
-| `WSL_LANE_NODE_ID` | `lane-node-dev-pair-21-22` | `lane_node.py` | Node identity sent on `HELLO`; appears in the server log as `Node '<id>' registered`. |
+| `WSL_LANE_NODE_ID` | **required** | `lane_node.py` | Stable production identity sent on `HELLO`; must equal `WSL_DIAG_SOURCE_ID` and the WSL-SRV topology manifest key. |
+| `WSL_LANES` | **required** | `lane_node.py` | Exactly one consecutive odd/even physical pair, such as `21,22`. |
+| `WSL_SCORING_NODE_TOKEN` | **required** | `lane_node.py` | Unique per-Pi HELLO credential; its server map key must equal `WSL_LANE_NODE_ID`. Never reuse `LANE_NODE_TOKEN`. |
 | `WSL_LANE_SCORING_MODE` | `manual` | `lane_node.py` | `camera` \| `manual` \| `disabled` (§ 20.2.3). |
 | `WSL_LANE_CAMERA_SETTLE_S` | `2.5` | `camera.py` | Seconds after DIELL before grabbing the frame (let pins stop rocking, before the sweep clears them). |
 | `WSL_LANE_CAMERA_DEVICE` | `0` | `camera.py` | Capture device index → `/dev/videoN`. |
 | `WSL_LANE_EMPTY_REF` | *(path)* | `camera.py` | Path to the captured empty-deck reference frame the detector diffs against. |
 | `WSL_LANE_CAMERA_STUB` | `0` | `lane_node.py` | `1` = rotate synthetic masks (bench only; never on a live lane). |
 
-> The defaults are **dev** defaults (localhost server, dev node id, manual scoring,
-> stub off). A node that comes up "connected to localhost" or registered as
-> `lane-node-dev-pair-21-22` on the server is running with un-overridden defaults —
-> check the service drop-in.
+> The URL and scoring-mode defaults are for a bench only. Physical identity and
+> lane assignment have no fallback: missing/mismatched IDs or a non-pair
+> `WSL_LANES` value stops Track-A before physical authority is enabled.
 
 ---
 

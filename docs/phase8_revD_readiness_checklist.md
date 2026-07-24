@@ -3,10 +3,29 @@
 Status legend: `[ ]` open · `[~]` blocked on physical verify / owner decision · `[x]` done.
 **Do not place a fab order until every PRE-ORDER GATE is `[x]`.**
 
+> **2026-07-23 — REV-D INPUT-MARGIN HARDENING (CURRENT BOARD/FAB RECORD).**
+> Exactly the 40 PC817 collector pull-ups `Rpu_*` (`R4,R6,…,R82`) are now
+> **47 kΩ**; all unrelated 10 kΩ networks are unchanged. At 3.3 V this lowers
+> the MCP23017 guaranteed-LOW sink requirement to
+> `(3.3 − 0.66)/47 kΩ = 56.2 µA`. Worst MCP input leakage leaves the idle node
+> at 3.253 V versus V_IH(min) 2.64 V, and the 50 pF first-order node RC is
+> 2.35 µs. These figures require the external 47 kΩ to be the sole pull:
+> production RP2040 GP6–GP13 must have PUE/PDE disabled, and U1/U2 MCP23017
+> GPPUA/GPPUB must command and read back `0x00`. Any mismatch is STOP-SHIP.
+> `R_TAPPU_*` remains a separate, intentionally unchanged 10 kΩ tap-drain
+> network. The current immutable package is
+> **`kicad/fab_revD_2026-07-23_r5/`**; every older rev-D package is superseded
+> for ordering. This is still an **EXPERIMENTAL FIRST-ARTICLE**: UMW C5692981
+> does not guarantee minimum CTR at ~1.7 mA/hot, so the revised FA-9 requires
+> every populated channel to pass loaded-minimum FIELD_WET, ≥70 °C,
+> idle-leakage, capability, and transition-time measurements before fleet
+> release. Current electrical basis: remediation spec §R4.
+
 > **⚗️ THIS ORDER IS AN EXPERIMENTAL FIRST-ARTICLE ONLY (R3-8, 2026-07-21).** Until
 > the physical first-article gates clear — chiefly **FA-9 numeric PC817 V_CE / margin
-> qualification** (the input front-end margin still rests on bounded arithmetic, spec
-> §R4-A, NOT a datasheet guarantee) plus the OG-4 at-temperature tap gate — this board
+> qualification** (the input front-end margin is improved by the 47 kΩ change, but the
+> selected lot still lacks a guarantee at ~1.7 mA/hot; spec §R4) plus the OG-4
+> at-temperature tap gate — this board
 > is a prototype validation run, not a fleet-release build. The fab-order line item in
 > G15 is labelled accordingly and carries a **blank EXPERIMENTAL-ORDER acceptance line
 > for Dylan**, mirroring the blank OG-1 and H2 lines. Do not scale to fleet quantity or
@@ -30,16 +49,17 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > first-article pack is now FA-1…**FA-12** (adds the ≥ 100 MΩ tap-probe rule +
 > TP-pad-only probing, FA-9 per-channel PC817B qualification at min FIELD_WET +
 > ≥ 70 °C [R2-7], FA-12 J16 SDA/SCL short recovery [R2-4]); the PC817B
-> disposition addendum is remediation spec §R4-A.
+> disposition is remediation spec §R4 (revised 2026-07-23).
 > Board figures anywhere below are superseded: **271 parts / 223 nets, netclasses
 > 103/4/13/82/21, 24 test pads (TP17-24 tap probe pads), ERC baseline 1+39
 > (WVR-ERC-2, pin-pair order-insensitive since round 3)**; release DRC =
-> `kicad/revD/DRC-revD-round3-r1.rpt`; as-current fab package =
-> **`kicad/fab_revD_2026-07-21_r3/`** (J16 protection stack with ESD VP moved
+> `kicad/fab_revD_2026-07-23_r5/reports/DRC-revD-fab-export.rpt`; as-current fab package =
+> **`kicad/fab_revD_2026-07-23_r5/`** (47 kΩ PC817 pull-ups plus the J16
+> protection stack with ESD VP moved
 > UPSTREAM of the polyfuse — round-3 finding 2, REV_ID straps rev-D=0b01,
 > Q17-Q20 = onsemi 2N7002LT1G C16338, 10M = C26108, gbrjob Revision "D").
-> `fab_revD_2026-07-21/` and `..._r2/` are tombstoned in-directory
-> (`_SUPERSEDED_DO_NOT_UPLOAD.txt`) — never upload from them. Full record:
+> `fab_revD_2026-07-21/`, `..._r2/`, `..._r3/`, and `..._r4/` are superseded — never
+> upload from them. Full record:
 > run-log "ROUND-2 BOARD/BOM/EXPORT BATCH" + "ROUND-3 FIX BATCH" +
 > "FINALIZE (ROUND 2)" entries.
 
@@ -209,22 +229,29 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   stub placement severed a zone neck at (160, 83–84) and was caught and re-placed north)
   and the Safety_Rail==13 stop-ship invariant.
 
-### G11 — Fab export to a NEW dated directory  `[x]`  (2026-07-21, Codex H6 remediation)
-- `scripts/export_fab_revD.py` written and RUN → **`kicad/fab_revD_2026-07-21/`** (hashed
+### G11 — Fab export to a NEW dated directory  `[x]`  (re-run 2026-07-23, input-margin hardening)
+- `scripts/export_fab_revD.py` RUN → **`kicad/fab_revD_2026-07-23_r5/`** (hashed
   as-ordered package, `manifest.json` with sha256 per file + source board/netlist hashes).
   REV and output-dir are parameters; the script **refuses to run if the output dir exists**
   (verified live — second run refused; no rmtree anywhere).
 - In-process re-gates before exporting: kicad-cli DRC **0/0/0** with the live remediation
   `.kicad_dru`; `audit_revD_board.py` routed mode **ALL PASS**.
 - **BOM↔CPL↔netlist equality ASSERTED** (not sampled): every placed refdes present in all
-  three with matching value+footprint; pinned counts **262 parts / 27 DNP / 235 placed /
-  218 JLC-placed / 22 JLC lines / 17 hand-solder**. (The remediation tasking's "252" was
-  the pre-R1 part count — R1.7 moved it to 262.)
+  three with matching value+footprint; pinned counts **271 parts / 28 DNP / 243 placed /
+  226 JLC-placed / 27 JLC lines / 17 hand-solder**.
+- **PC817 pull-up scope hard-locked:** `R4,R6,…,R82` are exactly 40 × 47 kΩ,
+  UNI-ROYAL `0805W8F4702T5E`, LCSC **C17713**. The exporter rejects a missing
+  channel, an unrelated 47 kΩ part, or a merge back into the 10 kΩ BOM line.
+- **Bias configuration and firmware identity carried in-package:** RP2040 GP6–GP13
+  PUE/PDE disabled; U1/U2 MCP23017 GPPUA/GPPUB commanded/read back `0x00`;
+  build `rel-0c746b5747143b8011b01d43`, cfg `05d808411db4bb0d`, release UF2
+  SHA-256 `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`.
+  Any internal-pull or identity mismatch blocks FA-9. The package explicitly
+  distinguishes the unchanged `R_TAPPU_*` 10 kΩ diagnostic-tap drain pulls.
 - **D_PROT hard-locked**: D17 = **MDD SS34, LCSC C8678, SMA/DO-214AC** (FR-3) asserted at
   netlist, board, and JLC-BOM level; any SS14 anywhere fails the export.
-- 10M 0805 (R_TAPG_*) JLC line is **MATCH-AT-UPLOAD by MPN 0805W8F1005T5E** — no
-  verifiable LCSC C-number found 2026-07-21; record the matched C-number in the order
-  notes (part-lock CSV carries the instruction). 1M locked to C17514.
+- 10M 0805 (R_TAPG_*) is pinned to UNI-ROYAL `0805W8F1005T5E`, LCSC
+  **C26108**; 1M remains C17514.
 - Package also carries the hand-solder BOM (rev-D refs incl. J15/J16 + the U37→U45 shift)
   and the **harness BOM** (see G13).
 
@@ -251,12 +278,17 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   the G7 waiver-or-session choice, and the deferred OUT-B override (change-list item G).
 - **J16 polyfuse is FITTED** (F1, Codex R2-4) — no longer an open option; the module
   allowance was re-derived **100 mA → 45 mA @ 85 °C worst case** (R3-7, run-log FR-15).
+  A substitute is accepted only if its **minimum Ihold at 85 °C is ≥90 mA**;
+  trip-current equivalence is never sufficient because PPTC trip is not a hard clamp.
 
 ### G15 — EXPERIMENTAL FIRST-ARTICLE order acceptance  `[~]`  **(owner sign-off — blank, like OG-1 / H2)**
 - This spin ships as an **experimental first-article validation build**, not a fleet
-  release (R3-8). The input front-end (PC817) margin is bounded arithmetic (spec §R4-A),
-  proven empirically only AT first article by the upgraded numeric **FA-9** V_CE / margin
-  qualification; the tap safety gate is proven only by the at-temperature **OG-4** repeat.
+  release (R3-8). The 47 kΩ input hardening reduces required sink current to
+  56.2 µA, but the UMW PC817 lot is proven empirically only AT first article by
+  the upgraded **FA-9** hot/min-voltage capability, leakage, and timing
+  qualification, after the RP2040/MCP internal-pull-zero runtime proof
+  (spec §R4); the tap safety gate is proven only by the
+  at-temperature **OG-4** repeat.
   Both are physical gates that cannot be discharged before boards exist.
 - **To close this gate — Dylan appends the acceptance line below** (mirrors the blank
   OG-1 sign-off line in the run log). Signing accepts placing an EXPERIMENTAL order whose
@@ -278,7 +310,7 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
   `scripts/generate_first_article_docs_revD.py` (re-run it after ANY netlist/placement
   change — derived docs, never hand-edit). The pack carries the 46-row REFDES_SHIFT
   table (ISO_WET U37→U45, U_WDOG U36→U44, rail-gate pullup R106→R124 …), the relocated
-  TP map, the FA-1…FA-11 procedures (incl. the R1.9 tap fault injection with the
+  TP map, the FA-1…FA-12 procedures (incl. the R1.9 tap fault injection with the
   ≥ 70 °C repeat, the GPB poke, the ADC read, cross-mate refusal + sacrificial-pair
   coding proof, and R4 V_CE sampling). **Every rev-C bench artifact still names WRONG
   parts on a rev-D board — use ONLY the rev-D pack at the bench.**
@@ -287,6 +319,11 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
   gone — if TP4 still floats high the bleed is missing/open). TP4 under opto load ≥ ~4.5 V.
   Regression: TP5↔TP2 still OPEN (isolation).
 - `[ ]` `i2cdetect -y 1` → 0x20 / 0x21 / 0x22.
+- `[ ]` **FA-9 input-bias runtime proof:** with the exact production release,
+  record RP2040 GP6–GP13 pad readback and require PUE=0/PDE=0 on every fast
+  input. Read U1/0x20 and U2/0x21 MCP23017 `GPPUA`/`GPPUB` and require all four
+  bytes `0x00`; `MachineIO` must refuse startup on a write/readback mismatch.
+  Do not apply the 47 kΩ numeric limits if this gate is not green.
 - `[ ]` 6-relay make/break via `lane_node/bench_first_article.py` (K7 DNP for M1).
 - `[ ]` **USB (item B):** ordinary unmodified micro-B cable fully seats with the J1 ribbon
   MATED; BOOTSEL reachable; UF2 drag-drop flash succeeds WITHOUT the hand-shaved cable.
@@ -323,6 +360,7 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
   plug physically REFUSES the wrong header — J3-plug vs J15 header, J15-plug vs J3,
   J13-plug vs J16, J16-plug vs J13.
 - `[ ]` Firmware review assert (item E binding, now fw v1.2 / remediation spec R3):
+  GP6–GP13 internal pulls disabled (the external 47 kΩ is authoritative);
   GP16–GP19 inputs-only ENFORCED (`tap_assert_input_only()` register-readback + the
   build-failing host direction test), Schmitt enabled, inversion in exactly one
   `tap_read()` accessor; deliberate disarm drives ARM_PERMIT low, never tristates; the

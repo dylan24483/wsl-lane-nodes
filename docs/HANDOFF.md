@@ -63,6 +63,36 @@
 > - **Open gates (full list = report §4):** Dylan — OG-1/G8/G14 sign-off, commit-chain review, H2 prototype-vs-waiver call, G7 waiver-or-session + OUT-B override; physical — first-article FA-1…FA-12 (FI-1-based FA-7 incl. ≥ 70 °C leg, FA-8 sacrificial coding pair, FA-9, FA-12), **firmware v1.2.2 bench flash** (board #1 still on v1.x), G7 powered session, characterization DC1–DC3, G12 JLC inspection (from `_r3/` ONLY), G13 harness/coding order; ops — M7 off-disk backup copy (hash-verify vs recorded zip sha256), lane push blocker (160 MB PDF), prod arming of WSL_MACHINE_DIAG/SMS + WSL Systems deploy.
 > - **Recorded HEADs:** lane `c4502b3` + finalize commits (pinned in the run-log FINALIZE-round-2 mirror record); WSL Systems `d12a09a`. Neither pushed. As-current mirror: `WSL_Backups\2026-07-21_phase8_revD_round2_final\` (+zip+sha256).
 
+> **⚡ ADDENDUM 2026-07-23 — REV-D INPUT-MARGIN HARDENING (CURRENT BOARD/FAB RECORD; supersedes every older fab-package pointer above):**
+> - Exactly the 40 PC817 collector pull-ups `Rpu_*` (`R4,R6,…,R82`) changed
+>   **10 kΩ → 47 kΩ**. All unrelated 10 kΩ networks are unchanged. Board
+>   topology, copper, placement, netclasses, part count (271), and net count
+>   (223) are unchanged.
+> - Receiver bounds at 3.3 V: MCP23017 V_IL(max)=0.66 V, so required sink is
+>   `(3.3−0.66)/47k=56.2 µA`; ±1 µA input leakage leaves idle HIGH at 3.253 V
+>   versus V_IH(min)=2.64 V; 47 kΩ×50 pF gives a 2.35 µs first-order node RC.
+>   Those figures require the external 47 kΩ to be the sole pull: production
+>   RP2040 GP6–GP13 PUE/PDE disabled and U1/U2 MCP23017 GPPUA/GPPUB commanded
+>   and read back `0x00`. Any mismatch is STOP-SHIP. The unchanged 10 kΩ
+>   `R_TAPPU_*` diagnostic-tap drain pull-ups are separate nets.
+> - This is a real margin gain, not a paper fleet qualification. The selected
+>   UMW PC817B / LCSC C5692981 has no guaranteed minimum CTR at the board's
+>   ~1.7 mA I_F and hot corner. Revised FA-9 still requires **every populated
+>   channel** to pass loaded-minimum FIELD_WET, ≥70 °C V_CE/capability,
+>   idle-leakage, and ≤100 µs edge measurements before fleet release.
+> - Current immutable output:
+>   **`kicad/fab_revD_2026-07-23_r5/`**. It contains the dedicated 47 kΩ
+>   UNI-ROYAL `0805W8F4702T5E` / LCSC C17713 BOM line, the binding pull-zero
+>   runtime gate, and production firmware identity build
+>   `rel-0c746b5747143b8011b01d43`, cfg `05d808411db4bb0d`, UF2 SHA-256
+>   `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`.
+>   It supersedes `_r4/` and every older package. Use only r5.
+> - J16 substitution wording is fail-closed: a substitute F1 must have
+>   **minimum Ihold at 85 °C ≥90 mA**. Never accept "same trip current" as
+>   equivalent; PPTC trip is time/temperature dependent, not a hard clamp.
+> - Definitive change/evidence record:
+>   `docs/phase8_revD_round4_board_report_2026-07-23.md`.
+
 ---
 
 ## 0. Cold-start orientation

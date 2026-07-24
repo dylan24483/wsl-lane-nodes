@@ -45,10 +45,17 @@ Two SSH sessions, server in one + lane node in the other:
 
 ```bash
 # Session 1 — server
-cd ~/wsl-lane-nodes && source .venv/bin/activate && python3 server/lane_node_server.py
+cd ~/wsl-lane-nodes && source .venv/bin/activate
+WSL_MACHINE_LANES=21,22 \
+WSL_SCORING_NODE_TOPOLOGY=pi-lane21-22=21,22 \
+WSL_ALLOW_UNAUTHENTICATED_BENCH=1 \
+python3 server/lane_node_server.py
 
 # Session 2 — lane node daemon
-cd ~/wsl-lane-nodes && source .venv/bin/activate && python3 lane_node/lane_node.py
+cd ~/wsl-lane-nodes && source .venv/bin/activate
+WSL_LANE_NODE_ID=pi-lane21-22 WSL_DIAG_SOURCE_ID=pi-lane21-22 \
+WSL_LANES=21,22 WSL_ALLOW_UNAUTHENTICATED_BENCH=1 \
+python3 lane_node/lane_node.py
 ```
 
 Browser at `http://lane-node-dev.local:8766/` — Open Lane / Close Lane / Reset Pins / Power On/Off / Trigger Ball buttons per lane.
@@ -58,7 +65,10 @@ Browser at `http://lane-node-dev.local:8766/` — Open Lane / Close Lane / Reset
 ```bash
 # On WSL-SRV (Windows): see docs/deploy_server_to_wsl_srv.md
 # On the Pi:
-WSL_LANE_SERVER_URL=ws://192.168.4.103:8765 python3 lane_node/lane_node.py
+WSL_LANE_SERVER_URL=ws://192.168.4.103:8765 \
+WSL_LANE_NODE_ID=pi-lane21-22 WSL_DIAG_SOURCE_ID=pi-lane21-22 \
+WSL_LANES=21,22 LANE_NODE_TOKEN=<shared-secret> \
+WSL_SCORING_NODE_TOKEN=<unique-pi-secret> python3 lane_node/lane_node.py
 # (192.168.4.103 = WSL-SRV since the 2026-06-03 eero re-IP; confirm the live IP —
 #  the DHCP reservation is still TODO. The old 192.168.86.36 is dead.)
 ```

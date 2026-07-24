@@ -463,76 +463,76 @@ against TP1 DMM at first article (±3 % gate, change spec §D).
 
 ---
 
-## R4. PC817B CTR disposition at 1.7 mA (M5)
+## R4. PC817B collector-pull-up hardening at 1.7 mA (M5; revised 2026-07-23)
 
-**Numbers.** Wetting current per closed contact: (5 − 1.2 V_LED)/2k2 = **1.73 mA**
-(change spec §H.3). PC817 **B rank CTR = 130–260 % at I_F = 5 mA, V_CE = 5 V, 25 °C**
-(Sharp PC817 series datasheet; board part UMW PC817B, LCSC C5692981). Worst-case
-derating stack at 1.7 mA:
+**Implemented board change.** All 40 optocoupler collector pull-ups `Rpu_*`
+(`R4,R6,…,R82`) change from 10 kΩ to **47 kΩ, 1%, 0805**. Field series
+resistors remain 2.2 kΩ, so wetting current and the TMA-0505S budget do not
+change. No unrelated 10 kΩ network changes.
 
-| Factor | Value | Basis |
-|---|---|---|
-| CTR floor (B rank) | 130 % | datasheet class limit |
-| I_F derate 5 → 1.7 mA | × 0.70 | Sharp normalized CTR-vs-I_F curve (CTR falls below the 5–10 mA peak; 0.70 is the conservative read of the curve at 1.7 mA) |
-| Temperature 25 → 85 °C | × 0.75 | Sharp CTR-vs-Tamb curve (≈ 0.8 at 85 °C; 0.75 conservative) |
-| Aging (LED degradation, 10-yr life at I_F ≪ rating) | × 0.70 | industry planning figure 20–30 % lifetime loss at low bias; 30 % taken |
-| **Worst-case effective CTR** | **≈ 48 %** | 130 × 0.70 × 0.75 × 0.70 |
+**Why this is the correct low-risk change.** The board-selected UMW PC817B,
+LCSC C5692981, guarantees its CTR rank only at the manufacturer's stated test
+current and temperature. It does not publish a minimum CTR at this board's
+~1.7 mA I_F and hot corner. Typical curves from another PC817 manufacturer are
+useful context, not a fleet guarantee for this lot. Raising all 40 channels to
+the stated 5 mA test point would consume about 200 mA in LEDs alone and exhaust
+the 200 mA wetting converter budget. Increasing collector resistance buys
+receiver-side margin without increasing field current.
 
-Available collector current: 1.73 mA × 0.48 ≈ **0.83 mA**. Required: sink the 10 k
-logic pull-up, 3.3 V/10 k = **0.33 mA**, to below the MCP23017 V_IL
-(≈ 0.2 × VDD = 0.66 V; Microchip DS20001952 — verify exact figure at implementation).
-At 0.33 mA with 0.83 mA of drive capability the transistor is saturated,
-V_CE ≈ 0.1–0.2 V ≪ 0.66 V.
+**Binding configuration dependency.** The calculations below require the
+external 47 kΩ `Rpu_*` to be the sole pull on each PC817 collector. Production
+firmware must leave RP2040 GP6–GP13 internal PUE/PDE disabled, and deployed
+`MachineIO` must command and verify U1/U2 MCP23017 `GPPUA=GPPUB=0x00`.
+Any enabled internal pull changes the effective resistance and invalidates the
+47 kΩ sink/leakage/RC disposition. The four `R_TAPPU_*` 10 kΩ diagnostic-tap
+drain pull-ups are separate MOSFET-drain nets, remain unchanged, and are not
+part of this calculation.
 
-**Margin = 0.83/0.33 ≈ 2.5× at the full worst-worst stack** (lot floor + hot + aged +
-low-I_F simultaneously).
+**Guaranteed receiver arithmetic (Microchip MCP23017 DS20001952):**
 
-**Disposition: NO CHANGE — accepted with evidence.** (a) 2.5× margin survives the
-pessimistic stack; (b) **the identical 1.73 mA design runs on the physical rev-C
-board: 40 channels, bench bring-up 6/6 + machine-22 field input-side PASS, GS map
-10/10** (run-log FR-1, readiness checklist) — the empirical anchor Codex's M5 itself
-allows for a disposition; (c) the undocumented-margin complaint is closed by this
-table.
+| Quantity | Bound at VDD = 3.3 V |
+|---|---|
+| GPIO V_IL(max) | 0.2 × VDD = **0.66 V** |
+| Required sink at V_IL with external 47 kΩ as sole pull | (3.3 − 0.66) / 47 kΩ = **56.2 µA** |
+| Maximum 47 kΩ pull-up current | 3.3 / 47 kΩ = **70.2 µA** |
+| GPIO V_IH(min) | 0.8 × VDD = **2.64 V** |
+| Worst idle HIGH from MCP input leakage alone | 3.3 V − (1 µA × 47 kΩ) = **3.253 V** |
+| Idle-HIGH margin over V_IH | **0.613 V** |
+| First-order GPIO RC using the 50 pF figure | 47 kΩ × 50 pF = **2.35 µs** |
 
-**Trigger conditions that reopen this and force a wetting-current change
-(Rin 2k2 → 1k, ≈ 3.5 mA, with mandatory re-run of the §H.3 wetting and §H.4 D17
-budgets per standing rule):**
+The 50 pF calculation is a first-order receiver-node estimate; optocoupler,
+trace, contamination, and probe effects are physical variables. FA-9 therefore
+measures both idle-HIGH leakage margin and actual assertion/release time.
 
-1. First-article or any service measurement shows **V_CE(on) > 0.3 V** on any channel
-   at nominal wetting (measure 3 sample channels each first article — add to the §I.9
-   checklist), or
-2. A supplier/rank change off PC817**B** (any CTR class below 130 % floor), or
-3. A future channel is repopulated for 24 VAC-sense with a different effective I_F, or
-4. Fleet mid-life audit (year 5) finds any channel's V_CE(on) trending above 0.3 V.
+**Disposition: board margin materially improved; physical lot gate remains.**
+The old 10 kΩ arithmetic required ~0.26 mA at V_IL. Rev-D now needs only
+56.2 µA, a 4.7× reduction, without adding load to the isolated wetting rail.
+That is sufficient justification for the PCB change. It is not permission to
+declare C5692981 qualified outside its guaranteed test point.
 
-### R4-A. Round-2 addendum (Codex R2-7, 2026-07-21 finalize) — bounded arithmetic sharpened + empirical closure
+**Binding FA-9 acceptance (every populated channel):**
 
-Codex round-2 re-raised M5 as **R2-7**: the derate stack above leans on conservative
-reads of TYPICAL curves, not published minima. Accepted refinements — **the disposition
-STANDS, sharpened; still NO REDESIGN:**
+1. Before applying any numeric limit, boot the exact production release and
+   record live pull configuration: RP2040 GP6–GP13 PUE=0/PDE=0, plus U1/U2
+   MCP23017 GPPUA/GPPUB all `0x00`. `MachineIO` readback mismatch must fail
+   startup. Any nonzero pull bit is STOP-SHIP.
+2. At loaded-minimum FIELD_WET, record cold and ≥70 °C `V_CE(on)` and the
+   actual receiver bit; require **V_CE(on) ≤ 0.30 V** and ACTIVE-LOW.
+3. At the hot/min-I_F corner, measure non-rail-limited `I_C(cap)`. With the
+   retained 30% lifetime-loss planning factor, require
+   `I_C(cap) × 0.70 ≥ 70.2 µA`, hence **I_C(cap) ≥ 100.3 µA**.
+4. At ≥70 °C with the contact open, record the assembled node HIGH and
+   receiver state. Require **V_node ≥ 2.84 V** (V_IH + 0.20 V service guard)
+   and INACTIVE. This catches optocoupler dark leakage, contamination, and
+   board leakage that the MCP-only 3.253 V calculation does not cover.
+5. Measure assertion and release at the collector under loaded-minimum
+   FIELD_WET; require the slower transition **≤100 µs**, at least 5× faster
+   than the 500 µs fastest-input debounce.
 
-- **Threshold condition made exact.** The MCP23017 input reads LOW once the
-  phototransistor pulls the 10 k logic pull-up below V_IL ≈ 0.2 × VDD = 0.66 V, i.e.
-  **I_C(threshold) ≈ (3.3 − 0.66) / 10 k ≈ 0.26 mA**. The 0.33 mA figure used above is
-  the dead-short current — a stricter number than the actual threshold, kept as the
-  design target. Against the worst-stack 0.83 mA of available drive the margin at the
-  true threshold is **≈ 3.2×** (0.83 / 0.26); at the stricter 0.33 mA target it is the
-  2.5× already stated.
-- **Provenance split — datasheet minimum vs. curve read.** The 130 % CTR floor is a
-  **published class minimum**. The ×0.70 I_F derate, ×0.75 temperature derate, and
-  ×0.70 aging factor are **conservative reads of typical curves** — Sharp publishes no
-  minimum CTR at 1.7 mA, so the stack is bounded-arithmetic evidence, not a datasheet
-  guarantee. Stated plainly per R2-7; the residual uncertainty is closed
-  **empirically, per channel**: first-article **FA-9 steps 2–3** now qualify EVERY
-  populated input channel at the loaded-minimum field voltage AND at ≥ 70 °C case
-  (the hot + low-I_F worst corner), on top of the 3-channel V_CE sampling.
-- **Why not raise I_F to the 5 mA datasheet point (the redesign — rejected by both
-  reviewers):** 40+ populated channels × 5 mA ≈ 200+ mA of LED current alone meets or
-  **exceeds the TMA-0505S wetting-rail budget (200 mA; §H.3 fleet worst case is
-  73.7 mA at 1.73 mA/channel)**. The low wetting current is a hard system constraint,
-  not an oversight — margin is PROVEN per channel instead of bought per channel.
-- Reopen triggers 1–4 above unchanged; any FA-9 step-2/3 per-channel failure lands
-  under trigger 1.
+Any failure blocks fleet release. A supplier/rank change, 24 VAC-sense
+repopulation, resistor substitution, or year-5 service trend also reopens this
+disposition. Do not automatically lower `Rin`: that would require a fresh
+wetting-converter and D17 rail budget review.
 
 ---
 

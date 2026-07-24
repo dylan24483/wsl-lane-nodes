@@ -1399,3 +1399,121 @@ remain deliberately untracked (standing practice — explicit staging only).
   `scripts/verify_revC_snapshot.py` -> **189/189 OK, 0 failures**.
 - WSL Systems round-2 end-state HEAD (unchanged by this finalize): `d12a09a`
   (`fable-audit-fixes`, not pushed).
+
+## ROUND-4 INPUT-MARGIN / FAB HARDENING — 2026-07-23
+
+### Implemented delta
+
+- Exactly 40 PC817 collector pull-ups `Rpu_*` (`R4,R6,…,R82`) changed
+  10 kΩ → 47 kΩ. No unrelated 10 kΩ part changed.
+- Board copper/placement/nets/netclasses/outline unchanged; PCB diff contains
+  exactly 40 removed 10 kΩ value fields and 40 added 47 kΩ value fields.
+- Part lock: UNI-ROYAL `0805W8F4702T5E`, LCSC C17713, 1%, 0805,
+  quantity 40. The unrelated 10 kΩ C17414 line remains quantity 13.
+- Electrical bounds: required sink 56.2 µA at MCP V_IL=0.66 V; MCP-only
+  idle HIGH 3.253 V at ±1 µA leakage vs V_IH=2.64 V; first-order
+  47 kΩ×50 pF RC=2.35 µs.
+- Proof boundary retained: UMW C5692981 has no guaranteed minimum CTR at
+  ~1.7 mA/hot. Revised FA-9 requires every populated channel to pass
+  loaded-min/hot V_CE, I_C(cap) ≥100.3 µA, hot idle-HIGH, and ≤100 µs edges.
+- J16 substitution language now requires minimum Ihold at 85 °C ≥90 mA;
+  trip-current equivalence is explicitly rejected.
+
+### Gate record
+
+| Gate | Result |
+|---|---|
+| Generator/ERC | PASS — 271 parts; 1 waived + 39 warnings |
+| Netlist audit | ALL PASS — exact 40 × 47 kΩ, no unrelated 47 kΩ |
+| Rev-C→D deep diff | CLEAN — 55/55 parts, 39/39 nets, 11/11 touched nets |
+| Netclasses | 103/4/13/82/21; Safety_Rail exactly 13 |
+| Router check-only | 0 problems / 2167 actions |
+| Board audit | ALL PASS |
+| Export DRC | 0 violations / 0 unconnected / 0 footprint errors |
+| Export equality | 271 / 28 DNP / 243 placed / 226 JLC / 27 lines / 17 hand |
+| First-article generator | 271 rows / 24 TPs / 46 shifts / 8 GPB |
+| Immutable-path replay | REFUSED as designed |
+| Manifest re-hash | 45/45 match |
+| Rev-C sacred snapshot | 189/189 OK / 0 failures |
+
+### Current immutable artifact
+
+Historical at this gate: `kicad/fab_revD_2026-07-23_r4/` superseded `_r3/`.
+Round 5 below now supersedes `_r4/`; neither is orderable. `_r3/` and `_r4/`
+have in-directory `_SUPERSEDED_DO_NOT_UPLOAD.txt` markers.
+
+- Board sha256:
+  `93972c28d07c8d37193ffecea4bfc3e012b934415fec1f85597d6e87edf7ea7b`
+- Netlist sha256:
+  `1d5d36f26f24c91bcf30ae5c895ac053128f1608054e19410a1506b4741f291f`
+- Manifest sha256:
+  `3abfb9ac830939339b2476a575215924d45b81b72cb764cbfd2df7d0b549a1bd`
+- Full package zip sha256:
+  `67059dfe1d981a6a847411ec3198f8a4f946a23dc97f673edda507373651ad03`
+- JLC upload zip sha256:
+  `1f6ad22a489c2484bb6c9ac580a90f125ce393dfc6e298f27672ee7f533989d6`
+- Gerber/drill zip sha256:
+  `e82be4a9df5bab75dec5c2fc6407c58de1727557c6fcff855a06465e62706d4e`
+
+Definitive report:
+`docs/phase8_revD_round4_board_report_2026-07-23.md`.
+
+---
+
+## 2026-07-23 — ROUND-5 INPUT-BIAS/FIRMWARE PACKAGE INTEGRATION
+
+Post-r4 integration found two internal-pull paths that would have paralleled
+the external 47 kΩ PC817 collector resistors and invalidated the r4-only
+sink/leakage/RC arithmetic:
+
+- RP2040 fast inputs GP6–GP13 had firmware pull-ups.
+- U1/U2 MCP23017 input ports were configured with GPPUA/GPPUB=`0xFF`.
+
+Both are closed. The production RP2040 build disables PUE/PDE on GP6–GP13.
+`MachineIO` commands input-expander GPPUA/GPPUB=`0x00`, reads back IODIR and
+GPPU writes, and fails construction on mismatch. FA-9 now records the live
+RP2040 and MCP register state before any numeric 47 kΩ criterion is applied.
+The unchanged `R_TAPPU_*` 10 kΩ diagnostic-tap drain pull-ups are explicitly
+separate from the PC817 network.
+
+Production firmware identity bound into the package:
+
+- build: `rel-0c746b5747143b8011b01d43`
+- cfg: `05d808411db4bb0d`
+- release UF2 SHA-256:
+  `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`
+- firmware manifest SHA-256:
+  `5bcbd2df1980acdd365865fc6527c96a3d0c1f51210a9d4a5fdd1f6cfcc279fd`
+
+### Gate record
+
+| Gate | Result |
+|---|---|
+| Firmware release verifier | PASS |
+| RP2040 fast-input pull regression | PASS — v1.2 host suite 140/140 |
+| MCP input-bias/readback regression | PASS — 2 tests |
+| First-article generator | PASS — 271 rows / 24 TPs / 46 shifts / 8 GPB |
+| Export DRC | 0 violations / 0 unconnected / 0 footprint errors |
+| Routed-board audit | ALL PASS |
+| Export equality | 271 / 28 DNP / 243 placed / 226 JLC / 27 lines / 17 hand |
+| Immutable-path replay | REFUSED as designed |
+| Manifest re-hash | 45/45 match |
+
+### Current immutable artifact
+
+`kicad/fab_revD_2026-07-23_r5/` is the only orderable package. `_r4/`,
+`_r3/`, and all older packages carry `_SUPERSEDED_DO_NOT_UPLOAD` markers.
+Board and netlist are unchanged from r4:
+
+- Board SHA-256:
+  `93972c28d07c8d37193ffecea4bfc3e012b934415fec1f85597d6e87edf7ea7b`
+- Netlist SHA-256:
+  `1d5d36f26f24c91bcf30ae5c895ac053128f1608054e19410a1506b4741f291f`
+- Manifest SHA-256:
+  `99f1819ee63cec1578f57331c8b3d7b0eec3db7d228c4f8810c0424ff8f31e93`
+- Full package zip SHA-256:
+  `b3ae254e54ec3efef5ea78daff4e70f73d068a8d2cef3b2d823c218312b71a87`
+- JLC upload zip SHA-256:
+  `789bec819c017bd841d0e853dc0038d03af040090e59761a6d104b7d2ce13fdc`
+- Gerber/drill zip SHA-256:
+  `efe841d387e11886f1b7870a1d1f6802f04296d14fb404b5d88b27604e295f68`
