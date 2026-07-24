@@ -3,6 +3,11 @@ Description=WSL Lane Node daemon (AMF 8270 control via Pi GPIO)
 Documentation=https://github.com/dylan24483/wsl-lane-nodes
 After=network-online.target
 Wants=network-online.target
+# Bound crash loops and keep each restart gap longer than the ~11 s NE555
+# expiry. Even if process cleanup fails, a crashed service cannot resume
+# watchdog kicks before the hardware has proved a rail-drop interval.
+StartLimitIntervalSec=120
+StartLimitBurst=4
 
 [Service]
 Type=simple
@@ -13,9 +18,9 @@ WorkingDirectory=/home/pi/wsl-lane-nodes
 # R2-9 (2026-07-21): shared per-Pi provisioning env — WSL_DIAG_SERVER_URL +
 # LANE_NODE_TOKEN (camera-health diag events ship over the same outbox leg
 # as the controller daemon's). Template: systemd/wsl-lane-node.env.example;
-# install per docs/phase8_pi_provisioning.md §8. '-' = optional on a bench
-# Pi; production installs MUST create it.
-EnvironmentFile=-/etc/wsl-lane-node.env
+# install per docs/phase8_pi_provisioning.md §8. The file is mandatory: a
+# scoring node may not guess its fleet identity or physical lane pair.
+EnvironmentFile=/etc/wsl-lane-node.env
 
 # Run lane_node.py via the venv's python so we get gpiozero + websockets.
 ExecStart=/home/pi/wsl-lane-nodes/.venv/bin/python3 lane_node/lane_node.py
@@ -38,11 +43,11 @@ TimeoutStopSec=10
 # unexpected sys.exit(0)) — brings the lane node back. on-failure left
 # the lane dead-silent after a clean-but-unintended exit. Intentional
 # `systemctl stop` is unaffected (systemd never restarts after a stop
-# job). RestartSec=5 backs off so a persistent crash bug doesn't burn
-# CPU; relay_cleanup.py (ExecStopPost above) drives the relay + kick
-# GPIOs LOW between attempts, so restarts stay fail-safe.
+# job). RestartSec=15 exceeds the watchdog expiry; relay_cleanup.py
+# (ExecStopPost above) also drives the relay + kick GPIOs LOW between
+# attempts. StartLimit above latches a persistent crash loop failed.
 Restart=always
-RestartSec=5
+RestartSec=15
 
 [Install]
 WantedBy=multi-user.target

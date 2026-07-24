@@ -128,7 +128,7 @@ This controller pin plan **overlaps that set on GPIO 5, 6, 12, 13, 16, 20, 23, 2
 
 ## 8. Per-Pi environment file — `/etc/wsl-lane-node.env` (R2-9, 2026-07-21)
 
-Both units load `EnvironmentFile=-/etc/wsl-lane-node.env`. **The default
+Both units require `EnvironmentFile=/etc/wsl-lane-node.env`. **The default
 deployment ships the HTTP diagnostics leg configured — JSONL-only is a
 degraded mode, not the norm** (Codex round-2 R2-9): without
 `WSL_DIAG_SERVER_URL` + `LANE_NODE_TOKEN` every diagnostics event stays on
@@ -141,8 +141,14 @@ sudo chmod 600 /etc/wsl-lane-node.env    # it carries the lane token
 sudo nano /etc/wsl-lane-node.env         # set at minimum:
 #   WSL_DIAG_SERVER_URL=http://192.168.4.103:8766
 #   LANE_NODE_TOKEN=<the server's token>
-#   WSL_DIAG_SOURCE_ID=<stable device id, e.g. pi-lane21-22>
-#   WSL_BOARD_REVS=21=revC,22=revC       # R2-6: REQUIRED for the controller
+#   WSL_SCORING_NODE_TOKEN=<unique random secret for this Pi>
+#   WSL_LANE_NODE_ID=pi-lane21-22
+#   WSL_LANES=21,22
+#   WSL_DIAG_SOURCE_ID=pi-lane21-22       # MUST equal WSL_LANE_NODE_ID
+#   WSL_BOARD_REVS=21=revD,22=revD       # REQUIRED for the controller
+#   WSL_RP2040_BUILD_ALLOWLIST=<release manifest build_id>
+#   WSL_RP2040_CFG_ALLOWLIST=<release manifest config hash>
+#   WSL_RP2040_UIDS=21=<Pico UID>,22=<Pico UID>
 sudo systemctl daemon-reload
 sudo systemctl restart lane-node         # or lane-node-controller
 ```
@@ -150,7 +156,7 @@ sudo systemctl restart lane-node         # or lane-node-controller
 Verify after restart:
 
 ```bash
-journalctl -u lane-node-controller -n 20   # expect "board_rev=revC" per lane,
+journalctl -u lane-node-controller -n 20   # expect "board_rev=revD" per lane,
                                            # NOT "UNPROVISIONED (will be refused)"
 ls ~/wsl-lane-nodes/diag_logs/outbox_cursor.json   # outbox cursor advancing
 curl -s http://192.168.4.103:8766/api/machine/health | head   # events landing
@@ -162,7 +168,48 @@ skipped fail-safe (never ticked, NE555 never kicked, rail stays down). This
 is deliberate: a silent `revC` default would swallow every AUX4-11 role on a
 rev-D board with zero log lines.
 
+**Rev-D identity note:** a declared board revision is not sufficient to ARM.
+The controller requires the live firmware `id.build` and `id.cfg` to match the
+two release allowlists above. The fleet also pins each Pico UID to its lane;
+enroll those UIDs during the controlled bench flash and keep the same mapping
+in WSL-SRV's machine-scoped environment. A missing/mismatched identity is
+reported as `DEGRADED` and the Rev-D controller remains disarmed.
+
 **R2-12 note:** events ship via the JSONL outbox (`diag_events.OutboxReplayer`)
 with a persisted cursor advanced only on a 2xx ack; the server dedupes on
 `(source_id, boot_id, seq)`, so outages/drops replay idempotently. Keep
-`WSL_DIAG_SOURCE_ID` stable across re-images.
+`WSL_LANE_NODE_ID` and `WSL_DIAG_SOURCE_ID` identical and stable across
+re-images. Track-A refuses to start if the identity is absent/development-like,
+the IDs disagree, or `WSL_LANES` is not one consecutive odd/even pair.
+
+On WSL-SRV, the same release must set
+`WSL_SCORING_NODE_TOPOLOGY=pi-lane21-22=21,22` (extend with
+`;pi-lane23-24=23,24` as pairs are enrolled). Its lane union must exactly match
+`WSL_MACHINE_LANES`; a missing/malformed manifest, an unexpected HELLO, a
+partial pair, a duplicate live node, or an overlapping claimant disables
+physical command authority and turns machine health red.
+Set `WSL_SCORING_NODE_TOKENS=pi-lane21-22=<that Pi's unique secret>` on
+WSL-SRV. Its key set must exactly match the topology. Never write token values
+to logs, reports, or the release manifest.
+
+## 9. Wall-clock anomaly recovery
+
+Wall-clock rollback latches command refusal durably on each Pi, WSL-SRV, and
+the WSL bridge. Never clear only one layer.
+
+1. Stop `lane-node.service` on every affected Pi and confirm it is inactive.
+2. Restore NTP and require `timedatectl show -p NTPSynchronized --value` to
+   print `yes`.
+3. Run `sudo .venv/bin/python3 lane_node/reset_clock_guard.py --actor-id <id>
+   --note "<ticket and NTP evidence>"` on each Pi. The helper refuses non-Linux,
+   an active service, or unsynchronized time and appends an audit record.
+4. Keep scoring sessions closed and no command in flight. Start the Pi services
+   and wait for every exact manifest node to report a fresh, healthy clock.
+5. POST the current UTC epoch, actor, and note to the authenticated
+   `/api/system/clock-guard/reset` endpoint on WSL-SRV.
+6. Clear the WSL bridge guard last using its audited recovery command. Confirm
+   all three health surfaces agree before re-enabling command workers.
+
+Previously refused command receipts remain terminal after a reset. Correct the
+physical state manually, then create a new audited operation; never replay a
+stale command ID.

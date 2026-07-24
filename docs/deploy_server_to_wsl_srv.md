@@ -63,6 +63,10 @@ If `pip install websockets` fails because WSL-SRV doesn't have outbound internet
 In the activated venv, with no Pi connected yet:
 
 ```powershell
+$env:WSL_MACHINE_LANES = "21,22"
+$env:WSL_SCORING_NODE_TOPOLOGY = "pi-lane21-22=21,22"
+$env:LANE_NODE_TOKEN = "<shared HTTP and server-command secret>"
+$env:WSL_SCORING_NODE_TOKENS = "pi-lane21-22=<unique Pi secret>"
 python server\lane_node_server.py
 ```
 
@@ -95,7 +99,11 @@ sudo pkill -f python3
 Override the SERVER_URL via env var. Either inline:
 
 ```bash
-WSL_LANE_SERVER_URL=ws://192.168.4.103:8765 python3 lane_node/lane_node.py
+WSL_LANE_SERVER_URL=ws://192.168.4.103:8765 \
+WSL_LANE_NODE_ID=pi-lane21-22 WSL_DIAG_SOURCE_ID=pi-lane21-22 \
+WSL_LANES=21,22 LANE_NODE_TOKEN='<shared secret>' \
+WSL_SCORING_NODE_TOKEN='<unique Pi secret>' \
+python3 lane_node/lane_node.py
 ```
 
 Or as a permanent change in the systemd unit at `/etc/systemd/system/lane-node.service`:
@@ -103,6 +111,7 @@ Or as a permanent change in the systemd unit at `/etc/systemd/system/lane-node.s
 ```
 [Service]
 Environment="WSL_LANE_SERVER_URL=ws://192.168.4.103:8765"
+EnvironmentFile=/etc/wsl-lane-node.env
 ```
 
 After editing the unit, `sudo systemctl daemon-reload` then `sudo systemctl start lane-node.service`.
@@ -116,12 +125,12 @@ With the WSL-SRV server running and the Pi node pointed at it:
 1. Pi terminal should show:
    ```
    [INFO] Connecting to ws://192.168.4.103:8765 ...
-   [INFO] Connected. Sending hello (lanes=[21, 22], protocol_version=2).
+   [INFO] Connected. Sending hello (lanes=[21, 22], protocol_version=3).
    ```
 2. WSL-SRV terminal should show:
    ```
    [INFO] New connection from ('192.168.4.XXX', YYYY)
-   [INFO] Node 'lane-node-dev-pair-21-22' registered (lanes=[21, 22], protocol_version=2)
+   [INFO] Node 'pi-lane21-22' registered (lanes=[21, 22], protocol_version=3)
    ```
 3. Browser at `http://192.168.4.103:8766/` — click Open Lane on lane 22. Relay 1 on the Pi's bench rig clicks 3 times. Confirms the full chain across the network boundary.
 

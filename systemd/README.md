@@ -8,9 +8,10 @@ Two units, **mutually exclusive** (`lane-node-controller.service`
 | `lane-node.service` | A | camera scoring (`lane_node.py`) | `camera_health`, `camera_ref_drift`, `gs_camera_disagree` |
 | `lane-node-controller.service` | B | 82-70 controller replacement (`controller_daemon.py`) | `service_restart*`, `pi_thermal`, `pi_disk_low`, `pi_fs_readonly`, `pi_undervoltage`, `uart_drops`, FSM/firmware faults, `fw_identity*` |
 
-Both load the shared per-Pi env (`EnvironmentFile=-/etc/wsl-lane-node.env`,
+Both require the shared per-Pi env (`EnvironmentFile=/etc/wsl-lane-node.env`,
 see `wsl-lane-node.env.example`): `WSL_DIAG_SERVER_URL`, `LANE_NODE_TOKEN`,
-`WSL_BOARD_REVS`, `WSL_LANES`.
+the distinct `WSL_SCORING_NODE_TOKEN`, `WSL_LANE_NODE_ID`, matching
+`WSL_DIAG_SOURCE_ID`, `WSL_BOARD_REVS`, and the exact paired `WSL_LANES`.
 
 ## R3-2 — controller heartbeat / lease renewal (why a quiet controller stays HEALTHY)
 
