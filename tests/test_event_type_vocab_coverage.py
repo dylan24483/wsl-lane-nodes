@@ -8,18 +8,30 @@ diagnostics contract vocabulary. That is exactly the fw_identity poison pill
 server's validator did not know it, and the WHOLE batch 400'd so the outbox
 cursor stalled and every later event was blocked.
 
-This test statically walks the AST of every lane_node/*.py module, finds
-every event_type string argument to an emit call, and fails if ANY of them
-is not in server/machine_contract.json's vocab.event_types. It cannot be
-satisfied by adding a type to only one side, because the contract is the one
-source both the server (machine_store) and the client (diag_events) load.
+This test statically walks the AST of every lane_node/*.py module plus the
+server-side machine_store.insert_events(...) producers, finds every
+event_type string they can emit, and fails if ANY of them is not in
+server/machine_contract.json's vocab.event_types. It cannot be satisfied by
+adding a type to only one side, because the contract is the one source both
+the server (machine_store) and the client (diag_events) load.
 
 Emit sites recognised (the event_type argument position per callee):
   * emit_event(severity, event_type, ...)        -> arg index 1 / kw event_type
   * _emit(severity, event_type, ...)             -> arg index 1
   * _diag_emit(severity, event_type, ...)        -> arg index 1
+  * _diag_emit_lanes(severity, event_type, ...)  -> arg index 1
   * diag_emit(severity, event_type, ...)         -> arg index 1  (lambda forwards)
   * make_event(lane_id, severity, event_type,..) -> arg index 2 / kw event_type
+  * _enqueue_diagnostic_incident_sync(
+        lane_id, severity, event_type, ...)       -> arg index 2
+  * _enqueue_diagnostic_incident(
+        lane_id, severity, event_type, ...)       -> arg index 2
+  * machine_store.insert_events([{..., "event_type": "..."}])
+
+The server producer scanner follows simple local assignments and
+machine_store.validate_event({...}) wrappers. This covers both direct event
+dictionaries and the validated-row-then-insert pattern without treating the
+generic machine_store.insert_events(rows) implementation as a producer.
 
 `if __name__ == "__main__":` blocks are skipped — those are per-module smoke
 harnesses ('smoke', 'catastrophic') that deliberately exercise the
@@ -34,6 +46,7 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LANE_NODE_DIR = os.path.join(REPO_ROOT, "lane_node")
+SERVER_DIR = os.path.join(REPO_ROOT, "server")
 CONTRACT_PATH = os.path.join(REPO_ROOT, "server", "machine_contract.json")
 
 # callee name -> (severity-arg index, event_type-arg index). Both positions are
@@ -46,8 +59,11 @@ _EMIT_CALLEES = {
     "emit_event": (0, 1),
     "_emit": (0, 1),
     "_diag_emit": (0, 1),
+    "_diag_emit_lanes": (0, 1),
     "diag_emit": (0, 1),
     "make_event": (1, 2),
+    "_enqueue_diagnostic_incident_sync": (1, 2),
+    "_enqueue_diagnostic_incident": (1, 2),
 }
 # SEVERITIES is loaded lazily by the visitor (contract-driven) but a severity is
 # ALSO accepted structurally (Name / IfExp) so a forwarded or computed severity
@@ -71,13 +87,16 @@ def _param_names(args):
 
 
 class _Scope:
-    __slots__ = ("params", "bindings")
+    __slots__ = ("params", "bindings", "expressions")
 
     def __init__(self, params=()):
         self.params = set(params)
         # name -> (values:set[str], resolved:bool) for simple string/ternary
         # assignments seen so far in this scope.
         self.bindings = {}
+        # name -> AST expression. Used only to follow a server producer's
+        # simple ``row = validate_event({...}); insert_events([row])`` shape.
+        self.expressions = {}
 
 
 class _EmitVisitor(ast.NodeVisitor):
@@ -122,12 +141,28 @@ class _EmitVisitor(ast.NodeVisitor):
             return   # do not descend into the smoke harness
         self.generic_visit(node)
 
+    def visit_For(self, node):
+        # platform_fault_events() returns tuples sourced exclusively from the
+        # statically scanned PLATFORM_EVENT_MAP below. Mark its event_type
+        # target as resolved here; the concrete strings are collected from
+        # that map, so callers remain vocabulary-covered without duplicating
+        # the mapping at every relay site.
+        if (isinstance(node.iter, ast.Call)
+                and _callee_name(node.iter.func) == "platform_fault_events"
+                and isinstance(node.target, (ast.Tuple, ast.List))
+                and len(node.target.elts) >= 3
+                and isinstance(node.target.elts[2], ast.Name)):
+            event_name = node.target.elts[2].id
+            self._scopes[-1].bindings[event_name] = (set(), True)
+        self.generic_visit(node)
+
     def visit_Assign(self, node):
         # Record simple string/ternary bindings so a later emit(et) resolves.
-        if isinstance(node.value, (ast.Constant, ast.IfExp)):
-            vals, res = self._resolve(node.value)
-            for tgt in node.targets:
-                if isinstance(tgt, ast.Name):
+        for tgt in node.targets:
+            if isinstance(tgt, ast.Name):
+                self._scopes[-1].expressions[tgt.id] = node.value
+                if isinstance(node.value, (ast.Constant, ast.IfExp)):
+                    vals, res = self._resolve(node.value)
                     self._scopes[-1].bindings[tgt.id] = (vals, res)
         self.generic_visit(node)
 
@@ -160,6 +195,52 @@ class _EmitVisitor(ast.NodeVisitor):
         # self.cycle_index (Attribute), Subscript, Call, etc. is NOT.
         return isinstance(arg, (ast.Name, ast.IfExp))
 
+    def _resolve_producer_rows(self, expr, seen=None):
+        """Resolve event_type values from a machine_store producer argument."""
+        seen = set() if seen is None else seen
+        if isinstance(expr, (ast.List, ast.Tuple, ast.Set)):
+            values = set()
+            resolved = True
+            for item in expr.elts:
+                item_values, item_resolved = self._resolve_producer_rows(
+                    item, seen)
+                values.update(item_values)
+                resolved = resolved and item_resolved
+            return values, resolved
+        if isinstance(expr, ast.Dict):
+            for key, value in zip(expr.keys, expr.values):
+                if (isinstance(key, ast.Constant)
+                        and key.value == "event_type"):
+                    return self._resolve(value)
+            return set(), False
+        if (isinstance(expr, ast.Call)
+                and _callee_name(expr.func) == "validate_event"):
+            row = _arg_at(expr, 0, "event")
+            if row is None:
+                row = _arg_at(expr, 0, "row")
+            return ((set(), False) if row is None
+                    else self._resolve_producer_rows(row, seen))
+        if isinstance(expr, ast.Name):
+            if expr.id in seen:
+                return set(), False
+            for scope in reversed(self._scopes):
+                if expr.id in scope.expressions:
+                    return self._resolve_producer_rows(
+                        scope.expressions[expr.id], seen | {expr.id})
+                if expr.id in scope.params:
+                    return set(), False
+            return set(), False
+        return set(), False
+
+    @staticmethod
+    def _is_machine_store_insert(node):
+        return (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "insert_events"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "machine_store"
+        )
+
     def visit_Call(self, node):
         spec = _EMIT_CALLEES.get(_callee_name(node.func))
         if spec is not None:
@@ -174,6 +255,16 @@ class _EmitVisitor(ast.NodeVisitor):
                     if not resolved:
                         self.dynamic.append((node.lineno,
                                              _callee_name(node.func)))
+        if self._is_machine_store_insert(node):
+            rows = _arg_at(node, 0, "rows")
+            values, resolved = (
+                (set(), False) if rows is None
+                else self._resolve_producer_rows(rows))
+            for value in values:
+                self.literals.append((node.lineno, value))
+            if not resolved:
+                self.dynamic.append((node.lineno,
+                                     "machine_store.insert_events"))
         self.generic_visit(node)
 
 
@@ -209,22 +300,48 @@ def _contract_severities():
         return set(json.load(f)["vocab"]["severities"])
 
 
+def _platform_event_map_literals(tree):
+    """Return event types from health_drop.PLATFORM_EVENT_MAP."""
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name)
+                   and target.id == "PLATFORM_EVENT_MAP"
+                   for target in node.targets):
+            continue
+        if not isinstance(node.value, ast.Dict):
+            continue
+        for value in node.value.values:
+            if (isinstance(value, (ast.Tuple, ast.List))
+                    and len(value.elts) >= 2
+                    and isinstance(value.elts[1], ast.Constant)
+                    and isinstance(value.elts[1].value, str)):
+                found.append((node.lineno, value.elts[1].value))
+    return found
+
+
 def _scan_all():
     emitted = {}    # event_type -> [(module, lineno), ...]
     dynamic = []    # (module, lineno, callee) — unresolvable event_type args
     severities = _contract_severities()
-    for name in sorted(os.listdir(LANE_NODE_DIR)):
-        if not name.endswith(".py"):
-            continue
-        path = os.path.join(LANE_NODE_DIR, name)
-        with open(path, encoding="utf-8") as f:
-            tree = ast.parse(f.read(), filename=path)
-        v = _EmitVisitor(severities)
-        v.visit(tree)
-        for lineno, et in v.literals:
-            emitted.setdefault(et, []).append((name, lineno))
-        for lineno, callee in v.dynamic:
-            dynamic.append((name, lineno, callee))
+    for source_dir in (LANE_NODE_DIR, SERVER_DIR):
+        prefix = os.path.basename(source_dir)
+        for name in sorted(os.listdir(source_dir)):
+            if not name.endswith(".py"):
+                continue
+            path = os.path.join(source_dir, name)
+            with open(path, encoding="utf-8") as f:
+                tree = ast.parse(f.read(), filename=path)
+            v = _EmitVisitor(severities)
+            v.visit(tree)
+            module = f"{prefix}/{name}"
+            for lineno, event_type in _platform_event_map_literals(tree):
+                emitted.setdefault(event_type, []).append((module, lineno))
+            for lineno, et in v.literals:
+                emitted.setdefault(et, []).append((module, lineno))
+            for lineno, callee in v.dynamic:
+                dynamic.append((module, lineno, callee))
     return emitted, dynamic
 
 
@@ -234,7 +351,7 @@ def test_every_emitted_event_type_is_in_the_contract():
     missing = {et: sites for et, sites in emitted.items()
                if et not in contract}
     assert not missing, (
-        "event_type(s) emitted in lane_node/*.py but ABSENT from "
+        "event_type(s) emitted by lane_node or server producers but ABSENT from "
         "server/machine_contract.json vocab.event_types (the R3-1 drift "
         "class — the server would per-record-reject them and the client "
         "raise at the emitter): "
@@ -273,6 +390,25 @@ def test_scan_found_the_known_emit_sites():
     assert "rp2040_wdt_reset" in emitted and "fw_reboot" in emitted, (
         "scanner did not resolve the `('rp2040_wdt_reset' if ... else "
         "'fw_reboot')` ternary — the dynamic-site fix regressed")
+    # Round-4 canaries: these are emitted by the plural lane-node helper and
+    # server-side machine_store.insert_events dictionaries. Requiring both
+    # sources prevents a one-sided scanner from passing vacuously.
+    assert any(
+        module == "lane_node/lane_node.py"
+        for module, _line in emitted.get("command_transport", [])
+    ), "scanner missed lane_node._diag_emit_lanes command_transport producer"
+    assert any(
+        module == "server/lane_node_server.py"
+        for module, _line in emitted.get("command_transport", [])
+    ), "scanner missed server machine_store.insert_events command producer"
+    assert any(
+        module == "server/lane_node_server.py"
+        for module, _line in emitted.get("scoring_event_transport", [])
+    ), "scanner missed server scoring-event reconciliation producer"
+    assert any(
+        module == "server/lane_node_server.py"
+        for module, _line in emitted.get("gs_camera_disagree", [])
+    ), "scanner did not follow validate_event row assignment into insert_events"
     assert len(emitted) >= 20, \
         f"scanner found only {len(emitted)} emitted types — suspiciously few"
 
@@ -291,5 +427,5 @@ if __name__ == "__main__":
     if not fails:
         em, _dyn = _scan_all()
         print(f"\n{len(em)} distinct event_type literals emitted across "
-              f"lane_node/*.py, all present in the contract.")
+              "lane_node and server producers, all present in the contract.")
     sys.exit(1 if fails else 0)

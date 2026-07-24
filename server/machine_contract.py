@@ -28,20 +28,19 @@ an emit site without updating the contract, the enumeration test fails
 before it ships.
 
 Fail posture: if the JSON is unreadable (a partial deploy), load_vocab()
-raises ContractUnavailable and the caller decides. machine_store fails
-CLOSED to a frozen last-known snapshot embedded here as
-_FALLBACK_VOCAB only when explicitly asked (load_vocab(allow_fallback=True))
-— the fallback is refreshed in lockstep with the JSON and the sha256 test
-guards it, but a live server must never die because a deploy dropped the
-file mid-copy.
+raises ContractUnavailable and the caller decides. machine_store can import
+with the frozen reviewed snapshot embedded here, but live ingest remains
+unavailable until the on-disk contract is readable and matches what was loaded.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
 
 CONTRACT_PATH = Path(__file__).resolve().parent / "machine_contract.json"
+FALLBACK_PROTOCOL_VERSION = 3
 
 
 class ContractUnavailable(RuntimeError):
@@ -50,17 +49,69 @@ class ContractUnavailable(RuntimeError):
 
 # Frozen last-known-good snapshot (refreshed in lockstep with the JSON; the
 # sha256 sidecar test + the vocab-coverage test guard against silent drift).
-# Used ONLY when the JSON is missing at runtime AND the caller opts in — a
-# live daemon must not die because a deploy dropped the file mid-copy.
+# Used only when the JSON is missing at import time and the caller opts in.
+# It keeps status reachable; diagnostics ingest still fails closed.
 _FALLBACK_VOCAB = {
     "severities": ("info", "warn", "fault"),
-    "states": ("HEALTHY", "FAULT", "OFFLINE", "UNKNOWN", "MAINTENANCE"),
+    "states": ("HEALTHY", "DEGRADED", "FAULT", "OFFLINE", "UNKNOWN",
+               "MAINTENANCE"),
     "cycle_types": ("ball", "reset", "power_on", "manual", "test"),
     "final_states": ("READY", "FAULT", "MANUAL_INTERVENTION"),
     "record_kinds": ("event", "cycle"),
+    "scoring_event_types": ("ball_event", "foul_event"),
+    "scoring_event_dispositions": (
+        "accepted", "duplicate", "ignored_lane_closed", "awaiting_manual",
+        "stale_quarantined", "overdue_quarantined",
+        "clock_anomaly_quarantined",
+        "duplicate_window_suppressed",
+    ),
+    "command_types": (
+        "cycle", "open_lane", "close_lane", "reset", "power_on",
+        "power_off", "scoring_epoch_sync",
+    ),
+    "actuating_command_types": (
+        "cycle", "open_lane", "close_lane", "reset", "power_on",
+        "power_off",
+    ),
+    "command_ack_statuses": (
+        "completed", "duplicate", "refused", "ambiguous", "failed",
+    ),
+    "manual_reconciliation_conditions": (
+        "stale_scoring_epoch", "overdue_scoring_event",
+        "scoring_event_lost", "command_indeterminate",
+        "command_ambiguous", "command_collision", "command_refused",
+        "command_failed", "operation_receipts_incomplete",
+        "privileged_resolution_override", "cycle_delivery_indeterminate",
+    ),
     "interval_columns": ("ss_to_guard_ms", "guard_to_table_ms",
                          "table_to_ta2_ms", "ta2_to_sa_ms",
                          "sa_to_ta1zero_ms", "bs_to_ta1zero_ms"),
+    # Frozen reviewed allow-set. Missing live JSON must never become
+    # accept-any taxonomy validation during a partial deployment.
+    "event_types": {
+        "ball_return_missing", "bank_unavailable", "be_no_current",
+        "be_stuck_running", "beam_blocked", "camera_health",
+        "camera_ref_drift", "chatter", "command_transport",
+        "configured_role_missing",
+        "control_loop_stalled", "contract_unavailable",
+        "diag_corrupt_row", "diag_drops", "diag_storage_error",
+        "diag_storage_pruned", "dist_index_stall", "drift_alarm",
+        "field_wet_lost", "field_wet_restored", "fsm_fault",
+        "fw_config_mismatch", "fw_fault", "fw_identity",
+        "fw_identity_missing", "fw_reboot", "gripper_disagree",
+        "gs_camera_disagree", "health_drop_stale",
+        "health_drop_unhealthy", "heartbeat_rejected",
+        "http_sink_drops", "link_lost", "maintenance_overdue",
+        "manual_override", "outbox_quarantine", "pi_clock_drift",
+        "pi_disk_low", "pi_fs_readonly", "pi_thermal",
+        "pi_undervoltage", "rail_drop", "recovered",
+        "rp2040_serial_corrupt", "rp2040_wdt_reset", "run_mismatch",
+        "scoring_server_ack_stalled", "scoring_event_transport",
+        "service_restart",
+        "service_restart_loop", "short_rack",
+        "stale_channel", "stuck_input", "tap_warn", "tapdump",
+        "uart_drops", "unexpected_edge", "v5_out_of_range",
+    },
 }
 
 
@@ -74,13 +125,28 @@ def load_contract(path=None):
         raise ContractUnavailable(f"cannot load {p}: {e}") from e
 
 
+def contract_sha256(path=None):
+    """Return the digest of a readable, parseable live contract.
+
+    A sidecar is intentionally never consulted. Deployment identity is the
+    JSON content this process can parse, not an adjacent assertion about it.
+    """
+    p = Path(path) if path else CONTRACT_PATH
+    try:
+        raw = p.read_bytes()
+        json.loads(raw.decode("utf-8"))
+    except Exception as e:  # noqa: BLE001 - all unavailable forms are equal
+        raise ContractUnavailable(f"cannot hash live contract {p}: {e}") from e
+    return hashlib.sha256(raw).hexdigest()
+
+
 def load_vocab(path=None, *, allow_fallback=False):
     """Return the vocab sub-dict with tuple/frozenset-friendly values.
 
-    Keys: severities, event_types, cycle_types, final_states, states
-    (== MACHINE_STATES), record_kinds, interval_columns. event_types is
-    returned as a set (writer validation membership); the ordered lists stay
-    tuples so lockstep-order assertions keep working.
+    Keys include the diagnostic, scoring-event, and command vocabularies plus
+    cycle/final/machine states, record kinds, and interval columns.
+    event_types is returned as a set (writer validation membership); ordered
+    lists stay tuples so lockstep-order assertions keep working.
     """
     try:
         c = load_contract(path)
@@ -92,15 +158,22 @@ def load_vocab(path=None, *, allow_fallback=False):
             "final_states": tuple(v["final_states"]),
             "states": tuple(v["states"]),
             "record_kinds": tuple(v.get("record_kinds", ("event", "cycle"))),
+            "scoring_event_types": tuple(v["scoring_event_types"]),
+            "scoring_event_dispositions": tuple(
+                v["scoring_event_dispositions"]),
+            "command_types": tuple(v["command_types"]),
+            "actuating_command_types": tuple(v["actuating_command_types"]),
+            "command_ack_statuses": tuple(v["command_ack_statuses"]),
+            "manual_reconciliation_conditions": tuple(
+                v["manual_reconciliation_conditions"]),
             "interval_columns": tuple(v["interval_columns"]),
         }
     except (ContractUnavailable, KeyError, TypeError):
         if allow_fallback:
             fb = dict(_FALLBACK_VOCAB)
-            # event_types has no frozen fallback on purpose — a validator that
-            # silently narrows the type set would re-open the poison-pill bug.
-            # Fallback ingest accepts any string event_type (fail-open on the
-            # taxonomy, never on delivery); the coverage test still gates dev.
-            fb["event_types"] = None
+            # Return a copy so callers cannot mutate the frozen reviewed
+            # allow-set. This fallback never authorizes live ingest by itself;
+            # diagnostics_contract_ready() still requires the live JSON.
+            fb["event_types"] = set(_FALLBACK_VOCAB["event_types"])
             return fb
         raise

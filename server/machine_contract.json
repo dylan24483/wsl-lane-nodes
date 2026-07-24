@@ -1,17 +1,25 @@
 {
   "contract": "wsl-phase8-machine-diagnostics",
-  "contract_version": 1,
-  "contract_revision": "1.3 (2026-07-23 R3: event-type vocabulary is now the SINGLE SOURCE loaded by server machine_store AND client diag_events — the R3-1a never-again gate for cross-contract drift; adds fw_identity (the poison-pill type the daemon emitted but the vocab omitted, reopening R2-6/R2-12), fw_identity_missing, outbox_quarantine, maintenance_overdue; per-record ingest (rejected[] response, batch never all-or-nothing); heartbeat_post lease endpoint (R3-2); record_kinds for the durable JSONL outbox (events + cycles single write path, R3-3))",
+  "contract_version": 3,
+  "contract_revision": "3.0 (2026-07-23 R4: protocol-v3 durable scoring-event receipts and physical-command receipts; renewable non-actuating epoch repair authorization; one-way open-actuation intent; exact scoring outbox evidence; generation and request-fingerprint idempotency; atomic transfer; durable manual reconciliation; server-owned cross-database backup fencing; command/scoring transport fault vocabulary; all prior R4 controller, identity, lease, persistence, and health invariants remain required)",
   "delivery_identity": {
     "fields": ["source_id", "boot_id", "seq"],
     "semantics": "R2-12 (2026-07-21): the Pi stamps every event + cycle record with a delivery identity — source_id (stable device id, default hostname; env WSL_DIAG_SOURCE_ID), boot_id (fresh uuid per daemon process start) and seq (process-wide monotonic counter). The daily diag JSONL file is the outbox: lane_node/diag_events.OutboxReplayer tails it with a persisted cursor advanced ONLY on a 2xx (cursor-ack). The server dedupes on UNIQUE(source_id, boot_id, seq) via INSERT OR IGNORE, so replay overlap after a drop or lost ack is idempotent. Identity is all-or-nothing WITHIN one record: a record carrying only part of the identity triple is rejected (per-record, into the R3-1b 'rejected' list — NOT a whole-batch 400); a record with none inserts as before (legacy live-sink era)."
   },
-  "updated": "2026-07-21",
+  "scoring_protocol": {
+    "version": 3,
+    "compatibility": "exact-version only; a HELLO with any other protocol_version is rejected before ownership registration",
+    "node_topology": "WSL_SCORING_NODE_TOPOLOGY is mandatory and has the form node-a=21,22;node-b=23,24. Node ids are bounded production identities, each owns exactly one consecutive odd/even pair, pairs are disjoint, and their union exactly equals WSL_MACHINE_LANES. WSL_SCORING_NODE_TOKENS has one distinct bounded secret per topology key; the Pi supplies its WSL_SCORING_NODE_TOKEN in the existing HELLO token field, while LANE_NODE_TOKEN remains the separate HTTP and server-command credential. HELLO must authenticate one manifest node and its exact pair. A missing credential policy, duplicate live identity, overlap, subset, superset, unexpected node, stale/missing expected node, or missing/invalid manifest is fail-closed; no newest-claimant routing is permitted.",
+    "common_frame_required_fields": ["type", "ts"],
+    "timestamp_semantics": "ts, event_created_at, issued_at, and completed_at are finite Unix epoch seconds and JSON booleans are never accepted as numbers. Event and command creation timestamps may be at most 300 seconds in the future. Both server and node maintain durable wall-clock high-water latches; a rollback beyond tolerance makes scoring events manual-only and refuses every actuating command until explicit maintenance. All HTTP and WebSocket authority JSON is byte/depth/node bounded and rejects duplicate keys, non-standard constants, and non-finite numeric overflow before mutation.",
+    "durability_boundary": "A scoring event remains at the ordered durable outbox head until a matching committed scoring_event_ack is received. A physical command is claimed in the durable command ledger before GPIO actuation and completed in that ledger before command_ack is sent."
+  },
+  "updated": "2026-07-23",
   "description": "SINGLE SOURCE OF TRUTH for the machine-diagnostics HTTP contract between the Pi lane-node daemon (client: lane_node/diag_events.py HttpSink), the :8766 lane-node server (server/lane_node_server.py + server/machine_store.py), and the WSL Systems bridge (wsl_phase8_bridge.py). Established closing Codex NO-GO audit finding H4 (2026-07-21): the cycle POST wrapper mismatch survived because each side's tests validated against their own fake. BOTH repos' test suites load this file and verify their side against it; change it only with a matching change on every consumer plus the recorded sha256 (server/machine_contract.sha256).",
   "auth": {
     "header": "X-Lane-Token",
     "env": "LANE_NODE_TOKEN",
-    "posture": "required on every POST when LANE_NODE_TOKEN is set; GETs stay open (LAN-internal)"
+    "posture": "LANE_NODE_TOKEN is mandatory for every HTTP mutation and authenticates server-to-node command frames in production. Each Pi supplies its distinct WSL_SCORING_NODE_TOKEN for WebSocket HELLO authentication against the exact WSL_SCORING_NODE_TOKENS server map; missing, reused, or mismatched credentials refuse mutation and physical authority. WSL_ALLOW_UNAUTHENTICATED_BENCH=1 is an explicit bench-only escape and keeps health NO-GO. GETs stay open (LAN-internal). The backup-fence and clock-reset endpoints remain unavailable under the bench override."
   },
   "endpoints": {
     "events_post": {
@@ -22,10 +30,10 @@
       "bare_body_tolerated": true,
       "max_batch": 500,
       "event_required_fields": ["lane_id", "severity", "event_type"],
-      "event_optional_fields": ["code", "cycle_id", "detail", "detail_json", "blackbox_file", "incident_id", "created_at", "ts_utc", "source_id", "boot_id", "seq"],
+      "event_optional_fields": ["code", "cycle_id", "detail", "detail_json", "blackbox_file", "incident_id", "created_at", "ts_utc", "ts_mono", "source_id", "boot_id", "seq"],
       "event_timestamp_precedence": ["created_at", "ts_utc", "server-receive-time"],
       "response_ok_fields": ["ok", "inserted", "duplicates", "ids", "rejected", "accepted"],
-      "ingest_semantics": "R3-1b (2026-07-23): PER-RECORD, never all-or-nothing. Every valid record in the batch inserts; every invalid record is returned in 'rejected' as {index, error} and does NOT block the rest. The response is always 2xx for a well-formed JSON array body (the cursor-ack), so a poison-pill record can never stall the outbox cursor — the client (lane_node/diag_events.OutboxReplayer) quarantines rejected records (quarantine file + counter + 'outbox_quarantine' event) and advances past them. A malformed BODY (not a JSON array/object) is still a 400."
+      "ingest_semantics": "R3-1b/R4 (2026-07-23): PER-RECORD, never all-or-nothing. Every valid record in the batch inserts or deduplicates; every invalid record is returned in 'rejected' as {index, error} and does NOT block the rest. Every HTTP 200 response satisfies accepted + duplicates + rejected.length == request batch length, with the duplicate count returned by that request's own insert transaction (including duplicates=0 for an all-invalid batch). The client quarantines rejected records and advances past the complete cursor acknowledgement. Malformed bodies and storage/disposition failures remain non-2xx."
     },
     "cycles_post": {
       "method": "POST",
@@ -35,58 +43,245 @@
       "bare_body_tolerated": true,
       "cycle_required_fields": ["lane_id", "final_state"],
       "cycle_optional_fields": ["started_at", "ended_at", "cycle_type", "ball", "aborted", "ss_to_guard_ms", "guard_to_table_ms", "table_to_ta2_ms", "ta2_to_sa_ms", "sa_to_ta1zero_ms", "bs_to_ta1zero_ms", "gs_mask", "cam_mask", "fw_version", "shadow", "source_id", "boot_id", "seq"],
-      "response_ok_fields": ["ok", "id"]
+      "response_ok_fields": ["ok", "accepted", "duplicates", "rejected", "id"],
+      "ingest_semantics": "For every well-formed one-cycle delivery, accepted + duplicates + rejected.length == 1. A permanently invalid cycle is returned at rejected[0] on HTTP 200 so the durable replayer can quarantine it; malformed JSON/body shape and storage failures remain non-2xx."
     },
     "event_ack_post": {
       "method": "POST",
       "path_template": "/api/machine/events/<id>/ack",
       "body_keys_accepted": ["acknowledged_by", "by"],
-      "body_value": "wsl.db staff id — integer or null, OPAQUE across the domain boundary",
+      "body_value": "positive wsl.db staff id integer, OPAQUE across the domain boundary",
       "response_ok_fields": ["ok", "event"]
     },
     "event_resolve_post": {
       "method": "POST",
       "path_template": "/api/machine/events/<id>/resolve",
-      "body_required": false,
-      "response_ok_fields": ["ok", "event"]
+      "body_required": true,
+      "body_allowed_shapes": [
+        {"required_fields": ["resolved_by", "recovery_event_id"], "optional_fields": []},
+        {"required_fields": ["resolved_by", "override"], "optional_fields": [], "override_required_fields": ["actor_id", "reason"], "override_exact": true, "override_actor_must_match": "resolved_by"}
+      ],
+      "response_ok_fields": ["ok", "event", "resolution"],
+      "semantics": "resolved_by is always a positive staff id. Normal resolution requires a later non-fault recovery_event_id for the same lane and fault family. The alternate override object contains exactly actor_id and reason, actor_id must equal resolved_by, and the reason must be 10..1000 non-whitespace characters. The privileged override is append-only audited; it never asserts physical recovery and the lane remains DEGRADED with manual_reconciliation_pending until later verified recovery evidence closes that condition. A bare resolve request is invalid."
+    },
+    "backup_fence": {
+      "authentication": "LANE_NODE_TOKEN must be configured and supplied in X-Lane-Token. The unauthenticated bench override never authorizes a backup fence.",
+      "server_acquire_timeout_seconds": 8,
+      "acquire": {
+        "method": "POST",
+        "path": "/api/system/backup-fence/acquire",
+        "body_required_fields": ["fence_id", "lease_seconds", "expected_lanes"],
+        "body_exact": true
+      },
+      "verify": {
+        "method": "POST",
+        "path": "/api/system/backup-fence/verify",
+        "body_required_fields": ["fence_id", "expected_lanes"],
+        "body_exact": true
+      },
+      "release": {
+        "method": "POST",
+        "path": "/api/system/backup-fence/release",
+        "body_required_fields": ["fence_id"],
+        "body_exact": true
+      },
+      "response_ok_fields": ["ok", "fence_id", "phase", "acquired_at_epoch", "expires_at_epoch", "expected_lanes", "lanes", "pending_mutations", "safety_ledgers", "stores"],
+      "store_identity_fields": ["canonical_path", "device", "inode", "size_bytes", "mtime_ns", "schema_version", "user_version", "page_count", "freelist_count", "logical_size_bytes", "content_sha256", "schema_sha256"],
+      "durable_clock_tables": ["control_clock_guard", "control_clock_reset_audit", "transport_clock_guard", "transport_clock_reset_audit"],
+      "durable_safety_tables": ["diagnostic_incident_outbox", "background_command_deliveries"],
+      "semantics": "fence_id is a caller-generated canonical UUID; lease_seconds is an integer from 1 through 900; expected_lanes must exactly equal the configured machine-lane set. Acquire succeeds only when every expected lane is closed, no scorer or active generation exists outside that configured topology, scoring snapshot and durable generation state agree, all durable and process-local pending manual/foul work is empty across every lane, no command receipt is in flight, and background_command_deliveries has no pending row. pending_mutations equals in-flight command ACK waiters plus pending background deliveries. safety_ledgers attests nonnegative pending counts for background_command_deliveries and diagnostic_incident_outbox; pending diagnostic incidents are copy-safe and resume after restore, but their exact count is bound into the artifact and restore proof. It then holds the server WebSocket mutation gate, in-memory scoring-state lock, lane_state database lock, and machine_diag database lock for the bounded lease. Lease release is governed by a process-monotonic deadline; acquired_at_epoch and expires_at_epoch are evidence only, so a wall-clock rollback cannot strand the locks. The stores object identifies the exact locked lane_state and machine_diag files, logical content, and schemas; the backup client must snapshot those canonical paths and reject any configured-path, file, content, or schema mismatch. Verify recomputes both store identities and fails closed plus releases the fence if an out-of-process write or atomic file replacement changed either source after acquisition. Backup and restore must preserve and semantically validate both server and Pi clock-guard/reset-audit pairs plus the diagnostic incident and background-command safety ledgers; losing a latch or pending reconciliation row must never re-enable authority. All non-fence HTTP work fails 503 while active. Verify must succeed after all external SQLite snapshots and before release; a restart or lease expiry makes verify fail so the caller rejects the artifact. Release is explicit and id-bound; automatic expiry is the crash fail-safe."
+    },
+    "clock_guard_reset_post": {
+      "method": "POST",
+      "path": "/api/system/clock-guard/reset",
+      "authentication": "LANE_NODE_TOKEN must be configured and supplied.",
+      "body_required_fields": ["confirmed_utc_epoch", "actor_id", "note"],
+      "body_exact": true,
+      "response_ok_fields": ["ok", "clock_guard", "audit"],
+      "semantics": "Non-actuating recovery only. The supplied finite epoch must match the server host within two seconds; actor_id is a positive staff id and note is 10..500 characters. Every durable scoring session and in-memory scorer must be closed, no command may be in flight, connected Pi nodes must form the exact configured lane partition, and every Pi must report an observed, unlatched command clock within ten seconds of the confirmed epoch. Reset and append-only audit commit atomically. Required order is: stop each Pi service, prove NTP synchronized, run lane_node/reset_clock_guard.py, restart and obtain healthy Pi evidence, reset the server guard, then reset the WSL saga guard last. Stable commands terminally refused before reset are manual-reconciliation work and are never silently re-identified."
+    },
+    "lane_manual_score_post": {
+      "method": "POST",
+      "path_template": "/api/lane/<N>/score",
+      "body_required_fields": ["event_id", "pin_mask"],
+      "body_optional_fields": ["foul"],
+      "body_exact": true,
+      "response_ok_fields": ["ok", "lane", "event_id", "pin_mask", "foul", "display", "replayed"],
+      "request_fingerprint": "The server computes SHA-256 over canonical JSON {lane,event_id,pin_mask,foul}, normalizing omitted foul to null. The client does not supply or choose the fingerprint.",
+      "semantics": "event_id must identify an unconsumed durable ball_event receipt whose disposition is awaiting_manual, capture_interrupted_manual_only, or clock_anomaly_manual_only for this lane and current scoring_epoch. The scoring mutation, event consumption, and manual-score receipt commit in one transaction. An exact retry returns the stored result with replayed=true and does not score again; the same event_id with a different fingerprint returns 409. It never actuates a pinsetter."
+    },
+    "lane_trigger_ball_post": {
+      "method": "POST",
+      "path_template": "/api/lane/<N>/trigger-ball",
+      "enabled_only_when": "WSL_ENABLE_TRIGGER_BALL is explicitly true",
+      "required_headers": ["X-Operation-Key", "X-Operation-Issued-At"],
+      "body_optional_fields": ["pin_mask", "foul"],
+      "body_exact": true,
+      "response_ok_fields": ["ok", "lane", "pin_mask", "pin_mask_source", "foul", "display", "operation_key", "request_fingerprint", "session_generation", "scoring_epoch", "sent_to", "replayed", "reconciliation_required"],
+      "request_fingerprint": "SHA-256 over canonical operation, lane, durable session generation, scoring epoch, normalized pin_mask/foul, and issued_at. The stable operation key is globally unique and any payload collision returns 409 before scoring or actuation.",
+      "semantics": "Bench-only. The normalized body is validated before mutation; absent/empty body means the deterministic simulator mask cycle and foul=false. Score state and an immutable bench_ball_operation_receipts row containing request and logical result commit in one SQLite transaction before CYCLE delivery. A lost response or delivery failure retry replays the stored result and identical command identity without scoring a second ball. Boolean/out-of-range masks, malformed foul values, stale generation/epoch bindings, and key collisions fail before mutation."
+    },
+    "lane_open_post": {
+      "method": "POST",
+      "path_template": "/api/lane/<N>/open",
+      "body_required_fields": ["bowlers", "send_open_command", "session_generation"],
+      "body_optional_fields": [],
+      "body_exact": true,
+      "response_ok_fields": ["ok", "session_generation", "scoring_epoch", "request_fingerprint", "bowlers", "replayed", "hardware_command_sent", "sent_to", "reconciliation_required"],
+      "request_fingerprint": "SHA-256 over canonical normalized operation, lane, generation, and roster, computed by the server and stored with the generation. Transport-only send_open_command is deliberately excluded so a state-only rehydrate can reconcile the same logical session without becoming an idempotency collision.",
+      "semantics": "session_generation is a positive integer, bowlers is an array, and send_open_command is a JSON boolean. A new generation receives one immutable scoring_epoch and commits scoring state plus the generation row before hardware delivery. Same generation plus same fingerprint is an idempotent replay; same generation plus a different fingerprint or a lower or retired generation returns 409. A higher generation while another is active returns 409 when send_open_command=true; send_open_command=false is the narrowly authorized desired-state repair path and may atomically supersede stale active state while issuing only a non-actuating scoring_epoch_sync. Physical OPEN authorization is immutable per generation: a generation first committed state-only can never be replayed with send_open_command=true, while a physically authorized generation may be rehydrated state-only. Any unresolved awaiting_manual event on the replaced scorer lanes returns 409 with pending_manual_scores before mutation so /score remains usable. A non-replay topology transition clears the process-local ball duplicate-window cache for every affected lane. A 503 with reconciliation_required=true may mean state committed but delivery was not confirmed; physical open retries remain inside their original bounded authorization, while state-only sync repair may renew only its non-actuating authorization timestamp."
+    },
+    "lane_close_post": {
+      "method": "POST",
+      "path_template": "/api/lane/<N>/close",
+      "body_required_fields": ["session_generation"],
+      "body_optional_fields": [],
+      "body_exact": true,
+      "response_ok_fields": ["ok", "session_generation", "session_generations", "request_fingerprint", "scoring_epoch", "replayed", "closed_lanes", "expected_commands", "sent_close_commands", "hardware_command_sent", "reconciliation_required"],
+      "request_fingerprint": "SHA-256 over canonical JSON {operation:'close_group',lanes:{<lane>:<generation>,...}}. The response session_generations and closed_lanes identify the exact durable close group and are identical on replay.",
+      "semantics": "The supplied positive generation is monotonic. A lower generation returns 409; an exact active generation retires the current scorer; an exact retired generation is an idempotent replay. A higher generation, including the first generation observed for a lane, commits an inactive CLOSE tombstone before delivery so a delayed OPEN at that generation can never resurrect a locally closed session. Before a non-replay transition, every participating lane must have no unresolved awaiting_manual events; otherwise the endpoint returns 409 with pending_manual_scores and leaves the epoch/state intact for /score. Closing a cross-lane scorer atomically retires every participating lane, clears their process-local ball duplicate-window state, and dispatches one stable close:<lane>:<generation> command per cleared lane. Success requires every required command receipt. The client must validate the exact closed_lanes set, exact session_generations map, counts, and request_fingerprint; merely containing the requested lane is not sufficient. An identical retired-generation retry is safe, does not clear newer process-local state, and never creates a new scoring epoch."
+    },
+    "pair_open_league_post": {
+      "method": "POST",
+      "path_template": "/api/pair/<L>-<R>/open-league",
+      "body_required_fields": ["team1_bowlers", "team2_bowlers", "team1_name", "team2_name", "send_open_command", "session_generations"],
+      "body_optional_fields": [],
+      "body_exact": true,
+      "session_generations_shape": "An object with exactly the two decimal lane-number keys and positive integer values.",
+      "response_ok_fields": ["ok", "lane_left", "lane_right", "session_generations", "scoring_epoch", "request_fingerprint", "team1_name", "team2_name", "team1_bowlers", "team2_bowlers", "replayed", "hardware_command_sent", "sent_open_commands", "sent_epoch_sync_commands", "reconciliation_required"],
+      "request_fingerprint": "SHA-256 over canonical operation, lanes, generations, normalized team names, and normalized roster. Transport-only send_open_command is excluded so desired-state repair can reconcile the same logical match without authorizing physical actuation.",
+      "semantics": "Both generation rows and the shared scorer are one atomic state transition and share one immutable scoring_epoch. Same generations plus the same canonical roster/request fingerprint replay the existing scorer without resetting frames. A same-generation roster collision returns 409. A higher generation over active stale state is allowed only with send_open_command=false and issues two non-actuating scoring_epoch_sync commands; with send_open_command=true it returns 409. State-only-first generations cannot later escalate to physical OPEN, while physical-first generations may be rehydrated state-only. Any unresolved awaiting_manual event on any replaced scorer lane returns 409 with pending_manual_scores before mutation. Non-replay replacement clears ball duplicate-window state for all affected lanes. Hardware success requires confirmed stable open-league:<lane>:<generation> commands for both lanes."
+    },
+    "lane_transfer_post": {
+      "method": "POST",
+      "path": "/api/lane/transfer",
+      "body_required_fields": ["from_lane", "to_lane", "paired_from", "paired_to", "session_generations", "send_hardware_commands"],
+      "body_optional_fields": [],
+      "body_exact": true,
+      "body_shape": {
+        "from_lane": "integer lane id",
+        "to_lane": "integer lane id",
+        "paired_from": "integer lane id or null",
+        "paired_to": "integer lane id or null",
+        "session_generations": "object mapping every participating decimal lane id to its positive generation",
+        "send_hardware_commands": "JSON boolean"
+      },
+      "response_ok_fields": ["ok", "from_lane", "to_lane", "paired_from", "paired_to", "session_generations", "scoring_epoch", "request_fingerprint", "sent_close_commands", "sent_open_commands", "hardware_commands_sent", "reconciliation_required", "replayed"],
+      "request_fingerprint": "SHA-256 over the full canonical body; one operation identity must never be reused with different source, target, pairing, generations, or actuation intent.",
+      "semantics": "Transfer atomically rekeys the same scorer object and preserves every bowler, frame, score, and scoring_epoch. It never constructs a fresh game. Any unresolved awaiting_manual event on a source lane returns 409 before mutation. Required old-lane closes and new-lane opens use stable command identities; ok=true requires every expected receipt when send_hardware_commands=true. State-only transfer uses generation-bound, renewable non-actuating scoring_epoch_sync authorization for every source and target. Non-replay transfer clears ball duplicate-window state for every source and target. A post-commit delivery failure returns 503 with reconciliation_required=true and is repaired only by retrying the identical fingerprint."
     },
     "machine_health_get": {
       "method": "GET",
       "path": "/api/machine/health",
-      "response_top_fields": ["ok", "generated_at", "lanes"],
-      "lane_entry_bridge_keys": ["fault", "code", "since", "acked", "event_id", "severity", "state", "last_seen", "age_s"],
+      "response_top_fields": ["ok", "generated_at", "lanes", "clock_authority", "scoring_node_topology", "diagnostic_delivery"],
+      "lane_entry_bridge_keys": ["fault", "code", "since", "acked", "event_id", "severity", "state", "last_seen", "age_s", "degraded_reasons", "scoring_state", "scoring_reasons"],
+      "lane_entry_forward_keys": ["activity_seen_at", "scoring_seen_at", "scoring_age_s", "scoring_state", "scoring_reason", "scoring_reasons", "scoring_mode", "scoring_camera_calibrated", "scoring_camera_ok", "scoring_camera_code", "scoring_outbox", "scoring_boot_id", "scoring_session_id", "scoring_heartbeat_seq", "scoring_node_lockout_s", "heartbeat_at", "controller_boot_id", "heartbeat_seq", "control_loop_seq", "control_loop_progress_at", "control_loop_age_s", "board_rev", "observed_pcb", "observed_rid", "observed_uid", "fw_build", "fw_cfg", "fw_version", "contract_sha256", "contract_loaded", "contract_match", "identity_ok", "identity_reason", "ro_fs", "outbox", "platform", "serial_parse_errors", "diag_record_drops", "maintenance_overdue", "degraded", "degraded_reasons"],
       "lane_entry_bridge_keys_note": "the keys wsl_phase8_bridge._parse_machine_health whitelists and wsl_machine_alerts.observe_health consumes; fault-latch fields come from the NEWEST OPEN fault event, never last_event_*",
-      "lane_entry_state_note": "R2-10 (2026-07-21): every configured machine lane (env WSL_MACHINE_LANES, default 21,22) ALWAYS appears with an explicit state from vocab.states — a board the store never heard from is UNKNOWN, never omitted. Lease: last_seen is the newest daemon-heard-from timestamp (WS HELLO/HEARTBEAT + machine ingest, EXCLUDING code deploy_marker:*); age_s = seconds since last_seen (null when never seen). Derivation precedence: MAINTENANCE > (no lease -> UNKNOWN) > (age_s > WSL_MACHINE_LEASE_S, default 90 -> OFFLINE) > (open fault -> FAULT) > HEALTHY. The WSL bridge degrades any snapshot it cannot refresh past its stale bound to UNKNOWN with the snapshot age."
+      "lane_entry_state_note": "Every configured machine lane always appears. last_seen and age_s derive only from the strict controller heartbeat. Track-A WebSocket HELLO/HEARTBEAT renew the independent scoring_seen_at/scoring_age_s/scoring_state lease; event/cycle replay updates activity_seen_at only. Neither path can renew the controller lease. Controller-state precedence: MAINTENANCE > no controller lease UNKNOWN > expired controller lease OFFLINE > open machine fault FAULT > invalid identity/contract/storage/outbox or stalled control-loop DEGRADED > HEALTHY."
     },
     "maintenance_post": {
       "method": "POST",
       "path_template": "/api/machine/lane/<N>/maintenance",
-      "body_required_fields": ["on"],
+      "body_required_fields": ["on", "changed_by"],
       "body_optional_fields": ["note"],
+      "body_field_semantics": {"changed_by": "positive WSL staff id, written to the append-only maintenance audit"},
       "response_ok_fields": ["ok", "lane", "maintenance"],
       "note": "mechanic flag; while on, the lane's health state is MAINTENANCE and WSL-side SMS alerting is suppressed. R3-10 (2026-07-23): maintenance is no longer indefinite — once it has been on longer than WSL_MACHINE_MAINTENANCE_MAX_S (default 43200s / 12h) the server emits ONE 'maintenance_overdue' warn event so a machine left flagged does not silently suppress alerts forever; the state stays MAINTENANCE (the mechanic must clear it), but the overdue event routes to the desk."
     },
     "health_get_identity": {
       "method": "GET",
       "path": "/api/health",
-      "identity_fields": ["git_hash", "protocol_version"],
-      "note": "R2-8 (2026-07-21): /api/health carries the deployed lane-node short git hash (null when unresolvable). deploy.ps1 on WSL-SRV records + compares it across deploys; only the identity fields are contract-pinned, the rest of /api/health is server-internal."
+      "identity_fields": ["git_hash", "protocol_version", "node_topology"],
+      "state_persistence_fields": ["ok", "save_ok", "load_ok", "last_load_state", "last_load_error", "state_discarded", "last_ok_ts", "last_ok_age_sec", "consecutive_failures", "last_error", "clock_guard"],
+      "note": "R2-8/R4 (2026-07-21..23): /api/health carries the deployed lane-node short git hash (null when unresolvable) and a state_save object that fails service health for save failure, unsuccessful/discarded startup restore, unavailable clock evidence, or a durable wall-clock rollback latch. Runtime state is bounded, strict format-v2 JSON with duplicate-key and non-finite-number rejection; legacy pickle is never deserialized. Missing or intentionally empty state is healthy; corrupt, unknown-version, legacy-discarded, database-error, or clock-anomaly state stays unhealthy until explicit recovery. deploy.ps1 on WSL-SRV records + compares identity across deploys."
+    },
+    "scoring_websocket": {
+      "transport": "WebSocket",
+      "path": ":8765",
+      "protocol_version": 3,
+      "hello_required_fields": ["type", "node", "token", "lanes", "protocol_version", "scoring_boot_id", "scoring_session_id", "heartbeat_seq", "scoring_mode", "camera_calibrated", "camera_ok", "camera_code", "outbox", "node_ball_lockout_s"],
+      "heartbeat_required_fields": ["type", "node", "scoring_boot_id", "scoring_session_id", "heartbeat_seq", "scoring_mode", "camera_calibrated", "camera_ok", "camera_code", "outbox", "node_ball_lockout_s"],
+      "diagnostic_outbox_required_fields": ["cursor_ok", "error", "oldest_unsent_age_s", "backlog", "backlog_bytes", "pending_writes", "dropped", "quarantined", "cycles_quarantined", "post_errors", "write_errors", "sink_errors"],
+      "scoring_transport_outbox_required_fields": ["scoring_event_queue_depth", "scoring_event_queue_capacity", "scoring_event_oldest_age_s", "scoring_capture_jobs", "scoring_capture_oldest_age_s", "scoring_clock_observed", "scoring_clock_anomaly_latched", "scoring_clock_high_water_epoch", "scoring_clock_observed_epoch", "scoring_event_durable", "scoring_event_error", "scoring_event_overdue", "scoring_event_drops", "scoring_event_expired", "scoring_event_max_age_s"],
+      "outbox_required_fields": ["cursor_ok", "error", "oldest_unsent_age_s", "backlog", "backlog_bytes", "pending_writes", "dropped", "quarantined", "cycles_quarantined", "post_errors", "write_errors", "sink_errors", "scoring_event_queue_depth", "scoring_event_queue_capacity", "scoring_event_oldest_age_s", "scoring_capture_jobs", "scoring_capture_oldest_age_s", "scoring_clock_observed", "scoring_clock_anomaly_latched", "scoring_clock_high_water_epoch", "scoring_clock_observed_epoch", "scoring_event_durable", "scoring_event_error", "scoring_event_overdue", "scoring_event_drops", "scoring_event_expired", "scoring_event_max_age_s"],
+      "scoring_transport_outbox_semantics": "The scoring transport fields are mandatory on every HELLO and HEARTBEAT, even when zero or healthy. depth/capacity/capture_jobs/drops/expired are nonnegative JSON integers, capacity is positive, capture_jobs cannot exceed depth, and depth cannot exceed capacity. oldest_age_s is null exactly when depth is zero and otherwise a finite nonnegative number; capture_oldest_age_s is null exactly when capture_jobs is zero and cannot be older than the overall head. A positive capture_jobs count identifies raw camera edges that have reserved FIFO positions and may block all later scoring delivery until completion or crash recovery. scoring_clock_observed and scoring_clock_anomaly_latched are booleans. An observed clock requires finite high-water and observed epochs with observed <= high-water; an unobserved clock carries null epochs and cannot assert an anomaly. A clock anomaly requires scoring_event_error=true and immediately degrades health because every actuating command is refused. durable/error/overdue are JSON booleans; production requires durable=true and error=false. overdue is true exactly when oldest_age_s exceeds max_age_s. max_age_s is finite and positive. scoring_event_expired counts events that entered the overdue/quarantine path; it never authorizes deletion without ACK. Any drop, expiry, backlog, non-durable state, error, overdue head, stuck capture job, unobserved clock, or clock-anomaly latch degrades service and exposes reconciliation evidence.",
+      "heartbeat_ack_required_fields": ["type", "node", "scoring_session_id", "heartbeat_seq", "committed_at", "scoring_epochs"],
+      "heartbeat_ack_scoring_epochs": "Exact object keyed by every lane owned by this node; each value is the active nonempty scoring_epoch or null for a closed lane.",
+      "scoring_event_frames": {
+        "ball_event_required_fields": ["type", "ts", "lane", "pin_mask", "event_id", "event_created_at", "scoring_epoch"],
+        "ball_event_optional_fields": ["awaiting_manual", "capture_interrupted"],
+        "foul_event_required_fields": ["type", "ts", "lane", "event_id", "event_created_at", "scoring_epoch"],
+        "foul_event_optional_fields": [],
+        "event_id": "Nonempty UUID-compatible opaque string, at most 128 characters, globally stable across every retry.",
+        "event_created_at": "Original finite Unix epoch seconds, immutable across retry.",
+        "scoring_epoch": "Nonempty active epoch string or null. A null/closed or mismatched epoch can be receipted but can never mutate an active game.",
+        "ball_pin_mask": "Integer 0..1023, except awaiting_manual=true requires pin_mask=null. awaiting_manual and capture_interrupted, when present, are JSON booleans; capture_interrupted=true requires awaiting_manual=true.",
+        "receipt_semantics": "The Pi reserves the physical camera edge's global FIFO position before settle/capture; an incomplete head blocks later ball and foul delivery. Capture completion atomically makes that same position sendable, while restart recovery promotes it with capture_interrupted=true for manual scoring. The server checks durable event_id receipt and immutable payload equality before any time-window or scoring decision. A payload collision is a protocol fault and receives no success disposition. The scoring mutation or quarantine fault and receipt are committed before ACK. An aged first-seen capture_interrupted event remains durable pending manual work with internal disposition capture_interrupted_manual_only and never authorizes CYCLE; loss and replay of its ACK remains non-actuating. A durable wall-clock rollback makes a first-seen ball internal clock_anomaly_manual_only and returns clock_anomaly_quarantined without scoring or CYCLE; a foul is quarantined without latching. If another score committed but the stable bounded ball-cycle:<sha256(event_id)> delivery became indeterminate, a timely same-epoch duplicate event retries that same command identity and immutable event-created authorization timestamp before the duplicate receipt; the node ledger prevents a second pulse. Clock anomaly, closed lane, stale, overdue, epoch-mismatched, and duplicate-window-suppressed events never authorize that retry; a committed event whose CYCLE can no longer be safely retried opens a cycle_delivery_indeterminate reconciliation incident."
+      },
+      "scoring_event_ack": {
+        "required_fields": ["type", "ts", "event_id", "disposition", "committed_at"],
+        "optional_fields": [],
+        "dispositions": ["accepted", "duplicate", "ignored_lane_closed", "awaiting_manual", "stale_quarantined", "overdue_quarantined", "clock_anomaly_quarantined", "duplicate_window_suppressed"],
+        "retirement_semantics": "Only a matching ACK with one listed disposition retires the ordered durable outbox head. overdue_quarantined means the original event was not scored and a durable operator-reconciliation fault was recorded; it does not mean the evidence was dropped."
+      },
+      "command_frames": {
+        "types": ["cycle", "open_lane", "close_lane", "reset", "power_on", "power_off", "scoring_epoch_sync"],
+        "actuating_types": ["cycle", "open_lane", "close_lane", "reset", "power_on", "power_off"],
+        "non_actuating_types": ["scoring_epoch_sync"],
+        "common_required_fields": ["type", "ts", "lane", "command_id", "issued_at"],
+        "open_lane_additional_required_fields": ["bowlers", "scoring_epoch"],
+        "close_lane_additional_required_fields": ["scoring_epoch"],
+        "scoring_epoch_sync_additional_required_fields": ["scoring_epoch", "session_generation"],
+        "scoring_epoch_sync_semantics": "Synchronizes the node's event-tagging epoch after a state-only open, rehydrate, or transfer. scoring_epoch is a nonempty epoch string or null and session_generation is the immutable positive generation for that lane. The stable command identity and canonical semantic hash bind type, lane, generation, and epoch. issued_at is deliberately excluded from that semantic hash only for scoring_epoch_sync and is freshly renewed on each HTTP repair dispatch, so desired-state repair remains possible after the normal command-age window. A matching completed replay idempotently re-applies the in-memory epoch before duplicate ACK; a matching started receipt is safely reclaimable after a crash. This exception must never pulse or change a relay.",
+        "command_id": "Nonempty opaque string at most 128 characters, stable for one logical operation and bound to the canonical semantic frame. The volatile auth token and websocket envelope ts are excluded. issued_at remains bound for every actuating command; only scoring_epoch_sync treats it as renewable transport authorization while retaining immutable lane, generation, and epoch binding.",
+        "issued_at": "Finite Unix epoch seconds inside the configured bounded authorization window. It is immutable for every actuating command. A scoring_epoch_sync dispatch uses a fresh value because it is non-actuating; its semantic identity excludes only this timestamp. Every expired command is rejected before ledger lookup or actuation, including an already-completed identity.",
+        "retry_semantics": "The node durably claims command_id plus canonical semantic payload hash before GPIO. Completed command receipts are permanent safety tombstones and are never automatically pruned by wall-clock age. A durable wall-clock rollback latch makes each new actuating identity terminally refused before GPIO; scoring_epoch_sync remains non-actuating. Same id and payload after completion returns duplicate with original_status and never actuates again. Same id and payload left started across interruption returns ambiguous and never guesses for every actuating command. A semantically matching scoring_epoch_sync is the sole safe exception: it may renew issued_at, reclaim a started receipt, and repeat the same non-actuating state assignment. Same id with any different semantic field is a collision and is refused. Sender timeout or disconnect is indeterminate, closes that route, emits command_transport, and is reconciled only with the same command identity."
+      },
+      "command_ack": {
+        "required_fields": ["type", "ts", "command_id", "status", "completed_at"],
+        "optional_fields": ["original_status"],
+        "statuses": ["completed", "duplicate", "refused", "ambiguous", "failed"],
+        "success_rule": "Success is status=completed, or status=duplicate with original_status=completed. original_status is required exactly for duplicate and forbidden for other statuses. refused, ambiguous, failed, and a duplicate whose original_status was not completed are failures and require visible reconciliation.",
+        "ordering": "The terminal ledger result is durably committed before ACK transmission. Loss of the ACK cannot turn a completed command into a second actuation."
+      },
+      "manual_reconciliation": "stale_quarantined, overdue_quarantined, ambiguous command delivery, command collision/refusal/failure, scoring-event loss, and a state-committed HTTP operation without all command receipts create durable command_transport or scoring_event_transport evidence. A refused, ambiguous, or failed background ball-cycle receipt is terminal manual-only work: automatic retry is forbidden, the physical state is corrected manually, and any later motion requires a new audited operation identity. These conditions are never converted to a score or silently cleared by retry.",
+      "note": "HELLO and each HEARTBEAT commit the independent Track-A scoring lease before HEARTBEAT_ACK is sent. heartbeat_seq is nonnegative and strictly advances within a scoring session. The node accepts an ACK only for its current node/session and a sequence it sent, with a nonempty timezone-aware UTC committed_at and an exact scoring_epochs map. Heartbeats are emitted every five seconds; three unacknowledged sequence steps fail the scoring WebSocket for reconnect and latch one scoring_server_ack_stalled fault per episode. The first valid durable ACK after reconnect emits recovered and rearms detection. This transport dead-man never stops the independent hardware-watchdog kick. backlog and backlog_bytes are nonnegative JSON integers (not booleans); backlog_bytes > 0 requires oldest_unsent_age_s, while backlog_bytes == 0 requires oldest_unsent_age_s=null."
+    },
+    "lane_scoring_get": {
+      "method": "GET",
+      "path_template": "/api/lane/<N>/scoring",
+      "closed_response_required_fields": ["ok", "lane", "open", "players", "session_generation", "retired_session_generation", "generation_state", "scoring_epoch", "pending_manual_scores"],
+      "open_response_additional_required_fields": ["session_generation", "retired_session_generation", "generation_state", "scoring_epoch", "pending_manual_scores"],
+      "generation_states": ["active", "retired", "never_opened"],
+      "pending_manual_score_fields": ["event_id", "event_created_at", "received_at", "age_s"],
+      "semantics": "The scoring snapshot and durable lane_session_generations row must agree on open/active state and scoring_epoch or the endpoint returns 503 scoring_generation_state_inconsistent. Active responses expose the exact positive generation and immutable epoch. Closed responses distinguish retired from never_opened. Every unconsumed awaiting_manual event is returned in arrival order so a desk cannot silently lose operator work."
+    },
+    "manual_score_resolution_post": {
+      "method": "POST",
+      "path_template": "/api/lane/<N>/score/resolve",
+      "body_required_fields": ["event_id", "actor_id", "disposition", "note"],
+      "body_optional_fields": [],
+      "dispositions": ["false_trigger_discarded", "session_abandoned"],
+      "response_ok_fields": ["ok", "replayed", "resolution"],
+      "resolution_fields": ["event_id", "lane_id", "actor_id", "disposition", "note", "created_at"],
+      "semantics": "Pending awaiting_manual work blocks every non-replay open, close, league replacement, and transfer source transition. A privileged operator may either submit the real score or use this endpoint when no defensible score exists. The endpoint atomically consumes exactly one pending event and appends an immutable manual_score_resolutions audit row; exact retries replay, changed actor/disposition/note conflicts, and scored events cannot be discarded. It never mutates the scorecard or sends a hardware command."
     },
     "lane_diagnostics_get": {
       "method": "GET",
       "path_template": "/api/lane/<N>/diagnostics",
-      "response_top_fields": ["ok", "lane", "open_faults", "events", "latest_cycle", "baseline"]
+      "response_top_fields": ["ok", "lane", "open_faults", "events", "open_incidents", "resolution_audit", "latest_cycle", "baseline"],
+      "semantics": "open_incidents preserves fault-family lifecycle and repeat count; resolution_audit is append-only evidence for verified recoveries and privileged override requests. An override_pending incident remains operationally open and cannot make health green."
     },
     "heartbeat_post": {
       "method": "POST",
       "path": "/api/machine/heartbeat",
       "request_wrapper_key": "heartbeat",
       "request_wrapper_kind": "object",
-      "bare_body_tolerated": true,
-      "heartbeat_required_fields": ["lane_id"],
-      "heartbeat_optional_fields": ["board_rev", "fw_build", "fw_cfg", "fw_version", "contract_sha256", "identity_ok", "ro_fs", "outbox"],
-      "response_ok_fields": ["ok", "lane", "last_seen"],
-      "note": "R3-2 (2026-07-23): the controller_daemon posts this on a fixed cadence WELL UNDER the lease window (WSL_MACHINE_HEARTBEAT_S default 20s vs WSL_MACHINE_LEASE_S 90s) so a healthy-but-quiet Track-B controller — which sends NO scoring-WS heartbeat (that path is Track-A only, the R3-2/R2-10 wrong-topology bug) — keeps its lease fresh and reads HEALTHY, while a killed controller expires OFFLINE. The server touches machine_leases.last_seen identically to the WS HELLO/HEARTBEAT and ingest paths, and records the carried board/firmware/contract identity. 'outbox' is the R3-3 health block {oldest_unsent_age_s, backlog, cursor_ok, quarantined}. Behind the same X-Lane-Token gate; NOT gated by WSL_MACHINE_DIAG (liveness must survive a diagnostics-ingest kill-switch, same rule as touch_lanes)."
+      "bare_body_tolerated": false,
+      "heartbeat_required_fields": ["lane_id", "controller_boot_id", "heartbeat_seq", "control_loop_seq", "board_rev", "contract_sha256", "contract_loaded", "identity_ok", "ro_fs", "outbox", "platform"],
+      "heartbeat_optional_fields": ["observed_pcb", "observed_rid", "observed_uid", "fw_build", "fw_cfg", "fw_version", "identity_reason", "serial_parse_errors", "diag_record_drops"],
+      "response_ok_fields": ["ok", "lane", "committed", "last_seen", "heartbeat_seq", "control_loop_seq"],
+      "note": "The exact {heartbeat:{...}} wrapper and required controller envelope are mandatory. controller_boot_id plus heartbeat_seq rejects replay/regression, including delayed heartbeats from a retired boot nonce; control_loop_seq advances only in the 50 Hz controller and drives control_loop_progress_at. Only a committed heartbeat renews controller_seen_at. An identity_ok=true revD heartbeat conditionally requires non-empty observed_pcb/observed_rid/observed_uid/fw_build/fw_cfg/fw_version evidence and observed_pcb==board_rev; identity_ok=false requires identity_reason. Identity, live-contract, read-only-filesystem and durable-outbox failures derive DEGRADED. A database failure returns 503; HTTP 200 always carries committed=true and echoes lane/heartbeat/control-loop progress."
     }
   },
   "vocab": {
@@ -100,8 +295,13 @@
       "camera_health",
       "camera_ref_drift",
       "chatter",
+      "command_transport",
       "configured_role_missing",
+      "control_loop_stalled",
+      "contract_unavailable",
+      "diag_corrupt_row",
       "diag_drops",
+      "diag_storage_error",
       "diag_storage_pruned",
       "dist_index_stall",
       "drift_alarm",
@@ -115,6 +315,9 @@
       "fw_reboot",
       "gripper_disagree",
       "gs_camera_disagree",
+      "health_drop_stale",
+      "health_drop_unhealthy",
+      "heartbeat_rejected",
       "http_sink_drops",
       "link_lost",
       "maintenance_overdue",
@@ -127,8 +330,11 @@
       "pi_undervoltage",
       "rail_drop",
       "recovered",
+      "rp2040_serial_corrupt",
       "rp2040_wdt_reset",
       "run_mismatch",
+      "scoring_server_ack_stalled",
+      "scoring_event_transport",
       "service_restart",
       "service_restart_loop",
       "short_rack",
@@ -140,10 +346,16 @@
       "unexpected_edge",
       "v5_out_of_range"
     ],
+    "scoring_event_types": ["ball_event", "foul_event"],
+    "scoring_event_dispositions": ["accepted", "duplicate", "ignored_lane_closed", "awaiting_manual", "stale_quarantined", "overdue_quarantined", "clock_anomaly_quarantined", "duplicate_window_suppressed"],
+    "command_types": ["cycle", "open_lane", "close_lane", "reset", "power_on", "power_off", "scoring_epoch_sync"],
+    "actuating_command_types": ["cycle", "open_lane", "close_lane", "reset", "power_on", "power_off"],
+    "command_ack_statuses": ["completed", "duplicate", "refused", "ambiguous", "failed"],
+    "manual_reconciliation_conditions": ["stale_scoring_epoch", "overdue_scoring_event", "scoring_event_lost", "command_indeterminate", "command_ambiguous", "command_collision", "command_refused", "command_failed", "operation_receipts_incomplete", "privileged_resolution_override", "cycle_delivery_indeterminate"],
     "cycle_types": ["ball", "manual", "power_on", "reset", "test"],
     "record_kinds": ["event", "cycle"],
     "record_kinds_note": "R3-3 (2026-07-23): the daily JSONL file is the SINGLE durable write path for BOTH events and cycles. Each outbox line carries an optional '_kind' discriminator ('event' default when absent — the legacy shape; 'cycle' routes the line to /api/machine/cycles wrapped as {cycle: row}). This retires the lossy in-memory-only CycleShipper-without-replay: a cycle written to the outbox survives a crash/outage and replays with the same delivery-identity idempotency as events. The OutboxReplayer cursor recovery scans from the OLDEST file carrying unshipped records, never the newest (the R3-3 stranding bug).",
-    "states": ["HEALTHY", "FAULT", "OFFLINE", "UNKNOWN", "MAINTENANCE"],
+    "states": ["HEALTHY", "DEGRADED", "FAULT", "OFFLINE", "UNKNOWN", "MAINTENANCE"],
     "final_states": ["FAULT", "MANUAL_INTERVENTION", "READY"],
     "interval_columns": ["ss_to_guard_ms", "guard_to_table_ms", "table_to_ta2_ms", "ta2_to_sa_ms", "sa_to_ta1zero_ms", "bs_to_ta1zero_ms"],
     "lane_id_range": [1, 32],
@@ -169,7 +381,48 @@
           "last_cycle_final_state": "FAULT",
           "state": "FAULT",
           "last_seen": "2026-07-21T17:59:58.000+00:00",
-          "age_s": 2.4
+          "age_s": 2.4,
+          "activity_seen_at": "2026-07-21T17:59:59.000+00:00",
+          "scoring_seen_at": "2026-07-21T17:59:59.000+00:00",
+          "scoring_age_s": 1.4,
+          "scoring_state": "HEALTHY",
+          "scoring_reason": null,
+          "scoring_reasons": [],
+          "scoring_mode": "camera",
+          "scoring_camera_calibrated": true,
+          "scoring_camera_ok": true,
+          "scoring_camera_code": "healthy",
+          "scoring_outbox": {"oldest_unsent_age_s": null, "backlog": 0, "backlog_bytes": 0, "cursor_ok": true, "pending_writes": 0, "dropped": 0, "quarantined": 0, "cycles_quarantined": 0, "post_errors": 0, "write_errors": 0, "sink_errors": 0, "error": false, "scoring_event_queue_depth": 0, "scoring_event_queue_capacity": 128, "scoring_event_oldest_age_s": null, "scoring_event_durable": true, "scoring_event_error": false, "scoring_event_overdue": false, "scoring_event_drops": 0, "scoring_event_expired": 0, "scoring_event_max_age_s": 30.0},
+          "scoring_boot_id": "example-scoring-boot",
+          "scoring_session_id": "example-scoring-session",
+          "scoring_heartbeat_seq": 42,
+          "scoring_node_lockout_s": 8.0,
+          "heartbeat_at": "2026-07-21T17:59:58.000+00:00",
+          "controller_boot_id": "example-controller-boot",
+          "heartbeat_seq": 42,
+          "control_loop_seq": 50012,
+          "control_loop_progress_at": "2026-07-21T17:59:58.000+00:00",
+          "control_loop_age_s": 2.4,
+          "board_rev": "revD",
+          "observed_pcb": "revD",
+          "observed_rid": "revD",
+          "observed_uid": "e6614104034b6f2a",
+          "fw_build": "3024346",
+          "fw_cfg": "aa4ff333",
+          "fw_version": "1.2.3",
+          "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "contract_loaded": true,
+          "contract_match": true,
+          "identity_ok": true,
+          "identity_reason": null,
+          "ro_fs": false,
+          "outbox": {"oldest_unsent_age_s": null, "backlog": 0, "backlog_bytes": 0, "cursor_ok": true, "quarantined": 0, "write_errors": 0, "sink_errors": 0, "dropped": 0},
+          "platform": {"ok": true, "reasons": []},
+          "serial_parse_errors": 0,
+          "diag_record_drops": 0,
+          "maintenance_overdue": false,
+          "degraded": false,
+          "degraded_reasons": []
         },
         "22": {
           "open_faults": 0,
@@ -184,8 +437,78 @@
           "last_cycle_final_state": "READY",
           "state": "HEALTHY",
           "last_seen": "2026-07-21T17:59:57.000+00:00",
-          "age_s": 3.1
+          "age_s": 3.1,
+          "activity_seen_at": "2026-07-21T17:59:59.000+00:00",
+          "scoring_seen_at": "2026-07-21T17:59:59.000+00:00",
+          "scoring_age_s": 1.4,
+          "scoring_state": "HEALTHY",
+          "scoring_reason": null,
+          "scoring_reasons": [],
+          "scoring_mode": "camera",
+          "scoring_camera_calibrated": true,
+          "scoring_camera_ok": true,
+          "scoring_camera_code": "healthy",
+          "scoring_outbox": {"oldest_unsent_age_s": null, "backlog": 0, "backlog_bytes": 0, "cursor_ok": true, "pending_writes": 0, "dropped": 0, "quarantined": 0, "cycles_quarantined": 0, "post_errors": 0, "write_errors": 0, "sink_errors": 0, "error": false, "scoring_event_queue_depth": 0, "scoring_event_queue_capacity": 128, "scoring_event_oldest_age_s": null, "scoring_event_durable": true, "scoring_event_error": false, "scoring_event_overdue": false, "scoring_event_drops": 0, "scoring_event_expired": 0, "scoring_event_max_age_s": 30.0},
+          "scoring_boot_id": "example-scoring-boot",
+          "scoring_session_id": "example-scoring-session",
+          "scoring_heartbeat_seq": 41,
+          "scoring_node_lockout_s": 8.0,
+          "heartbeat_at": "2026-07-21T17:59:57.000+00:00",
+          "controller_boot_id": "example-controller-boot",
+          "heartbeat_seq": 41,
+          "control_loop_seq": 49998,
+          "control_loop_progress_at": "2026-07-21T17:59:57.000+00:00",
+          "control_loop_age_s": 3.1,
+          "board_rev": "revD",
+          "observed_pcb": "revD",
+          "observed_rid": "revD",
+          "observed_uid": "e6614104034b6f2b",
+          "fw_build": "3024346",
+          "fw_cfg": "aa4ff333",
+          "fw_version": "1.2.3",
+          "contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "contract_loaded": true,
+          "contract_match": true,
+          "identity_ok": true,
+          "identity_reason": null,
+          "ro_fs": false,
+          "outbox": {"oldest_unsent_age_s": null, "backlog": 0, "backlog_bytes": 0, "cursor_ok": true, "quarantined": 0, "write_errors": 0, "sink_errors": 0, "dropped": 0},
+          "platform": {"ok": true, "reasons": []},
+          "serial_parse_errors": 0,
+          "diag_record_drops": 0,
+          "maintenance_overdue": false,
+          "degraded": false,
+          "degraded_reasons": []
         }
+      },
+      "clock_authority": {
+        "observed": true,
+        "anomaly_latched": false,
+        "high_water_epoch": 1784676000.0,
+        "observed_epoch": 1784676000.0
+      },
+      "scoring_node_topology": {
+        "ok": true,
+        "credential_policy_ok": true,
+        "expected_nodes": {"pi-lane21-22": [21, 22]},
+        "connected_nodes": ["pi-lane21-22"],
+        "reasons": []
+      },
+      "diagnostic_delivery": {
+        "started": true,
+        "last_success_at": "2026-07-21T18:00:00.000+00:00",
+        "last_error": null,
+        "consecutive_failures": 0,
+        "pending": 0,
+        "oldest_age_s": null,
+        "pending_background_commands": 0,
+        "enforced": true,
+        "thread_alive": true,
+        "heartbeat_age_s": 0.1,
+        "worker_stale_s": 5.0,
+        "pending_alert_s": 5.0,
+        "db_timeout_s": 0.5,
+        "ok": true
       }
     },
     "cycle_post_body": {
