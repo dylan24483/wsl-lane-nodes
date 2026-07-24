@@ -26,6 +26,14 @@ lane_node/_*.txt
 # Bundled FreeRouting JRE (toolchain, re-downloadable)
 tools/java25/
 
+# OEM service references are retained in controlled local storage, not the
+# public source repository. See docs/OEM_REFERENCE_MANIFEST_2026-07-24.md.
+/docs/8270-service-parts-manual.pdf
+/docs/8270-pinspotter-operation-training-manual.pdf
+/docs/610-007-030, 8270 PC Board Components Manual.PDF
+/docs/OmegaTek_Expander_Card.pdf
+/docs/OmegaTek_Omniboard.pdf
+
 # Local design-safety snapshots (protected by external mirror in C:\Users\Dylan DeYoung\WSL_Backups;
 # kept out of git because this repo has a known history-size problem)
 backups/
