@@ -5,6 +5,13 @@ title: "WSL Phase 8 — rev-B Controller Board — Pre-Power Test Checklist"
 # WSL Phase 8 — rev-B Controller Board
 ## Pre-Power Bench Test Checklist (shorts · continuity · first power)
 
+> ⛔ **RETIRED REV-B CHECKLIST — NOT CURRENT REV-D WIRING OR CUTOVER
+> AUTHORITY.** Retain only as a historical board-inspection record. Do not combine
+> it with the retired Rev-B solder guide's TB/SC J14 or firmware instructions.
+> Current lane-21/22 work uses the controlled Candidate-C J_SAFE1-2 jumper, the OEM
+> S/T coil ladder, per-lane G3 proof, current `docs/manual_src/`, the harness build
+> sheet, Track-B runbook, and manifest-verified firmware release process.
+
 | Field | Value |
 |---|---|
 | Board ID / serial | ____________________ |

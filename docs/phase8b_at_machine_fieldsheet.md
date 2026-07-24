@@ -2,6 +2,16 @@
 
 **For Dylan, at a REAL 82-70 pinsetter (lane 21 or 22), with the existing controller still installed.** This is the session that turns every `# CONFIRM at-machine` / `TBD` in the rev-B design into a hard number, so the board can go to fab. It is the **last gate** before rev-B PCB release (routing can finish in parallel; these numbers don't change the topology, they set ratings + final clearances).
 
+> **OPERATIONAL RECONCILIATION (2026-07-24):** this is the completed 2026-06-03
+> measurement worksheet, not current J_SAFETY wiring authority. Its original B1
+> inference that SC/TB could become a dry NC J_SAFE1-2 loop was disproved. Cold
+> tracing on 2026-06-27 found only SC at C2A-U, no independent TB lead, and ~21 Ω
+> coil sneak paths; it did **not** prove topology. Powered testing on 2026-07-07
+> proved OEM **parallel closed-when-safe** contacts and that both levers BACK/open
+> kill both S and T coils. Candidate C is decided: controlled, labeled jumper on
+> J_SAFE1-2; OEM ladder remains primary; per-lane G3 S-and-T coil-drop proof is
+> mandatory. Do not use the superseded B1 blanks below to derive a harness.
+
 > ⚠️ **THIS IS NOT THE BENCH.** The earlier field work was the *disconnected spare cabinet* (cold, safe). This session needs the **live machine** to read real voltages/currents and to actuate cams/grippers. **A powered pinsetter moves and bites.** Read §0 before touching anything.
 
 ---
@@ -12,13 +22,13 @@ Everything the rev-B board design needs is in hand. Remaining items are cutover-
 |---|---|---|
 | **A1** working voltage | **24 VAC** (all relays; SP presumed) | creepage can relax 250V→24V → smaller board |
 | **A3** lamp supply | **15 VDC** → replaced by board-driven LEDs | lamp output simplified (no PhotoMOS) |
-| **A4** cam input form | **dry contact** (normally-closed) | cam front-end = dry-contact wetting |
+| **A4** sampled cam input form | dry-contact behavior was observed for sampled motion cams; **no blanket NC/polarity conclusion for every cam** | populate only measured, landed channels |
 | **B3** Stop/CIS chain | **parallel, cut master breaker** (OEM svc p11) | preserve upstream safety chain |
-| **B1** TB/SC interlock | **parallel into 24V control path** (OEM); exact terminals → cutover | J_SAFETY = NC series loop |
+| **B1** TB/SC interlock | **superseded by 2026-06-27 cold + 2026-07-07 powered evidence:** embedded OEM parallel-safe ladder; no dry/independent TB pair | J_SAFE1-2 = controlled Candidate-C jumper; G3 proves S/T insertion |
 | **B2** cam-stop logic/HW | leans LOGIC; → cutover cam-flip | not a design gate |
 | **Grippers** | **chassis-return; gripped = CLOSED to ground** (corrects OEM TAC-common model) | gripper input = chassis-referenced dry contact, FIELD-side |
 
-**DELIBERATELY DEFERRED to cutover (NOT worth bench/field time now — set in software/at-disassembly):** per-gripper GS#→C2A pin labels (drop a pin, watch the live feed), per-cam SA/TA#→cavity labels, exact C1/C2A terminal landings, TB/SC terminal landing. All easier with the machine apart + a live feed; none gate the PCB (function-named + harness-resolved).
+**DELIBERATELY DEFERRED to cutover (NOT worth bench/field time now — set in software/at-disassembly):** per-gripper GS#→C2A pin labels (drop a pin, watch the live feed), measured motion-cam SA/SB/TA1/TA2 cavity/polarity labels, and exact C1/C2A output landings. **There is no TB/SC terminal search for J_SAFE1-2:** lane 21/22 uses the controlled Candidate-C jumper, TB has no independent lead, and SC/U remains cut/labeled/unlanded unless a separate sensing redesign is reviewed.
 
 ---
 
@@ -98,12 +108,22 @@ Each row has a **why** (what design number it locks). Priority order.
 ## PART B — SAFETY-ARCHITECTURE CONFIRMATIONS (design-critical, not voltage)
 > ✅ **STATUS 2026-06-02 — mostly resolved without the hard live trace:**
 > - **B3 = DONE from OEM service-manual p11** (Stop + C.I.S. in parallel, both cut the rear-panel master breaker). No probing needed. Skip the steps below.
-> - **B1 = design-answered (TB+SC parallel into 24V control path; J_SAFETY accepts an NC series loop). EXACT TERMINALS DEFERRED TO CUTOVER** — easier with the machine apart; do NOT contort behind the live machine for it now.
+> - **B1 = CLOSED by later evidence, not by the original inference below.** The
+>   powered OEM ladder is parallel closed-when-safe; no dry/independent TB pair
+>   exists for J_SAFE1-2. Candidate C uses the controlled jumper and per-lane G3
+>   S/T coil proof. Do not search for or fabricate an "exact TB/SC terminal"
+>   landing from this worksheet.
 > - **B2 = deferred to cutover** (cam-flip test; not a design gate).
 > The steps below are retained for reference / the cutover session, but Part B needs no further LIVE work now.
-### B1 — TB/SC interlock electrical form ⭐ (how it wires into the rail)
-**Why:** the relay-enable rail needs the TB/SC interlock as a hardware series condition. We need to know its electrical form on OUR chassis to wire J_SAFETY correctly.
-**What:** **LOCKED OUT.** Find the TB + SC cam switches; confirm they're wired in **parallel** in the 24 V control path (per OEM), and determine: is the interlock a **normally-closed loop** that opens on collision? Trace where it lands. Record: contacts found ___ ; NC loop? Y/N ___ ; lands at ___ . Photograph.
+### B1 — TB/SC interlock electrical form ⭐ (**CLOSED; do not execute the old terminal-search plan**)
+**Resolved record:** cold continuity cannot establish topology in this ladder because
+~21 Ω relay-coil sneak paths contaminate the reads. It found SC at shared C2A-U and
+no independently landable TB/dry pair. Powered testing established the operational
+truth: SC and TB are parallel closed-when-safe; either pressed lever permits the
+coil and both levers BACK/open block both S and T. The released field implementation
+is Candidate C: controlled J_SAFE1-2 jumper plus the per-lane G3 board-commanded
+S-and-T coil-drop proof. The OEM ladder must not be lifted onto the board's 5 V
+J_SAFETY circuit.
 
 ### B2 — Cam-stop logic-vs-hardwired (the deferred airtight proof)
 **Why:** closes the open question from the bench (S-side was inaccessible). Determines if an existing hardwired cam-stop is preserved as a bonus backstop.
@@ -138,8 +158,10 @@ Each row has a **why** (what design number it locks). Priority order.
 | gripper actuated | plug pin position (from notch) | empty state | gripped state |
 |---|---|---|---|
 | (work them one at a time) | | | |
-### C2 — Per-cam SA/SB/SC/TA1/TA2/TB → C2A cavity
-**LOCKED OUT.** Hand-rotate to trip each cam; note which C2A cavity changes at which angle. Record SA→__@__°, etc.
+### C2 — Per-motion-cam SA/SB/TA1/TA2 → C2A cavity
+Follow the current cutover runbook's powered/locked-out capture procedure and
+record only independently observed motion-cam inputs. For lane 21/22, **TB is
+NO-LEAD** and **SC/U is CUT+LABEL-ONLY**; neither is a dry-input capture here.
 ### C3 — GP/OS/BS/Foul/PBZ/PBC → C2A cavity
 Actuate each (some are remote buttons); note cavity. Record each.
 
@@ -148,17 +170,23 @@ Actuate each (some are remote buttons); note cavity. Record each.
 ## PRIORITY / IF SHORT ON TIME
 1. **A1 (working voltage)** — the single highest-value read; it's the creepage gate that decides whether the board can shrink. Do this first.
 2. **A2 (currents)** + **A3 (lamp)** — fab-lock relay/lamp ratings.
-3. **B1 (TB/SC form)** — needed to wire the safety connector.
-4. **A4 / C1–C3** — population defaults + harness map (can trickle in; harness is built at cutover).
+3. **Candidate-C G3 preparation** — verify the controlled jumper and the documented
+   S/T output insertion points against the current build sheet/runbook.
+4. **A4 / C1–C3** — population defaults + harness map for independently landed
+   channels (can trickle in; harness is built at cutover).
 
 ## WHAT TO SEND BACK
-The filled tables (photos of jotted sheets fine) + photos of: the TB/SC switches, the mask lamp supply point, any contactor coil nameplate you can read. I turn A1→final creepage policy + re-DRC; A2/A3→lock relay/lamp parts in the BOM; B1→J_SAFETY wiring; C→the adapter-harness pinout table.
+The filled tables (photos of jotted sheets fine) + photos of the mask lamp supply
+point and any contactor coil nameplate you can read. Use the current runbook/build
+sheet for Candidate-C G3 evidence; do not turn a TB/SC photo or cold continuity
+reading into a J_SAFE1-2 landing.
 
 ## WHAT THIS UNBLOCKS
 - A1 → **24 VAC confirmed; current conservative routed board is fab-exported.** Optional future work is 24 V creepage relaxation for a smaller/spin-2 board; current next step is vendor Gerber/drill upload preview.
 - A2/A3 → BOM fab-lock (relay contact rating, lamp switch part, snubber populate y/n).
 - A4 → input front-end default population per channel.
-- B1/B2/B3 → safety-chain wiring + the bonus-backstop decision.
+- B1/B2/B3 → B1 is now Candidate C + G3 evidence; B3 preserves Stop/CIS; B2/cam
+  enforcement remains separately measured and release-gated.
 - C → the per-chassis adapter harness (the thing that maps the function-named board to THIS lane's C1/C2A).
 
 > **Reminder:** this is per-CHASSIS-TYPE. Lanes 21/22 are SS+Omega-Tek; 11/12 are Active-98 MP. The A1/A4/C readings here apply to the 21/22 pair; the MP pair needs its own quick pass before its harness. The BOARD is common; the harness + populations are per-chassis.

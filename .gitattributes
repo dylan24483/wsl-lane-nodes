@@ -1,5 +1,29 @@
 server/machine_contract.json text eol=lf
 server/machine_contract.sha256 text eol=lf
+
+# RP2040 release identity hashes these controlled inputs byte-for-byte. Pin
+# LF so core.autocrlf cannot create a different clean-clone build identity.
+firmware/rp2040/CMakeLists.txt text eol=lf
+firmware/rp2040/config.h text eol=lf
+firmware/rp2040/fi1_bootsel.c text eol=lf
+firmware/rp2040/gen_build_id.cmake text eol=lf
+firmware/rp2040/main.c text eol=lf
+firmware/rp2040/pico_sdk_import.cmake text eol=lf
+firmware/rp2040/release_manifest_policy.py text eol=lf
+firmware/rp2040/release_provenance.py text eol=lf
+firmware/rp2040/release.ps1 text eol=lf
+firmware/rp2040/release/firmware_manifest.json text eol=lf
+
+# These are the two controlled release payloads. Keep them as ordinary Git
+# blobs (no line conversion, diff/merge driver, or inherited LFS filter).
+firmware/rp2040/release/wsl_phase8b_rp2040.uf2 -text -diff -merge -filter
+firmware/rp2040/release/wsl_phase8b_rp2040_FI1.uf2 -text -diff -merge -filter
+
+# The generator owns one canonical, byte-hashed ERC artifact at the repository
+# root. Its intentional CRLF serialization must not be rewritten.
+scripts/generate_kicad_netlist_revD.py text eol=lf
+generate_kicad_netlist_revD.erc -text whitespace=cr-at-eol
+
 # As-ordered fab packages are hashed byte-for-byte in their manifest.json -
 # NEVER let git line-ending normalization rewrite them (H6, 2026-07-21).
 kicad/fab_revD_*/** -text

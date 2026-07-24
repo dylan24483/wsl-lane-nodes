@@ -43,6 +43,7 @@ import json
 import logging
 import math
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -164,6 +165,10 @@ def diagnostics_contract_ready():
 # and must not fake board liveness.
 # ------------------------------------------------------------------
 MACHINE_STATES = _VOCAB["states"]   # R3-1a: loaded from the contract vocab
+CONTROLLER_MODES = frozenset(_VOCAB["controller_modes"])
+IDENTITY_ASSURANCES = frozenset(_VOCAB["identity_assurances"])
+CONTROLLER_FSM_STATES = frozenset(_VOCAB["controller_fsm_states"])
+SAFETY_TAP_FIELDS = tuple(_VOCAB["safety_tap_fields"])
 LEASE_WINDOW_ENV = "WSL_MACHINE_LEASE_S"
 DEFAULT_LEASE_WINDOW_S = 90.0
 OUTBOX_STALL_ENV = "WSL_MACHINE_OUTBOX_STALL_S"
@@ -172,6 +177,8 @@ PRODUCER_FUTURE_TOLERANCE_S = 300.0
 MACHINE_LANES_ENV = "WSL_MACHINE_LANES"
 DEFAULT_MACHINE_LANES = "21,22"   # PHASE_8_PAIRS; grows with the rollout
 LEASE_FUTURE_TOLERANCE_S = 5.0
+EXPECTED_CONTROLLER_MODE_ENV = "WSL_CONTROLLER_EXPECTED_MODE"
+QUALIFIED_RELEASES_ENV = "WSL_RP2040_QUALIFIED_RELEASES"
 
 
 def lease_window_s():
@@ -223,6 +230,42 @@ def configured_lanes():
         if 1 <= lane <= 32 and lane not in lanes:
             lanes.append(lane)
     return lanes
+
+
+def _expected_controller_mode():
+    """Return the expected live/shadow posture and any policy error.
+
+    Production provisioning sets this machine-scoped. A missing value retains
+    the conservative historical ``live`` expectation for developer/test
+    servers; malformed values can never make a controller lease green.
+    """
+    raw = os.environ.get(EXPECTED_CONTROLLER_MODE_ENV)
+    if raw is None or raw == "":
+        return "live", "controller_mode_policy_missing"
+    if raw not in CONTROLLER_MODES:
+        return None, "controller_mode_policy_invalid"
+    return raw, None
+
+
+def _qualified_release_policy():
+    """Parse exact board|build|cfg tuples without creating a cross-product."""
+    raw = os.environ.get(QUALIFIED_RELEASES_ENV)
+    if raw is None or raw == "":
+        return frozenset(), "qualified_release_policy_missing"
+    if raw != raw.strip() or any(char.isspace() for char in raw):
+        return frozenset(), "qualified_release_policy_invalid"
+    tuples = []
+    for item in raw.split(","):
+        parts = item.split("|")
+        if (
+                len(parts) != 3
+                or any(not part for part in parts)
+                or re.fullmatch(r"rev[A-Za-z0-9._-]+", parts[0]) is None):
+            return frozenset(), "qualified_release_policy_invalid"
+        tuples.append(tuple(parts))
+    if len(tuples) != len(set(tuples)):
+        return frozenset(), "qualified_release_policy_invalid"
+    return frozenset(tuples), None
 
 
 def _lease_timestamp_age(raw, now_dt, field):
@@ -649,6 +692,15 @@ _LEASE_IDENTITY_COLUMNS = (
     ('heartbeat_seq', 'INTEGER'),    # monotonic within controller_boot_id
     ('control_loop_seq', 'INTEGER'), # incremented by the 50 Hz control loop
     ('control_loop_progress_at', 'TEXT'), # changes only when loop seq advances
+    ('controller_mode', 'TEXT'),     # explicit live/shadow output posture
+    ('live_outputs_acknowledged', 'INTEGER'),
+    ('arm_state', 'INTEGER'),        # last successfully commanded physical ARM
+    ('fsm_state', 'TEXT'),           # live controller FSM state
+    ('manual_rearm_required', 'INTEGER'),
+    ('legacy_identity_mode', 'INTEGER'),
+    ('identity_assurance', 'TEXT'),
+    ('arm_prerequisite_reason', 'TEXT'),
+    ('safety_taps_json', 'TEXT'),    # NE555/kick/ARM-permit/RP2040-OK taps
     ('board_rev', 'TEXT'),           # configured board revision
     ('observed_pcb', 'TEXT'),        # firmware-reported PCB identity
     ('observed_rid', 'TEXT'),        # resistor/strap identity
@@ -1321,6 +1373,9 @@ def maintenance_max_s():
 # it can never renew controller_seen_at or control_loop_progress_at.
 _HEARTBEAT_REQUIRED_FIELDS = {
     'lane_id', 'controller_boot_id', 'heartbeat_seq', 'control_loop_seq',
+    'controller_mode', 'live_outputs_acknowledged', 'arm_state', 'fsm_state',
+    'manual_rearm_required', 'legacy_identity_mode', 'identity_assurance',
+    'arm_prerequisite_reason', 'safety_taps',
     'board_rev', 'contract_sha256', 'contract_loaded', 'identity_ok',
     'ro_fs', 'outbox', 'platform',
 }
@@ -1330,9 +1385,10 @@ _HEARTBEAT_OPTIONAL_FIELDS = {
     'serial_parse_errors', 'diag_record_drops',
 }
 _HEARTBEAT_STR_FIELDS = (
-    'controller_boot_id', 'board_rev', 'observed_pcb', 'observed_rid',
-    'observed_uid', 'fw_build', 'fw_cfg', 'fw_version', 'contract_sha256',
-    'identity_reason',
+    'controller_boot_id', 'controller_mode', 'fsm_state',
+    'identity_assurance', 'arm_prerequisite_reason', 'board_rev',
+    'observed_pcb', 'observed_rid', 'observed_uid', 'fw_build', 'fw_cfg',
+    'fw_version', 'contract_sha256', 'identity_reason',
 )
 
 
@@ -1355,7 +1411,10 @@ def validate_heartbeat(body):
         raise ValueError(f"heartbeat has unknown fields: {unknown}")
     row = dict(body)
     row['lane_id'] = _lane_id(row['lane_id'])
-    for field in ('contract_loaded', 'identity_ok', 'ro_fs'):
+    for field in (
+            'contract_loaded', 'identity_ok', 'ro_fs',
+            'live_outputs_acknowledged', 'arm_state',
+            'manual_rearm_required', 'legacy_identity_mode'):
         if type(row[field]) is not bool:
             raise ValueError(f"{field} must be boolean")
     for field in ('heartbeat_seq', 'control_loop_seq',
@@ -1364,15 +1423,51 @@ def validate_heartbeat(body):
             row[field] = _heartbeat_nonnegative_int(row[field], field)
     for field in _HEARTBEAT_STR_FIELDS:
         value = row.get(field)
-        if value is None and field in ('observed_pcb', 'observed_rid',
-                                       'observed_uid', 'fw_build', 'fw_cfg',
-                                       'fw_version'):
+        if value is None and field in (
+                'arm_prerequisite_reason', 'observed_pcb', 'observed_rid',
+                'observed_uid', 'fw_build', 'fw_cfg', 'fw_version'):
             continue
         row[field] = _opt_str(value, field, max_len=200)
     if not row['controller_boot_id']:
         raise ValueError("controller_boot_id must be non-empty")
     if not row['board_rev']:
         raise ValueError("board_rev must be non-empty")
+    if row['controller_mode'] not in CONTROLLER_MODES:
+        raise ValueError(
+            "controller_mode must be one of " + ",".join(sorted(CONTROLLER_MODES)))
+    if row['identity_assurance'] not in IDENTITY_ASSURANCES:
+        raise ValueError(
+            "identity_assurance must be one of "
+            + ",".join(sorted(IDENTITY_ASSURANCES)))
+    if (
+            not row['fsm_state']
+            or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", row['fsm_state']) is None):
+        raise ValueError("fsm_state must be a bounded canonical state token")
+    if (
+            row.get('arm_prerequisite_reason') is not None
+            and not row['arm_prerequisite_reason'].strip()):
+        raise ValueError(
+            "arm_prerequisite_reason must be null or a non-empty string")
+    safety_taps = row['safety_taps']
+    if (
+            not isinstance(safety_taps, dict)
+            or set(safety_taps) != set(SAFETY_TAP_FIELDS)
+            or any(
+                value is not None and type(value) is not bool
+                for value in safety_taps.values()
+            )):
+        raise ValueError(
+            "safety_taps must contain exactly nullable booleans "
+            + ",".join(SAFETY_TAP_FIELDS))
+    if (
+            row['board_rev'] == 'revD'
+            and row['identity_assurance'] == 'verified'
+            and any(type(safety_taps[field]) is not bool
+                    for field in SAFETY_TAP_FIELDS)):
+        raise ValueError(
+            "verified revD safety_taps must contain four booleans")
+    row['_safety_taps_json'] = json.dumps(
+        safety_taps, separators=(',', ':'), sort_keys=True)
     if row['board_rev'] == 'revD' and row['identity_ok']:
         required_identity = (
             'observed_pcb', 'observed_rid', 'observed_uid',
@@ -1599,6 +1694,81 @@ def _outbox_degraded_reasons(outbox):
     return reasons
 
 
+def _controller_posture_degraded_reasons(lease, safety_taps):
+    """Derive safety/controller policy faults from one fresh persisted lease."""
+    reasons = []
+    expected_mode, mode_policy_error = _expected_controller_mode()
+    actual_mode = lease.get('controller_mode')
+    if mode_policy_error is not None:
+        reasons.append(mode_policy_error)
+    elif actual_mode != expected_mode:
+        reasons.append('controller_mode_mismatch')
+    if (
+            expected_mode == 'live'
+            and lease.get('live_outputs_acknowledged') != 1):
+        reasons.append('live_outputs_not_acknowledged')
+
+    assurance = lease.get('identity_assurance')
+    if assurance != 'verified':
+        reasons.append(
+            'identity_assurance_' + (
+                assurance if assurance in IDENTITY_ASSURANCES else 'invalid'))
+    legacy = lease.get('legacy_identity_mode') == 1
+    if (
+            (legacy and assurance != 'legacy_unverified')
+            or (not legacy and assurance == 'legacy_unverified')
+            or (assurance == 'verified' and lease.get('identity_ok') != 1)):
+        reasons.append('identity_assurance_inconsistent')
+
+    manual_rearm = lease.get('manual_rearm_required') == 1
+    if manual_rearm:
+        reasons.append('manual_rearm_required')
+    arm_state = lease.get('arm_state') == 1
+    fsm_state = lease.get('fsm_state')
+    if fsm_state not in CONTROLLER_FSM_STATES:
+        reasons.append('fsm_state_unknown')
+    disarmed_states = {'power_off', 'manual_intervention', 'fault'}
+    live_armed_states = CONTROLLER_FSM_STATES - disarmed_states
+    if (
+            (arm_state and fsm_state in disarmed_states)
+            or (arm_state and manual_rearm)
+            or (actual_mode == 'shadow' and arm_state)
+            or (
+                actual_mode == 'live'
+                and not arm_state
+                and not manual_rearm
+                and fsm_state in live_armed_states
+            )):
+        reasons.append('arm_fsm_inconsistent')
+    prerequisite_reason = lease.get('arm_prerequisite_reason')
+    if prerequisite_reason and not manual_rearm:
+        reasons.append('arm_prerequisite_inconsistent')
+
+    if not isinstance(safety_taps, dict):
+        reasons.append('safety_taps_missing')
+    else:
+        if (
+                actual_mode == 'live'
+                and type(safety_taps.get('arm_permit')) is bool
+                and arm_state is not safety_taps['arm_permit']):
+            reasons.append('arm_permit_mismatch')
+        if arm_state and safety_taps.get('ne555') is not True:
+            reasons.append('arm_without_ne555')
+        if arm_state and safety_taps.get('rp2040_ok') is not True:
+            reasons.append('arm_without_rp2040_ok')
+
+    qualified, qualified_error = _qualified_release_policy()
+    if qualified_error is not None:
+        reasons.append(qualified_error)
+    elif (
+            lease.get('board_rev'),
+            lease.get('fw_build'),
+            lease.get('fw_cfg'),
+    ) not in qualified:
+        reasons.append('firmware_release_not_qualified')
+    return reasons
+
+
 def record_heartbeat(body, *, when=None):
     """Commit one strict controller heartbeat or raise.
 
@@ -1662,6 +1832,19 @@ def record_heartbeat(body, *, when=None):
                     'heartbeat_seq': hb['heartbeat_seq'],
                     'control_loop_seq': hb['control_loop_seq'],
                     'control_loop_progress_at': progress_at,
+                    'controller_mode': hb['controller_mode'],
+                    'live_outputs_acknowledged': (
+                        1 if hb['live_outputs_acknowledged'] else 0),
+                    'arm_state': 1 if hb['arm_state'] else 0,
+                    'fsm_state': hb['fsm_state'],
+                    'manual_rearm_required': (
+                        1 if hb['manual_rearm_required'] else 0),
+                    'legacy_identity_mode': (
+                        1 if hb['legacy_identity_mode'] else 0),
+                    'identity_assurance': hb['identity_assurance'],
+                    'arm_prerequisite_reason':
+                        hb.get('arm_prerequisite_reason'),
+                    'safety_taps_json': hb['_safety_taps_json'],
                     'board_rev': hb['board_rev'],
                     'observed_pcb': hb.get('observed_pcb'),
                     'observed_rid': hb.get('observed_rid'),
@@ -2224,6 +2407,15 @@ def _empty_lane_rollup():
         'control_loop_seq': None,
         'control_loop_progress_at': None,
         'control_loop_age_s': None,
+        'controller_mode': None,
+        'live_outputs_acknowledged': None,
+        'arm_state': None,
+        'fsm_state': None,
+        'manual_rearm_required': None,
+        'legacy_identity_mode': None,
+        'identity_assurance': None,
+        'arm_prerequisite_reason': None,
+        'safety_taps': None,
         'board_rev': None,
         'observed_pcb': None,
         'observed_rid': None,
@@ -2347,6 +2539,11 @@ def machine_health():
         except (TypeError, ValueError):
             platform = None
         try:
+            safety_taps = json.loads(lease['safety_taps_json']) \
+                if lease.get('safety_taps_json') else None
+        except (TypeError, ValueError):
+            safety_taps = None
+        try:
             scoring_outbox = json.loads(lease['scoring_outbox_json']) \
                 if lease.get('scoring_outbox_json') else None
         except (TypeError, ValueError):
@@ -2385,6 +2582,8 @@ def machine_health():
                 reasons.append('rp2040_serial_corrupt')
             if (lease.get('diag_record_drops') or 0) > 0:
                 reasons.append('diagnostic_record_drops')
+            reasons.extend(
+                _controller_posture_degraded_reasons(lease, safety_taps))
         reasons = sorted(set(reasons))
         if lease.get('maintenance'):
             state = 'MAINTENANCE'
@@ -2466,6 +2665,24 @@ def machine_health():
         entry['control_loop_seq'] = lease.get('control_loop_seq')
         entry['control_loop_progress_at'] = progress_at
         entry['control_loop_age_s'] = progress_age_s
+        entry['controller_mode'] = lease.get('controller_mode')
+        entry['live_outputs_acknowledged'] = (
+            None if lease.get('live_outputs_acknowledged') is None
+            else lease.get('live_outputs_acknowledged') == 1)
+        entry['arm_state'] = (
+            None if lease.get('arm_state') is None
+            else lease.get('arm_state') == 1)
+        entry['fsm_state'] = lease.get('fsm_state')
+        entry['manual_rearm_required'] = (
+            None if lease.get('manual_rearm_required') is None
+            else lease.get('manual_rearm_required') == 1)
+        entry['legacy_identity_mode'] = (
+            None if lease.get('legacy_identity_mode') is None
+            else lease.get('legacy_identity_mode') == 1)
+        entry['identity_assurance'] = lease.get('identity_assurance')
+        entry['arm_prerequisite_reason'] = lease.get(
+            'arm_prerequisite_reason')
+        entry['safety_taps'] = safety_taps
         for field in (
                 'board_rev', 'observed_pcb', 'observed_rid', 'observed_uid',
                 'fw_build', 'fw_cfg', 'fw_version', 'contract_sha256',

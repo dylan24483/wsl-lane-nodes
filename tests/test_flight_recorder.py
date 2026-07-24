@@ -369,7 +369,10 @@ runlog = LogCapture()
 logging.getLogger("flight_recorder").addHandler(runlog)
 logging.getLogger("flight_recorder").setLevel(logging.INFO)
 
-bc = cd.BoardController(cd.BoardConfig(21, 1, "sim", 0, 0, board_rev="revC"), sim=True)
+bc = cd.BoardController(cd.BoardConfig(
+    21, 1, "sim", 0, 0, board_rev="revC",
+    allow_legacy_revc_no_identity=True,
+    legacy_revc_no_identity_enrolled=True), sim=True)
 bc.recorder._dump_dir = tempfile.mkdtemp(prefix="fr_daemon_")
 check(bc.recorder.enabled, "daemon builds an enabled flight recorder by default")
 check(bc.telemetry.enabled, "daemon builds enabled cam telemetry by default")
@@ -408,7 +411,10 @@ check(fdoc["context"]["fsm_state"] == "fault", "fault dump context records the F
 check(isinstance(bc.telemetry.baselines(), dict), "telemetry baselines queryable after daemon ticks")
 
 # SHADOW gate: a BoardController with shadow=True wraps io in ShadowIO and drives nothing
-bc_sh = cd.BoardController(cd.BoardConfig(21, 1, "sim", 0, 0, board_rev="revC"), sim=True, shadow=True)
+bc_sh = cd.BoardController(cd.BoardConfig(
+    21, 1, "sim", 0, 0, board_rev="revC",
+    allow_legacy_revc_no_identity=True,
+    legacy_revc_no_identity_enrolled=True), sim=True, shadow=True)
 check(isinstance(bc_sh.io, ShadowIO), "shadow=True wraps the io in ShadowIO")
 bc_sh.link.feed_line('{"ev":"hb","ok":1,"up":250}'); bc_sh.tick()
 bc_sh.io.slow = {}                                  # ShadowIO delegates slow to underlying RecordingIO

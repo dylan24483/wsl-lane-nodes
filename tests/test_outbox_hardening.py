@@ -551,7 +551,7 @@ def test_disabled_writer_builds_no_delivery_leg_and_heartbeat_fails_closed(
     class Link:
         def fw_identity(self):
             return {
-                "pcb": "revD", "rid": "revD", "uid": "test-uid",
+                "pcb": "revD", "rid": 1, "uid": "test-uid",
                 "build": "test-build", "cfg": "test-cfg", "fw": "1.2.3",
             }
 
@@ -571,8 +571,64 @@ def test_disabled_writer_builds_no_delivery_leg_and_heartbeat_fails_closed(
         control_loop_seq = 7
 
         @staticmethod
+        def telemetry_snapshot():
+            return {
+                "lane_id": 21,
+                "controller_boot_id": cd._CONTROLLER_BOOT_ID,
+                "control_loop_seq": 7,
+                "board_rev": "revD",
+                "observed_pcb": "revD",
+                "observed_rid": "1",
+                "observed_uid": "test-uid",
+                "fw_build": "test-build",
+                "fw_cfg": "test-cfg",
+                "fw_version": "1.2.3",
+                "identity_ok": True,
+                "identity_reason": None,
+                "controller_mode": "live",
+                "live_outputs_acknowledged": True,
+                "arm_state": True,
+                "fsm_state": "ready",
+                "manual_rearm_required": False,
+                "legacy_identity_mode": False,
+                "identity_assurance": "verified",
+                "arm_prerequisite_reason": None,
+                "safety_taps": {
+                    "ne555": True,
+                    "wdog_kick": True,
+                    "arm_permit": True,
+                    "rp2040_ok": True,
+                },
+                "parse_errors": 0,
+                "quarantined_lines": 0,
+                "diag_record_drops": 0,
+                "pending_diag_records": 0,
+                "_link_hb_generation": 1,
+                "_link_discontinuity_generation": 0,
+            }
+
+        @staticmethod
         def _identity_arm_ok(allow_shadow_bypass=False):
             return True, None
+
+        @staticmethod
+        def runtime_diagnostics(identity_verdict=None):
+            return {
+                "controller_mode": "live",
+                "live_outputs_acknowledged": True,
+                "arm_state": True,
+                "fsm_state": "ready",
+                "manual_rearm_required": False,
+                "legacy_identity_mode": False,
+                "identity_assurance": "verified",
+                "arm_prerequisite_reason": None,
+                "safety_taps": {
+                    "ne555": True,
+                    "wdog_kick": True,
+                    "arm_permit": True,
+                    "rp2040_ok": True,
+                },
+            }
 
     platform = cd.PlatformHealth(
         [Board()], writer, dir_path=str(tmp_path))
@@ -587,6 +643,8 @@ def test_disabled_writer_builds_no_delivery_leg_and_heartbeat_fails_closed(
     assert heartbeat_outbox["health_unavailable"] is True
     assert heartbeat_outbox["cursor_ok"] is False
     assert heartbeat_outbox["error"] is True
+    assert sent[0]["controller_mode"] == "live"
+    assert sent[0]["identity_assurance"] == "verified"
 
 
 def test_cycle_shipper_has_no_second_queue_before_durable_writer():

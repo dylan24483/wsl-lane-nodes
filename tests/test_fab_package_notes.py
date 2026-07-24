@@ -38,6 +38,14 @@ FIRST_ARTICLE_PACK = os.path.join(
 FIRST_ARTICLE_MAP = os.path.join(
     REPO, "docs", "phase8_revD_first_article_refdes_map.csv"
 )
+REVD_GENERATOR = os.path.join(REPO, "scripts", "generate_kicad_netlist_revD.py")
+REVD_ERC = os.path.join(REPO, "generate_kicad_netlist_revD.erc")
+REVD_NETLIST = os.path.join(REPO, "kicad", "wsl-phase8b-revD.net")
+FW_RELEASE_DIR = os.path.join(REPO, "firmware", "rp2040", "release")
+FW_RELEASE_MANIFEST = os.path.join(FW_RELEASE_DIR, "firmware_manifest.json")
+STALE_SCRIPTS_ERC = os.path.join(
+    REPO, "scripts", "generate_kicad_netlist_revD.erc"
+)
 
 BAD = b"2x the 100mA module allowance"
 REQUIRED_F1 = (
@@ -57,6 +65,10 @@ REQUIRED_BIAS_GATE = (
     b"rel-0c746b5747143b8011b01d43",
     b"05d808411db4bb0d",
     b"d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae",
+    b"supported_board_revisions",
+    b"revD",
+    b"ea8ea4ceb273df98e888aeb5d1f1327d39577e8492fda455c932fea3768bd7b5",
+    b"revD|rel-0c746b5747143b8011b01d43|05d808411db4bb0d",
 )
 
 
@@ -206,9 +218,51 @@ def test_current_package_source_hashes_match_live_design():
         )
 
 
+def test_current_package_manifest_hashes_every_member_and_firmware_policy():
+    dirs = _current_fab_dirs()
+    assert len(dirs) == 1, "package integrity requires exactly one current package"
+    with open(os.path.join(dirs[0], "manifest.json"), encoding="utf-8") as stream:
+        manifest = json.load(stream)
+
+    mismatches = []
+    for record in manifest["files"]:
+        path = os.path.join(REPO, *record["path"].split("/"))
+        if not os.path.isfile(path):
+            mismatches.append(f"missing {record['path']}")
+            continue
+        with open(path, "rb") as stream:
+            actual_hash = hashlib.sha256(stream.read()).hexdigest()
+        actual_bytes = os.path.getsize(path)
+        if actual_hash != record["sha256"] or actual_bytes != record["bytes"]:
+            mismatches.append(
+                f"{record['path']} bytes/hash "
+                f"{actual_bytes}/{actual_hash} != "
+                f"{record['bytes']}/{record['sha256']}"
+            )
+    assert not mismatches, "; ".join(mismatches)
+
+    with open(FW_RELEASE_MANIFEST, "rb") as stream:
+        release_manifest_bytes = stream.read()
+    release_manifest = json.loads(release_manifest_bytes)
+    production = manifest["production_firmware"]
+    assert production["supported_board_revisions"] == ["revD"]
+    assert release_manifest["supported_board_revisions"] == ["revD"]
+    assert production["qualified_releases"] == release_manifest["qualified_releases"]
+    assert production["qualified_releases"] == [
+        "revD|rel-0c746b5747143b8011b01d43|05d808411db4bb0d"
+    ]
+    assert production["manifest_sha256"] == hashlib.sha256(
+        release_manifest_bytes
+    ).hexdigest()
+    release_image = next(
+        image for image in release_manifest["images"]
+        if image["variant"] == "release" and not image["bench_only"]
+    )
+    assert production["sha256"] == release_image["image"]["sha256"]
+
+
 def test_revD_erc_artifact_is_canonical():
-    erc_path = os.path.join(REPO, "generate_kicad_netlist_revD.erc")
-    with open(erc_path, "rb") as stream:
+    with open(REVD_ERC, "rb") as stream:
         lines = stream.read().splitlines()
     expected = sorted(
         lines,
@@ -224,13 +278,43 @@ def test_revD_erc_artifact_is_canonical():
     assert sum(line.startswith(b"ERC WARNING") for line in lines) == 39
 
 
+def test_revD_generator_has_one_repo_root_erc_custodian():
+    assert not os.path.exists(STALE_SCRIPTS_ERC), (
+        "stale scripts/generate_kicad_netlist_revD.erc must not exist"
+    )
+    with open(REVD_GENERATOR, encoding="utf-8") as stream:
+        source = stream.read()
+    assert 'ERC_ARTIFACT = REPO_ROOT / f"{SCRIPT_PATH.stem}.erc"' in source
+    assert "os.chdir(REPO_ROOT)" in source
+    assert 'child_env["PYTHONHASHSEED"] = "0"' in source
+    assert "erc_candidates" not in source
+    assert "pathlib.Path.cwd() /" not in source
+
+
+def test_revD_netlist_has_no_volatile_skidl_line_numbers():
+    with open(REVD_NETLIST, encoding="utf-8") as stream:
+        netlist = stream.read()
+    assert netlist.count(
+        '(source "scripts/generate_kicad_netlist_revD.py")'
+    ) == 2
+    fields = re.findall(
+        r'\(name "SKiDL Line"\) "generate_kicad_netlist_revD\.py:([^"]+)"',
+        netlist,
+    )
+    assert len(fields) == 271, f"expected 271 SKiDL Line fields, got {len(fields)}"
+    assert set(fields) == {"0"}, f"volatile SKiDL source lines remain: {set(fields)}"
+
+
 if __name__ == "__main__":
     try:
         test_no_current_fab_package_carries_the_100mA_note()
         test_current_fab_package_carries_input_and_f1_locks()
         test_first_article_dnp_count_matches_csv_and_current_package()
         test_current_package_source_hashes_match_live_design()
+        test_current_package_manifest_hashes_every_member_and_firmware_policy()
         test_revD_erc_artifact_is_canonical()
+        test_revD_generator_has_one_repo_root_erc_custodian()
+        test_revD_netlist_has_no_volatile_skidl_line_numbers()
         print(
             "PASS current fab package notes, input-bias gate, part locks, "
             "DNP set, source binding, and deterministic ERC"

@@ -10,3 +10,8 @@ test/*.exe
 *.hex
 *.map
 *.o
+
+# The exact controlled two-image bundle is source-controlled. All other UF2
+# build products remain ignored by the rules above.
+!/release/wsl_phase8b_rp2040.uf2
+!/release/wsl_phase8b_rp2040_FI1.uf2

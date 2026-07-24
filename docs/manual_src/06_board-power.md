@@ -139,8 +139,10 @@ produces 3.3 V at **pin 36**, which the board uses as `VCC_3V3`. The Pico's eigh
 What `VCC_3V3` feeds and **why it must be 3.3 V, not 5 V:**
 
 - **All three MCP23017 I²C expanders** (VDD pin 9 and ~RESET pin 18 of each — see `block_mcp`).
-- **Every PC817 optocoupler logic-side pull-up** (`Rpu_*`, 10 kΩ) — the opto phototransistor
-  collector pulls the logic net to `VCC_3V3` when idle.
+- **Every PC817 optocoupler logic-side pull-up** — Rev-B `Rpu_*` is 10 kΩ;
+  current Rev-D/R5 `Rpu_*` is **47 kΩ**. The opto phototransistor collector is
+  held at `VCC_3V3` when idle; RP2040 and MCP23017 internal pulls stay disabled
+  so the external Rev-D network is the sole bias.
 - **The single I²C bus pull-ups** (`R_I2C_SDA`, `R_I2C_SCL`, 4.7 kΩ each to `VCC_3V3`).
 
 The MCP23017s and the opto logic side run at **3.3 V specifically so the I²C bus and all logic
@@ -203,9 +205,11 @@ FIELD_WET_V --- Rin (2.2k) --->|(PC817 LED)|--- field pin (J_FAST/J_SLOW_*) ---[
 
 When the machine contact **closes**, it completes the loop from `FIELD_WET_V` through the 2.2 kΩ
 series resistor (`Rin_*`) and the PC817 LED to `FIELD_GND`, lighting the opto LED. The opto's
-logic-side phototransistor then pulls its logic net **LOW** (idle is HIGH via the 10 kΩ `VCC_3V3`
-pull-up). All inputs are therefore **active-low at the logic side** — see Section 8, *Input Stage*,
-and the firmware note (`INPUT_ACTIVE_LOW = True`).
+logic-side phototransistor then pulls its logic net **LOW** (idle is HIGH via the external
+`VCC_3V3` `Rpu_*`: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D/R5**). All inputs are
+therefore **active-low at the logic side** — see Section 8, *Input Stage*, and the firmware note
+(`INPUT_ACTIVE_LOW = True`). Rev-D production also requires RP2040 PUE/PDE off and U1/U2
+MCP23017 `GPPUA/GPPUB=0x00` with readback.
 
 #### 6.4.4 Why 200 mA / 1 W is ample
 
@@ -240,10 +244,12 @@ power/load aspect.
 
 #### 6.5.1 Coil supply topology
 
-`RELAY_ENABLE_RAIL` is sourced from `VCC_5V` through a **P-channel pass FET (AO3401A, refdes Q14)**
-that is only turned on when the entire series safety chain is satisfied (watchdog OK **and** ARM
-**and** RP2040 OK **and** the external NC safety loops at `J_SAFETY`). When any condition fails, Q14
-turns off and the rail collapses, de-energizing every relay coil.
+`RELAY_ENABLE_RAIL` is sourced from `VCC_5V` through a **P-channel pass FET (AO3401A, refdes Q14)**.
+The PCB provides two J_SAFETY series positions, but the released Candidate-C harness closes pins
+1–2 with the controlled jumper rather than landing TB/SC there. Q14 still requires watchdog OK,
+ARM, RP2040 OK/cam-stop, and the implemented Stop/CIS loop. Primary TB/SC protection is separate:
+the OEM parallel-safe contacts remain in the S/T coil circuits and must pass the per-lane G3
+insertion proof. When any implemented on-board condition fails, Q14 turns off and the rail collapses.
 
 Per `relay_output`, each motion channel wires its coil between the rail and a low-side NPN switch:
 

@@ -1,3 +1,16 @@
+# ⛔ RETIRED / DO NOT USE FOR WIRING, FIRMWARE, BRING-UP, OR CUTOVER
+
+> This compiled Markdown is a **frozen Rev-B manual from 2026-06-04**. Its body is
+> intentionally retained as historical design evidence and contains superseded
+> SC/TB, J_SAFETY, firmware, and cutover instructions. **Do not follow the body for
+> current Rev-D work.** Use the current section sources in `docs/manual_src/`,
+> `docs/phase8_interlock_redesign.md`,
+> `docs/phase8_lane21_harness_build_sheet.md`, and
+> `docs/phase8_trackB_controller_cutover_runbook.md`. In particular, J_SAFE1-2 is
+> the controlled Candidate-C jumper; the OEM parallel closed-when-safe ladder is
+> the primary guard and requires the per-lane G3 S-and-T coil-drop proof. The
+> compiled DOCX exports are equally stale.
+
 # Westside Lanes — Phase 8 Lane Controller & Scoring System
 ## Technical Reference & Service Manual
 

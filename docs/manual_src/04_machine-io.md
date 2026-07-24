@@ -35,21 +35,29 @@ There are **two sweep cams that each trip at two angles** (SA, SB), one sweep in
 |---|---|---|---|---|
 | **SA** | Sweep | **270°** and **360°/zero** | Stop sweep run-through at 270°; stop sweep at zero (360°) | `SA_RUNTHRU` (270), `SA_ZERO` (360) |
 | **SB** | Sweep | **66°** and **186°** | Guard stop at 66° (sweep stops, starts the 3 s pin-settle); initiate table spotting at 186° | `SB_GUARD` (66) |
-| **SC** | Sweep | **86°–243°** (window) | Sweep-under-table window → feeds the **TB/SC hardware interlock** (collision avoidance); RP2040 reads it as a *software echo* only. **✓ measured 2026-06-27: read at C2A-U via its N.O. (pink) contact** — the shared series-interlock node (see below) | `SC_LO`, `SC_HI` (86, 243) |
+| **SC** | Sweep | **86°–243°** (window) | Sweep-under-table half of the OEM collision interlock. **Cold-located 2026-06-27:** pink lead reaches C2A-U, a non-isolatable live-ladder region, not a dry input. The planned RP2040 echo is default-off/unvalidated. | `SC_LO`, `SC_HI` (86, 243) |
 | **TA1** | Table | **355°** and **185°** | Table zero stop at 355°; at 185° reset the 3 s time-delay and flip ball memory | `TA1_ZERO` (355) |
 | **TA2** | Table | **260°** | Initiate sweep run-through; **latch the gripper read** (pin/strike decision); signal "machine ready" | `TA2_RUNTHRU` (260) |
-| **TB** | Table | **105°–255°** (window) | Table-sweep interference window → feeds the **TB/SC hardware interlock**; RP2040 reads it as a software echo only. **✓ measured 2026-06-27: NO standalone C2A cavity on 21/22** — both TB wires tie into the SC/U node (see below) | (window, interlock) |
+| **TB** | Table | **105°–255°** (window) | Table-sweep half of the OEM collision interlock. **Cold-measured 2026-06-27: NO standalone C2A cavity on 21/22** — neither lead isolates from the SC/U live-ladder region, so there is no independent RP2040 TB observation. | (window, interlock) |
 
 **Electrical form — SPLIT per cam (corrected by the 2026-06-27 at-machine metering; the old blanket "all six cams NC dry" claim from field-sheet item A4 holds only for the motion cams):**
 
-- **Motion cams SA / SB / TA1 / TA2 = dry switch closures, normally-closed (NC)** (field-sheet item A4).
+- **Motion cams SA / SB / TA1 / TA2:** independently land and measure their contact
+  class plus edge→angle polarity; do not apply one blanket "normally-closed" rule.
 - **SC is read on its N.O. (pink) contact**, landing at **C2A-U** — ✓ measured 2026-06-27.
-- **TB has NO independent signal on the 21/22 chassis** — ✓ measured 2026-06-27: both TB wires tie into the SC/U node. **SC+TB form a SERIES hardware interlock in the live 24 VAC relay ladder**; the only obtainable signal is the combined SC∧TB interlock on the shared U node, so the board's TB input (GP11) has nothing standalone to observe. Harness + firmware-echo redesign for the single shared interlock signal: **`docs/phase8_interlock_redesign.md`** (in progress).
-- The cam contacts sit **in series in the machine's relay ladder**, not as isolated dry contacts — cold continuity probing hits ~21 Ω sneak paths through relay coils, which is why the per-cam SA/SB/TA1/TA2 cavity map is **deferred to POWERED cutover**. **C2A-N is the shared motion-cam COMMON bus** (never a per-cam signal cavity).
+- **TB has NO independent signal on the 21/22 chassis** — the 2026-06-27 cold trace found neither TB lead isolatable from the SC/U live-ladder region and exposed ~21 Ω relay-coil sneak paths. That did **not** prove topology. Powered 2026-07-07 authority: SC+TB are **parallel closed-when-safe**; either pressed lever permits a coil and both levers BACK/open kill S and T. Candidate C keeps that OEM ladder primary through the controlled J_SAFE1-2 jumper and per-lane G3 proof. GP11 has nothing to observe; the SC∧TB echo is default-off, secondary, and unvalidated.
+- In the **SC/TB live-ladder region**, cold continuity probing hits ~21 Ω sneak
+  paths through relay coils and cannot establish topology. The independently
+  landable SA/SB/TA1/TA2 cavity/class/polarity map remains a powered-session task.
+  **C2A-N is the shared motion-cam COMMON bus**, never a per-cam signal cavity.
 
 On the board, each cam input front-end defaults to **dry-contact wetting** (the isolated wetting supply drives the opto LED through the closed cam to FIELD_GND/common). Per-channel population is jumper-selectable to a 24 VAC voltage-sense front-end if a particular chassis presents the cam as a powered line instead, but the 21/22 default is dry-contact.
 
-> ⚠️ **(VERIFY: per-cam edge polarity — which physical edge (open→closed vs closed→open) is the angular "trip" for each of SA/SB/SC/TA1/TA2/TB).** The firmware (`main.c`, `scan_inputs()`) forwards *both* edges to the Pi tagged `f` (asserted/fall) or `r` (released/rise); the Pi maps cam+edge → FSM method. The exact edge-to-angle binding is a **deferred cutover field task** (rotate the mechanism by hand, watch which C2A cavity changes at which angle — at-machine field sheet PART C2). Do NOT bake unconfirmed cam polarity into the firmware; the v1.1 cam-stop-overrun enforcement hook in `main.c` is deliberately left disabled until this is measured.
+> ⚠️ **(VERIFY: SA/SB/TA1/TA2 edge→angle polarity.)** The firmware forwards both
+> edges, but stock v1.2.3 keeps all measured-cam enforcement flags OFF. Capture each
+> independently landed motion cam, create a new controlled release with only
+> confirmed values, and pass its bench gate. Do not include SC/TB in this input
+> capture: lane 21/22 has no independent TB lead and SC/U is not a dry landing.
 
 **Where they land:** cam wires enter via the machine's **A&MC ("Approach & Machine Control") plug** and run to **C2A** cavities. On the board they connect to the **J_FAST_IN** connector → PC817 optocouplers → RP2040 GPIOs:
 
@@ -169,7 +177,7 @@ There are **two beams per lane** (left/right, mounted on the kickback), coalesce
 
 (Source: `phase8_io_board_spec.md` §1 row 1 "16 V rest → 0.7 V broken, NPN active-low (characterized)"; `phase8_bench_mule_characterization.md` "DIELL ball-detect … ~16 V rest / 0.7 V broken, NPN active-low"; `docs/lane_visit_checklist.md` Phase 4 LEFT row "AN / 24V / 0V / NPN open-collector".)
 
-**Proven signal chain (bench + at-machine validated):** DIELL → AL-ZARD 8-channel opto board (during the Phase-8a pilot) → Pi GPIO 17 → daemon. On the **Rev-B controller board** this becomes DIELL → **J_FAST_IN** → on-board PC817B optocoupler → RP2040 GPIO (active-low at the Pico, idle HIGH via the on-board 10k pull-up to 3V3). The firmware de-bounces at `DEBOUNCE_DIELL_US = 500` (faster than the cams), and applies a `BALL_LOCKOUT_MS = 300` re-trigger lockout so one thrown ball produces exactly one `ball` event.
+**Proven signal chain (bench + at-machine validated):** DIELL → AL-ZARD 8-channel opto board (during the Phase-8a pilot) → Pi GPIO 17 → daemon. On the controller PCB this becomes DIELL → **J_FAST_IN** → on-board PC817B optocoupler → RP2040 GPIO (active-low at the Pico, idle HIGH via external `Rpu_*` to 3V3). The historical Rev-B `Rpu_*` value was 10 kΩ; the current Rev-D/R5 value is **47 kΩ**, and firmware disables the RP2040 internal pulls. The firmware de-bounces at `DEBOUNCE_DIELL_US = 500` (faster than the cams), and applies a `BALL_LOCKOUT_MS = 300` re-trigger lockout so one thrown ball produces exactly one `ball` event.
 
 | Beam | RP2040 GPIO | Pico pin | Net | Firmware constant |
 |---|---|---|---|---|
@@ -258,7 +266,7 @@ Notes:
 - The relay-enable rail, NE555 watchdog, RP2040 RP_OK, TB/SC interlock, power-down/First-Ball-Zero rule: **§19 Safety Architecture**.
 
 **Confirmed (locked) machine-I/O facts:**
-- Motion-cam form (SA/SB/TA1/TA2) = dry contact, NC (A4); **SC = read on its N.O. contact at C2A-U, TB = no independent signal — SC+TB series interlock (✓ measured 2026-06-27; see `docs/phase8_interlock_redesign.md`)**. DIELL = NPN open-collector, ~16 V rest / ~0.7 V broken, 24 V supply (characterized end-to-end). Grippers = chassis-return, gripped = closed-to-ground (corrected at machine); **gripper cavities GS1=C 2=H 3=M 4=S 5=W 6=a 7=e 8=K 9=r 10=v (complete 10/10), PBZ=EE, BS=CC (✓ measured 2026-06-27/07-07)**. Output working voltage = 24 VAC (A1). Relay = Omron G5LE-14 **5 VDC** coil (C116963). Opto = PC817B (C5692981). Expander = MCP23017 I²C (C47023, *not* SPI). Watchdog timer = bipolar NE555 (NE555DR, C7593). RP2040 fast inputs = **GP6–GP13**, RP2040_OK = GP2, UART = GP0/GP1. Board = 250×225 mm, 4 copper layers.
+- Motion-cam form (SA/SB/TA1/TA2) remains subject to the powered cavity/class/polarity capture; **SC's pink lead cold-locates at C2A-U but stays unlanded as a dry input, and TB has no independent signal. Powered truth is SC+TB parallel closed-when-safe; the cold session did not prove topology** (see `docs/phase8_interlock_redesign.md`). DIELL = NPN open-collector, ~16 V rest / ~0.7 V broken, 24 V supply (characterized end-to-end). Grippers = chassis-return, gripped = closed-to-ground (corrected at machine); **gripper cavities GS1=C 2=H 3=M 4=S 5=W 6=a 7=e 8=K 9=r 10=v (complete 10/10), PBZ=EE, BS=CC (✓ measured 2026-06-27/07-07)**. Output working voltage = 24 VAC (A1). Relay = Omron G5LE-14 **5 VDC** coil (C116963). Opto = PC817B (C5692981). Expander = MCP23017 I²C (C47023, *not* SPI). Watchdog timer = bipolar NE555 (NE555DR, C7593). RP2040 fast inputs = **GP6–GP13** by board design, but GP11/TB is unpopulated in the lane-21/22 harness; RP2040_OK = GP2, UART = GP0/GP1. Board = 250×225 mm, 4 copper layers.
 
 **Deferred to cutover (do NOT guess, NOT board-gating):**
 - Per-cam **SA/SB/TA1/TA2**→C2A cavity (**POWERED cutover only** — cold reads invalidated 2026-06-27 by the shared N common + relay-ladder coil sneak paths, ~21 Ω) + edge-to-angle polarity (still unmeasured); exact C1/C2A landings for all 7 outputs; GP/OS/Foul/PBC cavities and (for GP/OS/Foul) dry-vs-AC form; relay contact current (A2); mask-LED type + `Rled_*` value; M1 existence as a separate relay. *(Resolved 2026-06-27/07-07, no longer deferred: complete gripper GS#→cavity map + GS#-to-pin order (10/10 incl. GS8=K), SC=U, TB=no independent signal (series interlock — landing = the shared U node), PBZ=EE, BS=CC.)*

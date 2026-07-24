@@ -107,7 +107,27 @@ The corrective pass wires the previously orphaned blocks:
 """
 
 import os
+import pathlib
+import subprocess
 import sys
+
+SCRIPT_PATH = pathlib.Path(__file__).resolve()
+REPO_ROOT = SCRIPT_PATH.parent.parent
+ERC_ARTIFACT = REPO_ROOT / f"{SCRIPT_PATH.stem}.erc"
+
+# SKiDL traverses sets/dicts while emitting the legacy netlist. Re-exec before
+# importing it with a fixed hash seed so separate clean processes serialize the
+# same electrical graph in the same order.
+if os.environ.get("PYTHONHASHSEED") != "0":
+    child_env = os.environ.copy()
+    child_env["PYTHONHASHSEED"] = "0"
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), *sys.argv[1:]],
+        cwd=pathlib.Path.cwd(),
+        env=child_env,
+        check=False,
+    )
+    raise SystemExit(completed.returncode)
 
 KICAD_CANDIDATE_ROOTS = [
     r"C:\Program Files\KiCad\10.0\share\kicad",
@@ -127,7 +147,15 @@ for var in ["KICAD_FOOTPRINT_DIR"] + [f"KICAD{v}_FOOTPRINT_DIR" for v in (6, 7, 
     os.environ[var] = footprint_dir
 print(f"Using KiCad libraries at {kicad_root}")
 
-from skidl import ERC, KICAD, SKIDL, Part, Pin, Net, generate_netlist, lib_search_paths, set_default_tool
+# SKiDL selects its .erc log location when its logger is imported. Anchor that
+# import at the repository root so invoking this script from root, scripts/, an
+# IDE, or a clean-clone verifier can only ever write ERC_ARTIFACT.
+_caller_cwd = pathlib.Path.cwd()
+try:
+    os.chdir(REPO_ROOT)
+    from skidl import ERC, KICAD, SKIDL, Part, Pin, Net, generate_netlist, lib_search_paths, set_default_tool
+finally:
+    os.chdir(_caller_cwd)
 
 set_default_tool(KICAD)
 lib_search_paths[KICAD].append(symbol_dir)
@@ -990,17 +1018,14 @@ def check_erc_waiver():
     if n_warn != ERC_EXPECTED_WARNINGS:
         problems.append(f"ERC warning count {n_warn} != waived baseline {ERC_EXPECTED_WARNINGS}")
 
-    # Confirm the single error is EXACTLY the waived one via the emitted .erc
-    # (skidl names it after the top-level script, in the cwd).
-    import pathlib
-    stem = pathlib.Path(sys.argv[0]).stem or "generate_kicad_netlist_revD"
-    candidates = [pathlib.Path.cwd() / f"{stem}.erc",
-                  pathlib.Path(__file__).resolve().parent / f"{stem}.erc"]
-    erc_file = next((p for p in candidates if p.is_file()), None)
-    if erc_file is None:
-        problems.append(f"cannot locate the emitted .erc file (looked at {candidates})")
+    # Confirm the single error is EXACTLY the waived one via the one canonical
+    # repository-root artifact. The SKiDL import above owns this exact path.
+    if not ERC_ARTIFACT.is_file():
+        problems.append(f"cannot locate the emitted .erc file at {ERC_ARTIFACT}")
     else:
-        err_lines = [ln for ln in erc_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        err_lines = [ln for ln in ERC_ARTIFACT.read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines()
                      if ln.startswith("ERC ERROR")]
         if (len(err_lines) != ERC_EXPECTED_ERRORS
                 or not all(all(s in ln for s in ERC_WAIVED_ERROR_SUBSTRS) for ln in err_lines)):
@@ -1073,13 +1098,13 @@ def main():
 def canonicalize_generated_artifacts(netlist_path):
     """Remove SKiDL runtime volatility from the checked-in Rev-D artifacts.
 
-    SKiDL emits the wall-clock generation time in the legacy KiCad netlist
-    and iterates ERC diagnostics in hash-dependent order. Neither changes the
-    electrical design, but both previously changed source/package hashes on a
-    no-op regeneration. Keep the established R5 design timestamp and sort the
+    SKiDL emits the wall-clock generation time and source line numbers in the
+    legacy KiCad netlist, and iterates ERC diagnostics in hash-dependent order.
+    None changes the electrical design, but all previously changed
+    source/package hashes on a no-op regeneration. Keep the established R5
+    design timestamp, normalize diagnostic-only source-line fields, and sort
     ERC rows so two clean generator runs are byte-identical.
     """
-    import pathlib
     import re
 
     netlist = pathlib.Path(netlist_path)
@@ -1092,16 +1117,34 @@ def canonicalize_generated_artifacts(netlist_path):
     )
     if replacements != 1:
         raise RuntimeError("generated Rev-D netlist has no unique design date")
+
+    netlist_bytes, source_replacements = re.subn(
+        rb'\(source "[^"]*generate_kicad_netlist_revD\.py"\)',
+        b'(source "scripts/generate_kicad_netlist_revD.py")',
+        netlist_bytes,
+    )
+    if source_replacements != 2:
+        raise RuntimeError(
+            "generated Rev-D netlist source field count drifted: "
+            f"{source_replacements} != 2"
+        )
+
+    netlist_bytes, line_replacements = re.subn(
+        rb'(\(name "SKiDL Line"\) "generate_kicad_netlist_revD\.py:)\d+(")',
+        rb"\g<1>0\g<2>",
+        netlist_bytes,
+    )
+    if line_replacements != len(parts):
+        raise RuntimeError(
+            "generated Rev-D netlist source-line field count drifted: "
+            f"{line_replacements} != {len(parts)}"
+        )
     netlist.write_bytes(netlist_bytes)
 
-    stem = pathlib.Path(sys.argv[0]).stem or "generate_kicad_netlist_revD"
-    erc_candidates = [
-        pathlib.Path.cwd() / f"{stem}.erc",
-        pathlib.Path(__file__).resolve().parent / f"{stem}.erc",
-    ]
-    erc_path = next((path for path in erc_candidates if path.is_file()), None)
-    if erc_path is None:
-        raise RuntimeError(f"cannot canonicalize ERC artifact; looked at {erc_candidates}")
+    if not ERC_ARTIFACT.is_file():
+        raise RuntimeError(
+            f"cannot canonicalize canonical ERC artifact {ERC_ARTIFACT}"
+        )
 
     def _canonical_erc_line(line):
         # SKiDL also orders the two operands INSIDE a pin-conflict
@@ -1124,7 +1167,7 @@ def canonicalize_generated_artifacts(netlist_path):
 
     erc_lines = [
         _canonical_erc_line(line)
-        for line in erc_path.read_bytes().splitlines()
+        for line in ERC_ARTIFACT.read_bytes().splitlines()
     ]
     erc_lines.sort(
         key=lambda line: (
@@ -1134,7 +1177,7 @@ def canonicalize_generated_artifacts(netlist_path):
             line,
         )
     )
-    erc_path.write_bytes(b"\r\n".join(erc_lines) + b"\r\n")
+    ERC_ARTIFACT.write_bytes(b"\r\n".join(erc_lines) + b"\r\n")
 
 
 if __name__ == "__main__":

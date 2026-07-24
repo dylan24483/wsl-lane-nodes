@@ -11,7 +11,9 @@ taken directly from the live board sources:
 - **`kicad/fab_revB_routed_manual/assembly/wsl-phase8b-revB-cpl.csv`** — the placed
   reference designators (J1..J14) and their footprints.
 - **`kicad/fab_revB_routed_manual/assembly/wsl-phase8b-revB-jlc-standard-pcba-bom.csv`**
-  and **`...-bom-non-dnp.csv`** / **`...-dnp-excluded.csv`** — the as-ordered part numbers.
+  and **`...-bom-non-dnp.csv`** / **`...-dnp-excluded.csv`** — the
+  historical Rev-B package part numbers. They were generated, not purchased,
+  and do not authorize a current order.
 - **`kicad/fab_revB_routed_manual/assembly/wsl-phase8b-revB-harness-mating-parts.csv`**
   and **`...-offboard-hardware.csv`** — the off-board mating plugs.
 
@@ -66,7 +68,7 @@ each connector with both its J-number and its function name.
 | **J11** | `J_MOTION_M2` | Phoenix MKDS 1,5/2-5.08, horizontal screw | 2 | Machine output (dry contact) | direct screw |
 | **J12** | `J_MOTION_M1` **(DNP)** | Phoenix MKDS 1,5/2-5.08, horizontal screw | 2 | Machine output (dry contact) | **NOT POPULATED** — footprint only |
 | **J13** | `J_LAMP_LED` | Phoenix MCV 1,5/6-G-3,5 vertical | 6 | Logic (LED drive) | Phoenix MC 1,5/6-ST-3,5 (PN 1840405) |
-| **J14** | `J_SAFETY` | Phoenix MCV 1,5/4-G-3,5 vertical | 4 | Safety rail (interlock loops) | Phoenix MC 1,5/4-ST-3,5 (PN 1840382) |
+| **J14** | `J_SAFETY` | Phoenix MCV 1,5/4-G-3,5 vertical | 4 | Safety rail source positions (**Candidate-C jumper 1–2; Stop/CIS 3–4**) | Phoenix MC 1,5/4-ST-3,5 (PN 1840382) |
 
 > **J12 is the only DNP connector.** The M1 (ball-return) channel — connector J12, relay
 > K7, driver Q7, R85/R86/R87, D13/D14, snubber C10 — is **Do Not Populate**. The FSM does
@@ -94,7 +96,8 @@ These conventions hold across every table below. They come from `opto_input()`,
   *PWR* = power into the board, *BIDIR* = bidirectional bus (I2C).
 - **Domain** is one of: **LOGIC** (3.3 V / 5 V referenced to logic GND), **FIELD**
   (machine-side, referenced to `FIELD_GND`, isolated from logic by the opto), **MACHINE
-  OUTPUT** (a floating relay dry contact), or **SAFETY** (the relay-enable interlock loop).
+  OUTPUT** (a floating relay dry contact), or **SAFETY** (the relay-enable source
+  positions; on lanes 21/22, Candidate-C jumper 1–2 plus Stop/CIS 3–4).
 - **All field inputs are dry-contact wetting by default.** Each input opto LED is fed from
   the isolated `FIELD_WET_V` rail (the TMA-0505S, U37, ~5 V isolated) through a 2.2 kΩ
   series resistor (`Rin`), and the field contact, when **closed**, returns that pin to
@@ -102,9 +105,11 @@ These conventions hold across every table below. They come from `opto_input()`,
   Section 5 / Section 10 for the optional 24 VAC-sense population. `FIELD_GND` and logic
   `GND` share **zero** nodes on the board — the isolation barrier is intact.
 - **All opto outputs are ACTIVE-LOW at the controller.** The opto transistor pulls the
-  logic pin LOW when its LED is on (contact closed). Idle = HIGH via an on-board 10 kΩ
-  pull-up to 3V3 (`Rpu`). Firmware (`config.h`) and `controller_io.py`
-  (`INPUT_ACTIVE_LOW = True`) both invert this: **asserted/closed reads logical 1.**
+  logic pin LOW when its LED is on (contact closed). Idle = HIGH via external `Rpu`
+  to 3V3: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D/R5**. Firmware
+  disables the RP2040 internal pulls, and `controller_io.py` commands/readbacks
+  U1/U2 MCP23017 `GPPUA/GPPUB=0x00`; `INPUT_ACTIVE_LOW = True` still means
+  **asserted/closed reads logical 1.**
 - **Relay contacts are isolated dry NO contacts.** For every `J_MOTION_*`: **pin 2 = COM**
   (`OUT_x_A`, relay pad 1), **pin 1 = NO** (`OUT_x_B`, relay pad 3). The board never sources
   the voltage on these pins; the machine control circuit does. The contact closes only when
@@ -219,11 +224,12 @@ return for the dry-contact wetting.
 `FIELD_WET_V` → 2.2 kΩ (`Rin`) → opto LED anode; opto LED cathode → the J3 field pin. The
 machine contact (a cam microswitch) between that pin and `FIELD_GND` (pins 9/10) completes
 the LED loop when closed, turning the opto on and pulling the Pico GPIO LOW through the
-transistor; idle is held HIGH by a 10 kΩ pull-up to 3V3 (`Rpu`). The RP2040 reads these
-edges with a 2 ms cam debounce / 500 µs DIELL debounce (`config.h`), enforces cam-stop and
-an 8 s motion max-run backstop, and forwards events to the Pi over the J1 UART. **Because
-the RP2040 owns these and gates `RP2040_OK`, a fault on a fast input drops the motion rail
-in hardware, not just in software.**
+transistor; idle is held HIGH by external `Rpu` to 3V3 (Rev-B 10 kΩ; current
+Rev-D/R5 **47 kΩ**, with the RP2040 internal pulls off). The RP2040 reads these edges
+with a 2 ms cam debounce / 500 µs DIELL debounce (`config.h`), enforces cam-stop and an
+8 s motion max-run backstop, and forwards events to the Pi over the J1 UART. **Because
+the RP2040 owns these and gates `RP2040_OK`, a fault on a fast input drops the motion
+rail in hardware, not just in software.**
 
 > **GPIO source-of-truth note.** The Pico GPIO column above is from `block_rp2040()` /
 > `config.h` (GP6–GP13). The older `docs/phase8_channel_allocation.md` §2 GPIO column
@@ -414,46 +420,45 @@ on, sinks the LED return to GND, and lights the lamp. The bit assignments
 
 ---
 
-### 11.9 J14 — `J_SAFETY` (hardware interlock loops, 4-pin, 3.5 mm)
+### 11.9 J14 — `J_SAFETY` (board-side source-loop positions, 4-pin, 3.5 mm)
 
-The two external normally-closed (NC) hardware interlock loops, wired **in series** between
-`VCC_5V` and the gate of the relay-enable pass-FET. This is the part of the safety rail that
-**no software can bypass**: if either loop opens, the pass-FET gate loses its pull and the
-relay-enable rail collapses, de-energizing every motion-output relay coil. Per the contract,
-these are the **TB/SC interference interlock** loop and the **Stop / CIS / master chain**
-loop (`phase8b_pcb_revB_spec.md` §4.1, §4.4).
+The PCB wires two connector positions **in series** between `VCC_5V` and the
+relay-enable pass-FET source. That is the board design, not the lane-21/22 field
+topology. Candidate C uses the controlled, labeled jumper on pins 1–2 because the
+machine has no dry TB/SC pair; pins 3–4 carry the separately measured Stop/CIS
+loop. Primary TB/SC protection remains in the OEM S/T coil ladder and is validated
+by the per-lane G3 coil-drop test.
 
 | Pin | Signal | Net | Dir | Domain | Notes |
 |---|---|---|---|---|---|
 | 1 | +5 V loop source | `VCC_5V` | OUT | SAFETY | Start of the series interlock string. |
-| 2 | TB/SC loop return → next loop | `SAFE_TBSC_RETURN` | IN/OUT | SAFETY | Far end of the **TB/SC** NC loop; jumpers internally to pin 3. |
+| 2 | first position return → next loop | `SAFE_TBSC_RETURN` | IN/OUT | SAFETY | Candidate C return from the controlled pin-1↔2 jumper; same on-board net as pin 3. |
 | 3 | Stop/CIS loop source | `SAFE_TBSC_RETURN` | IN/OUT | SAFETY | Same net as pin 2 — start of the **Stop/CIS/master** NC loop. |
 | 4 | Stop/CIS loop return → pass-FET source | `SAFE_STOP_RETURN` | IN | SAFETY | Far end of the second loop; lands on the AO3401A (Q14) source + gate pull-up. |
 
-**Operating theory.** `block_rail()` wires this as two NC loops in series:
-`VCC_5V` (pin 1) → external TB/SC contacts → pin 2; pins 2 and 3 are the **same board net**
+**Operating theory.** `block_rail()` wires two source positions in series:
+`VCC_5V` (pin 1) → Candidate-C controlled jumper → pin 2; pins 2 and 3 are the **same board net**
 (`SAFE_TBSC_RETURN`), so the string continues out pin 3 → external Stop/CIS/master contacts
 → pin 4 (`SAFE_STOP_RETURN`). Pin 4 feeds the **source of P-channel pass-FET Q14
 (AO3401A)** and a 100 kΩ gate pull-up. The pass-FET drain is `RELAY_ENABLE_RAIL`. Q14 only
-conducts (rail up) when pin 4 is at ~5 V — i.e. **both** external loops are closed —
+conducts (rail up) when pin 4 is at ~5 V — i.e. the Candidate-C jumper and Stop/CIS position are closed —
 **and** the gate is pulled low by the downstream AND chain of two MMBT3904 NPNs gated by
 `ARM_PERMIT`, `RP2040_OK`, and the NE555 watchdog-OK pull-down. Any one false condition
 (open interlock loop, de-asserted arm, RP2040 unhealthy, or missing watchdog kick) leaves
 the rail dead and the motion relays open. This is the electrical realization of the
 "non-bypassable hardware safety rail" in the one-sentence contract (§13).
 
-> **Connect the external loops correctly.** Pins 1↔2 are the **TB/SC** NC loop; pins 3↔4
-> are the **Stop/CIS/master** NC loop. They are in series, so an open in either kills the
-> rail. Do **not** jumper pin 1→4 to "make it work" during bench bring-up — that defeats
-> the interlock. For a bench test with no machine loops, jumper 1–2 and 3–4 *only* on a
-> locked-out/off-live machine, and remove the jumpers before cutover.
+> **Candidate-C connector rule.** Pins 1↔2 receive only the keyed/labeled engineered
+> jumper from `phase8_lane21_harness_build_sheet.md`; pins 3↔4 receive the Stop/CIS
+> loop. Never bridge 1→4 or jumper 3↔4 at the machine. Opening 1↔2 proves the PCB
+> source position drops the rail, but it does **not** prove TB/SC protection; G3's
+> board-commanded S-and-T coil-drop test is the authoritative proof.
 
-> **(VERIFY: TB/SC + Stop/CIS electrical form and polarity.)** The exact electrical
-> derivation of the TB/SC and Stop/CIS loops (cam contacts vs the 24 V control path vs a
-> low-voltage isolated loop) and the final connector polarity are an open
-> assembly/cutover item (`phase8b_pcb_revB_spec.md` §4.4, §11 item 3). The board makes the
-> interlock a first-class rail condition; the *source* of the loop is harness-resolved at
-> the machine.
+> **Field resolution:** TB/SC is no longer an open J14 derivation. Cold 2026-06-27
+> proved no dry/independent pair and ~21 Ω sneak paths; powered 2026-07-07 proved
+> parallel closed-when-safe contacts, both levers BACK/open kills S/T. Candidate C
+> delegates the primary guard to that OEM ladder. Only the separate Stop/CIS
+> pins-3/4 landing remains to be resolved by its measured harness procedure.
 
 ---
 
@@ -482,7 +487,7 @@ connector is live:
 
 ---
 
-### 11.11 Connector parts & board summary (as ordered)
+### 11.11 Historical Rev-B connector parts & board summary (as generated)
 
 Confirmed from the BOM/CPL/mating-parts CSVs:
 

@@ -1,7 +1,7 @@
 {
   "contract": "wsl-phase8-machine-diagnostics",
   "contract_version": 3,
-  "contract_revision": "3.0 (2026-07-23 R4: protocol-v3 durable scoring-event receipts and physical-command receipts; renewable non-actuating epoch repair authorization; one-way open-actuation intent; exact scoring outbox evidence; generation and request-fingerprint idempotency; atomic transfer; durable manual reconciliation; server-owned cross-database backup fencing; command/scoring transport fault vocabulary; all prior R4 controller, identity, lease, persistence, and health invariants remain required)",
+  "contract_revision": "3.1 (2026-07-24 R5: controller output mode, live-output acknowledgement, ARM/FSM/manual-rearm posture, identity assurance, exact qualified firmware tuple, and four-channel safety-tap evidence are mandatory heartbeat and health-drop facts; all prior R4 protocol-v3 durability, fencing, identity, lease, persistence, and health invariants remain required)",
   "delivery_identity": {
     "fields": ["source_id", "boot_id", "seq"],
     "semantics": "R2-12 (2026-07-21): the Pi stamps every event + cycle record with a delivery identity — source_id (stable device id, default hostname; env WSL_DIAG_SOURCE_ID), boot_id (fresh uuid per daemon process start) and seq (process-wide monotonic counter). The daily diag JSONL file is the outbox: lane_node/diag_events.OutboxReplayer tails it with a persisted cursor advanced ONLY on a 2xx (cursor-ack). The server dedupes on UNIQUE(source_id, boot_id, seq) via INSERT OR IGNORE, so replay overlap after a drop or lost ack is idempotent. Identity is all-or-nothing WITHIN one record: a record carrying only part of the identity triple is rejected (per-record, into the R3-1b 'rejected' list — NOT a whole-batch 400); a record with none inserts as before (legacy live-sink era)."
@@ -173,11 +173,11 @@
     "machine_health_get": {
       "method": "GET",
       "path": "/api/machine/health",
-      "response_top_fields": ["ok", "generated_at", "lanes", "clock_authority", "scoring_node_topology", "diagnostic_delivery"],
+      "response_top_fields": ["ok", "site_id", "site_identity_ok", "generated_at", "lanes", "clock_authority", "scoring_node_topology", "diagnostic_delivery"],
       "lane_entry_bridge_keys": ["fault", "code", "since", "acked", "event_id", "severity", "state", "last_seen", "age_s", "degraded_reasons", "scoring_state", "scoring_reasons"],
-      "lane_entry_forward_keys": ["activity_seen_at", "scoring_seen_at", "scoring_age_s", "scoring_state", "scoring_reason", "scoring_reasons", "scoring_mode", "scoring_camera_calibrated", "scoring_camera_ok", "scoring_camera_code", "scoring_outbox", "scoring_boot_id", "scoring_session_id", "scoring_heartbeat_seq", "scoring_node_lockout_s", "heartbeat_at", "controller_boot_id", "heartbeat_seq", "control_loop_seq", "control_loop_progress_at", "control_loop_age_s", "board_rev", "observed_pcb", "observed_rid", "observed_uid", "fw_build", "fw_cfg", "fw_version", "contract_sha256", "contract_loaded", "contract_match", "identity_ok", "identity_reason", "ro_fs", "outbox", "platform", "serial_parse_errors", "diag_record_drops", "maintenance_overdue", "degraded", "degraded_reasons"],
+      "lane_entry_forward_keys": ["activity_seen_at", "scoring_seen_at", "scoring_age_s", "scoring_state", "scoring_reason", "scoring_reasons", "scoring_mode", "scoring_camera_calibrated", "scoring_camera_ok", "scoring_camera_code", "scoring_outbox", "scoring_boot_id", "scoring_session_id", "scoring_heartbeat_seq", "scoring_node_lockout_s", "heartbeat_at", "controller_boot_id", "heartbeat_seq", "control_loop_seq", "control_loop_progress_at", "control_loop_age_s", "controller_mode", "live_outputs_acknowledged", "arm_state", "fsm_state", "manual_rearm_required", "legacy_identity_mode", "identity_assurance", "arm_prerequisite_reason", "safety_taps", "board_rev", "observed_pcb", "observed_rid", "observed_uid", "fw_build", "fw_cfg", "fw_version", "contract_sha256", "contract_loaded", "contract_match", "identity_ok", "identity_reason", "ro_fs", "outbox", "platform", "serial_parse_errors", "diag_record_drops", "maintenance_overdue", "degraded", "degraded_reasons"],
       "lane_entry_bridge_keys_note": "the keys wsl_phase8_bridge._parse_machine_health whitelists and wsl_machine_alerts.observe_health consumes; fault-latch fields come from the NEWEST OPEN fault event, never last_event_*",
-      "lane_entry_state_note": "Every configured machine lane always appears. last_seen and age_s derive only from the strict controller heartbeat. Track-A WebSocket HELLO/HEARTBEAT renew the independent scoring_seen_at/scoring_age_s/scoring_state lease; event/cycle replay updates activity_seen_at only. Neither path can renew the controller lease. Controller-state precedence: MAINTENANCE > no controller lease UNKNOWN > expired controller lease OFFLINE > open machine fault FAULT > invalid identity/contract/storage/outbox or stalled control-loop DEGRADED > HEALTHY."
+      "lane_entry_state_note": "Every configured machine lane always appears. last_seen and age_s derive only from the strict controller heartbeat. Track-A WebSocket HELLO/HEARTBEAT renew the independent scoring_seen_at/scoring_age_s/scoring_state lease; event/cycle replay updates activity_seen_at only. Neither path can renew the controller lease. Controller-state precedence: MAINTENANCE > no controller lease UNKNOWN > expired controller lease OFFLINE > open machine fault FAULT > controller mode/live-ack mismatch, legacy/unverified/invalid identity assurance, manual rearm, inconsistent ARM/FSM/safety taps, unqualified board-build-config tuple, invalid identity/contract/storage/outbox, or stalled control-loop DEGRADED > HEALTHY. MAINTENANCE preserves all degraded evidence while retaining its state precedence."
     },
     "maintenance_post": {
       "method": "POST",
@@ -191,9 +191,9 @@
     "health_get_identity": {
       "method": "GET",
       "path": "/api/health",
-      "identity_fields": ["git_hash", "protocol_version", "node_topology"],
+      "identity_fields": ["site_id", "site_identity_ok", "git_hash", "protocol_version", "node_topology"],
       "state_persistence_fields": ["ok", "save_ok", "load_ok", "last_load_state", "last_load_error", "state_discarded", "last_ok_ts", "last_ok_age_sec", "consecutive_failures", "last_error", "clock_guard"],
-      "note": "R2-8/R4 (2026-07-21..23): /api/health carries the deployed lane-node short git hash (null when unresolvable) and a state_save object that fails service health for save failure, unsuccessful/discarded startup restore, unavailable clock evidence, or a durable wall-clock rollback latch. Runtime state is bounded, strict format-v2 JSON with duplicate-key and non-finite-number rejection; legacy pickle is never deserialized. Missing or intentionally empty state is healthy; corrupt, unknown-version, legacy-discarded, database-error, or clock-anomaly state stays unhealthy until explicit recovery. deploy.ps1 on WSL-SRV records + compares identity across deploys."
+      "note": "R2-8/R4/R5 (2026-07-21..24): /api/health carries the full deployed lane-node Git commit (null when unresolvable), plus the process-observed WSL_SITE_ID and its syntactic validity. The independent WSL dead-man compares that live site identity and node_topology.expected_nodes with the committed fleet authority; it never treats its own manifest echo as live proof. state_save fails service health for save failure, unsuccessful/discarded startup restore, unavailable clock evidence, or a durable wall-clock rollback latch. Runtime state is bounded, strict format-v2 JSON with duplicate-key and non-finite-number rejection; legacy pickle is never deserialized. Missing or intentionally empty state is healthy; corrupt, unknown-version, legacy-discarded, database-error, or clock-anomaly state stays unhealthy until explicit recovery."
     },
     "scoring_websocket": {
       "transport": "WebSocket",
@@ -278,10 +278,10 @@
       "request_wrapper_key": "heartbeat",
       "request_wrapper_kind": "object",
       "bare_body_tolerated": false,
-      "heartbeat_required_fields": ["lane_id", "controller_boot_id", "heartbeat_seq", "control_loop_seq", "board_rev", "contract_sha256", "contract_loaded", "identity_ok", "ro_fs", "outbox", "platform"],
+      "heartbeat_required_fields": ["lane_id", "controller_boot_id", "heartbeat_seq", "control_loop_seq", "controller_mode", "live_outputs_acknowledged", "arm_state", "fsm_state", "manual_rearm_required", "legacy_identity_mode", "identity_assurance", "arm_prerequisite_reason", "safety_taps", "board_rev", "contract_sha256", "contract_loaded", "identity_ok", "ro_fs", "outbox", "platform"],
       "heartbeat_optional_fields": ["observed_pcb", "observed_rid", "observed_uid", "fw_build", "fw_cfg", "fw_version", "identity_reason", "serial_parse_errors", "diag_record_drops"],
       "response_ok_fields": ["ok", "lane", "committed", "last_seen", "heartbeat_seq", "control_loop_seq"],
-      "note": "The exact {heartbeat:{...}} wrapper and required controller envelope are mandatory. controller_boot_id plus heartbeat_seq rejects replay/regression, including delayed heartbeats from a retired boot nonce; control_loop_seq advances only in the 50 Hz controller and drives control_loop_progress_at. Only a committed heartbeat renews controller_seen_at. An identity_ok=true revD heartbeat conditionally requires non-empty observed_pcb/observed_rid/observed_uid/fw_build/fw_cfg/fw_version evidence and observed_pcb==board_rev; identity_ok=false requires identity_reason. Identity, live-contract, read-only-filesystem and durable-outbox failures derive DEGRADED. A database failure returns 503; HTTP 200 always carries committed=true and echoes lane/heartbeat/control-loop progress."
+      "note": "The exact {heartbeat:{...}} wrapper and required controller envelope are mandatory. controller_boot_id plus heartbeat_seq rejects replay/regression, including delayed heartbeats from a retired boot nonce; control_loop_seq advances only in the 50 Hz controller and drives control_loop_progress_at. Only a committed heartbeat renews controller_seen_at. controller_mode is live|shadow; identity_assurance is verified|legacy_unverified|invalid; fsm_state is a bounded canonical controller state or a bounded future-state token that degrades as unknown. arm_prerequisite_reason is a required nullable string. safety_taps has exactly nullable booleans ne555/wdog_kick/arm_permit/rp2040_ok, but a verified revD requires all four to be booleans. An identity_ok=true revD heartbeat conditionally requires non-empty observed_pcb/observed_rid/observed_uid/fw_build/fw_cfg/fw_version evidence and observed_pcb==board_rev; identity_ok=false requires identity_reason. Mode/live-ack, assurance, manual-rearm, ARM/FSM/tap consistency, exact board|build|cfg qualification, identity, live-contract, read-only-filesystem and durable-outbox failures derive DEGRADED. A database failure returns 503; HTTP 200 always carries committed=true and echoes lane/heartbeat/control-loop progress."
     }
   },
   "vocab": {
@@ -354,6 +354,10 @@
     "manual_reconciliation_conditions": ["stale_scoring_epoch", "overdue_scoring_event", "scoring_event_lost", "command_indeterminate", "command_ambiguous", "command_collision", "command_refused", "command_failed", "operation_receipts_incomplete", "privileged_resolution_override", "cycle_delivery_indeterminate"],
     "cycle_types": ["ball", "manual", "power_on", "reset", "test"],
     "record_kinds": ["event", "cycle"],
+    "controller_modes": ["live", "shadow"],
+    "identity_assurances": ["verified", "legacy_unverified", "invalid"],
+    "controller_fsm_states": ["power_off", "manual_intervention", "ready", "sweep_to_guard", "guard_delay", "table_detect", "runthrough", "spotting", "table_finish", "fault"],
+    "safety_tap_fields": ["ne555", "wdog_kick", "arm_permit", "rp2040_ok"],
     "record_kinds_note": "R3-3 (2026-07-23): the daily JSONL file is the SINGLE durable write path for BOTH events and cycles. Each outbox line carries an optional '_kind' discriminator ('event' default when absent — the legacy shape; 'cycle' routes the line to /api/machine/cycles wrapped as {cycle: row}). This retires the lossy in-memory-only CycleShipper-without-replay: a cycle written to the outbox survives a crash/outage and replays with the same delivery-identity idempotency as events. The OutboxReplayer cursor recovery scans from the OLDEST file carrying unshipped records, never the newest (the R3-3 stranding bug).",
     "states": ["HEALTHY", "DEGRADED", "FAULT", "OFFLINE", "UNKNOWN", "MAINTENANCE"],
     "final_states": ["FAULT", "MANUAL_INTERVENTION", "READY"],
@@ -364,6 +368,8 @@
   "examples": {
     "machine_health_response": {
       "ok": true,
+      "site_id": "wsl-olympia",
+      "site_identity_ok": true,
       "generated_at": "2026-07-21T18:00:00.000+00:00",
       "lanes": {
         "21": {
@@ -403,9 +409,18 @@
           "control_loop_seq": 50012,
           "control_loop_progress_at": "2026-07-21T17:59:58.000+00:00",
           "control_loop_age_s": 2.4,
+          "controller_mode": "live",
+          "live_outputs_acknowledged": true,
+          "arm_state": false,
+          "fsm_state": "fault",
+          "manual_rearm_required": true,
+          "legacy_identity_mode": false,
+          "identity_assurance": "verified",
+          "arm_prerequisite_reason": null,
+          "safety_taps": {"ne555": true, "wdog_kick": true, "arm_permit": false, "rp2040_ok": true},
           "board_rev": "revD",
           "observed_pcb": "revD",
-          "observed_rid": "revD",
+          "observed_rid": "1",
           "observed_uid": "e6614104034b6f2a",
           "fw_build": "3024346",
           "fw_cfg": "aa4ff333",
@@ -459,9 +474,18 @@
           "control_loop_seq": 49998,
           "control_loop_progress_at": "2026-07-21T17:59:57.000+00:00",
           "control_loop_age_s": 3.1,
+          "controller_mode": "live",
+          "live_outputs_acknowledged": true,
+          "arm_state": true,
+          "fsm_state": "ready",
+          "manual_rearm_required": false,
+          "legacy_identity_mode": false,
+          "identity_assurance": "verified",
+          "arm_prerequisite_reason": null,
+          "safety_taps": {"ne555": true, "wdog_kick": true, "arm_permit": true, "rp2040_ok": true},
           "board_rev": "revD",
           "observed_pcb": "revD",
-          "observed_rid": "revD",
+          "observed_rid": "1",
           "observed_uid": "e6614104034b6f2b",
           "fw_build": "3024346",
           "fw_cfg": "aa4ff333",

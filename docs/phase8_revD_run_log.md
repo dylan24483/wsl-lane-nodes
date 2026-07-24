@@ -138,17 +138,42 @@ pad 4 NC unused — identical to the rev-C meter-confirmed map (G1/G2).
 
 ## Waivers
 
-### WVR-ERC-1 — SKiDL ERC baseline: exactly 1 error + 40 warnings — WAIVED (recorded 2026-07-20)
+### WVR-ERC-1 — SKiDL ERC baseline: 1 waived error + 39 current warnings
 
 - The single error: `Pin conflict on net GND, POWER-OUT pin 33/AGND of RaspberryPi_Pico/A1
   <==> POWER-OUT pin 3/GND of RaspberryPi_Pico/A1` — both pins are grounds of the SAME Pico
   module and must be tied; a SKiDL symbol pin-type artifact, electrically benign.
 - The rev-C generator never ran ERC (its `.erc` is 0 bytes), so rev-D defines the baseline.
 - Enforcement: `generate_kicad_netlist_revD.py::check_erc_waiver()` fails closed on ANY drift
-  (second error, different single error, or warning-count change from 40). Updating those
-  constants requires a new waiver entry here — that is the point.
-- The 40 warnings are the expected unconnected-spare-GPIO / power-drive-level class (full list
-  in `scripts/generate_kicad_netlist_revD.erc`).
+  (second error, different single error, or warning-count change from the current 39).
+  The original 40-warning record was amended by WVR-ERC-2 when two spare-pin warnings
+  disappeared and one intentional READY-pin warning appeared; updating the constants
+  again requires another recorded waiver.
+- The 39 warnings are the expected unconnected-spare-GPIO / power-drive-level class (full list
+  in the canonical repository-root `generate_kicad_netlist_revD.erc`).
+
+#### ERC artifact custody amendment (2026-07-24)
+
+- `scripts/generate_kicad_netlist_revD.py` anchors the SKiDL logger to the repository root
+  before import and reads/canonicalizes only `generate_kicad_netlist_revD.erc`.
+- The stale `scripts/generate_kicad_netlist_revD.erc` duplicate was removed. Invocation
+  directory is no longer allowed to select, create, or validate a second ERC artifact.
+- The committed artifact remains deterministic CRLF bytes and is marked `-text`; its
+  byte hash is therefore stable across `core.autocrlf` settings.
+- The generator also normalizes diagnostic-only `SKiDL Line` values in the legacy netlist
+  to `generate_kicad_netlist_revD.py:0`. Moving comments or custody setup in the generator
+  can no longer churn the source-netlist/package hash while leaving connectivity unchanged.
+- The legacy netlist `source` field is fixed to
+  `scripts/generate_kicad_netlist_revD.py`; caller-relative `..\` spelling no longer
+  changes the hash when the same generator is invoked from `scripts/`.
+- The entrypoint re-executes before importing SKiDL with `PYTHONHASHSEED=0`; SKiDL's
+  set/dict traversal can therefore no longer reorder electrically identical netlist rows
+  between clean processes.
+- Root-cwd and `scripts/`-cwd regenerations now converge byte-for-byte:
+  netlist SHA-256
+  `4a33bfab891c73c080460f5609c6316a5291007d03c84a3abd92104ac47e4bd7`;
+  ERC SHA-256
+  `c5dfdf525a17788afba751187e8965ede1282948b66b2765225333995df1caa3`.
 
 ---
 
@@ -1483,7 +1508,10 @@ Production firmware identity bound into the package:
 - release UF2 SHA-256:
   `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`
 - firmware manifest SHA-256:
-  `5bcbd2df1980acdd365865fc6527c96a3d0c1f51210a9d4a5fdd1f6cfcc279fd`
+  `ea8ea4ceb273df98e888aeb5d1f1327d39577e8492fda455c932fea3768bd7b5`
+- supported board revisions: `revD`
+- qualified release tuple:
+  `revD|rel-0c746b5747143b8011b01d43|05d808411db4bb0d`
 
 ### Gate record
 
@@ -1501,19 +1529,23 @@ Production firmware identity bound into the package:
 
 ### Current immutable artifact
 
-`kicad/fab_revD_2026-07-23_r5/` is the only orderable package. `_r4/`,
-`_r3/`, and all older packages carry `_SUPERSEDED_DO_NOT_UPLOAD` markers.
-Board and netlist are unchanged from r4:
+`kicad/fab_revD_2026-07-23_r5/` is the only non-superseded geometry
+package. It is **not authorization to order**: the package README retains
+G7/G8/G13/G14 and first-article gates. `_r4/`, `_r3/`, and all older packages
+carry `_SUPERSEDED_DO_NOT_UPLOAD` markers. Board copper is unchanged from r4;
+the netlist hash changed only because deterministic metadata custody now
+normalizes both caller-relative `source` fields and all diagnostic-only line
+fields:
 
 - Board SHA-256:
   `93972c28d07c8d37193ffecea4bfc3e012b934415fec1f85597d6e87edf7ea7b`
 - Netlist SHA-256:
-  `1d5d36f26f24c91bcf30ae5c895ac053128f1608054e19410a1506b4741f291f`
+  `4a33bfab891c73c080460f5609c6316a5291007d03c84a3abd92104ac47e4bd7`
 - Manifest SHA-256:
-  `99f1819ee63cec1578f57331c8b3d7b0eec3db7d228c4f8810c0424ff8f31e93`
+  `0318d4a103cca638017dfe27b3067599690155c63ad07aff83db6e751d5cb926`
 - Full package zip SHA-256:
-  `b3ae254e54ec3efef5ea78daff4e70f73d068a8d2cef3b2d823c218312b71a87`
+  `c210fdee42618bbc4c50453832fdce16a7cba02c13862c7c8eb25e0e0ec8c94d`
 - JLC upload zip SHA-256:
-  `789bec819c017bd841d0e853dc0038d03af040090e59761a6d104b7d2ce13fdc`
+  `d1d93de75474323135ac6f1eb41f0ebfa306a95640a91e01dafb758d42d18e25`
 - Gerber/drill zip SHA-256:
   `efe841d387e11886f1b7870a1d1f6802f04296d14fb404b5d88b27604e295f68`

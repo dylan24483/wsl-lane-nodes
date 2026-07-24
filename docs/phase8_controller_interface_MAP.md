@@ -2,6 +2,15 @@
 
 **Source:** QubicaAMF *8270 MP Pinspotter Operation Training Manual* (PN 610000009), mined in full 2026-05-31 (text + all controller-relevant diagrams). This synthesizes the controller↔machine interface so the field sheet (`phase8_controller_interface_fieldsheet.md`) becomes **"verify a few specifics on our spare,"** not "trace 40 pins blind."
 
+> **CURRENT SC/TB RECONCILIATION (2026-07-24):** retain this map for signal roles,
+> but do not derive J_SAFE wiring from it. Cold tracing found SC at shared C2A-U,
+> no independent TB lead, and ~21 Ω coil sneak paths; powered testing proved OEM
+> **parallel closed-when-safe** contacts, with both levers BACK/open killing both S
+> and T coils. Candidate C uses a controlled J_SAFE1-2 jumper, preserves the OEM
+> ladder through the S/T output insertion points, and requires per-lane G3 proof.
+> The firmware SC∧TB echo is default-off, unvalidated, secondary, and not
+> field-observable as two inputs on lanes 21/22.
+
 > **Not in this manual:** the big foldout schematics — *9807 MP Chassis & Machine*, *6730 5-Board Chassis & Machine*, *5500 82-70 Machine Wiring*. They're in the **161 MB Service & Parts manual (#2)**. Get that for the exact node-by-node schematic if/when needed.
 >
 > **Chassis caveat:** the manual's wire tables are the **9800 MP** and **6700 ELCO** chassis. Our **spare is an SS chassis + Omega-Tek Omniboard** (21/22); lanes 11/12 are the **MP** (Ultra 98). The **machine side is common** (same 82-70 cams/motors/grippers via C1/C2A) — only the chassis-internal wiring differs. Verify machine-side pins on our spare; use the Omega-Tek manuals (already have) for that board's internals.
@@ -52,9 +61,16 @@ The controller **reads machine switches/cams** (via the **C2A** plug + the **TAC
 
 ## SAFETY — preserve in hardware
 - **Stop switch** (post-1979, left of power plug) + **C.I.S.** (1981, under plug-duct cover): both **cut the rear-panel MASTER circuit breaker** → kills control power. Hardware.
-- **Table-sweep INTERLOCK** (p15): **TB + SC contacts in PARALLEL** in the 24 V relay-control path. On a collision course both open → both motor relays drop. **Hardware collision-prevention — PRESERVE.**
+- **Table-sweep INTERLOCK** (p15): **TB + SC contacts in PARALLEL** in the 24 V
+  relay-control path. Powered lane-21/22 evidence establishes the polarity: either
+  pressed lever permits; both levers BACK/open block both S and T coils. Preserve
+  this OEM ladder; do not lift it onto the board's 5 V J_SAFE circuit.
 - **Motor braking**: regenerative, in the relay N.C. contacts + caps. Hardware.
-- **⭐ Field-sheet Part 4 ANSWERED:** the cam-position stops (SA/TA1 @zero) are **controller LOGIC** (read cam → drop relay), **not** a hardwired motor latch. So the **Pi times the stops** (real-time → MCU co-processor) with **TB/SC as the hardware backstop** and braking in hardware. Verify on our spare, but expect the same.
+- **Motion-cam stop boundary:** SA/TA stops are controller logic, so the replacement
+  FSM uses independently measured motion-cam inputs. The controlled v1.2.3 release
+  keeps measured-cam enforcement flags OFF pending polarity capture and a new
+  release. Independently, Candidate C preserves TB/SC as the primary OEM hardware
+  backstop and requires the per-lane S/T G3 coil proof.
 
 ## POWER
 - 115 VAC in via Russell-Stoll (hot + neutral + ground); 25 A breaker/machine.

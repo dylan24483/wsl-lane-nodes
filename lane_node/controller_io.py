@@ -18,11 +18,16 @@ self-contained: 3× MCP23017 @ 0x20–0x23 on the board's own I²C bus + 1 RP204
 
 ⚠️ SAFETY: this module is the software half. The hardware half (relay-enable
 rail, NE555 watchdog, RP2040 cam-stop, regenerative braking) is NEVER bypassed
-here. The TB/SC hardware interlock is PLANNED only — design open per
-docs/phase8_interlock_redesign.md; until it lands, `io.interlock_ok()` is the
-ONLY TB/SC guard, not a secondary echo. MachineIO is
+here. Candidate C retains the OEM parallel closed-when-safe S/T ladder as the
+primary TB/SC protection; J_SAFE1-2 is a controlled jumper, and per-lane G3
+insertion proof is mandatory. The firmware/software echo is default-off and
+unvalidated, so it is diagnostic defense-in-depth only. MachineIO is
 NOT to drive a live machine until the full hardware safety chain is bench-proven
 (see docs/phase8_PLAN_A_full_replacement.md + the off-live validation gate #17).
+Software freshness checks reserve and measure a bounded actuation window, but
+cannot mathematically stop an opaque kernel/I²C/GPIO call that begins fresh and
+then stalls. RP2040_OK, the NE555 rail watchdog, and the OEM S/T guard remain
+the independent load-bearing deadline boundary.
 
 Hardware deps (Pi only): `smbus2` (or `smbus`) for the MCP23017s. Imported
 lazily so this module loads + the RecordingIO path tests on any machine.
@@ -143,6 +148,35 @@ INPUT_ACTIVE_LOW = True
 # what is energized. Lamps (first_ball/second_ball/foul/strike) are not motors.
 MOTION_RELAYS = ("S", "T", "SP", "BE", "M", "M1", "M2")
 
+# A positive operation may begin only with this much heartbeat lease left. The
+# operation itself must return within the bounded half-window below, preserving
+# an equal post-return reserve for rollback/hard-safe handling. Normal MCP/GPIO
+# control writes are millisecond-scale; a 50 ms return is already abnormal.
+POSITIVE_ACTUATION_MAX_S = 0.050
+POSITIVE_ACTUATION_MIN_REMAINING_S = 0.100
+
+
+class LinkFreshnessError(RuntimeError):
+    """A safety-positive actuation was refused or exceeded its time budget."""
+
+
+def require_positive_actuation_freshness(
+        link, action, *, min_remaining_s=POSITIVE_ACTUATION_MIN_REMAINING_S):
+    """Require full link health plus an exact heartbeat-lease time budget."""
+    healthy, remaining = link.actuation_freshness_status()
+    if not healthy:
+        suffix = (
+            "no accepted heartbeat" if remaining is None
+            else f"heartbeat remaining={remaining:.6f}s"
+        )
+        raise LinkFreshnessError(
+            f"refused {action}: RP2040 link health is not current "
+            f"({suffix})")
+    if remaining is None or remaining < min_remaining_s:
+        raise LinkFreshnessError(
+            f"refused {action}: heartbeat remaining={remaining:.6f}s is "
+            f"below the {min_remaining_s:.6f}s positive-actuation margin")
+
 
 class _MCP23017:
     """Minimal MCP23017 driver over smbus. Caches output latches so per-bit
@@ -174,7 +208,7 @@ class _MCP23017:
     def read_port(self, port):
         return self.bus.read_byte_data(self.addr, _GPIOA if port == 0 else _GPIOB)
 
-    def write_bit(self, port, bit, value):
+    def write_bit(self, port, bit, value, *, positive_guard=None):
         # C-02 (hw-independence audit 2026-07-09): the cache must never run ahead
         # of the hardware. A cache updated before a NACKed write leaves a stale
         # bit that the NEXT write to ANY other bit on the port re-asserts — an
@@ -182,6 +216,11 @@ class _MCP23017:
         olat = self._olat[port]
         olat = (olat | (1 << bit)) if value else (olat & ~(1 << bit))
         reg = _OLATA if port == 0 else _OLATB
+        # Last software check at the physical I²C boundary, after staging and
+        # before the ioctl. The ioctl itself remains opaque; RP_OK/NE555/OEM
+        # hardware protection covers a kernel/bus stall after this point.
+        if value and positive_guard is not None:
+            positive_guard()
         self.bus.write_byte_data(self.addr, reg, olat)
         self._olat[port] = olat        # write returned: cache = best estimate
         readback = self.bus.read_byte_data(self.addr, reg)
@@ -270,25 +309,89 @@ class MachineIO:
                  f"{' OUT-B@%#x' % ADDR_OUT_B if enable_pin_lamps else ''}")
 
     # ---- outputs (FSM drives) ---------------------------------------------
+    def _require_positive_fresh(self, action):
+        # MachineIO is also used by the isolated manual first-article utility,
+        # where no RP2040 object is intentionally supplied. The production
+        # BoardController always supplies one and adds an outer guard as well.
+        if self._rp2040 is not None:
+            require_positive_actuation_freshness(self._rp2040, action)
+
+    def _rollback_positive_output(self, name, port, bit, reason):
+        """Best-effort exact-channel rollback after an uncertain positive write."""
+        failures = []
+        try:
+            self.out_a.write_bit(port, bit, False)
+        except Exception as exc:
+            failures.append(f"I2C off failed: {type(exc).__name__}: {exc}")
+        if self._rp2040 is not None and name in MOTION_RELAYS:
+            try:
+                if self._rp2040.stop(name) is False:
+                    failures.append("firmware STOP transport failed")
+            except Exception as exc:
+                failures.append(
+                    f"firmware STOP failed: {type(exc).__name__}: {exc}")
+        self._out_state[name] = False
+        log.error(
+            "L%s OUT %s positive command failed (%s); rollback issued%s",
+            self.lane, name, reason,
+            f"; {'; '.join(failures)}" if failures else "")
+        self.recorder.record("fault", f"{name}-positive-command", reason)
+        self.recorder.record("out", name, False)
+        return tuple(failures)
+
     def _set_out(self, name, on):
         on = bool(on)
         changed = self._out_state.get(name) is not on
-        if changed:
-            self._out_state[name] = on
-            # Timestamped (via logging) output history — post-incident forensics.
-            log.info("L%s OUT %s -> %s", self.lane, name, "ON" if on else "off")
-            # Flight recorder tap: record every OUTPUT CHANGE (idea #10). Recorder
-            # is fail-safe + bounded; this never raises into the control path.
-            self.recorder.record("out", name, on)
         port, bit = OUT_A_MAP[name]
-        self.out_a.write_bit(port, bit, on)     # OLAT write is idempotent; always refresh
+        positive_guard = None
+        if on and name in MOTION_RELAYS:
+            positive_guard = lambda: self._require_positive_fresh(
+                f"{name}-on-inner")
+        # Physical write first. State/logging/recorder work must never consume
+        # heartbeat lease before a safety-positive output reaches the boundary.
+        try:
+            self.out_a.write_bit(
+                port, bit, on, positive_guard=positive_guard)
+        except LinkFreshnessError:
+            # The guard runs before the physical bus call; no rollback needed.
+            raise
+        except Exception as exc:
+            if on and name in MOTION_RELAYS:
+                self._rollback_positive_output(
+                    name, port, bit,
+                    f"I2C positive write/readback failed: "
+                    f"{type(exc).__name__}: {exc}")
+                raise LinkFreshnessError(
+                    f"{name}-on physical write was uncertain and was "
+                    "rolled back") from exc
+            raise
         if changed and self._rp2040 is not None and name in MOTION_RELAYS:
             # Send RUN/STOP only on a real change (wire economy). NOTE: this is
             # NOT load-bearing for the max-run backstop — the firmware stamps
             # its timer only on a false->true transition (main.c handle_line),
             # so re-assertion is safe; rp2040_link's hb run-mask reconciliation
             # relies on exactly that to re-send lost RUN/STOP lines.
-            (self._rp2040.run if on else self._rp2040.stop)(name)
+            try:
+                sent = (self._rp2040.run if on else self._rp2040.stop)(name)
+            except Exception as exc:
+                sent = False
+                send_exc = exc
+            else:
+                send_exc = None
+            if on and sent is False:
+                reason = "firmware RUN transport failed"
+                if send_exc is not None:
+                    reason += f": {type(send_exc).__name__}: {send_exc}"
+                self._rollback_positive_output(name, port, bit, reason)
+                raise LinkFreshnessError(
+                    f"{name}-on lost its firmware max-run command and was "
+                    "rolled back")
+        if changed:
+            self._out_state[name] = on
+            # Forensics are deliberately after the physical + firmware command
+            # boundaries so a slow logger/recorder cannot delay actuation.
+            log.info("L%s OUT %s -> %s", self.lane, name, "ON" if on else "off")
+            self.recorder.record("out", name, on)
 
     def set_sweep(self, on): self._set_out("S", on)
     def set_table(self, on): self._set_out("T", on)
@@ -354,28 +457,57 @@ class MachineIO:
     def read_input(self, name): return self._read_in(name)   # PBZ/PBC/Foul/OS/... for the daemon
 
     def interlock_ok(self):
-        """Software echo of the TB/SC interlock. ⚠️ The hardware TB+SC loop is
-        PLANNED, not landed — design open per docs/phase8_interlock_redesign.md
-        (measured 2026-06-27: no isolatable dry NC pair exists to land J_SAFETY
-        as drawn). Until that design lands, this echo is the ONLY TB/SC guard.
-        When the RP2040 link is wired, echo its SC/TB collision state; otherwise
-        default True — which today means NO interlock protection, not "the
-        hardware has it covered"."""
+        """Optional software echo of the TB/SC collision posture.
+
+        Candidate C's primary protection is the OEM parallel closed-when-safe
+        S/T ladder, with J_SAFE1-2 controlled and per-lane G3 insertion proof
+        mandatory. The firmware echo remains default-off/unvalidated
+        defense-in-depth. Returning True without a link means only "no software
+        veto"; it does not assert or replace the independent OEM guard.
+        """
         if self._rp2040 is not None:
             return self._rp2040.interlock_ok()
         return True
 
     def watchdog_kick(self):
-        self._kick()
+        self._require_positive_fresh("watchdog-kick-inner")
+        try:
+            self._kick()
+        except LinkFreshnessError:
+            raise
+        except Exception as exc:
+            raise LinkFreshnessError(
+                "watchdog-kick physical callback failed") from exc
 
     def arm(self, on):
         """Assert/deassert the relay-enable arm GPIO (power-down rule)."""
         on = bool(on)
+        if on:
+            self._require_positive_fresh("arm-high-inner")
+        # Physical GPIO callback first; forensics/state cannot delay it.
+        try:
+            self._arm(on)
+        except LinkFreshnessError:
+            if on:
+                try:
+                    self._arm(False)
+                except Exception:
+                    pass
+            raise
+        except Exception as exc:
+            if on:
+                try:
+                    self._arm(False)
+                except Exception:
+                    pass
+                raise LinkFreshnessError(
+                    "ARM-high physical callback failed; ARM-low rollback "
+                    "issued") from exc
+            raise
         if self._armed is not on:
             self._armed = on
             log.info("L%s ARM -> %s", self.lane, "ASSERTED" if on else "deasserted")
             self.recorder.record("arm", "arm", on)   # flight recorder tap (idea #10)
-        self._arm(on)
 
     def now(self):
         return self._now()
@@ -466,6 +598,114 @@ class RecordingIO:
     def watchdog_kick(self): self.kicks += 1
     def arm(self, on): self.armed = bool(on); self.events.append(("arm", bool(on))); self.recorder.record("arm", "arm", bool(on))
     def log(self, msg): self.events.append(("log", msg))
+
+
+class FreshnessGuardIO:
+    """Guard motor-on, watchdog-kick, and ARM-high at point of actuation.
+
+    Holding the link state lock prevents concurrent mutation, but monotonic
+    time still advances during a tick. A fixed pre-write reserve, an inner
+    MachineIO check, measured maximum return time, postcheck, and rollback
+    close every software-controlled delay window. They do not make Linux,
+    I²C, or GPIO calls hard real-time: an opaque call that stalls after the
+    last check is contained by RP2040_OK, NE555, and the OEM guard. OFF/LOW
+    operations always pass through.
+    """
+
+    def __init__(self, io, link):
+        object.__setattr__(self, "_io", io)
+        object.__setattr__(self, "_link", link)
+
+    def __getattr__(self, name):
+        return getattr(self._io, name)
+
+    def __setattr__(self, name, value):
+        if name in ("_io", "_link"):
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._io, name, value)
+
+    def _require_fresh(
+            self, action,
+            min_remaining_s=POSITIVE_ACTUATION_MIN_REMAINING_S):
+        require_positive_actuation_freshness(
+            self._link, action, min_remaining_s=min_remaining_s)
+
+    def _require_bounded_duration(self, action, started):
+        elapsed = self._link.now() - started
+        if elapsed < 0.0 or elapsed > POSITIVE_ACTUATION_MAX_S:
+            raise LinkFreshnessError(
+                f"refused {action}: positive operation returned in "
+                f"{elapsed:.6f}s, outside the 0.."
+                f"{POSITIVE_ACTUATION_MAX_S:.6f}s bound")
+
+    def _positive_with_rollback(self, action, on, name):
+        self._require_fresh(name)
+        started = self._link.now()
+        try:
+            result = action(on)
+        except LinkFreshnessError:
+            raise
+        except Exception as exc:
+            try:
+                action(False)
+            except Exception:
+                pass
+            raise LinkFreshnessError(
+                f"{name} raised after positive staging; rollback issued") \
+                from exc
+        try:
+            self._require_bounded_duration(name, started)
+            self._require_fresh(name + "-postcheck", min_remaining_s=0.0)
+        except LinkFreshnessError:
+            # The write may have succeeded just before its slow transport
+            # crossed the deadline. Undo that exact positive command now; the
+            # BoardController catch then executes the full hard-safe sequence.
+            try:
+                action(False)
+            except Exception:
+                pass
+            raise
+        return result
+
+    def set_sweep(self, on):
+        if bool(on):
+            return self._positive_with_rollback(
+                self._io.set_sweep, on, "sweep-on")
+        return self._io.set_sweep(on)
+
+    def set_table(self, on):
+        if bool(on):
+            return self._positive_with_rollback(
+                self._io.set_table, on, "table-on")
+        return self._io.set_table(on)
+
+    def set_spot(self, on):
+        if bool(on):
+            return self._positive_with_rollback(
+                self._io.set_spot, on, "spot-on")
+        return self._io.set_spot(on)
+
+    def watchdog_kick(self):
+        self._require_fresh("watchdog-kick")
+        started = self._link.now()
+        try:
+            result = self._io.watchdog_kick()
+        except LinkFreshnessError:
+            raise
+        except Exception as exc:
+            raise LinkFreshnessError(
+                "watchdog-kick raised during positive operation") from exc
+        self._require_bounded_duration("watchdog-kick", started)
+        self._require_fresh(
+            "watchdog-kick-postcheck", min_remaining_s=0.0)
+        return result
+
+    def arm(self, on):
+        if bool(on):
+            return self._positive_with_rollback(
+                self._io.arm, on, "arm-high")
+        return self._io.arm(on)
 
 
 # ===========================================================================

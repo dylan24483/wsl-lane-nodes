@@ -25,6 +25,17 @@ Where a section number is uncertain, cross-reference by title.
 > `docs/phase8b_pcb_revB_spec.md`. The stale GPIO column in
 > `docs/phase8_channel_allocation.md` is **not** used here.
 
+> **Current Rev-D/R5 amendment.** This chapter preserves the Rev-B topology and
+> BOM facts where they are explicitly labeled Rev-B. For current Rev-D/R5 work,
+> `scripts/generate_kicad_netlist_revD.py` and
+> `kicad/fab_revD_2026-07-23_r5/manifest.json` supersede the old resistor value:
+> exactly forty collector pull-ups `Rpu_*` (`R4,R6,…,R82`) are **47 kΩ**
+> (`0805W8F4702T5E`, LCSC C17713), while unrelated 10 kΩ networks are unchanged.
+> RP2040 GP6–GP13 internal pulls are disabled, and U1/U2 MCP23017
+> `GPPUA/GPPUB` must command and read back `0x00`. This remains subject to
+> per-channel FA-9 qualification; the selected PC817B has no guaranteed minimum
+> CTR at the board's approximately 1.7 mA LED current and hot corner.
+
 ---
 
 ### 8.1 What an input channel is for
@@ -43,11 +54,11 @@ wiring (which may carry machine voltages, ground faults, or noise) and the
 3.3 V logic are electrically separate. The contact state crosses the barrier as
 light, not as a shared conductor.
 
-At-machine measurements (`docs/phase8b_at_machine_fieldsheet.md`, item A4)
-confirmed that on lanes 21/22 the cams are **dry contacts, normally-closed at
-rest**, and grippers are **chassis-referenced** (a gripped pin closes the switch
-to chassis ground). This is why the dry-contact wetting front-end (below) is the
-confirmed default population for those channels.
+At-machine work supports dry-contact wetting for independently measured motion
+cams and confirms grippers are **chassis-referenced** (gripped closes to chassis).
+It does **not** justify one normally-closed polarity for all cams. In particular,
+SC/U is a live-ladder node, TB has no independent lane-21/22 lead, and neither is a
+dry opto landing. Measure each SA/SB/TA1/TA2 class/polarity before population.
 
 ---
 
@@ -68,7 +79,7 @@ FIELD_WET_V ──► Rin (2k2) ──► PC817B LED anode (pin 1)
 and on the isolated logic side:
 
 ```
-VCC_3V3 ──► Rpu (10k) ──► logic node (Pico GPIO or MCP23017 pin)
+VCC_3V3 ──► Rpu (Rev-B 10k; Rev-D/R5 47k) ──► logic node (Pico GPIO or MCP23017 pin)
                             ▲
 PC817B collector (pin 4) ──┘   (phototransistor pulls the logic node toward GND when lit)
 PC817B emitter (pin 3) ──► GND  (logic ground)
@@ -85,8 +96,9 @@ PC817B emitter (pin 3) ──► GND  (logic ground)
    off in the part lock are `R3, R5, R7 … R65`) sets the LED drive current so the
    PC817B turns on cleanly while keeping field-side current low. With a ~5 V
    wetting supply minus the LED forward drop, this is on the order of a couple of
-   milliamps — enough to saturate the PC817B over its CTR bin given the matched
-   10 k logic pull-up.
+   milliamps. Rev-B paired that drive with a 10 kΩ collector pull-up. Rev-D/R5
+   changes only `Rpu_*` to 47 kΩ to reduce the required sink current; that
+   arithmetic does **not** replace the per-channel hot first-article FA-9 test.
 
 3. **The field contact does the switching.** The LED's cathode (pin 2) is wired
    to the per-channel field net `FIELD_<name>`, which lands on the channel's
@@ -99,10 +111,10 @@ PC817B emitter (pin 3) ──► GND  (logic ground)
    phototransistor.
 
 5. **Logic side pulls LOW.** The phototransistor's collector (pin 4) is tied to
-   the logic node, which is held HIGH by `Rpu` = **10 kΩ** to `VCC_3V3`; its
-   emitter (pin 3) goes to logic `GND`. When the transistor conducts, it pulls
-   the logic node down toward `GND`. So **contact closed → LED on → logic node
-   LOW**.
+   the logic node, which is held HIGH by external `Rpu` to `VCC_3V3`
+   (**10 kΩ on Rev-B; 47 kΩ on current Rev-D/R5**); its emitter (pin 3) goes to
+   logic `GND`. When the transistor conducts, it pulls the logic node down toward
+   `GND`. So **contact closed → LED on → logic node LOW**.
 
 6. **Idle state.** With the machine contact open, no LED current flows, the
    phototransistor is off, and `Rpu` holds the logic node **HIGH** at 3.3 V.
@@ -120,7 +132,7 @@ generator). Pin roles as wired in `opto_input()`:
 | 1 | LED anode (input +) | Field | `FIELD_LED_<name>` (output of `Rin`, which is fed from `FIELD_WET_V`) |
 | 2 | LED cathode (input −) | Field | `FIELD_<name>` → channel connector pin (machine contact pulls it to `FIELD_GND`) |
 | 3 | Phototransistor emitter | Logic | `GND` (logic ground) |
-| 4 | Phototransistor collector (output) | Logic | logic node = Pico GPIO **or** MCP23017 pin; held HIGH by `Rpu` (10 k) to `VCC_3V3` |
+| 4 | Phototransistor collector (output) | Logic | logic node = Pico GPIO **or** MCP23017 pin; held HIGH by external `Rpu` to `VCC_3V3` (Rev-B 10 kΩ; current Rev-D/R5 47 kΩ) |
 
 > The barrier runs **between pins 1/2 (field) and pins 3/4 (logic)**. Nothing
 > bridges those two pin-pairs on the board except the optocoupler itself.
@@ -130,15 +142,17 @@ generator). Pin roles as wired in `opto_input()`:
 | Ref pattern | Value | Purpose | Part (part lock) |
 |---|---|---|---|
 | `Rin_<name>` | 2.2 kΩ ("2k2"), 0805, 1% | Field-side LED current limit | LCSC C17520, `0805W8F2201T5E`, UNI-ROYAL — 32 off (`R3,R5,…,R65`) |
-| `Rpu_<name>` | 10 kΩ, 0805, 1% | Logic-side pull-up to `VCC_3V3` (defines idle-HIGH / active-LOW) | LCSC C17414, `0805W8F1002T5E`, UNI-ROYAL — 37 off total on board (32 of them are the opto pull-ups; the rest serve the watchdog/safety AND chain) |
+| `Rpu_<name>` (Rev-B historical) | 10 kΩ, 0805, 1% | Logic-side pull-up to `VCC_3V3` (defines idle-HIGH / active-LOW) | LCSC C17414, `0805W8F1002T5E`, UNI-ROYAL — 32 opto pull-ups; the old 37-count 10 kΩ BOM line also included five unrelated networks |
+| `Rpu_<name>` (Rev-D/R5 current) | **47 kΩ**, 0805, 1% | Sole external logic-side bias; RP2040 and MCP23017 internal pulls must be off | LCSC **C17713**, `0805W8F4702T5E`, UNI-ROYAL — exactly 40 refs `R4,R6,…,R82` |
 | `OPTO_<name>` | PC817B | The opto-isolator | LCSC C5692981, `PC817B`, UMW, DIP-4 — 32 off (`U4…U35`) |
 
-> **CTR note (from the part-lock file):** "CTR bin must be accepted with Rev-B
-> field resistors." The 2k2 LED resistor + 10k logic pull-up were chosen to work
-> across the PC817**B** current-transfer-ratio bin; do not substitute a
-> lower-CTR opto or change these resistor values without re-checking that a
-> closed contact still pulls the logic node solidly below the input's logic-LOW
-> threshold.
+> **CTR note.** The Rev-B part lock recorded the 2k2 LED resistor + 10 kΩ
+> pull-up pairing. Current Rev-D/R5 keeps 2k2 and uses 47 kΩ, but the selected
+> UMW PC817B / C5692981 still has no guaranteed minimum CTR at the design's
+> approximately 1.7 mA LED current and hot corner. Do not substitute parts or
+> treat the 47 kΩ arithmetic as fleet qualification: every populated channel
+> must pass FA-9 at loaded-minimum `FIELD_WET_V`, ≥70 °C, including idle leakage
+> and ≤100 µs edge measurements.
 
 ---
 
@@ -223,15 +237,15 @@ galvanically separated from logic — option 1 of contract §8.3.
 ### 8.5 Active-low polarity (asserted = LOW)
 
 Every input channel is **active-low at the logic pin**: the machine contact
-closing pulls the logic node LOW, idle is HIGH (held by the 10 k pull-up to
-`VCC_3V3`). Both the firmware and the FSM software encode this so a service tech
-sees consistent behavior end-to-end.
+closing pulls the logic node LOW, idle is HIGH (held by external `Rpu_*` to
+`VCC_3V3`: Rev-B 10 kΩ; current Rev-D/R5 **47 kΩ**). Both the firmware and the
+FSM software encode this so a service tech sees consistent behavior end-to-end.
 
 | Layer | File | How active-low is expressed |
 |---|---|---|
-| Hardware | `scripts/generate_kicad_netlist_revB.py` (`opto_input()`) | LED in series to `FIELD_GND`; collector pulls logic node down; `Rpu` (10 k) holds it HIGH at idle |
-| Firmware (fast inputs) | `firmware/rp2040/config.h` | Header note: "every fast input is opto-isolated and ACTIVE-LOW at the Pico — machine contact CLOSED (signal asserted) pulls the GPIO LOW; idle is HIGH (on-board 10k pull-up to 3V3)" |
-| Software (slow inputs) | `lane_node/controller_io.py` | `INPUT_ACTIVE_LOW = True`; `_read_in()` returns asserted when `raw == 0`; "Optos are active-low at the MCP pin (switch closed → opto pulls pin LOW)" |
+| Hardware | Rev-B and Rev-D `opto_input()` generators | LED in series to `FIELD_GND`; collector pulls logic node down; external `Rpu` holds it HIGH at idle (Rev-B 10 kΩ; Rev-D/R5 47 kΩ) |
+| Firmware (fast inputs) | `firmware/rp2040/config.h`, `main.c` | Active-low; current Rev-D release keeps GP6–GP13 internal PUE/PDE disabled so external 47 kΩ is authoritative |
+| Software (slow inputs) | `lane_node/controller_io.py` | `INPUT_ACTIVE_LOW = True`; `_read_in()` returns asserted when `raw == 0`; U1/U2 `GPPUA/GPPUB=0x00` is commanded and read back |
 
 > **Bench bring-up consequence:** with the machine harness unplugged (all field
 > contacts open), every logic node should read **HIGH** and every input should

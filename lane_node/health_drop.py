@@ -40,6 +40,7 @@ import json
 import hashlib
 import math
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -53,6 +54,25 @@ SERVICE_CONTROLLER = "controller"   # Track-B: Pi/controller platform health
 SERVICE_CAMERA = "camera"           # Track-A: camera/scoring health
 
 DEFAULT_MAX_AGE_S = 900.0           # a foreign drop older than this is ignored
+CONTROLLER_MODES = frozenset(("live", "shadow"))
+IDENTITY_ASSURANCES = frozenset(
+    ("verified", "legacy_unverified", "invalid"))
+CONTROLLER_FSM_STATES = frozenset((
+    "power_off", "manual_intervention", "ready", "sweep_to_guard",
+    "guard_delay", "table_detect", "runthrough", "spotting",
+    "table_finish", "fault",
+))
+SAFETY_TAP_FIELDS = frozenset(
+    ("ne555", "wdog_kick", "arm_permit", "rp2040_ok"))
+EXPECTED_CONTROLLER_MODE_ENV = "WSL_CONTROLLER_EXPECTED_MODE"
+QUALIFIED_RELEASES_ENV = "WSL_RP2040_QUALIFIED_RELEASES"
+CONTROLLER_BOARD_REQUIRED_FIELDS = frozenset((
+    "lane_id", "controller_boot_id", "control_loop_seq", "board_rev",
+    "fw_build", "fw_cfg", "identity_ok", "identity_reason",
+    "controller_mode", "live_outputs_acknowledged", "arm_state", "fsm_state",
+    "manual_rearm_required", "legacy_identity_mode", "identity_assurance",
+    "arm_prerequisite_reason", "safety_taps",
+))
 
 
 def parse_required_services(raw):
@@ -191,11 +211,101 @@ def _entry_integrity_error(service, entry):
     return None
 
 
+def _controller_board_schema_error(board):
+    """Return a stable error for an invalid controller health-drop board."""
+    if not isinstance(board, dict):
+        return "controller_board_not_object"
+    missing = CONTROLLER_BOARD_REQUIRED_FIELDS - set(board)
+    if missing:
+        return "controller_board_missing_" + sorted(missing)[0]
+    lane = board.get("lane_id")
+    if type(lane) is not int or not 1 <= lane <= 32:
+        return "controller_board_lane_invalid"
+    if (
+            not isinstance(board.get("controller_boot_id"), str)
+            or not board["controller_boot_id"].strip()
+            or len(board["controller_boot_id"]) > 200):
+        return "controller_board_boot_id_invalid"
+    if (
+            type(board.get("control_loop_seq")) is not int
+            or board["control_loop_seq"] < 0):
+        return "controller_board_control_loop_seq_invalid"
+    for field in (
+            "identity_ok", "live_outputs_acknowledged", "arm_state",
+            "manual_rearm_required", "legacy_identity_mode"):
+        if type(board.get(field)) is not bool:
+            return f"controller_board_{field}_invalid"
+    if board.get("controller_mode") not in CONTROLLER_MODES:
+        return "controller_board_mode_invalid"
+    if board.get("identity_assurance") not in IDENTITY_ASSURANCES:
+        return "controller_board_identity_assurance_invalid"
+    fsm_state = board.get("fsm_state")
+    if (
+            not isinstance(fsm_state, str)
+            or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", fsm_state) is None):
+        return "controller_board_fsm_state_invalid"
+    for field in (
+            "board_rev", "fw_build", "fw_cfg", "identity_reason",
+            "arm_prerequisite_reason"):
+        value = board.get(field)
+        if value is not None and (
+                not isinstance(value, str)
+                or len(value) > 200
+                or (field in ("board_rev", "fw_build", "fw_cfg")
+                    and not value.strip())
+                or (field in ("identity_reason", "arm_prerequisite_reason")
+                    and not value.strip())):
+            return f"controller_board_{field}_invalid"
+    if not isinstance(board.get("board_rev"), str):
+        return "controller_board_board_rev_invalid"
+    if not board["identity_ok"] and not board.get("identity_reason"):
+        return "controller_board_identity_reason_missing"
+    taps = board.get("safety_taps")
+    if (
+            not isinstance(taps, dict)
+            or set(taps) != SAFETY_TAP_FIELDS
+            or any(value is not None and type(value) is not bool
+                   for value in taps.values())):
+        return "controller_board_safety_taps_invalid"
+    if (
+            board["board_rev"] == "revD"
+            and board["identity_assurance"] == "verified"
+            and (
+                not isinstance(board.get("fw_build"), str)
+                or not isinstance(board.get("fw_cfg"), str)
+                or any(type(taps[field]) is not bool
+                       for field in SAFETY_TAP_FIELDS))):
+        return "controller_board_verified_revd_evidence_incomplete"
+    return None
+
+
+def _payload_schema_error(service, payload):
+    if service != SERVICE_CONTROLLER:
+        return None
+    if not isinstance(payload, dict):
+        return "controller_payload_not_object"
+    boards = payload.get("boards")
+    if not isinstance(boards, list) or not boards:
+        return "controller_boards_missing"
+    lanes = []
+    for board in boards:
+        error = _controller_board_schema_error(board)
+        if error is not None:
+            return error
+        lanes.append(board["lane_id"])
+    if len(lanes) != len(set(lanes)):
+        return "controller_board_lane_duplicate"
+    return None
+
+
 def write_drop(path, service, payload):
     """Atomically merge {service: {written_at, payload}} into the drop file.
     Returns True on success, False on any failure (e.g. read-only FS). Never
     raises. Preserves other services' entries."""
     try:
+        schema_error = _payload_schema_error(service, payload)
+        if schema_error is not None:
+            raise ValueError(schema_error)
         data = _read_raw(path)
         encoded = json.dumps(
             payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -281,6 +391,7 @@ def read_foreign_statuses(path, this_service, *, max_age_s=DEFAULT_MAX_AGE_S,
         written = entry.get("written_at")
         timestamp_error = None
         integrity_error = _entry_integrity_error(expected, entry)
+        schema_error = _payload_schema_error(expected, entry.get("payload"))
         if not _finite_number(now):
             # The caller's wall clock is itself unusable.  Existing data is
             # not "missing", but freshness cannot be proven.
@@ -304,7 +415,7 @@ def read_foreign_statuses(path, this_service, *, max_age_s=DEFAULT_MAX_AGE_S,
             raw_age = float(now) - float(written)
             age = round(raw_age, 1)
             status = "fresh" if raw_age <= max_age_s else "stale"
-        if integrity_error is not None:
+        if integrity_error is not None or schema_error is not None:
             # A present-but-corrupt record is stale/invalid evidence, never a
             # fresh snapshot.  Keep the payload attached for forensics but do
             # not allow read_foreign_drops() to relay it as trusted truth.
@@ -321,6 +432,8 @@ def read_foreign_statuses(path, this_service, *, max_age_s=DEFAULT_MAX_AGE_S,
             result["timestamp_error"] = timestamp_error
         if integrity_error is not None:
             result["integrity_error"] = integrity_error
+        if schema_error is not None:
+            result["schema_error"] = schema_error
         return [result]
     except Exception:
         _bump("read_errors")
@@ -644,6 +757,112 @@ def _snapshot_lanes(service, payload):
     return out
 
 
+def _qualified_release_tuples():
+    raw = os.environ.get(QUALIFIED_RELEASES_ENV)
+    if raw is None or raw == "":
+        return frozenset(), "qualified_release_policy_missing"
+    if raw != raw.strip() or any(char.isspace() for char in raw):
+        return frozenset(), "qualified_release_policy_invalid"
+    tuples = []
+    for item in raw.split(","):
+        parts = item.split("|")
+        if (
+                len(parts) != 3
+                or any(not part for part in parts)
+                or re.fullmatch(r"rev[A-Za-z0-9._-]+", parts[0]) is None):
+            return frozenset(), "qualified_release_policy_invalid"
+        tuples.append(tuple(parts))
+    if len(tuples) != len(set(tuples)):
+        return frozenset(), "qualified_release_policy_invalid"
+    return frozenset(tuples), None
+
+
+def _controller_board_policy_reasons(board):
+    """Return diagnostic-only safety reasons for one validated board block."""
+    reasons = []
+    expected_mode_raw = os.environ.get(EXPECTED_CONTROLLER_MODE_ENV)
+    expected_mode = (
+        "live" if expected_mode_raw is None or expected_mode_raw == ""
+        else expected_mode_raw)
+    if expected_mode_raw is None or expected_mode_raw == "":
+        reasons.append("controller_mode_policy_missing")
+    elif expected_mode not in CONTROLLER_MODES:
+        reasons.append("controller_mode_policy_invalid")
+    elif board["controller_mode"] != expected_mode:
+        reasons.append("controller_mode_mismatch")
+    if (
+            expected_mode == "live"
+            and board["live_outputs_acknowledged"] is not True):
+        reasons.append("live_outputs_not_acknowledged")
+    if board["identity_assurance"] != "verified":
+        reasons.append(
+            "identity_assurance_" + board["identity_assurance"])
+    if (
+            (
+                board["legacy_identity_mode"]
+                and board["identity_assurance"] != "legacy_unverified"
+            )
+            or (
+                not board["legacy_identity_mode"]
+                and board["identity_assurance"] == "legacy_unverified"
+            )
+            or (
+                board["identity_assurance"] == "verified"
+                and board["identity_ok"] is not True
+            )):
+        reasons.append("identity_assurance_inconsistent")
+    if board["manual_rearm_required"]:
+        reasons.append("manual_rearm_required")
+
+    arm_state = board["arm_state"]
+    fsm_state = board["fsm_state"]
+    disarmed_states = {"power_off", "manual_intervention", "fault"}
+    if fsm_state not in CONTROLLER_FSM_STATES:
+        reasons.append("fsm_state_unknown")
+    if (
+            (arm_state and fsm_state in disarmed_states)
+            or (arm_state and board["manual_rearm_required"])
+            or (board["controller_mode"] == "shadow" and arm_state)
+            or (
+                board["controller_mode"] == "live"
+                and not arm_state
+                and not board["manual_rearm_required"]
+                and fsm_state in CONTROLLER_FSM_STATES - disarmed_states
+            )):
+        reasons.append("arm_fsm_inconsistent")
+    if (
+            board.get("arm_prerequisite_reason")
+            and not board["manual_rearm_required"]):
+        reasons.append("arm_prerequisite_inconsistent")
+
+    taps = board["safety_taps"]
+    if (
+            board["controller_mode"] == "live"
+            and type(taps["arm_permit"]) is bool
+            and arm_state is not taps["arm_permit"]):
+        reasons.append("arm_permit_mismatch")
+    if arm_state and taps["ne555"] is not True:
+        reasons.append("arm_without_ne555")
+    if arm_state and taps["rp2040_ok"] is not True:
+        reasons.append("arm_without_rp2040_ok")
+
+    qualified, qualified_error = _qualified_release_tuples()
+    if qualified_error is not None:
+        reasons.append(qualified_error)
+    elif (
+            board["board_rev"], board["fw_build"], board["fw_cfg"]) not in qualified:
+        reasons.append("firmware_release_not_qualified")
+    return sorted(set(reasons))
+
+
+def controller_board_policy_reasons(board):
+    """Public exact policy verdict shared by writers and relay consumers."""
+    error = _controller_board_schema_error(board)
+    if error is not None:
+        return [error]
+    return _controller_board_policy_reasons(board)
+
+
 def snapshot_fault_events(service, payload):
     """Translate explicit snapshot evidence into alert-only event descriptors.
 
@@ -726,16 +945,33 @@ def snapshot_fault_events(service, payload):
                 })
             add(severity, event_type, code, evidence=evidence)
         for board in payload.get("boards") or ():
-            if not isinstance(board, dict) or board.get("identity_ok") is not False:
+            if _controller_board_schema_error(board) is not None:
                 continue
             lane = board.get("lane_id")
             affected = [lane] if isinstance(lane, int) and 1 <= lane <= 32 \
                 else lanes
-            reason = board.get("identity_reason")
-            code = (reason.strip() if isinstance(reason, str) and reason.strip()
+            if board.get("identity_ok") is False:
+                reason = board.get("identity_reason")
+                code = (
+                    reason.strip()
+                    if isinstance(reason, str) and reason.strip()
                     else "identity_unavailable")
-            add("fault", "fw_identity", code, affected=affected,
-                evidence={"lane_id": lane, "identity_reason": reason})
+                add("fault", "fw_identity", code, affected=affected,
+                    evidence={"lane_id": lane, "identity_reason": reason})
+            policy_evidence = {
+                field: board.get(field)
+                for field in (
+                    "lane_id", "controller_mode",
+                    "live_outputs_acknowledged", "arm_state", "fsm_state",
+                    "manual_rearm_required", "legacy_identity_mode",
+                    "identity_assurance", "arm_prerequisite_reason",
+                    "safety_taps", "board_rev", "fw_build", "fw_cfg")
+            }
+            for reason in controller_board_policy_reasons(board):
+                add(
+                    "fault", HEALTH_DROP_UNHEALTHY_EVENT,
+                    f"controller:{lane}:{reason}",
+                    affected=affected, evidence=policy_evidence)
 
     if payload.get("ok") is False and not events:
         add("warn", HEALTH_DROP_UNHEALTHY_EVENT,

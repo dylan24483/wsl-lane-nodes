@@ -1,5 +1,15 @@
 # WSL Phase 8 rev-B — Board #1 Hand-Solder & First-Power Guide
 
+> ⛔ **RETIRED REV-B GUIDE — DO NOT USE FOR CURRENT J14 WIRING, FIRMWARE
+> FLASHING, OR CUTOVER.** The body intentionally preserves the original Rev-B bench
+> procedure and therefore repeatedly labels J14 pins 1–2 as a TB/SC loop and
+> references v1.1 artifacts. For current Rev-D work, J_SAFE1-2 is only the
+> controlled Candidate-C jumper; OEM TB/SC protection stays in the S/T coil ladder
+> and requires per-lane G3 proof. Use the current `docs/manual_src/`, interlock
+> redesign, lane harness build sheet, Track-B runbook, and the manifest-verified
+> firmware release process. Do not flash the paths or binaries named in this
+> retired guide.
+
 **Scope:** the hand-solder pass on a JLC-assembled rev-B lane-controller board, then the **logic-only bench bring-up** (spec §12.9). The board is **not on a machine** — the only hazards here are ESD and solder shorts to the board, not machine motion. This is the gate that proves one assembled board before any machine work.
 
 **How this was built:** six sections, each grounded agent-by-agent in the live design files — pinouts from `scripts/generate_kicad_netlist_revB.py`, test points + thermal-mass from `13_layout-mfg.md`, the rail-fit order from `06_board-power.md`, the bring-up sequence from `21_bringup-cutover.md`, and the flash steps from `firmware/rp2040/README.md`. Where a fact isn't fixed in the sources it's flagged `(VERIFY: …)`.

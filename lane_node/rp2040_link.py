@@ -83,6 +83,7 @@ import logging
 import math
 import threading
 import time
+from contextlib import contextmanager
 from collections import deque
 
 
@@ -113,6 +114,10 @@ SENT_MAXLEN = 256    # `sent` is a test/bench record, not an unbounded log
 SEND_FAIL_LIMIT = 3  # consecutive serial-write failures => health_ok() False
 REBOOT_FAULT = "fw_reboot"  # synthetic fault latched on firmware-reboot detection
 RUN_RESYNC_RETRIES = 3  # hb run-mask mismatch: re-sends per motor per episode
+# Keep TX lock wait + kernel write inside the controller's 50 ms positive-
+# operation return budget. A control line is only a few bytes at 115200 baud.
+SERIAL_TX_LOCK_TIMEOUT_S = 0.010
+SERIAL_WRITE_TIMEOUT_S = 0.025
 
 # R3-5 (Codex round-3, 2026-07-23): firmware-identity re-request after a
 # reboot. A reboot INVALIDATES every cached identity/capability/extrema fact
@@ -121,6 +126,16 @@ RUN_RESYNC_RETRIES = 3  # hb run-mask mismatch: re-sends per motor per episode
 # it MISSING once so the daemon inhibits ARM (env-escapable for the bench).
 IDENTITY_RETRY_S = 3.0       # seconds between id re-requests after a reboot
 IDENTITY_MAX_RETRIES = 3     # re-requests before declaring identity MISSING
+
+# Qualified v1.2.3 ``emit_hb`` wire envelope.  Once identity-capability is
+# observed, every heartbeat is an exact release-contract sample: accepting an
+# abbreviated record and retaining omitted fields from an older sample can make
+# stale RID/tap/run/input evidence look current and renew liveness.
+MODERN_HB_FIELDS = frozenset((
+    "ev", "ok", "flt", "up", "drp", "in", "run", "tap", "rd", "ep",
+    "v5", "v5n", "v5x", "rid", "bn",
+))
+HEARTBEAT_SCHEMA_FAULT = "heartbeat_schema_invalid"
 
 # v1.2.x tap telemetry (Codex round-2 R2-11, 2026-07-21). The firmware's hb
 # "tap" mask + tapdump "p" field use this bit/pin order (README "v1.2 tap
@@ -131,8 +146,8 @@ TAP_BITS = ("NE555", "KICK", "ARM", "RPOK")
 # every v1.2.x record (tapdump ring, tapwarn, uart drop increases, boot
 # facts) becomes a typed dict here instead of being silently ignored.
 DIAG_RECORDS_MAX = 512
-# A tapdump from the firmware ring is at most TAP_RING_N entries (config.h
-# TAP_RING_N = 64); anything past this bound in one dump is discarded+counted.
+# A tapdump from the firmware ring is at most TAP_RING_SZ entries (config.h
+# TAP_RING_SZ = 128); anything past this bound in one dump is discarded+counted.
 TAPDUMP_ENTRIES_MAX = 128
 
 
@@ -242,7 +257,9 @@ class RP2040Link:
     """
 
     def __init__(self, port=None, baud=115200, *, serial_obj=None,
-                 hb_timeout=1.0, trip_edge="f", now=None):
+                 hb_timeout=1.0, trip_edge="f", now=None,
+                 identity_protocol_seen=False,
+                 identity_evidence_callback=None):
         self._trip = trip_edge          # which edge ('f'/'r') is the cam's angular trip
         self._hb_timeout = hb_timeout
         self._now = now or time.monotonic
@@ -260,12 +277,19 @@ class RP2040Link:
         # corruption the reconciliation exists to heal). One lock, write-only.
         self._tx_lock = threading.Lock()
 
-        # state guarded by _lock
-        self._lock = threading.Lock()
+        # State guarded by _lock. Re-entrant because the daemon holds this lock
+        # across one bounded control transaction, while normal query/command
+        # methods entered inside that transaction also take it.
+        self._lock = threading.RLock()
         self._sc_danger = False
         self._tb_danger = False
         self._rp_ok = False
         self._last_hb = None     # None until the first line (0.0 is a valid fake-clock time)
+        self._hb_generation = 0
+        self._hb_discontinuity_generation = 0
+        self._reboot_discontinuity_generation = 0
+        self._wdt_reboot_discontinuity_generation = 0
+        self._heartbeat_sample = None
         self._fault = ""
         self._send_fails = 0     # consecutive serial-write failures (health gate)
         # v0.2.0 telemetry (None until a firmware that sends it is heard)
@@ -291,6 +315,12 @@ class RP2040Link:
         self._tapdump = None        # open tapdump collection (header + entries)
         # v1.2.2 identity (R2-6; None until an "id" line / hb "rid" is heard)
         self._identity = None       # last "id" line, sanitized dict
+        # Process-lifetime downgrade guard.  Once ANY identity-protocol record
+        # is observed, cache invalidation/reboot may clear _identity but must
+        # never make this link look like a pre-identity legacy board again.
+        self._identity_protocol_seen = bool(identity_protocol_seen)
+        self._identity_evidence_callback = identity_evidence_callback
+        self._identity_evidence_error = None
         self._rid = None            # last hb "rid" (REV_ID strap code; 255 = floating)
         # v1.2.3 (R3-5): per-boot nonce "bn". Firmware emits it on the boot
         # line, the id line AND every hb specifically so the Pi can detect a
@@ -330,7 +360,9 @@ class RP2040Link:
             self._ser = serial_obj
         elif port is not None:
             import serial  # pyserial, lazy
-            self._ser = serial.Serial(port, baud, timeout=0.1)
+            self._ser = serial.Serial(
+                port, baud, timeout=0.1,
+                write_timeout=SERIAL_WRITE_TIMEOUT_S)
         else:
             self._ser = None
         self._rx = b""
@@ -346,16 +378,32 @@ class RP2040Link:
         self.sent.append(line)
         if self._ser is not None:
             try:
-                with self._tx_lock:   # daemon + reader threads both send (v1.1.1)
-                    self._ser.write((line + "\n").encode())
+                # daemon + reader threads both send (v1.1.1). Bound the lock
+                # wait as well as pyserial's kernel write; write_timeout alone
+                # does not cover a peer stalled while holding this mutex.
+                if not self._tx_lock.acquire(
+                        timeout=SERIAL_TX_LOCK_TIMEOUT_S):
+                    raise TimeoutError("serial TX lock acquisition timed out")
+                try:
+                    payload = (line + "\n").encode()
+                    written = self._ser.write(payload)
+                    # pyserial's contract is an exact byte count. Treat None
+                    # and short writes alike as unacknowledged transport.
+                    if written != len(payload):
+                        raise IOError(
+                            f"short serial write {written}/{len(payload)}")
+                finally:
+                    self._tx_lock.release()
             except Exception as e:  # never let a comms hiccup crash the caller
                 with self._lock:
                     self._send_fails += 1
                     n = self._send_fails
                 log.warning("RP2040 send failed x%d (%s): %s", n, line, e)
+                return False
             else:
                 with self._lock:
                     self._send_fails = 0
+        return True
 
     # run/stop/stop_all/clear also track the COMMANDED run-state so the hb "run"
     # mask can be reconciled against it (_reconcile_run). CLEAR mirrors the
@@ -363,22 +411,22 @@ class RP2040Link:
     def run(self, motor):
         with self._lock:
             self._cmd_run[motor] = True
-        self._send(f"RUN {motor}")
+        return self._send(f"RUN {motor}")
 
     def stop(self, motor):
         with self._lock:
             self._cmd_run[motor] = False
-        self._send(f"STOP {motor}")
+        return self._send(f"STOP {motor}")
 
     def stop_all(self):
         with self._lock:
             self._cmd_run.clear()
-        self._send("STOP *")
+        return self._send("STOP *")
 
     def clear(self):
         with self._lock:
             self._cmd_run.clear()
-        self._send("CLEAR")
+        return self._send("CLEAR")
 
     def ping(self):         self._send("PING")
 
@@ -455,22 +503,39 @@ class RP2040Link:
                     else:
                         self._tb_danger = trip
             elif trip and cid in CAM_DISPATCH:
-                with self._evlock:
-                    self._events.append(("cam", cid, t_fw, t_pi))
+                # Serialize event admission with the same safety-state lock
+                # used by the daemon's control transaction.  Lock order is
+                # always _lock -> _evlock.
+                with self._lock:
+                    with self._evlock:
+                        self._events.append(("cam", cid, t_fw, t_pi))
         elif kind == "ball":
             t_fw = self._num(ev, "t")
             t_pi = self.now()
             if t_fw is not None:
                 self.fw_clock.update(t_fw, t_pi)
-            with self._evlock:
-                self._events.append(("ball", ev.get("src"), t_fw, t_pi))
+            with self._lock:
+                with self._evlock:
+                    self._events.append(("ball", ev.get("src"), t_fw, t_pi))
         elif kind in ("hb", "boot", "rp_ok", "flt", "ack"):
             notes = []   # (log_fn, msg, args) — emitted AFTER the lock is released
-            resends = []  # run-state resync commands — sent AFTER the lock is released
+            resends = []  # (motor, desired) resync intents; revalidated before send
             records = []  # typed diag records — pushed AFTER the lock is released
             with self._lock:
                 if kind == "hb":
-                    self._validate_hb(ev)
+                    # ``bn``/``rid`` are themselves monotonic evidence that
+                    # this is not a pre-identity legacy image. Persist that
+                    # evidence before accepting or rejecting the sample.
+                    if (
+                            self._identity_uint(
+                                ev.get("bn"), nonzero=True) is not None
+                            or self._identity_uint(ev.get("rid")) is not None):
+                        self._mark_identity_capable_locked()
+                    try:
+                        self._validate_hb(ev)
+                    except Exception:
+                        self._reject_heartbeat_sample_locked()
+                        raise
                 elif kind == "rp_ok":
                     if self._status_bit(ev.get("v")) is None:
                         raise ValueError(
@@ -486,6 +551,17 @@ class RP2040Link:
                             "boot wdt_reset must be JSON bool or integer 0/1")
                 elif kind == "flt" and not isinstance(ev.get("code"), str):
                     raise ValueError("fault code must be a string")
+                # Modern identity-capability evidence closes the legacy escape
+                # even when the ID response itself is lost. ``rid`` arrived
+                # with the identity protocol and ``bn`` strengthens it in
+                # v1.2.3. This monotonic, durably seeded latch is never
+                # invalidated by a firmware reboot or cache reset.
+                if (kind in ("hb", "boot")
+                        and (self._identity_uint(
+                                 ev.get("bn"), nonzero=True) is not None
+                             or self._identity_uint(
+                                 ev.get("rid")) is not None)):
+                    self._mark_identity_capable_locked()
                 if kind == "flt":
                     # An explicit firmware fault => NOT healthy, immediately — even if the
                     # paired rp_ok:0 line is delayed or dropped on a lossy UART. Cleared by
@@ -507,11 +583,20 @@ class RP2040Link:
                         self._on_hb(ev, notes, resends, records)
                         # ACK/boot/rp_ok/fault traffic proves bytes are moving,
                         # not that the supervised heartbeat loop is alive.
-                        self._last_hb = self.now()
+                        received_at = self.now()
+                        self._last_hb = received_at
+                        self._hb_generation += 1
+                        self._heartbeat_sample = {
+                            "generation": self._hb_generation,
+                            "received_monotonic": received_at,
+                            "modern": bool(self._identity_protocol_seen),
+                            "wire": dict(ev),
+                        }
             for log_fn, msg, args in notes:
                 log_fn(msg, *args)
-            for line in resends:   # _send takes the lock itself; must run unlocked
-                self._send(line)
+            for motor, desired, fw_running in resends:
+                self._send_reconcile(
+                    motor, desired, fw_running=fw_running)
             self._push_records(records)
             if self.on_health:
                 self.on_health(ev)
@@ -544,6 +629,7 @@ class RP2040Link:
                 "t_fw":  self._num(ev, "t"),
             }
             with self._lock:
+                self._mark_identity_capable_locked()
                 # R3-5: the id line also carries the per-boot nonce. If it
                 # changed from a known value we missed a reboot (no boot line,
                 # no uptime regression) — invalidate the stale caches + latch
@@ -552,6 +638,7 @@ class RP2040Link:
                 # already matches (boot cached it), so this is a no-op there.
                 nonce_reboot = self._nonce_reboot(ev)
                 if nonce_reboot:
+                    self._note_heartbeat_discontinuity_locked("reboot")
                     self._invalidate_identity_cache()
                     self._last_up = None
                     self._last_drp = None
@@ -597,11 +684,22 @@ class RP2040Link:
 
     @staticmethod
     def _identity_text(value, max_len):
-        """Strict identity-string sanitizer."""
+        """Return an exact bounded wire identity string, or ``None``.
+
+        Identity is authorization evidence, not display text.  Never trim or
+        truncate it before tuple/UID comparison: padding and overlength input
+        must be distinguishable from the provisioned value and fail closed.
+        """
         if not isinstance(value, str):
             return None
-        value = value.strip()
-        return value[:max_len] if value else None
+        if (
+                not value
+                or len(value) > max_len
+                or value != value.strip()
+                or any(ord(char) < 0x20 or ord(char) > 0x7E
+                       for char in value)):
+            return None
+        return value
 
     @staticmethod
     def _identity_uint(value, *, nonzero=False):
@@ -639,6 +737,97 @@ class RP2040Link:
                 raise ValueError("heartbeat bn must be a nonzero uint32")
         elif self._boot_nonce is not None:
             raise ValueError("heartbeat omitted the known boot nonce")
+
+        modern = bool(
+            self._identity_protocol_seen
+            or "bn" in ev
+            or "rid" in ev
+        )
+        if not modern:
+            return
+        fields = set(ev)
+        if fields != MODERN_HB_FIELDS:
+            missing = sorted(MODERN_HB_FIELDS - fields)
+            unknown = sorted(fields - MODERN_HB_FIELDS)
+            raise ValueError(
+                "modern heartbeat schema mismatch "
+                f"(missing={missing}, unknown={unknown})")
+        fault = ev["flt"]
+        if (
+                len(fault) > 64
+                or fault != fault.strip()
+                or any(ord(char) < 0x20 or ord(char) > 0x7E
+                       for char in fault)):
+            raise ValueError("heartbeat flt must be a bounded wire token")
+        bounds = {
+            "in": 0xFF,
+            "run": 0x7F,
+            "tap": 0x0F,
+            "rd": 128,
+            "v5": 0xFFFF,
+            "v5n": 0xFFFF,
+            "v5x": 0xFFFF,
+        }
+        for key, maximum in bounds.items():
+            if ev[key] > maximum:
+                raise ValueError(
+                    f"heartbeat {key} exceeds qualified schema bound")
+        if ev["ep"] == 0:
+            raise ValueError("heartbeat ep must be nonzero")
+        if ev["rid"] not in (0, 1, 2, 3, 255):
+            raise ValueError("heartbeat rid is not a defined strap code")
+        if not ev["v5n"] <= ev["v5"] <= ev["v5x"]:
+            raise ValueError("heartbeat v5 extrema are inconsistent")
+
+    def _mark_identity_capable_locked(self):
+        """Commit the monotonic capability latch with ``_lock`` held."""
+        if self._identity_protocol_seen:
+            return
+        try:
+            if self._identity_evidence_callback is not None:
+                self._identity_evidence_callback()
+        except Exception as exc:
+            # The in-process latch still closes in the safe direction.  The
+            # durable failure is separately exposed so ARM cannot proceed.
+            self._identity_protocol_seen = True
+            self._identity_evidence_error = (
+                f"{type(exc).__name__}: {exc}")[:240]
+            self._rp_ok = False
+            self._fault = "identity_evidence_persist_failed"
+            self._last_hb = None
+            self._heartbeat_sample = None
+            raise
+        self._identity_protocol_seen = True
+
+    def _reject_heartbeat_sample_locked(self):
+        """Invalidate all current-sample facts after a malformed heartbeat."""
+        self._note_heartbeat_discontinuity_locked("schema")
+        self._last_hb = None
+        self._heartbeat_sample = None
+        self._rp_ok = False
+        self._fault = HEARTBEAT_SCHEMA_FAULT
+        self._rid = None
+        self._tap_mask = None
+        self._ring_depth = None
+        self._v5 = None
+        self._in_mask = None
+        self._run_mask = None
+        self._run_mismatch = ()
+
+    def _note_heartbeat_discontinuity_locked(
+            self, cause, *, wdt_reset=False):
+        """Advance control-visible loss generations with ``_lock`` held.
+
+        The generic generation is the safety authority consumed by the daemon.
+        Subtype generations preserve diagnostic attribution even when a later
+        clean heartbeat has already replaced the current fault fields before
+        the controller thread gets CPU.
+        """
+        self._hb_discontinuity_generation += 1
+        if cause == "reboot":
+            self._reboot_discontinuity_generation += 1
+            if wdt_reset:
+                self._wdt_reboot_discontinuity_generation += 1
 
     def _mask_danger(self, mask, bit):
         # hb "in" bits are debounced ASSERTED levels. Map level -> danger flag the
@@ -698,6 +887,14 @@ class RP2040Link:
                 self._identity_retries = 0
 
     def _on_boot(self, ev, notes, records=None):
+        # A boot record is a control-authority discontinuity even if a complete
+        # new ID + clean heartbeat are already buffered behind it.  The daemon
+        # consumes this monotonic generation and forces its existing hard-safe
+        # + fresh-PBZ recovery path.  Current health fields must never erase the
+        # fact that RP_OK dropped and the firmware's command state restarted
+        # between two controller ticks.
+        self._note_heartbeat_discontinuity_locked(
+            "reboot", wdt_reset=bool(ev.get("wdt_reset")))
         rebooted = self._last_up is not None    # we had heartbeats before this boot
         self._last_up = None                    # fresh uptime/drp baselines
         self._last_drp = None
@@ -747,9 +944,9 @@ class RP2040Link:
         # the max-run/motion-no-run backstop for exactly those motors. Clearing
         # instead (pre-flash review 2026-07-07 finding 2 proposed it) would leave
         # a still-running motor unsupervised until the daemon's next transition.
-        # The review's stale-resend scenario (daemon wedged >250 ms mid-change)
-        # is bounded: the 50 Hz health trip corrects within ~20 ms and a truly
-        # wedged Pi drops the NE555 rail regardless.
+        # Heartbeat reconciliation revalidates each captured intent under
+        # _lock at send time, so it cannot issue stale STOP after a new RUN or
+        # stale RUN after hard-safe STOP.
         self._resync_tries = {}
         self._run_mismatch = ()
         v11 = ev.get("v11")
@@ -801,7 +998,15 @@ class RP2040Link:
         # invalidate the stale identity/capability cache and latch the same
         # safe-state relatch a boot event would. The rest of this hb (rid/v5/in/
         # run) then repopulates from the NEW image.
+        reboot_discontinuity_noted = False
         if self._nonce_reboot(ev):
+            # Preserve the reboot even when the reader consumes this heartbeat,
+            # the matching ID, and a later clean heartbeat before the 50 Hz
+            # controller gets CPU.  `_fault`/`_rp_ok` are current-state fields;
+            # only this monotonic generation makes the intervening loss
+            # impossible to erase.
+            self._note_heartbeat_discontinuity_locked("reboot")
+            reboot_discontinuity_noted = True
             self._invalidate_identity_cache()
             self._last_up = None
             self._last_drp = None
@@ -885,6 +1090,11 @@ class RP2040Link:
                 # trip is in the SAFE direction (nuisance PBZ) and is accepted.
                 self._fault = REBOOT_FAULT
                 self._rp_ok = False
+                # A nonce-changing modern heartbeat has already recorded this
+                # same reboot above.  Older/no-nonce firmware reaches only this
+                # path, so record it here without double-counting one sample.
+                if not reboot_discontinuity_noted:
+                    self._note_heartbeat_discontinuity_locked("reboot")
                 self.fw_clock.resync()     # fw ms clock restarted; offset is garbage
                 # R3-5: an uptime-regression reboot must ALSO invalidate the
                 # cached identity/capability state (the nonce path already did
@@ -905,8 +1115,9 @@ class RP2040Link:
         commanded and heal any desync (finding 38: RUN/STOP have no ACK/CRC —
         a lost STOP deterministically latches motion_timeout at 8 s and drops
         the rail; a lost RUN silently removes the firmware's max-run backstop
-        for that motion). Called with self._lock HELD; the corrective command
-        lines are appended to `resends` and written AFTER the lock drops.
+        for that motion). Called with self._lock HELD; corrective
+        ``(motor, desired)`` intents are appended to `resends`, then rechecked
+        against current command intent at send time.
 
         Re-sending is safe with current firmware: main.c stamps the max-run
         timer only on a false->true transition, so a duplicate (the benign
@@ -928,15 +1139,10 @@ class RP2040Link:
             mismatched.append(name)
             tries = self._resync_tries.get(name, 0)
             if tries < RUN_RESYNC_RETRIES:
-                self._resync_tries[name] = tries + 1
-                cmdline = f"RUN {name}" if cmd else f"STOP {name}"
-                resends.append(cmdline)
-                notes.append((log.warning,
-                              "RP2040 run-state MISMATCH for %s: firmware=%s commanded=%s "
-                              "(lost/corrupt RUN/STOP line?) — re-sending %r (retry %d/%d)",
-                              (name, "running" if fw_running else "stopped",
-                               "RUN" if cmd else "STOP", cmdline,
-                               tries + 1, RUN_RESYNC_RETRIES)))
+                # Do not consume a retry yet. The controller may change intent
+                # after this heartbeat snapshot; _send_reconcile rechecks and
+                # increments only for an actual current-intent send attempt.
+                resends.append((name, cmd, fw_running))
             elif tries == RUN_RESYNC_RETRIES:
                 self._resync_tries[name] = tries + 1   # log the exhaustion once
                 notes.append((log.error,
@@ -946,6 +1152,40 @@ class RP2040Link:
                               "desynced for this motor",
                               (name, RUN_RESYNC_RETRIES)))
         self._run_mismatch = tuple(mismatched)
+
+    def _send_reconcile(self, motor, desired, *, fw_running=None):
+        """Send a heartbeat reconciliation only if its intent is still current.
+
+        The heartbeat reader must not emit a captured stale STOP after the
+        controller has physically turned a motor ON and sent RUN, nor a stale
+        RUN after hard-safe STOP. Holding ``_lock`` across the bounded send
+        makes either the reconciliation or the controller's later command
+        definitively last on the wire.
+        """
+        attempted = False
+        attempt_no = None
+        line = f"RUN {motor}" if desired else f"STOP {motor}"
+        with self._lock:
+            if self._cmd_run.get(motor, False) is not bool(desired):
+                return False
+            tries = self._resync_tries.get(motor, 0)
+            if tries >= RUN_RESYNC_RETRIES:
+                return False
+            attempt_no = tries + 1
+            self._resync_tries[motor] = attempt_no
+            attempted = True
+            result = self._send(line)
+        if attempted:
+            log.warning(
+                "RP2040 run-state MISMATCH for %s: firmware=%s "
+                "commanded=%s (lost/corrupt RUN/STOP line?) — "
+                "re-sending %r (retry %d/%d)",
+                motor,
+                ("unknown" if fw_running is None
+                 else ("running" if fw_running else "stopped")),
+                "RUN" if desired else "STOP", line,
+                attempt_no, RUN_RESYNC_RETRIES)
+        return result
 
     # ---- v1.2.x tap ring / warnings (R2-11; called with self._lock HELD) ----
     def _on_tap_event(self, kind, ev, records):
@@ -1042,6 +1282,43 @@ class RP2040Link:
         return out
 
     # ---- FSM bridge --------------------------------------------------------
+    @contextmanager
+    def control_transaction(self):
+        """Freeze safety facts and snapshot inbound motion for one control tick.
+
+        The bounded critical section is owned by the daemon tick.  Identity,
+        max-run, health, run-mask, and event admission all serialize on
+        ``_lock``; the event queue is copied under the fixed
+        ``_lock -> _evlock`` order.  Events arriving after the snapshot wait
+        for the next tick, whose prerequisite check runs before dispatch.
+        """
+        with self._lock:
+            with self._evlock:
+                evs = list(self._events)
+                self._events.clear()
+            yield evs
+
+    @contextmanager
+    def state_transaction(self):
+        """Freeze link state without draining/dispatching the event queue."""
+        with self._lock:
+            yield
+
+    @staticmethod
+    def apply_event_batch(evs, controller, observer=None):
+        """Dispatch a previously snapshotted event batch into the FSM."""
+        for kind, ident, t_fw, t_pi in evs:
+            if kind == "cam":
+                dispatch_cam(controller, ident)
+            elif kind == "ball":
+                controller.on_ball()
+            if observer is not None:
+                try:
+                    observer(kind, ident, t_fw, t_pi)
+                except Exception:
+                    log.debug("apply_events observer swallowed", exc_info=True)
+        return len(evs)
+
     def apply_events(self, controller, observer=None):
         """Drain queued cam/ball events into the FSM. Call from the daemon's main
         loop only (keeps FSM access single-threaded). Returns the count applied.
@@ -1056,17 +1333,7 @@ class RP2040Link:
         with self._evlock:
             evs = list(self._events)
             self._events.clear()
-        for kind, ident, t_fw, t_pi in evs:
-            if kind == "cam":
-                dispatch_cam(controller, ident)
-            elif kind == "ball":
-                controller.on_ball()
-            if observer is not None:
-                try:
-                    observer(kind, ident, t_fw, t_pi)
-                except Exception:
-                    log.debug("apply_events observer swallowed", exc_info=True)
-        return len(evs)
+        return self.apply_event_batch(evs, controller, observer)
 
     # ---- queries -----------------------------------------------------------
     def interlock_ok(self):
@@ -1080,10 +1347,39 @@ class RP2040Link:
         with self._lock:
             return self._rp_ok
 
+    def _actuation_freshness_locked(self):
+        """Return ``(health_ok, exact_remaining_seconds)`` with _lock held."""
+        remaining = (
+            None if self._last_hb is None
+            else self._hb_timeout - (self.now() - self._last_hb)
+        )
+        alive = remaining is not None and remaining >= 0.0
+        healthy = (
+            alive and self._rp_ok and not self._fault
+            and self._send_fails < SEND_FAIL_LIMIT
+        )
+        return bool(healthy), remaining
+
+    def heartbeat_freshness_remaining(self):
+        """Exact heartbeat lease remainder, sampled while holding link state.
+
+        ``None`` means no qualifying heartbeat has been accepted. A negative
+        value is the amount by which the deadline has already been exceeded.
+        This is intentionally not clamped: positive-actuation guards need the
+        real budget, not only a boolean alive/dead answer.
+        """
+        with self._lock:
+            return self._actuation_freshness_locked()[1]
+
+    def actuation_freshness_status(self):
+        """Atomically return ``(full_link_health, heartbeat_remaining_s)``."""
+        with self._lock:
+            return self._actuation_freshness_locked()
+
     def is_alive(self):
         with self._lock:
-            return (self._last_hb is not None
-                    and (self.now() - self._last_hb) <= self._hb_timeout)
+            _healthy, remaining = self._actuation_freshness_locked()
+            return remaining is not None and remaining >= 0.0
 
     def health_ok(self):
         """True only if the RP2040 is heartbeating, reports rail-permit OK, has no
@@ -1091,10 +1387,7 @@ class RP2040Link:
         rp_ok:0) => not healthy; >= SEND_FAIL_LIMIT consecutive write failures (our
         RUN/STOP may not be reaching the firmware) => not healthy."""
         with self._lock:
-            alive = (self._last_hb is not None
-                     and (self.now() - self._last_hb) <= self._hb_timeout)
-            return (alive and self._rp_ok and not self._fault
-                    and self._send_fails < SEND_FAIL_LIMIT)
+            return self._actuation_freshness_locked()[0]
 
     def fault(self):
         with self._lock:
@@ -1187,6 +1480,53 @@ class RP2040Link:
         with self._lock:
             return dict(self._identity) if self._identity else None
 
+    def identity_protocol_seen(self):
+        """Whether durable or current-process modern evidence has been seen.
+
+        The initial value may be loaded from the per-lane durable evidence
+        record. It is never cleared by reboot/cache invalidation.
+        """
+        with self._lock:
+            return bool(self._identity_protocol_seen)
+
+    def identity_evidence_error(self):
+        """Return a bounded persistence failure, if durable evidence failed."""
+        with self._lock:
+            return self._identity_evidence_error
+
+    def heartbeat_sample(self):
+        """Return the current immutable-generation heartbeat sample, or None.
+
+        A sample ceases to be current on timeout or immediately when a
+        malformed modern heartbeat arrives.  Callers receive copies so they
+        cannot mutate the link's committed generation.
+        """
+        with self._lock:
+            if (
+                    self._heartbeat_sample is None
+                    or self._last_hb is None
+                    or (self.now() - self._last_hb) > self._hb_timeout):
+                return None
+            sample = dict(self._heartbeat_sample)
+            sample["wire"] = dict(sample["wire"])
+            return sample
+
+    def heartbeat_discontinuity_generation(self):
+        """Monotonic heartbeat/reboot generation for control-loop relatching."""
+        with self._lock:
+            return self._hb_discontinuity_generation
+
+    def heartbeat_discontinuity_status(self):
+        """Atomically snapshot generic and diagnostic subtype generations."""
+        with self._lock:
+            return {
+                "generation": self._hb_discontinuity_generation,
+                "reboot_generation":
+                    self._reboot_discontinuity_generation,
+                "wdt_reboot_generation":
+                    self._wdt_reboot_discontinuity_generation,
+            }
+
     def pcb_rev_id(self):
         """Last hb "rid" REV_ID strap code (v1.2.2+): 0-3, 255 = floating/
         unread straps (rev-B/rev-C board), or None if never sent."""
@@ -1200,6 +1540,8 @@ class RP2040Link:
 
     def _identity_status_locked(self):
         """Return the protocol-level ``(ok, reason)`` with ``_lock`` held."""
+        if self._identity_evidence_error is not None:
+            return False, "identity_evidence_persist_failed"
         ident = self._identity
         if ident is None:
             return False, ("identity_missing" if self._identity_missing_reported
@@ -1360,9 +1702,11 @@ class RP2040Link:
 
     def close(self):
         self._stop = True
-        if self._ser is not None:
+        ser = self._ser
+        self._ser = None
+        if ser is not None:
             try:
-                self._ser.close()
+                ser.close()
             except Exception:
                 pass
 

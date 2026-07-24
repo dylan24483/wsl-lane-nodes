@@ -46,7 +46,14 @@ Track A is **read-only with respect to the machine** — the existing controller
 
 The Pi reads the 82-70's switches and cams and drives its motor-control relays directly, replacing the controller brain entirely. This is the safety-critical track: it commands AC motors operating near people, so it carries a layered hardware safety architecture (covered in **§19, Safety Architecture** and summarized in §1.7). The Pi runs an event-driven **finite-state machine (FSM)** that reproduces the 82-70 "sequence of operation," assisted by an **RP2040 co-processor** on the controller board that owns the fast, timing-critical cam/ball inputs and an independent rail-permission safety line.
 
-As of the source documents, Track B has: the full controller behavioral spec mined from both AMF manuals; the FSM written and simulated; the custom controller board (rev-B) designed, routed, and a **bare-PCB fabrication package generated and fab-ready** under a conservative design-rule contract; and the RP2040 firmware written, host-tested, and ARM-cross-built to a `.uf2`. Track B is **NOT cutover-ready** — it still needs the populated board, on-machine bench bring-up, the remaining field measurements (relay-coil current, the exact safety-interlock terminal landings), and the cam-stop overrun firmware feature (deferred to firmware v1.1). Details: **§5, The Rev-B Controller Board**, **§15, RP2040 Firmware**, and **§21, Track B Bring-up & Cutover**.
+Track B has the behavioral spec, simulated FSM, historical Rev-B fabrication
+package, and a controlled Rev-D-only RP2040 v1.2.3 bundle. It is **NOT
+cutover-ready**: the bundle is not flashed; first-article/on-hardware gates remain;
+all measured-cam enforcement flags are OFF pending polarity capture and a new
+controlled release; and every lane still requires the Candidate-C S/T insertion
+proof. TB/SC J_SAFE terminal discovery is no longer open — J_SAFE1-2 is the
+controlled jumper and primary protection remains in the OEM ladder. Details:
+**§5**, **§15**, and **§21**.
 
 > **The two tracks converge** into a single Pi-per-pair node that both scores (Track A) and controls (Track B). A useful convergence detail: once Track A supplies pin data, the controller board does **not** need to drive the 10 physical pin-indicator lamps — the camera already knows which pins stand — so those outputs are omitted in the baseline board (see §1.6 and §5).
 
@@ -87,9 +94,9 @@ Phase 8's organizing principle is **eliminate every end-of-life dependency** by 
 Owning the brain shifts the burden to *us* to preserve the machine's safety behavior. The non-negotiable rule, stated in the board contract, is that **the controller board must never be the only safety device**:
 
 - The machine's upstream **Stop switch + C.I.S. (Cover Interlock Switch) → master circuit breaker** chain stays in hardware and remains the final physical stop.
-- The **TB/SC table-sweep collision interlock** stays as a hardware loop that can drop the motor relays without any software involvement.
+- The **TB/SC table-sweep collision interlock** stays in the OEM S/T coil ladder and can block both motor-contactor coils without any software involvement. Powered 2026-07-07: its contacts are parallel closed-when-safe; both levers BACK/open is the blocking state.
 - The motors' **regenerative braking** (in the relay normally-closed contacts) stays in hardware.
-- The board's motor-relay coils are powered through a hardware **relay-enable rail** that drops (de-energizes the relays) unless *all* of these independent permissions are simultaneously true: the **NE555 hardware watchdog** is being kicked by the Pi, the Pi has asserted **ARM**, the **RP2040 health line (RP2040_OK)** is high, and the external **TB/SC** and **Stop/CIS** loops are closed. The Pi physically cannot bypass these in software.
+- The board's motor-relay coils are powered through a hardware **relay-enable rail** gated by the **NE555 watchdog**, Pi **ARM**, **RP2040_OK** (including enabled cam-stop enforcement), and the implemented **Stop/CIS** loop. Under decided Candidate C, J_SAFE1-2 carries only the controlled jumper; the independent primary TB/SC permission remains in the OEM S/T coil ladder and must pass the per-lane G3 coil-drop proof. The Pi physically cannot bypass either the on-board rail gates or a correctly inserted OEM ladder.
 - The board **fails open** (motion-dead) on loss of logic power, watchdog kick, RP2040 health, arm permission, or the hardware interlock.
 
 This layered model is the heart of Track B and is detailed in **§19, Safety Architecture**. It is introduced here because no part of this system should be operated, repaired, or modified without understanding it first.
@@ -106,7 +113,11 @@ The controller connects to each 82-70 machine through two standard AMP "M"-type 
 
 These are the *machine-side* connectors. The Phase 8 board does **not** expose C1/C2A pin numbers directly; it exposes **function-named terminal blocks** (J_FAST_IN, J_SLOW_IN_A/B, J_MOTION_*, J_LAMP_LED, J_SAFETY, plus J_PI and J_PWR), and a per-chassis **adapter harness** maps those to the actual C1/C2A cavities at cutover. The board's connector inventory and the function↔connector mapping are in **§5, The Rev-B Controller Board**; the machine-side connector pinouts are in **§3, The AMF 82-70 Machine & Control Theory**. (Connectors: `docs/phase8_8270_SYSTEM_REFERENCE.md` §4; harness contract: `docs/phase8b_pcb_revB_spec.md` §7.)
 
-> ⚠️ **Exact C1/C2A cavity numbers are chassis-specific and several are deferred to cutover.** Per-gripper cavity labels, per-cam→cavity labels, and the exact safety-interlock and C1/C2A terminal landings are intentionally captured on cutover day (easier with the machine apart and a live feed). They do **not** gate the board because everything is function-named and harness-resolved. Do not treat any specific cavity number in this manual as final for a given chassis without on-machine verification. (`docs/HANDOFF.md` §3.)
+> ⚠️ **Exact C1/C2A cavity numbers are chassis-specific.** Per-gripper labels,
+> independently landed SA/SB/TA1/TA2 inputs, Stop/CIS J_SAFE3-4, and S/T output
+> insertion remain field captures. TB/SC J_SAFE1-2 is resolved: controlled
+> Candidate-C jumper, no machine landing, with per-lane G3 coil proof. Do not treat
+> a historical cavity guess as final.
 
 ### 1.9 How to use this manual
 
@@ -194,9 +205,9 @@ This is the starting glossary; later sections expand individual entries. Where a
 | **RP2040_OK** | The RP2040's fail-safe-low health/permission output (GP2). HIGH only when the firmware is healthy and past boot settle; one of the series conditions gating the relay-enable rail. |
 | **MCP23017** | The I²C 16-bit I/O expander (3 per board) used for the slow inputs (grippers/switches) and the relay/lamp outputs. Run at 3.3 V. |
 | **NE555 watchdog** | A hardware monostable timer that the Pi must repeatedly "kick"; a missed kick drops the motor-relay rail. The board-level sibling of the FSM's software watchdog. |
-| **relay-enable rail** | The hardware-gated supply for the on-board motor-relay coils. Drops unless watchdog + ARM + RP2040_OK + TB/SC + Stop/CIS are all satisfied. The board cannot bypass it in software. |
+| **relay-enable rail** | The hardware-gated supply for the on-board motor-relay coils. Candidate C leaves five effective on-board permissions (watchdog + ARM + RP2040_OK/cam-stop + Stop/CIS, with the J_SAFE1-2 design position closed by the controlled jumper); the OEM TB/SC ladder separately gates the S/T coil circuits. The board cannot bypass either path when its output taps pass G3. |
 | **ARM** | A dedicated Pi GPIO permission, asserted only after a verified operator-safe state, that is one of the series conditions for the relay-enable rail (implements the OEM "Power-Down / require First Ball Zero on power restore" rule in part). |
-| **TB/SC interlock** | The table-sweep collision interlock: cams TB and SC wired in parallel into the control path so the motor relays drop on a collision course. Preserved as a **hardware** loop (board input J_SAFETY); never softened to an advisory firmware-only input. See §19. |
+| **TB/SC interlock** | The table-sweep collision interlock: powered-proven **parallel closed-when-safe** OEM contacts in the S/T coil ladder. Both levers BACK/open block both coils. Candidate C preserves that ladder as the primary hardware guard through correct output insertion and per-lane G3 proof; J_SAFE1-2 is the controlled jumper, not a machine landing. The default-off SC∧TB firmware echo is secondary/unvalidated. See §19. |
 | **Stop / C.I.S.** | The **Stop** switch and **C**over **I**nterlock **S**witch (plug-duct cover), wired in parallel; either one cuts the rear-panel master circuit breaker → whole machine dead. The final physical stop; preserved upstream of the board. |
 | **PCBA** | **P**rinted **C**ircuit **B**oard **A**ssembly — a populated board (vs a bare PCB). The rev-B *bare-PCB* fab package exists; full PCBA (population/assembly) is a remaining Track-B item. |
 | **DNP** | **D**o **N**ot **P**opulate — a footprint present in the layout but intentionally left unpopulated. On rev-B this includes the **M1** (ball-return) relay channel (8 parts) — M1 is unverified on these chassis and the FSM does not drive it — plus the value-DNP RC-snubber/MOV arc-suppression footprints on the motion outputs (populated only after at-machine load characterization). Current fab package: 27 DNP refs, all excluded from the assembly BOM/placement files. |

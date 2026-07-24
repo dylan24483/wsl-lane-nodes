@@ -27,22 +27,32 @@ Everything below depends on understanding the **relay-enable rail** and what it 
 
 The Rev-B board never sources machine power. It only **opens and closes isolated dry relay contacts** that sit in series with the machine's *existing* control circuits. The heavy S/T contactors stay on the machine and keep switching the 115 VAC motors and their OEM braking behavior — the board only switches their coil circuits (all measured at ~24 VAC; see §14 and the fieldsheet). The board is therefore never the only safety device: the upstream **Stop / C.I.S. / master-breaker chain stays live and upstream** (OEM service manual p11 confirms Stop and C.I.S. are in parallel and both cut the rear-panel master breaker), and the master breaker remains the final physical stop.
 
-The board's own permission to move anything is the **relay-enable rail** (`RELAY_ENABLE_RAIL`, test point **TP16**). It feeds the coil side of all motion relays. It is a hardware **AND** of six conditions — if any one is false, the rail collapses and every motion relay drops. **The Pi cannot bypass it in software.** Full circuit theory is in §10; here is the operating summary you will test against in §21.2 and §21.3:
+The board's own permission layer is `RELAY_ENABLE_RAIL` (TP16), but Candidate C
+places TB/SC outside that rail: J_SAFE1-2 carries the controlled jumper and the OEM
+parallel-safe ladder separately gates the S/T machine coils. The table retains the
+PCB's named positions while identifying the released field implementation:
 
 | # | condition | source on the board | fail-safe default | how it drops the rail |
 |---|---|---|---|---|
 | 1 | **Watchdog OK** | NE555 monostable (U36), Pi kicks `WDOG_KICK` (Pi GPIO 12) at < ~10 s | false (no kick → drop) | NE555 output gate (Q13 AO3400A) opens the rail's pull-down chain |
 | 2 | **Arm OK** | Pi `ARM_PERMIT` GPIO, asserted only after operator-safe state (First-Ball-Zero) | false | NPN AND transistor Q15 (MMBT3904) in the gate chain |
 | 3 | **RP2040 OK** | RP2040 (A1) `RP2040_OK` = GP2, heartbeat/permission | false (Hi-Z → 100k pulldown) | NPN AND transistor Q16 (MMBT3904) in the gate chain |
-| 4 | **Cam-stop OK** | RP2040 immediate cam-edge drop path (drives `RP2040_OK` low) | false on reset/fault | same path as #3 — RP2040 pulls GP2 low |
-| 5 | **TB/SC interlock OK** | external hardware NC loop on J14 pins 1-2 | open/false | breaks the series rail feed before the pass-FET |
+| 4 | **Enabled cam-stop OK** | qualified RP2040 cam-edge enforcement, when enabled in a controlled release | false on reset/fault | same path as #3 — an enabled enforcement fault pulls GP2 low; stock v1.2.3 measured-cam flags are OFF |
+| 5 | **TB/SC board provision** | controlled Candidate-C jumper on J14 pins 1-2; no machine landing | keyed/labeled jumper only | closes the first source position; primary protection is the OEM ladder and G3 coil proof |
 | 6 | **Stop/CIS/master OK** | external machine safety chain on J14 pins 3-4 | open/false | breaks the series rail feed before the pass-FET |
 
-The rail itself is gated by a P-channel pass-FET **Q14 (AO3401A, "rail pass")**, fed through the two external NC loops on **J14 (`J_SAFETY`)** in series: `VCC_5V → J14.1 → [TB/SC loop] → J14.2/J14.3 → [Stop/CIS loop] → J14.4 → Q14 source → Q14 drain = RELAY_ENABLE_RAIL`. The pass-FET gate is pulled up to its own source (R, 100k) and pulled toward conduction only when the watchdog/arm/RP2040 AND-chain (Q13/Q15/Q16) allows it.
+Q14 is fed through the two J14 source positions in series:
+`VCC_5V → J14.1 → [controlled Candidate-C jumper] → J14.2/J14.3 → [Stop/CIS loop] → J14.4 → Q14`.
+The separate OEM TB/SC contacts remain in each S/T coil circuit. TP16 can therefore
+be live during a valid collision block; the corresponding S/T machine coil must
+still be dead.
 
 > **The welded-contact limit (memorize this).** The rail de-energizes relay *coils*. It **cannot open a contact that has welded shut.** Relay contact rating, arc suppression, and the upstream master breaker are what protect against a welded contact. This is why §21.2 includes a dummy-load test on every relay and why the master breaker is never the thing you skip.
 
-Conditions 1, 2, 3/4 are *on-board* permissions (you test them by manipulating the Pi/RP2040). Conditions 5 and 6 are *external loops* you wire at the lane and test by physically opening them. All six must independently drop motion — that is the heart of go-gate **G3** (§21.3).
+Conditions 1, 2, 3/4 and Stop/CIS are active on-board/connector permissions.
+Candidate-C position 5 is the controlled jumper. Opening it tests PCB continuity
+only; the **authoritative TB/SC G3 proof is machine-side**: command S, then T, force
+both levers BACK/open, and require each contactor coil to remain dead.
 
 ---
 
@@ -71,18 +81,25 @@ Do these **in order**. Each step gates the next. Keep a bench log. Use the test 
 |---|---|---|---|
 | 1. **Power rails** | Apply regulated 5 V to **J2 (`J_PWR`)** pin 1 (`VCC_5V_RAW`), GND on pins 2-3. The on-board reverse-polarity Schottky **D17 (SS14)** feeds `VCC_5V`. | TP1 (`VCC_5V`) ≈ 5 V. TP3 (`VCC_3V3`) ≈ 3.3 V (the Pico's on-board regulator supplies 3V3 — see §6/§7). TP4 (`FIELD_WET_V`) ≈ 5 V isolated (from U37 TMA-0505S). No part hot. | Check D17 orientation, U37, short on a rail. Do not proceed. |
 | 2. **I²C enumerate** | With the Pi connected via **J1 (`J_PI`)**, scan the board's I²C bus. | All **3× MCP23017** answer at **0x20 (U1, IN-A), 0x21 (U2, IN-B), 0x22 (U3, OUT-A)**. (Addresses set by A2/A1/A0 strapping — see §7/§12.) | Re-check I²C pull-ups R1/R2 (4.7k to 3V3), address straps, solder on the SOIC-28W parts. |
-| 3. **RP2040 boot + heartbeat** | Flash the firmware (`firmware/rp2040/`, FW `phase8b-rp2040 v0.1.0`) if not already; power up. | Over UART (J1 pins 5/6, 115200-8N1) you see a `boot` line then `hb` (heartbeat) lines every 250 ms. After the 200 ms boot-settle, `RP2040_OK` (GP2, TP14) goes HIGH (`rp_ok:1`). | Check the Pico solder, UART wiring (Pi TX→GP1, Pico GP0→Pi RX), `BOOT_SETTLE_MS`. |
+| 3. **RP2040 boot + identity + heartbeat** | Verify and flash only the controlled Rev-D release artifact (`firmware/rp2040/release.ps1 -VerifyOnly`; current bundle reports `phase8b-rp2040 v1.2.3`) when the first-article plan authorizes flashing; power up. | The manifest-bound `id` fields match the verified release tuple, then `hb` lines arrive every 250 ms. After the 200 ms boot-settle, `RP2040_OK` (GP2, TP14) goes HIGH only if healthy. **A version string alone is not image proof.** | Check the Pico solder, UART wiring (Pi TX→GP1, Pico GP0→Pi RX), release identity, and `BOOT_SETTLE_MS`. |
 | 4. **Watchdog drop** | With the rail armed on the bench-safe path, **stop kicking** `WDOG_KICK` (Pi GPIO 12). | After the NE555 timeout (~10 s — the Pi normally kicks well inside this), the rail (TP16) drops. Observe at TP11 (`NE555_OUT`), TP12 (`WDOG_OK_PULLDOWN`). | Verify the NE555 timing network (R_WDOG_TIMING 100k, C_WDOG_TIMING 100µF/16V = C11), the trig pull-up (R_WDOG_TRIG_PULLUP 10k — the "Rev-A trigger pull-up fix"), Q13. |
 | 5. **Arm drop** | De-assert the Pi `ARM_PERMIT` GPIO (J1 pin 8). | Rail (TP16) drops. TP13 (`ARM_PERMIT`) reads low. | Check Q15 (AND ARM) and its base network (Rb 10k / Rpd 100k). |
-| 6. **Interlock drop** | Open the J14 (`J_SAFETY`) loops one at a time — first the TB/SC loop (pins 1-2), then the Stop/CIS loop (pins 3-4). | Rail (TP16) drops when **either** loop opens. TP15 (`SAFE_STOP_RETURN`) goes open/low. | Confirm the two NC loops are jumpered closed for the test; check Q14 pass-FET. |
+| 6. **J14 source-position drops** | Open J_SAFE1-2, then the Stop/CIS loop on J_SAFE3-4. On lanes 21/22, 1-2 is the controlled Candidate-C jumper — **not** a TB/SC field loop. | Rail (TP16) drops when either board source position opens. This validates PCB/source wiring only; it does not prove the OEM collision guard. | Check the controlled 1-2 jumper, measured 3-4 Stop/CIS loop, and Q14. Prove TB/SC separately with the per-lane G3 S-and-T coil test. |
 | 7. **Each relay with a dummy load** | Re-establish all rail conditions. Command each motion relay **(S, T, SP, BE, M, M2)** in turn through OUT-A (U3). Put a **dummy load** (a lamp or resistor sized to the expected ~24 VAC coil-circuit current) across the relay's J6-J11 contact pair. | Each relay clicks, its COM-NO contact closes the dummy load, and the load drops the instant you drop the rail. Probe coil-drive, COM, NO per the test-pad rule (§9, spec §3.2). **M1 (K7/J12) is DNP — not tested.** | Check the relay driver (Q1-Q6), `RELAY_ENABLE_RAIL` reaching the coil, the flyback diode. |
-| 8. **Input front-ends** | Exercise each opto input. For **fast** inputs (SA/SB/SC/TA1/TA2/TB/DIELL-L/DIELL-R) wet the J3 (`J_FAST_IN`) field pin to `FIELD_GND`; for **slow** inputs (GS1-10, GP/OS/BS/PBZ/PBC/Foul on J4, and 10th/manual/AUX on J5) do the same. | The corresponding RP2040 fast-input edge (cam/ball event over UART) or MCP23017 bit flips. Optos are **active-low** at the logic pin: a closed field contact pulls the input LOW (§8, §12). | Check the PC817 (U4-U35), the input resistor (Rin 2k2), the logic pull-up (Rpu 10k to 3V3), `FIELD_WET_V`. |
+| 8. **Input front-ends** | Exercise each opto input. For **fast** inputs (SA/SB/SC/TA1/TA2/TB/DIELL-L/DIELL-R) wet the J3 (`J_FAST_IN`) field pin to `FIELD_GND`; for **slow** inputs (GS1-10, GP/OS/BS/PBZ/PBC/Foul on J4, and 10th/manual/AUX on J5) do the same. | The corresponding RP2040 fast-input edge (cam/ball event over UART) or MCP23017 bit flips. Optos are **active-low** at the logic pin: a closed field contact pulls the input LOW (§8, §12). On Rev-D, also prove RP2040 pulls are off and U1/U2 `GPPUA/GPPUB=0x00` read back exactly. | Check the PC817, the input resistor (`Rin` 2k2), the current Rev-D/R5 logic pull-up (`Rpu_*` **47 kΩ** to 3V3), and `FIELD_WET_V`. An internal pull enabled or a missing external `Rpu_*` is STOP-SHIP. |
 | 9. **Cam-stop rail drop** | Drive a cam-stop condition on the RP2040 and confirm it pulls the rail. | `RP2040_OK` (GP2/TP14) goes low → rail (TP16) drops. **See the firmware caveat below.** | This is condition #4 — it shares the GP2 path with #3. |
 | 10. **(only then) machine-harness test** | Everything above passed. The board is cleared to be wired to a machine — which is the cutover (§21.3), **not** part of bench bring-up. | — | — |
 
 **Pass = all of steps 1-9 green, logged.** Only then does the board become a candidate for the controller cutover (this is gate **G1**). Build the spare unit #2 the same way.
 
-> ⚠️ **Firmware caveat for step 9 (read carefully).** The shipped firmware is **v0.1.0**. It provides the RP2040's UART-independent **motion max-run backstop** (`MAX_MOTION_MS` = 8000 ms — a guarded motor marked RUNNING by the Pi for longer than 8 s latches a fault and drops `RP2040_OK`). It does **NOT** yet implement **per-cam-edge cam-stop overrun enforcement** — that is the explicitly-deferred **v1.1** hook (see `main.c`, the `// v1.1` marker in `supervise()`). Per-cam-edge enforcement needs the per-cam edge→angle polarity, which is a deferred cutover field item (§21.3, runbook §3.2). So at the bench you can prove step 9 in the **max-run-backstop** sense (mark a motor running, let it exceed 8 s → rail drops) and prove the GP2→rail path directly (reset/halt the RP2040 → rail drops, condition #3/#4 share that path). The true **per-cam-edge** drop is bench-provable only after you capture cam polarity and flash v1.1 — which is why the cutover sequences cam-polarity capture *before* the live cam-stop test.
+> ⚠️ **Firmware caveat for step 9 (read carefully).** The controlled Rev-D-only
+> firmware bundle is **v1.2.3**, not yet flashed, and every measured-cam enforcement
+> flag ships **OFF**. The code contains the cam-stop paths, but stock release behavior
+> credits only health plus the 8 s motion max-run backstop. At the bench, prove the
+> max-run drop and the GP2→rail path. A true per-cam-edge drop may be credited only
+> after edge→angle polarity is measured, enabled in a **new controlled release**, and
+> that release passes its dedicated bench test. The SC∧TB echo remains default-off,
+> secondary, unvalidated, and unusable on lanes 21/22 without an independent TB lead.
 
 #### 21.2.2 Test points (your bench meter taps)
 
@@ -141,7 +158,13 @@ The board carries 16 test pads (1.5×1.5 mm), excluded from BOM/POS but present 
 
 Because the blast radius is motion, the cutover is **gated on a fully bench-validated unit** (§21.2 / G1) and uses a **staged, rail-disabled bring-up**. You never go straight from "harness landed" to "auto motion." The safety-rail drop tests (Stage 6 / gate **G3**) are the heart of the procedure — if any rail condition fails to drop motion, you **ABORT**; you do not "fix it live."
 
-A critical consequence of removing the Omega-Tek board: bench work found the OEM machine uses **logic cam-stops** (in the triac board), **not** hardwired cam-in-series stops. So removing the OEM brain removes the existing cam-stop, and the **RP2040 hardware cam-stop replaces it.** This is exactly why the RP2040 cam-stop must be proven before cutover and why the Stage-6 cam-stop drop test is a hard gate.
+A critical consequence of removing the Omega-Tek board: the ordinary motion
+cam-stops were controller logic, not hardwired motor latches. Removing the OEM brain
+therefore requires the replacement FSM stop behavior **and** any credited RP2040
+cam-edge backstop to be measured and proven before cutover. Stock v1.2.3 keeps those
+cam-edge enforcement flags OFF, so a newly controlled, polarity-bound release is a
+hard prerequisite before that sub-gate can pass. This is separate from the preserved
+OEM SC/TB collision ladder and its Candidate-C G3 coil-drop proof.
 
 #### 21.3.2 Lockout/tagout — the operating discipline
 
@@ -154,7 +177,11 @@ Non-negotiables: lane formally **out of service, off-hours only**; **two people*
 
 #### 21.3.3 The deferred field-capture items (the reason the runbook exists)
 
-A set of facts were **deliberately deferred** from the design phase to cutover day, because they are far easier to capture with the machine apart and a **live input feed** running, and because **none of them gate the board** — the board uses function-named connectors and a per-chassis adapter harness resolves them (§14). The at-machine fieldsheet (already complete) locked everything the *board design* needed (working voltage = 24 VAC, lamp supply = 15 VDC, cam form = dry contact NC, grippers = chassis-return/gripped-closed, Stop+CIS parallel, TB/SC parallel into 24 V). What remains for cutover day are the **per-pin labels and exact landings.**
+A set of facts remain easier to capture with the machine apart. For SC/TB, however,
+topology and polarity are already resolved by powered evidence: **parallel
+closed-when-safe**, both levers BACK/open blocks S/T. What remains is not a J14
+terminal search; it is the per-lane board-output insertion proof. The other
+unmeasured cam cavities/classes/polarities remain explicit cutover captures.
 
 > **Live feed = your meter.** With the harness landed on the inputs (J3/J4/J5) but the **rail still disabled** (no motion possible), the Pi reads every input over the daemon (`journalctl -u lane-node -f` shows input-bank reads). So most capture is "actuate the thing by hand, locked out, and watch which channel flips in the log."
 
@@ -163,9 +190,9 @@ The deferred items (full method per item in runbook §3, worksheets in runbook A
 | item | runbook ref | what you capture | how |
 |---|---|---|---|
 | **Per-gripper GS# → C2A cavity** | §3.1 | which physical gripper maps to GS1…GS10 (the *bank* and polarity are already locked: gripped = CLOSED to **chassis** ground) | lift one pin / actuate one gripper at a time, watch which `GS` channel deasserts in the live feed; set the result in `controller_io.py` GS map (software only) |
-| **Per-cam SA/SB/SC/TA1/TA2/TB → C2A cavity + trip angle** | §3.2 | which cam fires which fast input at which angle | locked out, hand-rotate the sweep/table, watch which fast input fires at which cam angle. **This also feeds firmware v1.1 cam-stop polarity.** |
+| **Per-cam SA/SB/TA1/TA2 → C2A cavity + trip angle** | §3.2 | which motion cam fires which valid fast input at which angle | powered/locked-out procedure per runbook. **SC/U stays CUT+LABEL-ONLY; TB is NO-LEAD on lanes 21/22.** |
 | **C1/C2A output cavity confirm** | §3.3 | confirm the measured output cavities on *this* in-place machine before landing J6-J11 | land-check against the spare-cabinet measurements (table below) |
-| **TB/SC interlock → exact terminals (J14)** | §3.4 | the exact NC-loop terminals for the hardware interlock | locked out, find the TB+SC cam switches, confirm the NC loop, land J14 pins 1-2 into it. **First-class rail condition — hardware, not firmware.** |
+| **TB/SC Candidate-C proof** | §3.4 / G3 | verify board S/T contacts did not bypass the OEM ladder | install only the controlled J_SAFE1-2 jumper; live, body clear, command S then T and force both levers BACK/open → each coil dead |
 | **Stop/CIS/master chain** | §3.5 | confirm continuity, **preserve, do not replace**; tie J14 pins 3-4 sense into it | locked-out continuity: Stop in RUN vs STOP drops the motor-relay coil rail |
 | **M1 ball-return existence** | §3.6 | whether ball-return is a separate command on this chassis | if yes → future rev-C populate; **for this cutover M1 stays DNP and unharnessed** |
 
@@ -194,30 +221,33 @@ Budget ~2-3 h for the first pair. Stages, summarized from runbook §6 — **run 
 | 2. Field capture (§21.3.3) | A | work the deferred items, fill Appendix-B worksheets — most of the window, all cold/hand-actuated | **G2** |
 | 3. Install mask LEDs | A | fit the L_FIRST/SECOND/STRIKE/FOUL LEDs into the mask housings, run J13 (`J_LAMP_LED`: 5 V, GND, 4 returns). **Leave the OEM 15 VDC mask-lamp wiring physically intact** (lift, don't cut) for clean rollback | — |
 | 4. Disconnect the OEM brain | A | **unplug** the Omega-Tek board + triac driver bank + connectors. **Do not cut anything.** Bag/label each OEM connector; shelve the brain at the cabinet — it is your rollback | — |
-| 5. Land the adapter harness | A | one connector group at a time, double-checking each against the runbook §4 map, lift-and-land, torque, tug-test, photograph: J6/J7→C1 + J8/J9/J10/J11→C2A coil circuits · J3→cams+DIELL · J4/J5→grippers/switches · J14→TB/SC + Stop/CIS · J13→mask LEDs · J1→Pi · J2→supplies. Final visual pass: every board terminal vs the map. **Catch swaps now.** | — |
-| 6. **Logic-only bring-up + SAFETY-DROP TESTS** | A (rail DISABLED, no motion possible) | breaker still OFF, power **logic only (5 V)**. Pi boots, I²C enumerates all 3 MCP23017, RP2040 boots + heartbeats, watchdog healthy, **all relays default OPEN, rail DISABLED**. Read inputs (lift a pin → GS flips; rotate a cam → fast input; break DIELL → ball; trip foul). Then prove **each** rail condition independently drops the rail (see below). | **G3** |
-| 7. **First commanded motion** | **B — DELIBERATE LIVE** | two people, body clear, hand on the breaker. Breaker ON, arm. Command **SP alone** (spot fires, no sweep/table). Command **one sweep (S)** → watch it stop on the SA cam (RP2040 cam-stop). Command **one table (T)** → stop on TA. Command **one full reset cycle** → completes and stops cleanly, no overrun. | **G4** |
+| 5. Land the adapter harness | A | follow the current runbook/build sheet: J6/J7 output insertion must preserve the OEM ladder; J_SAFE1-2 gets only the controlled jumper; J_SAFE3-4 gets Stop/CIS; TB gets NO-LEAD and SC/U stays unlanded pending reviewed sensing. Torque, tug-test, and photograph every landing. | — |
+| 6. **Logic-only bring-up + on-board drops; then Candidate-C G3 proof** | A, followed only by the runbook's explicit deliberate-live proof | breaker OFF for logic/input checks and on-board drop tests. Then use the runbook's guarded powered procedure to prove both board-commanded S/T coils are dead with both levers BACK/open. | **G3** |
+| 7. **First commanded motion** | **B — DELIBERATE LIVE** | two people, body clear, hand on the breaker. Breaker ON, arm. Command **SP alone** (spot fires, no sweep/table). Command **one sweep (S)** and one table (T) → verify the FSM stops on the measured SA/TA events and that the separately qualified RP2040 overrun backstop is armed as declared by the release posture. Command **one full reset cycle** → completes and stops cleanly, no overrun. | **G4** |
 | 8. Ball cycle + scoring | B | roll a ball down each lane: DIELL fires → FSM cycles the pinsetter (cam-timed) → camera scores (Track A) → display updates. Confirm detected standing pins match the deck across a few leave types, both lanes | **G5** |
 | 9. Soak handoff | — | brief night staff ("21+22 are on the new Pi controller… if anything looks wrong, leave the lane closed, photograph it, message Dylan — do not try to fix it"); tape a contact note inside the cabinet; leave the OEM brain shelved + all wire labels on for the first soak week | — |
 
-**Stage 6 safety-drop tests (the heart of the cutover, gate G3).** With the rail's enable on the bench-safe armed path, prove **each** condition independently drops the rail:
+**Stage 6/G3 tests.** Prove each implemented on-board drop, then prove Candidate C separately:
 
 1. stop the watchdog kick → rail drops
 2. de-assert arm → rail drops
 3. reset/halt the RP2040 → rail drops
-4. trigger a cam-stop edge → rail drops — **⚠️ requires RP2040 firmware v1.1 (cam-stop overrun).** v0.1.0 provides only the motion max-run backstop, **not** per-cam-edge enforcement; per-cam enforcement depends on the §3.2 per-cam edge→angle polarity. **So capture cam polarity FIRST (Stage 2 / §3.2), flash v1.1, THEN run this sub-test.** This sub-test is **BLOCKED until then**; the other five rail-drop conditions are testable with v0.1.0.
-5. open the TB/SC loop (J14 pins 1-2) → rail drops
+4. trigger each **enabled, measured** cam-stop edge → rail drops. Stock v1.2.3
+   cannot pass this sub-test because every measured-cam flag is OFF; first capture
+   polarity, create/verify a new controlled release, and prove its declared posture.
+5. open J_SAFE1-2 → rail drops (**PCB-position test only; not TB/SC proof**)
 6. open the Stop/CIS chain (J14 pins 3-4) → rail drops
+7. with the board commanding **S**, then **T**, force both TB/SC levers BACK/open → each corresponding machine coil remains dead even though the board contact is closed
 
-**Every one must drop motion permission. Any failure → ABORT + rollback.** Do not proceed to live motion with a safety condition that doesn't drop the rail.
+**Every implemented rail drop and both Candidate-C coil tests must pass. Any failure → ABORT + rollback.**
 
 #### 21.3.5 Go / No-Go gates
 
 | gate | when | pass condition | fail action |
 |---|---|---|---|
 | **G1** | before scheduling | unit bench-validated (§21.2, spec §12 step 9, all steps) · firmware proven · Track-A scoring soaked clean · spare on hand · OEM brain photographed | don't schedule |
-| **G2** | after Stage 2 | all §3 field items captured; harness map complete; no surprises vs measured cavities | resolve or defer non-blocking; **abort if a safety landing (TB/SC) is unclear** |
-| **G3** | Stage 6 | **EVERY** rail condition (watchdog, arm, RP2040, cam-stop, TB/SC, Stop/CIS) independently drops motion permission | **ABORT → rollback** |
+| **G2** | after Stage 2 | all required field items captured; controlled J_SAFE jumper and S/T insertion points match the build sheet | resolve or abort |
+| **G3** | Stage 6 | watchdog, arm, RP2040, every release-enabled measured cam-stop, and Stop/CIS drop the rail; both board-commanded S/T coils are dead with both levers BACK/open; only the controlled J_SAFE1-2 jumper is present | **ABORT → rollback** |
 | **G4** | Stage 7 | commanded S/T/SP each stop on cams; full reset completes + stops; no runaway | **breaker OFF → rollback** |
 | **G5** | Stage 8 | ball cycle + correct score across a few balls/leaves, both lanes | flip scoring to manual (§21.4 Step 7); controller stays if G3/G4 passed |
 
@@ -228,7 +258,7 @@ Budget ~2-3 h for the first pair. Stages, summarized from runbook §6 — **run 
 Trigger: any G3/G4 failure, or a Stage-7/8 fault that isn't a trivial single-wire fix. Budget ~20-40 min (longer than a scoring rollback because you re-plug the brain — practice it in the Stage-5 dry run). Summary (full steps in runbook §8):
 
 1. **Master breaker OFF, lockout, verify 0 V.**
-2. **Lift the adapter harness** from C1/C2A/TB/SC/Stop-CIS (use the tape labels; lift, don't cut).
+2. **Lift the adapter harness** from C1/C2A and Stop/CIS; remove the labeled J_SAFE plug/output taps per the build sheet (TB/SC itself was never landed on J_SAFE).
 3. **Re-plug the OEM Omega-Tek board + triac driver bank + connectors** (preserved from Stage 4).
 4. Mask LEDs (J13) can stay unpowered (harmless); the OEM 15 VDC mask wiring was left intact, so OEM lamps work on re-plug.
 5. **Master breaker ON.** OEM controller runs the machine. **Bowl a frame on each lane** to confirm normal operation.
@@ -239,7 +269,10 @@ Trigger: any G3/G4 failure, or a Stage-7/8 fault that isn't a trivial single-wir
 
 Daily for 7-10 days (runbook §9): check `/api/health` on the server (node connected, no excessive disconnects); WSL-SRV log clean (no `lane_node_server.py` errors, no protocol mismatch); **walk 21+22 during open hours** watching real cycles (cam-stops crisp, no overrun, reset completes, scoring agrees); **cam-stop / watchdog timeouts in the journal must be ZERO** — any timeout is investigated before it recurs; touch the Pi case + boards days 1-3 (warm, not hot). After 7-10 clean days → a cleanup visit (tidy wire routing; decide whether the OEM brain is permanently retired or stays shelved as a spare), then the next chassis.
 
-**Per-chassis caveat:** the board is fleet-common; the **harness and input populations are per-chassis-type.** Before cutting over **11/12 (Active-98 MP)**, run a short field pass on that pair for the chassis-specific items (working voltage, input forms, the C-series harness map — output cavities, cam→cavity, gripper return reference, TB/SC terminals). Do **not** assume 21/22's cavities carry over — the Omega-Tek retrofit already diverged from OEM on the M2/S cavities and on the gripper return (chassis vs TAC-GND). Clone the *board*; re-capture the *harness*. See **§14**.
+**Per-chassis caveat:** the board is fleet-common; the harness/input populations are
+per chassis. For 11/12, re-capture cavities, input forms, gripper return, and the
+TB/SC observable/landing facts; do not assume lane 21/22's no-independent-TB result.
+Whatever Candidate-C insertion is selected must pass that lane's S/T G3 proof.
 
 > **Server IP note.** The Track-B runbook (as written) points the Pi node and health checks at `192.168.86.36`. **That IP is dead** — WSL-SRV was re-IP'd to **192.168.4.103** in the 2026-06-03 eero router swap, and the DHCP reservation is still TODO, so the address could move again. Before the cutover window, **confirm the current WSL-SRV IP, reserve it on the eero, and set `WSL_LANE_SERVER_URL=ws://<current-IP>:8765`** on the `lane-node` service. The Track-A runbook (§21.4) already reflects `.4.103`. (VERIFY: the live WSL-SRV IP on cutover day — re-confirm the eero reservation before relying on any hard-coded address.)
 
@@ -304,7 +337,10 @@ The strict order — nothing below is optional, and each gates the next:
 
 1. **Generate the bare-PCB fab package** (`kicad/fab_revB_routed_manual/`) → vendor Gerber/drill upload preview → **fab order**.
 2. **Assemble** with the DNP parts held out (M1 channel K7/Q7/J12, all snubbers/MOVs) — see §13 and `dnp-excluded.csv`. Hand-solder the Phoenix terminals and the Pico if the house doesn't place them.
-3. **RP2040 firmware + daemon bench bring-up** (firmware v0.1.0; v1.1 cam-stop overrun comes after cam polarity is captured at cutover).
+3. **RP2040 firmware + daemon bench bring-up:** verify the controlled v1.2.3
+   Rev-D-only bundle and its identity, but do not credit or flash it outside the
+   first-article plan. Capture cam polarity, then create a new controlled release
+   with only the measured enforcement flags enabled and pass its bench gate.
 4. **Full board bench validation** — §21.2 / spec §12 step 9, every step green. **(Gate G1.)**
 5. Build the **spare unit #2** the same way.
 6. **Track-A scoring** live + soaked clean on 21/22 (§21.4) — *before* the controller cutover, on a separate visit.

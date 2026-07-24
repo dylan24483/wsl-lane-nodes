@@ -4,6 +4,19 @@
 
 **Reads-with:** `phase8_io_board_spec.md` (why), `phase8_C1_C2A_pinout_p288.md` (where the machine pins are), `cycle_control_8270.py` (the io contract), `phase8_8270_SYSTEM_REFERENCE.md` (the system).
 
+> **CURRENT SAFETY/WIRING CORRECTION (2026-07-24):** this allocation began as a
+> Rev-B design bridge; it is **not** authority for the lane-21/22 SC/TB harness.
+> Powered testing on 2026-07-07 proved the OEM contacts are **parallel
+> closed-when-safe** and that both levers BACK/open kill both S and T coils. Cold
+> tracing on 2026-06-27 found no dry/independent TB landing and could not establish
+> topology through the ~21 Ω coil sneak paths. Candidate C therefore puts the
+> controlled, labeled jumper on J_SAFE1-2, leaves primary collision protection in
+> the OEM S/T coil ladder, and requires the per-lane G3 S-and-T coil-drop proof.
+> The firmware SC∧TB echo is default-off, secondary, and unvalidated; lanes 21/22
+> have no independent TB lead. Current wiring authority is
+> `phase8_interlock_redesign.md`, the lane harness build sheet, and the Track-B
+> cutover runbook.
+
 > **Status: DRAFT (2026-05-31 session 5).** Channel COUNTS + bank structure are firm. Exact MCP port-pin assignments are a clean first cut (rearrange freely for layout). The three architecture refinements in §6 are **DECIDED/ADOPTED (Dylan, 2026-05-31)** → self-contained identical single-lane boards. C1/C2A pin digits are 225-DPI best-effort → bench-verify.
 
 ---
@@ -30,7 +43,7 @@ Straight from `cycle_control_8270.py`'s `io` interface — this is what MUST exi
 | `read_grippers` | IN | **GS1–GS10** | 10 |
 | `gp_closed` | IN | **GP** | 1 |
 | `bs_closed` | IN | **BS** | 1 |
-| `interlock_ok` | IN | TB+SC (software echo; HW interlock is separate) | (2) |
+| `interlock_ok` | IN | SC∧TB software echo (**default OFF/unvalidated; no independent TB lead on lanes 21/22**) | (2 board positions, not 2 landed field leads) |
 | cam events¹ | IN | **SA, SB, SC, TA1, TA2, TB** | 6 |
 | `on_ball` | IN | **SS / DIELL** | 1 (2 beams) |
 | `on_foul` | IN | **Foul** (Radaray) | 1 |
@@ -47,22 +60,30 @@ Straight from `cycle_control_8270.py`'s `io` interface — this is what MUST exi
 
 ### FAST inputs → RP2040 co-processor (latency-critical: cam-stops)
 
-> **⛔ SUPERSEDED (2026-06-10) — the `RP2040 GPIO` column below is the pre-layout DRAFT and is WRONG vs the as-built rev-B board.** Authoritative pin map = `scripts/generate_kicad_netlist_revB.py` `block_rp2040()` (the live netlist) and `firmware/rp2040/config.h` / `firmware/rp2040/README.md`: **UART to the Pi on GP0/GP1, `RP2040_OK` (rail permission) on GP2, and the 8 fast inputs on GP6–GP13** (SA=GP6 · SB=GP7 · SC=GP8 · TA1=GP9 · TA2=GP10 · TB=GP11 · DIELL-L=GP12 · DIELL-R=GP13). Note in particular: the draft puts SC on GP2 — on the real board GP2 is `RP2040_OK`. Table kept only for the signal / front-end / C2A-source / used-by columns.
+> **⛔ SUPERSEDED — the `RP2040 GPIO` column below is the pre-layout DRAFT and is WRONG vs the Rev-D board.** Authoritative pin map = `scripts/generate_kicad_netlist_revD.py` `block_rp2040()` and `firmware/rp2040/config.h` / `firmware/rp2040/README.md`: **UART to the Pi on GP0/GP1, `RP2040_OK` (rail permission) on GP2, and the 8 board input positions on GP6–GP13** (SA=GP6 · SB=GP7 · SC=GP8 · TA1=GP9 · TA2=GP10 · TB=GP11 · DIELL-L=GP12 · DIELL-R=GP13). A board position is not proof of a field lead: lane 21/22 has no independent TB harness lead and SC/U is not a dry input landing. Note in particular: the draft puts SC on GP2 — on the real board GP2 is `RP2040_OK`. Table kept only for signal intent; field landings come from the current harness build sheet.
 
 | ch | signal | RP2040 GPIO | front-end | C2A src | used by |
 |---|---|---|---|---|---|
 | 1 | SA (sweep 270/360°) | GP0 | opto-in | C2A-31N | cam_SA_* |
 | 2 | SB (guard 66/186°) | GP1 | opto-in | C2A-31H | cam_SB_guard |
-| 3 | SC (interlock 86–243°) | GP2 | opto-in | C2A-? | interlock (HW + echo) |
+| 3 | SC (interlock 86–243°) | GP2 | opto-in | SC/U **CUT+LABEL only; do not land as a dry input** | optional echo position only |
 | 4 | TA1 (table 355/185°) | GP3 | opto-in | C2A-34N | cam_TA1_* |
 | 5 | TA2 (run-through 260°) | GP4 | opto-in | C2A-21A/30N | cam_TA2_runthrough |
-| 6 | TB (interlock 105–255°) | GP5 | opto-in | C2A-? | interlock (HW + echo) |
+| 6 | TB (interlock 105–255°) | GP5 | opto-in | **NO independent lead on lanes 21/22** | optional echo position only |
 | 7 | DIELL-L (ball) | GP6 | opto-in (proven) | (DIELL) | on_ball |
 | 8 | DIELL-R (ball) | GP7 | opto-in (proven) | (DIELL) | on_ball |
 
-The RP2040 enforces the cam-position **motor-relay drop in hardware** (cam edge → pull the relay-enable rail) independent of Pi scheduling, AND forwards cam/ball EVENTS to the Pi for the FSM. SC+TB also feed the **hardware** TB/SC interlock directly (§5) — the RP2040 read is the software echo only.
+The RP2040 forwards events from **landed, measured** fast inputs to the Pi. The
+v1.2.3 code contains cam-stop enforcement paths, but the controlled release keeps
+every measured-cam enforcement flag **OFF** until per-cam polarity is captured,
+qualified, and bound into a new release. SC/TB do **not** feed J_SAFETY or the
+relay-enable rail on lanes 21/22. The OEM parallel-safe ladder is the primary
+hardware guard; Candidate C uses the J_SAFE1-2 jumper and G3 coil-drop proof.
 
-> **⚠️ Correction (2026-06-10):** "enforces … in hardware" is the **target** design, not what's shipped. Firmware **v0.1.0/v0.2.0 explicitly does NOT enforce per-cam-edge cam-stops** — that is deferred to **v1.1**, because it needs the bench-confirmed per-cam edge→angle polarity (a deliberately-deferred cutover field item, `phase8_trackB_controller_cutover_runbook.md` §3.2). Shipped firmware provides health/heartbeat (`RP2040_OK`) plus the **8 s motion max-run backstop** only — see `firmware/rp2040/README.md`. This note applies everywhere this doc says the RP2040 cam-stop "enforces"/"acts on" the rail (§5, §6 #1, §7).
+> **Firmware posture (v1.2.3):** the controlled Rev-D-only bundle exists but is not
+> flashed or cutover-ready. Stock enforcement is health/heartbeat plus the 8 s
+> motion max-run backstop. Cam-edge enforcement flags and the SC∧TB echo remain
+> default OFF; the echo also lacks an independent TB field observation.
 
 ### SLOW inputs → MCP23017 #IN-A (I²C 0x20) + #IN-B (0x21)
 | ch | signal | chip.port.pin | front-end | C2A src | used by |
@@ -154,19 +175,28 @@ Two **independent I²C buses**, one per board; each board repeats 0x20–0x23. E
 ---
 
 ## 5. Relay-enable rail (safety — the one rail that matters)
-ALL motion-relay coils (S,T,SP,BE,M,M1,M2) are powered through a series **relay-enable rail** gated by the AND of:
+ALL board motion-relay coils (S,T,SP,BE,M,M1,M2) are powered through a
+**relay-enable rail**. On lanes 21/22 its effective permissions are:
 1. **NE555 watchdog OK** (Pi kicks GPIO12 < ~10 s, else rail drops) — bench-validated.
 2. **Pi "arm" GPIO** asserted (de-asserts on power-down rule until operator First-Ball-Zero).
-3. **Hardware TB+SC interlock** closed (the two cams in parallel in the 24 V control path — io-board spec §6 / SYSTEM_REFERENCE §5).
-4. **Master breaker** on (stop/CIS chain).
-Any one false → all motors drop. The RP2040 cam-stop also acts on this rail *(target design — cam-stop enforcement is firmware **v1.1**, not yet shipped; v0.1.0/v0.2.0 = health + 8 s max-run only — see the 2026-06-10 correction in §2)*. **None of this is bypassable by the Pi in software.**
+3. **RP2040 health/permission** (and only those measured-cam enforcement paths
+   enabled in a qualified future release).
+4. **Stop/CIS/master** source loop on J_SAFE3-4.
+5. **Controlled Candidate-C jumper** on J_SAFE1-2 (a board source position, not a
+   TB/SC sensor).
+
+Any implemented on-board permission going false drops the board relay coils. The
+separate OEM **parallel closed-when-safe SC/TB ladder** blocks the S/T machine
+coils; both levers BACK/open must kill both coils even while the board commands
+motion. That insertion is accepted only by the per-lane G3 test. **The Pi cannot
+bypass the implemented rail gates or the preserved OEM ladder.**
 
 ---
 
 ## 6. ✅ THREE refinements vs `phase8_io_board_spec.md` — ADOPTED (Dylan, 2026-05-31)
 All three adopted → **self-contained identical single-lane boards** (develop one, clone). The tables in §2–§4 already reflect them.
 
-**#1 — RP2040 OWNS the fast inputs + forwards events** (vs spec's "Pi GPIO IRQ AND mirror to RP2040"). The RP2040 owns cams+DIELL, enforces cam-stops in **hardware** (cam edge → drop the relay-enable rail, independent of Pi scheduling) *(cam-stop enforcement = firmware **v1.1**, not yet shipped — see §2 correction)*, and forwards cam/ball *events* to the Pi for the FSM **over UART** (see §7 — chosen because the RP2040 can PUSH events; an I²C/SPI slave can't initiate). The FSM consumes events not pin-polls → nothing lost, and the Pi 40-pin header isn't blown by 16 fast inputs across the pair. Safety note: cam-STOPS are hardware on the RP2040 and do NOT depend on the link; only the FSM's event *notification* rides the link.
+**#1 — RP2040 OWNS the landed fast inputs + forwards events** (vs spec's "Pi GPIO IRQ AND mirror to RP2040"). The RP2040 forwards cam/ball *events* to the Pi for the FSM **over UART** (see §7 — chosen because the RP2040 can PUSH events; an I²C/SPI slave can't initiate). The v1.2.3 firmware contains fail-safe cam-stop paths, but all measured-cam enforcement flags remain **OFF** pending measured polarity and a newly qualified release. Lane 21/22 has no independent TB input. The FSM consumes events not pin-polls, and the Pi 40-pin header is not consumed by 16 direct inputs across the pair.
 
 **#2 — Per-board I²C bus.** Each board gets its own bus (Pi `i2c-1` + a second via `dtoverlay=i2c-gpio`), so **each board uses 0x20–0x23 identically**. Avoids the zero-headroom 0x20–0x27 shared-bus fill; makes the two boards electrically identical ("clone the board").
 
@@ -183,7 +213,11 @@ Evaluated UART vs I²C-peripheral vs SPI for the cam/ball-event link:
 - **UART (chosen).** Dedicated point-to-point, async, no shared-bus contention with the MCP23017s. The RP2040 PUSHES events the instant a cam/DIELL edge fires (no Pi polling) — exactly the event-forwarding model #1 wants. Only 2 Pi pins per board (TXD/RXD); the per-board buses are different UARTs (Pi has multiple PL011/mini-UARTs, or `uart-gpio`-style soft UARTs). Dead-simple framing (newline-delimited JSON or a 1-byte event code). Failure is detectable (RP2040 can heartbeat over the same line; Pi sees silence).
 - ✗ **I²C-peripheral:** the RP2040 would be a *slave* → the Pi must POLL it (I²C slaves can't initiate), defeating push-events; and it'd share the board's I²C bus with 3 MCP23017s → contention on the latency-critical path. Reject.
 - ✗ **SPI:** also Pi-master-polled (RP2040 as SPI slave can't initiate); more pins (4); overkill bandwidth we don't need. Reject.
-- **Note:** the link carries EVENTS only. The safety-critical **cam-STOP stays entirely on the RP2040** (cam edge → relay-enable rail) *(v1.1 — see §2 correction; shipped firmware = health + 8 s max-run backstop)*, so a dead UART can't cause unsafe motion — it just means the FSM stops getting event notifications (→ motion-timeout FAULT, fail-safe). Protocol spec = a future small doc; baseline = newline-JSON `{"ev":"SB_guard"}` / `{"ev":"ball"}` at 115200.
+- **Note:** the link carries events and RUN/STOP supervision. A dead UART is
+  fail-safe through Pi health/ARM handling and the 8 s max-run backstop. Do not
+  credit per-cam-edge rail enforcement until measured polarity is enabled in a
+  controlled release and its bench gate passes. Protocol details are in the
+  current firmware README.
 
 ### ✅ AEDIKO relay specs — FOUND in `pcb_design_spec.md` (no sourcing needed)
 Captured during Phase-8a watchdog work:

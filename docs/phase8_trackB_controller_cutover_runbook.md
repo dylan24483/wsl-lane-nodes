@@ -1,12 +1,12 @@
 # Phase 8 Track-B — Controller-Replacement Cutover Runbook — Lanes 21+22
 
-**Status:** DRAFT 2026-06-03 (rev-B bare-PCB fab package generated; board not yet fabricated/assembled/bench-proven). This is the run-of-show + the cutover-day field-capture procedure. It will be **refined after bench bring-up of unit #1** (spec §12.9), exactly like the Track-A / 8a plans were refined after their first validations. Written now so the **deliberately-deferred field items** are captured in a structured way before the controller swap.
+**Status: DRAFT / PHYSICAL RELEASE NO-GO (updated 2026-07-24).** The Rev-D R5 fabrication package exists as geometry evidence, but the board has not been ordered, assembled, first-article qualified, or bench-proven. The committed v1.2.3 production UF2 is Rev-D-only and still has every cam-stop enforcement flag OFF with trip polarities unconfirmed; it is **not a cutover image**. This runbook remains the run-of-show and field-capture procedure and must be refined after unit #1 passes the Rev-D first-article and bench gates.
 
-**What this does:** replaces the **OEM 82-70 controller brain** at lanes 21+22 — the Omega-Tek Omniboard + its S2003LS2 triac driver bank + the Siemens/ice-cube control relays — with the **rev-B integrated Pi controller** (one board per lane, two boards on one Pi). After cutover, **cam timing, cam-stops, the cycle, masking, ball-state, and status indication come from the Pi/RP2040**, not the OEM controller. Scoring already comes from the camera (Track A) — *but note (2026-06-10): with current code the Track-A scoring node and this controller **cannot share a Pi**, so camera scoring goes dark at controller cutover until the unified scoring+control daemon exists — see the §2 prerequisite.*
+**What this does:** replaces the **OEM 82-70 controller brain** at lanes 21+22 — the Omega-Tek Omniboard + its S2003LS2 triac driver bank + the Siemens/ice-cube control relays — with the **Rev-D integrated Pi controller** (one board per lane, two boards on one Pi). After cutover, **cam timing, cam-stops, the cycle, masking, ball-state, and status indication come from the Pi/RP2040**, not the OEM controller. Scoring already comes from the camera (Track A) — *but note (2026-06-10): with current code the Track-A scoring node and this controller **cannot share a Pi**, so camera scoring goes dark at controller cutover until the unified scoring+control daemon exists — see the §2 prerequisite.*
 
 **Who runs it:** Dylan, at the lane + on the Pi node, with **one helper for every live step**. Claude can't reach the hardware.
 
-**Chassis scope:** lanes **21/22 = SS chassis + Omega-Tek retrofit**. The **board is common to the whole fleet; the harness + input populations are per-chassis.** Lanes 11/12 (Active-98 MP) need their own short field pass before their harness — see §10.
+**Chassis scope:** lanes **21/22 = SS chassis + Omega-Tek retrofit**. The **Rev-D board is the fleet-common production revision; the harness + input populations are per-chassis.** Lanes 11/12 (Active-98 MP) need their own short field pass before their harness — see §10. Rev-B and Rev-C boards are not valid targets for the Rev-D firmware bundle.
 
 ---
 
@@ -24,12 +24,12 @@
 
 ---
 
-## 0. Cold-start — what the rev-B board is, and the non-negotiable safety model
+## 0. Cold-start — what the Rev-D board is, and the non-negotiable safety model
 
 - **One board per lane**, two identical boards on one Pi (independent I²C bus + RP2040 each). Develop/validate one, clone.
 - **The board never sources machine power.** It only **opens/closes isolated dry contacts** in the existing machine control circuits. The S/T heavy-lug **contactors stay** and keep switching the 115 V motors and their OEM braking behavior; we only switch their **coil circuits** (all measured ~24 VAC).
 - **The board is never the only safety device.** The upstream **Stop / C.I.S. / master-breaker chain stays live and upstream** (OEM service manual p11: Stop + C.I.S. are in parallel and both cut the rear-panel master breaker). The master breaker remains the final physical stop, including for a welded contact (the rail can drop a coil; it cannot open a welded contact).
-- **The safety rail** (relay-enable rail) gates the board's output-relay coil supply. It is the **AND** of six conditions, any false → all motion relays drop, **not bypassable by the Pi in software**:
+- **The safety system** gates motion through five on-board rail conditions plus the OEM TB/SC coil-ladder condition. Any false → motion permission drops; none is bypassable by normal Pi software:
 
   | condition | source | fail-safe default |
   |---|---|---|
@@ -42,7 +42,7 @@
 
 - **Cam-stops are now SOLELY the RP2040's job.** Bench work (JOB-2) found the OEM machine uses **logic stops** (triac board), not hardwired cam-in-series — so removing the Omega-Tek board removes the existing cam-stop. The RP2040 hardware cam-stop **replaces** it. This is why the RP2040 cam-stop must be bench-proven (spec §12.9) *before* this cutover, and why the §6 Stage-6b cam-stop drop test is a hard gate.
 
-**Reads-with:** `phase8b_pcb_revB_spec.md` (the electrical contract + §12.9 bench bring-up), `phase8_channel_allocation.md` (channel→pin map), `phase8_C1_C2A_pinout_p288.md` + `phase8_bench_session1_FINDINGS.md` (machine-side cavities), `phase8b_at_machine_fieldsheet.md` (the field results this consolidates), `phase8_trackA_golive_runbook.md` (scoring, brought up separately), `phase_8a_infrastructure_plan.md` (Cat6/PoE/enclosure/5 V — assumed already done).
+**Reads-with:** `phase8b_pcb_revB_spec.md` (base electrical contract + §12.9 bench sequence), `phase8_revD_remediation_spec_2026-07-21.md`, `phase8_revD_readiness_checklist.md`, `phase8_revD_first_article_pack.md`, `phase8_interlock_redesign.md`, `phase8_channel_allocation.md` (channel→pin map), `phase8_C1_C2A_pinout_p288.md` + `phase8_bench_session1_FINDINGS.md` (machine-side cavities), `phase8b_at_machine_fieldsheet.md`, `phase8_trackA_golive_runbook.md`, and `phase_8a_infrastructure_plan.md`.
 
 ---
 
@@ -63,17 +63,18 @@
 
 ## 2. Prerequisites — ALL must be green before scheduling the window
 
-### Hardware / firmware (the gate that doesn't exist yet)
-- [ ] **rev-B board fabbed + assembled** (bare-PCB fab package generated in `kicad/fab_revB_routed_manual/` → vendor upload preview → fab order → hand-solder Phoenix/through-hole parts; DNP suppression/M1 parts stay unpopulated unless explicitly released).
-- [ ] **RP2040 firmware** flashed and bench-proven: cam-stop enforcement (cam edge → rail drop, independent of Pi) + UART event protocol to the Pi + heartbeat/permission.
-- [ ] **Unit #1 fully bench-validated on a LOCKED-OUT / off machine per `phase8b_pcb_revB_spec.md` §12.9**, every step passing: power rails → I²C enumerate (3× MCP23017) → RP2040 boot+heartbeat → watchdog drop → arm drop → interlock drop → each relay contact with dummy load → input front-ends → **cam-stop rail drop** → only then machine-harness test.
+### Hardware / firmware (all are hard NO-GO gates)
+- [ ] **Rev-D board ordered only from the current R5 package** (`kicad/fab_revD_2026-07-23_r5/`) after G7/G8/G13/G14, vendor-preview, BOM/substitution, and first-article prerequisites pass; then assembled with all DNP parts held out unless explicitly released.
+- [ ] **Release artifact custody passes before any flash:** run `firmware/rp2040/release.ps1 -VerifyOnly`; require `supported_board_revisions` to equal exactly `["revD"]` and `qualified_releases` to equal exactly `["revD|rel-0c746b5747143b8011b01d43|05d808411db4bb0d"]`; provision those as `WSL_RP2040_SUPPORTED_BOARD_REVISIONS=revD` and the exact `WSL_RP2040_QUALIFIED_RELEASES` tuple (independent build/config lists must not authorize a cross-product); verify production UF2 SHA-256 `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`; verify the physical board is marked/read as Rev-D. Never flash this bundle on Rev-B/Rev-C. Never deploy the `_FI1.uf2` bench image.
+- [ ] **Cam polarity captured and a new controlled Rev-D-only production bundle generated.** The committed v1.2.3 image has `CAM_*_STOP_ENABLED=0` and unconfirmed `CAM_*_TRIP='?'`; do not treat its valid signature as cutover readiness. Capture §3.2, enable only proven cams, rebuild through `release.ps1`, record the new manifest/UF2 hashes, and bench-prove cam edge → rail drop independently of the Pi.
+- [ ] **Unit #1 fully first-article + bench validated off-machine** per `phase8_revD_first_article_pack.md`, `phase8_revD_readiness_checklist.md`, and the base `phase8b_pcb_revB_spec.md` §12.9 sequence: power rails → I²C enumerate (3× MCP23017) → pull-register readback → Rev-ID → RP2040 boot/identity/heartbeat → watchdog drop → arm drop → each relay contact with dummy load → input front-ends/margins → **enabled cam-stop rail drop** → only then machine-harness test.
 - [ ] **Spare unit #2** assembled (rapid swap if #1 fails on-site).
 - [ ] **Gripper front-end confirmed for chassis-referenced returns** (queued board item): JOB-3 found grippers are **chassis-return, gripped = CLOSED to ground** (not the TAC-GND bus the OEM 9800-MP schematic assumed). Confirm the opto-input front-end handles a chassis-referenced return before cutover. Likely fine (still contact-to-a-reference); does not change isolation domains.
 
 ### Software / server (mostly already live from Track-A)
 - [ ] WSL-SRV `lane_node_server.py` running 24/7 (ports 8765 WS + 8766 HTTP), auto-restart configured.
 - [ ] Pi node `lane-node.service` pointed at `ws://192.168.4.103:8765`, **`systemctl enable`d** (the "lane goes dark after a power event" trap — provisioning runbook). *(IP per the 2026-06-03 eero re-IP; old `192.168.86.36` is dead.)*
-- [ ] `lane_node/controller_io.py` `MachineIO` map matches the rev-B contract (3× MCP23017 @ 0x20/0x21/0x22 + RP2040 UART link).
+- [ ] `lane_node/controller_io.py` `MachineIO` map matches the Rev-D contract (3× MCP23017 @ 0x20/0x21/0x22 + RP2040 UART link).
 - [ ] **Track-A camera scoring already live + soaked** on 21/22 (`phase8_trackA_golive_runbook.md`). Bring scoring up *first, on a separate visit* so the cutover only changes the controller, not scoring too.
 - [ ] **Unified scoring+control daemon exists** — **gates Stage 8's scoring half, gate G5, and the §9 scoring-agreement soak check.** With current code the controller and Track-A scoring **cannot run on the same Pi**: `lane-node-controller.service` carries `Conflicts=lane-node.service` and their GPIO maps overlap (`phase8_pi_provisioning.md` §7; the `TODO(server)` unification in `controller_daemon.py`). Until that unified daemon ships, **camera scoring goes DARK at controller cutover** — the desk's manual `POST /api/lane/<N>/score` path and the display keep working, but nothing auto-scores. Either ship the unification first, or run this cutover with Stage 8/G5/§9 scoring checks explicitly marked BLOCKED and replaced by the manual deck check (see Stage 8).
 
@@ -117,14 +118,14 @@ Confirm the **measured** output cavities against THIS in-place machine before la
 ### 3.4 TB/SC hardware interlock → J_SAFETY landing — ✅ RESOLVED 2026-07-07 = CANDIDATE C (jumper + gates)
 - **DECISION FORMAL (Dylan, 2026-07-07 — `phase8_interlock_redesign.md` §7):** J_SAFE1-2 (TBSC loop) gets a **documented, labeled JUMPER PLUG as an engineered harness part**; the rail's TB/SC condition is **formally delegated to the OEM ladder**. Premise **proven at the machine 2026-07-07** (§4-RESULTS): with both SC/TB cam levers held **BACK** (the danger state), the ladder alone kills **both** S and T motor-contactor coils even on a brain-independent manual command — SC+TB act as a **parallel closed-when-SAFE pair**. Build + verbatim label text: **`phase8_lane21_harness_build_sheet.md` §2**; insertion-point rules for the S/T taps (do NOT bypass the ladder): build sheet §3.2.
 - **Measured 2026-06-27 (this machine), unchanged:** no isolatable dry NC pair exists — SC reads only on its **N.O. (pink)** wire at the shared node (**TSG-1 = C2A-U**, also a common rail); **TB has no standalone cavity**. ⛔ Never land J_SAFE1/2 into the ladder — that ties the board's VCC5 dry-sense loop into a live 24 VAC node. Cold continuity in this region stays invalid (~21 Ω coil sneak paths).
-- **Standing conditions of the decision (hard):** ① the **per-lane Stage-6b/G3 machine-side coil-drop proof every cutover** — board commands S (then T), body clear, force both levers BACK → **coil must die even with the board contact closed**; a failure = the insertion bypassed the interlock = G3 FAIL → abort/rollback. ② **§4.3 window-angle capture** at the powered session. ③ The software echo remains pending its single-node redesign (review findings #4/#12) — the SC (J3-3) sense lead stays CUT+LABEL-ONLY until that lands + F.5 step 4 classes the node.
+- **Standing conditions of the decision (hard):** ① the **per-lane Stage-6b/G3 machine-side coil-drop proof every cutover** — board commands S (then T), body clear, force both levers BACK → **coil must die even with the board contact closed**; a failure = the insertion bypassed the interlock = G3 FAIL → abort/rollback. ② **§4.3 window-angle capture** at the powered session. ③ The firmware SC∧TB echo is **default-off, secondary, and unvalidated** because this harness has no independent TB observation; the SC (J3-3) sense lead stays CUT+LABEL-ONLY unless a separately reviewed observe-only design is released after F.5 step 4 classes the node.
 - Still true: this is a **first-class rail condition** — under Candidate C it is enforced **in machine hardware (the OEM ladder)**, verified per lane at G3, not by firmware.
 
 ### 3.5 Stop/CIS/master chain — confirm, preserve, do not replace
 - OEM service p11: Stop + C.I.S. parallel, both cut the master breaker. **Confirm continuity** (Stop in RUN vs STOP drops the motor-relay coil rail) and **leave the chain intact upstream.** J_SAFETY's Stop/CIS sense ties into this chain so the board's rail also requires it OK.
 
 ### 3.6 M1 ball-return existence check
-- Confirm whether ball-return is a **separate command** on this chassis. If yes → it's a future rev-C populate; **for this cutover M1 stays DNP and unharnessed** (FSM doesn't drive it).
+- Confirm whether ball-return is a **separate command** on this chassis. If yes → it requires a future reviewed population change; **for this cutover M1 stays DNP and unharnessed** (FSM doesn't drive it).
 
 ### 3.7 (bonus, not a gate) cam-stop logic-vs-hardwired
 - Hand-rotate so the SA cam trips; watch whether the S coil drops **by cam alone** (hardwired bonus backstop) or **only via the board** (logic). Expected: logic → no bonus backstop → the RP2040 cam-stop is the sole stop (already accounted for). Record for completeness.
@@ -141,7 +142,7 @@ The board exposes function-named connectors; this per-chassis harness lands them
 | | SP, M, M2, BE | C2A (+C1 for BE) per §3.3 | same; **M2: preserve Expander interlock** |
 | | M1 | — | **DNP, not landed** |
 | **J_FAST_IN** | SA/SB/TA1/TA2 | C2A cam cavities — **CAPTURE §3.2** | dry contact, **normally-closed** (A4) → dry-wetting population |
-| | SC, TB | C2A interlock cams — **CAPTURE §3.2** | dry-wetting + also feed J_SAFETY HW path |
+| | SC, TB | SC/U = CUT+LABEL-ONLY pending reviewed observe-only input; TB = NO-LEAD (no independent cavity) | **do not feed J_SAFETY**; Candidate C uses only the controlled J_SAFE1-2 jumper and the OEM ladder |
 | | DIELL-L, DIELL-R | DIELL sensor leads | NPN open-collector, **idle HIGH ~13–17 V, broken LOW ~0 V**; 10 kΩ pull-up to +12 V |
 | **J_SLOW_IN_A** | GS1–GS10 | C2A 4-bank ≈41C…410U — **per-GS# CAPTURE §3.1** | dry contact, **gripped = CLOSED to chassis** (chassis return) |
 | | GP, OS, BS | C2A (GP≈412DD, BS≈112cc) — confirm §3 | dry contact |
@@ -160,7 +161,7 @@ The board exposes function-named connectors; this per-chassis harness lands them
 
 1. **Dry-run the whole §6 run-of-show on the bench** with the spare/off machine or a jumpered fixture — including every safety-drop test (Stage 6b) and the rollback. Don't first-run any step in production.
 2. **Print the kit:** this doc §3 onward, the harness map §4, the Appendix-B worksheets (blank), spec §12.9 bench steps, and the OEM-brain in-place photos.
-3. **Pack:** cutover enclosure (Pi + both rev-B boards + supplies, assembled), **spare unit #2**, multimeter, wire strippers + small flat-blade + torque driver (~0.5 Nm Phoenix), Sharpie + tape + pre-printed terminal labels, headlamp, bowling ball, phone (photos + AnyDesk), laptop (this doc + bench log, charged).
+3. **Pack:** cutover enclosure (Pi + both Rev-D boards + supplies, assembled), **spare unit #2**, multimeter, wire strippers + small flat-blade + torque driver set for the applicable Phoenix terminal (**0.22–0.25 Nm for the MC 1,5 harness plugs; never the retired ~0.5 Nm figure**), Sharpie + tape + pre-printed terminal labels, headlamp, bowling ball, phone (photos + AnyDesk), laptop (this doc + bench log + verified release manifest, charged).
 4. **WSL-SRV pre-checks (AnyDesk):** `curl http://192.168.4.103:8766/api/health` OK; `lane_state.db` clean of bench state; firewall 8765/8766 open; no pending Windows updates that could reboot mid-window.
 
 ---
@@ -185,17 +186,17 @@ Fit the L_FIRST/SECOND/STRIKE/FOUL LEDs into the mask housings, run J_LAMP_LED (
 **Unplug** the Omega-Tek board + triac driver bank + their connectors. **Do not cut anything.** Bag/label each OEM connector. Keep the OEM brain on a shelf at the cabinet — it is your rollback.
 
 ### Stage 5 — Land the adapter harness (30 min)
-One connector group at a time, **double-checking each against the §4 map**, lift-and-land, torque, tug-test, photograph: J_MOTION_OUT → C1/C2A coil circuits · J_FAST_IN → cams + DIELL · J_SLOW_IN_A/B → grippers/switches · J_SAFETY → TB/SC + Stop/CIS · J_LAMP_LED → mask LEDs · J_PI → Pi · J_PWR → supplies. Final visual pass: every board terminal vs the map. Catch swaps **now**.
+One connector group at a time, **double-checking each against the §4 map**, lift-and-land, torque, tug-test, photograph: J_MOTION_OUT → C1/C2A coil circuits · J_FAST_IN → cams + DIELL · J_SLOW_IN_A/B → grippers/switches · J_SAFE1-2 → the exact Candidate-C keyed/labeled jumper only · J_SAFE3-4 → Stop/CIS · J_LAMP_LED → mask LEDs · J_PI → Pi · J_PWR → supplies. Final visual pass: every board terminal vs the map. Catch swaps **now**.
 
 ### Stage 6 — Logic-only bring-up (rail DISABLED, no motion possible) (20 min)
 **Master breaker still OFF; power LOGIC only (5 V).**
-1. Pi boots, connects to server. **I²C enumerates all 3 MCP23017** per board. **RP2040 boots + heartbeats** — a `boot` line then `hb … ok:1` at ~4 Hz over UART. Health checks that actually exist on rev-B (the board has **no on-board status LEDs** — the D-refdes parts are flyback/snubber diodes and a DNP MOV footprint, NOT indicators): **GP2/`RP2040_OK` reads HIGH** on a meter or its test pad once healthy, **NE555 watchdog output** measurable at its test point while the Pi kicks GPIO 12, and **5 V present at J_PWR** — per spec §12.9. **All relays default OPEN; rail DISABLED** (arm de-asserted).
+1. Pi boots, connects to server. **I²C enumerates all 3 MCP23017** per board and input pull registers command/read back `0x00`. **RP2040 boots + emits identity + heartbeats** — require `pcb:"revD"`, a release-allowlisted `build`/`cfg`, `fi1:0`, then `hb … ok:1` at ~4 Hz. The board has **no on-board status LEDs** — D-refdes parts are flyback/snubber/protection devices, not indicators. Verify **GP2/`RP2040_OK` HIGH**, measurable **NE555 watchdog output**, and **5 V at J_PWR** per the bench contract. **All relays default OPEN; rail DISABLED** (arm de-asserted).
 2. **Read inputs (still no motion):** lift a pin → a GS channel flips; hand-rotate a cam → fast input + (when armed) cam-stop path; break a DIELL beam → ball input; trip foul. Confirm the live feed reads each — this also verifies §3 captures.
 3. **⭐ SAFETY-DROP TESTS (the heart of the cutover):** with the rail's enable simulated/armed on the bench-safe path, prove **each** condition independently drops the rail:
    - stop the watchdog kick → rail drops
    - de-assert arm → rail drops
    - reset/halt the RP2040 → rail drops
-   - trigger a cam-stop edge → rail drops  **⚠️ requires RP2040 firmware v1.1 (cam-stop overrun). v1 firmware provides only the motion max-run backstop, NOT per-cam-edge enforcement — it depends on the §3.2 per-cam edge→angle polarity. So capture cam polarity FIRST (§3.2), flash v1.1, THEN run this sub-test. This sub-test is BLOCKED until then; the other five rail-drop conditions are testable with v1.**
+   - trigger each enabled cam-stop edge → rail drops. **The committed v1.2.3 release does not satisfy this gate:** its enforcement flags are OFF and polarities are unconfirmed. Capture §3.2 first, generate and verify a new Rev-D-only controlled release with only measured cams enabled, then prove each cam on the bench and again here. A valid hash/manifest without enabled, measured cam enforcement is still G3 FAIL.
    - TB/SC interlock → **coil-drop proof (Candidate C form — the landed design as of 2026-07-07, `phase8_interlock_redesign.md` §7).** J_SAFE1-2 carries the *documented, labeled* engineered jumper (build sheet §2), so a rail-drop test is meaningless for this condition — the proof moves to the MACHINE side: **force SC/TB into the danger state (both cam levers held BACK) while the board commands S → the S-contactor COIL must read dead even with the board contact closed; repeat for T.** A coil that energizes = the §3.3 insertion bypassed the ladder → G3 FAIL, lift the feed-side tap, re-select, re-prove (build sheet §3.2). ⛔ Any OTHER J_SAFE jumper remains FORBIDDEN — the §2 engineered part on 1-2 is the sole exception; never jumper 3-4, never bridge 1→4.
    - open the Stop/CIS chain → rail drops
    **Every one must drop motion permission. Any failure → ABORT + rollback (G3).** Do not proceed to live motion with a safety condition that doesn't drop the rail.
@@ -223,9 +224,9 @@ Brief night staff: "21+22 are on the new Pi controller. The machine cycles autom
 
 | gate | when | pass condition | fail action |
 |---|---|---|---|
-| **G1** | before scheduling | unit bench-validated (spec §12.9 all steps) · firmware proven · Track-A scoring soaked clean · spare on hand · OEM brain photographed | don't schedule |
+| **G1** | before scheduling | Rev-D first article + spec §12.9 bench sequence passed · physical Rev-ID and exact release manifest/UF2 verified · measured cam enforcement enabled/proven · Track-A scoring soaked clean · spare on hand · OEM brain photographed | don't schedule |
 | **G2** | after Stage 2 | all §3 field items captured; harness map §4 complete; no surprises vs measured cavities | resolve or defer non-blocking; abort if a safety landing (TB/SC) is unclear |
-| **G3** | Stage 6b | **EVERY** rail condition (watchdog, arm, RP2040, cam-stop, TB/SC, Stop/CIS) independently drops motion permission · **TB/SC proven by physically forcing the interlock at the MACHINE side** (not a J_SAFE terminal lift) · **a J_SAFE1-2 jumper = automatic FAIL** (unless it IS the landed candidate-C design, in which case the live coil-drop proof replaces the rail-drop proof — `phase8_interlock_redesign.md`) | **ABORT → rollback** |
+| **G3** | Stage 6b | watchdog, arm, RP2040, every enabled cam-stop, and Stop/CIS each independently drop the rail · TB/SC is proven at the MACHINE side by forcing both levers BACK while the board commands S and then T; both coils must be dead · J_SAFE1-2 contains only the controlled Candidate-C keyed/labeled jumper from the harness build sheet; any other bridge or an energized coil is FAIL | **ABORT → rollback** |
 | **G4** | Stage 7 | commanded S/T/SP each stop on cams; full reset completes + stops; no runaway | **breaker OFF → rollback** |
 | **G5** | Stage 8 | ball cycle correct + manual deck check across a few balls/leaves both lanes *(the auto-score half is **BLOCKED** until the unified scoring+control daemon — §2 prerequisite; until then G5 gates on cycle correctness only)* | flip scoring to manual (Track-A Step 7); controller stays if G3/G4 passed |
 
@@ -247,7 +248,7 @@ Trigger: any G3/G4 failure, or a Stage-7/8 fault that isn't a trivial single-wir
 3. **Re-plug the OEM Omega-Tek board + triac driver bank + connectors** (preserved from Stage 4).
 4. Mask LEDs (J_LAMP_LED) can stay unpowered (harmless); the OEM 15 VDC mask wiring was left intact, so OEM lamps work on re-plug.
 5. **Master breaker ON.** OEM controller runs the machine. **Bowl a frame on each lane** to confirm normal operation.
-6. Leave the rev-B enclosure powered down + in place (harmless); take the unit home to debug.
+6. Leave the Rev-D enclosure powered down + in place (harmless); take the unit home to debug.
 7. **Document the failure:** which gate/stage, observed behavior, suspected cause → `project_phase8b_cutover_attempt_N.md` memory.
 
 **Budget:** ~20–40 min (longer than the 8a wire-lift because you re-plug the brain). Practice it in the Stage-5 dry run.
@@ -270,13 +271,18 @@ After 7–10 clean days → **cleanup visit** (tidy wire routing; decide whether
 
 ## 10. Per-chassis — this is the 21/22 (SS + Omega-Tek) harness only
 
-The **board is fleet-common; the harness + input populations are per-chassis-type.** Before cutting over **11/12 (Active-98 MP)**, run a short field pass on that pair for the chassis-specific items: A1 working voltage, A4 input forms, and the C-series harness map (output cavities, cam→cavity, gripper return reference, TB/SC terminals). Don't assume 21/22's cavities carry over — the Omega-Tek retrofit already diverged from OEM on M2/S cavities and on the gripper return (chassis vs TAC-GND). Clone the *board*, re-capture the *harness*.
+The **board is fleet-common; the harness + input populations are per-chassis-type.**
+Before cutting over **11/12 (Active-98 MP)**, run a short field pass for A1 working
+voltage, A4 input forms, the C-series harness map, and the TB/SC observable +
+S/T-insertion facts. Do not assume an independently landable TB/SC pair exists or
+copy lane 21/22's Candidate-C evidence without that lane's powered proof. Clone the
+*board*; re-capture and G3-prove the *harness*.
 
 ---
 
 ## 11. Where this sits in the sequence
 
-Upstream of this runbook (must finish first): rev-B **bare-PCB fab package generated → vendor upload preview → fab order → assemble with DNP parts held out → RP2040 firmware/daemon bench bring-up → full board validation (spec §12.9).** The cutover is scheduled only after all of those are green. There is no external deadline — the Phase-8 thesis is "do it once, do it right." A bad first controller cutover poisons the soak and the per-chassis rollout.
+Upstream of this runbook (must finish first): Rev-D R5 **package/hash verification → G7/G8/G13/G14 + vendor upload preview → fab order → assemble with DNP parts held out → first-article qualification → measured cam-polarity capture → new controlled Rev-D-only firmware bundle → daemon/firmware bench bring-up → full board validation.** The cutover is scheduled only after all of those are green. There is no external deadline — the Phase-8 thesis is "do it once, do it right." A bad first controller cutover poisons the soak and the per-chassis rollout.
 
 ---
 

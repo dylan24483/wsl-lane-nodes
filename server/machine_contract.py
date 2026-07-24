@@ -58,6 +58,16 @@ _FALLBACK_VOCAB = {
     "cycle_types": ("ball", "reset", "power_on", "manual", "test"),
     "final_states": ("READY", "FAULT", "MANUAL_INTERVENTION"),
     "record_kinds": ("event", "cycle"),
+    "controller_modes": ("live", "shadow"),
+    "identity_assurances": ("verified", "legacy_unverified", "invalid"),
+    "controller_fsm_states": (
+        "power_off", "manual_intervention", "ready", "sweep_to_guard",
+        "guard_delay", "table_detect", "runthrough", "spotting",
+        "table_finish", "fault",
+    ),
+    "safety_tap_fields": (
+        "ne555", "wdog_kick", "arm_permit", "rp2040_ok",
+    ),
     "scoring_event_types": ("ball_event", "foul_event"),
     "scoring_event_dispositions": (
         "accepted", "duplicate", "ignored_lane_closed", "awaiting_manual",
@@ -158,6 +168,10 @@ def load_vocab(path=None, *, allow_fallback=False):
             "final_states": tuple(v["final_states"]),
             "states": tuple(v["states"]),
             "record_kinds": tuple(v.get("record_kinds", ("event", "cycle"))),
+            "controller_modes": tuple(v["controller_modes"]),
+            "identity_assurances": tuple(v["identity_assurances"]),
+            "controller_fsm_states": tuple(v["controller_fsm_states"]),
+            "safety_tap_fields": tuple(v["safety_tap_fields"]),
             "scoring_event_types": tuple(v["scoring_event_types"]),
             "scoring_event_dispositions": tuple(
                 v["scoring_event_dispositions"]),

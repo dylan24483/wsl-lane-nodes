@@ -36,7 +36,12 @@ The previous-generation ("Rev-A") bench rig that proved out Phase 8 was an assem
 
 Two functions are genuinely **new** in Rev-B (they did not exist as discrete modules on the bench rig):
 
-1. **An RP2040 co-processor (the Pico module).** It owns the fast inputs (cams + ball detectors), runs a fail-safe motion max-run backstop independently of the Pi (per-cam-edge cam-stop *overrun* enforcement is deferred to firmware v1.1), forwards events to the Pi over UART, and — critically — contributes a fail-safe permission line (`RP2040_OK`) into the safety rail. See Section 7.
+1. **An RP2040 co-processor (the Pico module).** It owns the landed fast inputs
+   (cams + ball detectors), runs a fail-safe motion max-run backstop independently
+   of the Pi, forwards events over UART, and contributes `RP2040_OK` to the rail.
+   The v1.2.3 code contains per-cam overrun paths, but all measured-cam enforcement
+   flags remain OFF pending polarity capture and a new controlled release. See
+   Section 7.
 2. **Isolated field "wetting."** Dry-contact inputs (grippers, cams, switches) need a sense voltage to detect a contact closing. Rev-B generates that voltage on-board from an **isolated** DC/DC converter (the TMA-0505S, ref U37), so the sense rail (`FIELD_WET_V`) and its return (`FIELD_GND`) are galvanically separated from logic ground. A machine-side fault cannot backfeed the Pi.
 
 > ⚠️ **Source-of-truth correction.** An earlier parts-planning draft (`phase8b_pcb_revB_BOM_power.md`) suggested a generic **B0505S-1W** isolated brick for field wetting. The **as-built netlist and the locked fab BOM use the TRACO TMA-0505S** (`scripts/generate_kicad_netlist_revB.py` `block_supplies()`, footprint `Converter_DCDC_TRACO_TMA-05xxS_…`; off-board hardware sheet ref **U37**, "Locked exact part"). Use the **TMA-0505S** — the B0505S reference is stale.
@@ -182,15 +187,15 @@ The actual machine-output working voltage was **measured at 24 VAC**, which woul
 
 Rev-B adds *layers* of protection; it does not replace the machine's existing safety chain. When working on, bench-bringing-up, or servicing this board, treat the following as permanent, hardware-level facts:
 
-1. **The upstream machine safety chain stays live and primary.** The **Stop switch** (red button) and the **C.I.S.** (plug-duct cover switch) are wired in parallel and both **cut the master circuit breaker** in the rear control panel — killing the whole machine. That chain sits *upstream* of this board and is the **final physical stop**. The board does not, and must not, defeat it. `(VERIFY: exact J_SAFETY terminal landings on this SS + Omega-Tek chassis are a cutover-day wiring task; the design accepts a normally-closed series loop, but the precise terminals differ from the OEM 9800-MP and are confirmed at cutover.)`
+1. **The upstream machine safety chain stays live and primary.** The **Stop switch** and **C.I.S.** both cut the master breaker. Separately, the powered-proven OEM TB/SC ladder blocks both S/T coils when both levers are BACK/open. Candidate C leaves TB/SC in those coil circuits, uses only the controlled J_SAFE1-2 jumper, and requires per-lane G3 insertion proof. The board must defeat neither path. `(VERIFY remains for the separate J_SAFE3-4 Stop/CIS landing; TB/SC J_SAFE landing is resolved as no machine landing.)`
 
 2. **Live motor current never touches the board.** Motor power stays on the machine's S/T contactors. The board commands those contactors' control coils through isolated contacts only.
 
-3. **The board fails *open* (motion-dead) on loss of any of:** logic power, the NE555 watchdog kick, RP2040 health (`RP2040_OK`), arm permission, or the hardware interlock loop. Every one of these is a series condition on the relay-enable rail, and **the Pi cannot bypass them in software** (see Section 10).
+3. **The on-board rail fails open** on loss of logic power, watchdog kick, `RP2040_OK`/enabled cam-stop, ARM, or the implemented Stop/CIS loop. Candidate C closes the J_SAFE1-2 design position with the controlled jumper; primary TB/SC blocking remains separately in the OEM S/T coil ladder and is proven by G3. **The Pi cannot bypass either correctly installed hardware path** (see Section 10).
 
 4. **The safety rail de-energizes coils; it cannot un-weld a stuck contact.** The rail drops the relay *coils*, but a relay contact that has welded closed will stay closed — which is exactly why relay contact rating, arc suppression (snubber/MOV), and validation are safety-relevant, and why the master breaker / Stop / C.I.S. chain remains the ultimate stop. `(VERIFY: final relay contact current/voltage rating for S/T/SP/BE/M/M2 — confirm G5LE-14 margin is sufficient — pending the at-machine coil/control current measurement.)`
 
-5. **Never power this board against a live machine until the full hardware safety chain is bench-proven** off-live (spec §12.9 bench bring-up sequence). The software (`lane_node/controller_io.py`) is only the soft half; `io.interlock_ok()` is a *secondary advisory echo*, never the authoritative interlock.
+5. **Never power this board against a live machine until the on-board gates are bench-proven and Candidate C passes the per-lane live G3 S/T coil-drop proof.** The software (`lane_node/controller_io.py`) is only the soft half; its SC∧TB echo is default-off, lacks an independent TB input on this chassis, and is not validated protection.
 
 Carry this rule into every later section: when Section 9 describes a relay closing, or Section 7 describes the RP2040 raising `RP2040_OK`, the closing/permitting is always *in addition to* — never *instead of* — the machine's own breaker, interlock, and braking.
 
@@ -225,7 +230,7 @@ For bench bring-up and probing, the as-built reference designators map to functi
 | J6–J11 | **J_MOTION_BE / _M / _M2 / _S / _SP / _T** (in this annotation order) | six 2-pin isolated contact terminals, one per populated motion output |
 | J12 | **J_MOTION_M1** | M1 ball-return output terminal — **DNP** |
 | J13 | **J_LAMP_LED** | 6-pos — VCC_5V, GND, and the four status-LED returns |
-| J14 | **J_SAFETY** | 4-pos — the TB/SC interlock loop + Stop/CIS chain sense (two NC loops in series) |
+| J14 | **J_SAFETY** | 4-pos board-side series provision — **pins 1–2 = controlled Candidate-C jumper (no TB/SC machine landing); pins 3–4 = Stop/CIS chain sense** |
 | MK1–MK4 | — | M3 mounting holes |
 | TP1–TP16 | — | test pads (rails, I²C, watchdog nodes, ARM_PERMIT, RP2040_OK, SAFE_STOP_RETURN, RELAY_ENABLE_RAIL) |
 
@@ -241,5 +246,8 @@ For bench bring-up and probing, the as-built reference designators map to functi
 
 - **Section 8 — Inputs (fast + slow):** the PC817 front-ends, the RP2040 fast inputs (cams + DIELL on **GP6–GP13**), the MCP23017 slow-input banks, and the dry-contact-vs-24VAC population options.
 - **Section 9 — Outputs & Relays:** the G5LE relay channels, the MMBT3904 coil drivers, the function-named motion terminals, the S/T contactor-command contract, and the status-LED drivers.
-- **Section 10 — Safety Rail & Watchdog:** the relay-enable rail, the AO3401A pass-FET, the ARM/RP2040_OK AND chain, the NE555 watchdog, and the J_SAFETY interlock loop — the hardware enforcement behind §5.7.
+- **Section 10 — Safety Rail & Watchdog:** the relay-enable rail, the AO3401A
+  pass-FET, the ARM/RP2040_OK AND chain, the NE555 watchdog, the Candidate-C
+  J_SAFE1-2 source jumper, and Stop/CIS J_SAFE3-4 — plus the separate OEM-ladder
+  G3 proof behind §5.7.
 - **Section 7 — RP2040 Co-Processor & Firmware:** the Pico's role, the fail-safe `RP2040_OK` line, the UART event/command protocol, and the cam-stop / max-run backstop.

@@ -69,8 +69,19 @@ def mk_board(roles=None, writer=None, shipper=None, cam_sink=None,
     # slow_debounce_n=1 keeps the rule-logic tests on raw single-tick pulses
     # (debounce passthrough); the debounce layer itself has dedicated tests
     # below (test_slow_debounce_* / test_diag_debounce_*).
-    return BoardController(BoardConfig(21, 1, "sim", 0, 0,
-                                       board_rev=board_rev), sim=True,
+    return BoardController(BoardConfig(
+                               21, 1, "sim", 0, 0,
+                               board_rev=board_rev,
+                               allowed_fw_builds=("test-build",),
+                               allowed_fw_cfgs=("test-cfg",),
+                               qualified_fw_releases=(
+                                   (board_rev, "test-build", "test-cfg"),),
+                               supported_fw_board_revisions=(board_rev,),
+                               allow_legacy_revc_no_identity=(
+                                   board_rev == "revC"),
+                               legacy_revc_no_identity_enrolled=(
+                                   board_rev == "revC")),
+                           sim=True,
                            diag_writer=writer, cycle_shipper=shipper,
                            cam_sink=cam_sink, aux_roles=roles or {},
                            slow_debounce_n=slow_debounce_n,
@@ -86,11 +97,29 @@ def hb(bc, extra=""):
     bc._test_hb_up = max(
         getattr(bc, "_test_hb_up", 0), int(fields["up"]))
     fields.update({"ev": "hb", "ok": 1})
+    if bc.cfg.board_rev == "revD":
+        fields.setdefault("bn", 123)
+        fields.setdefault("rid", 1)
+        fields.setdefault("flt", "")
+        fields.setdefault("drp", 0)
+        fields.setdefault("in", 0)
+        fields.setdefault("run", 0)
+        fields.setdefault("tap", 13)
+        fields.setdefault("rd", 0)
+        fields.setdefault("ep", 1)
+        fields.setdefault("v5", 5000)
+        fields.setdefault("v5n", 4990)
+        fields.setdefault("v5x", 5010)
     bc.link.feed_line(json.dumps(fields, separators=(",", ":")))
 
 
 def to_ready(bc):
     hb(bc)
+    if bc.cfg.board_rev == "revD":
+        bc.link.feed_line(
+            '{"ev":"id","fw":"test","bn":123,"pcb":"revD","rid":1,'
+            '"uid":"TEST","build":"test-build","cfg":"test-cfg",'
+            '"fi1":0,"t":1}')
     bc.tick()
     bc.io.slow["PBZ"] = True
     bc.tick()

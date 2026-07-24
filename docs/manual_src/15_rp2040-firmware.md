@@ -12,10 +12,12 @@ to Pi scheduling latency.
 Everything in this section is **per board / per lane** — a lane pair has two
 identical boards, each with its own RP2040, on one shared Raspberry Pi.
 
-Firmware version documented here: **`phase8b-rp2040 v0.1.0`** (the `FW_VERSION`
-string in `config.h`). This is a **DRAFT, bench-bring-up-gated** firmware: it has
-been host-tested and clean-cross-compiled, but it has **not been validated on a
-live machine** and is **not cutover-ready** (see §15.10).
+Firmware version documented here: **`phase8b-rp2040 v1.2.3`** (the `FW_VERSION`
+string in `config.h`). A controlled Rev-D-only release bundle exists, but it has
+**not been flashed or validated on a live machine** and is **not cutover-ready**.
+Every measured-cam enforcement flag remains **OFF** in the released configuration;
+polarity capture, a newly qualified release, and first-article/bench gates remain
+mandatory (see §15.9–§15.10).
 
 > **Read the safety model (§15.6) before editing this firmware.** The RP2040 drives
 > a non-bypassable condition in the relay-enable rail. Getting its fail-safe
@@ -50,10 +52,11 @@ camera sections — this manual tree uses non-contiguous file prefixes (02, 08, 
 The RP2040 firmware has exactly four jobs. Three of them keep running even if the
 UART to the Pi is dead.
 
-1. **Read 8 fast inputs, debounce them, and push edge events to the Pi over
-   `uart0`.** The 8 inputs are 6 pinsetter cams (SA, SB, SC, TA1, TA2, TB) and 2
-   DIELL ball-detector beams (left + right). The FSM *consumes* these events; it
-   does not poll. This removes Pi scheduling jitter from cam timing.
+1. **Read the 8 board fast-input positions, debounce them, and push edge events to
+   the Pi over `uart0`.** The PCB positions are SA, SB, SC, TA1, TA2, TB and two
+   DIELL beams. Field observability is harness-specific: lane 21/22 has **no
+   independent TB lead**, and SC/U is not a dry-input landing. The FSM consumes
+   events from landed, measured channels; it does not poll.
 
 2. **Drive `RP2040_OK` (GP2) = rail permission.** This GPIO is one series condition
    in the relay-enable-rail AND chain on the board (see the Relay-Output section and
@@ -76,19 +79,21 @@ UART to the Pi is dead.
 What the RP2040 firmware is **not**:
 
 - It is **not** the only safety device. The TB/SC collision interlock (the
-  `J_SAFETY` hardware NC loop), the Stop / CIS / master-breaker chain, the NE555
+  powered-proven OEM parallel-safe contacts in the S/T coil ladder), the Stop / CIS / master-breaker chain, the NE555
   watchdog (which watches the **Pi**, not the RP2040), and the machine's
   regenerative motor braking are **all in hardware, independent of this firmware.**
 - It does **not** switch any motor or coil current. It only drives a 3.3 V logic
   permission line; the relays and the machine contactors do the switching.
-- It does **not**, in v0.1.0, enforce per-cam-edge cam-stop overrun — that is
-  deferred to v1.1 (§15.9), and its absence is exactly what blocks cutover gate G3.
+- The v1.2.3 code contains per-cam-edge enforcement paths, but the controlled
+  release keeps **all measured-cam flags OFF**. No cam-stop path may be credited
+  until its polarity is measured, enabled in a new controlled release, and proven
+  at the applicable bench/cutover gate (§15.9).
 
 ---
 
 ### 15.2 Pinout (Authoritative)
 
-**Source of truth:** `scripts/generate_kicad_netlist_revB.py` → `block_rp2040()` and
+**Source of truth:** `scripts/generate_kicad_netlist_revD.py` → `block_rp2040()` and
 its `FAST_INPUTS` table (the live board netlist generator). `config.h` cites this
 and matches it. The Pico physical-pin numbers in the generator map to the GPIO
 numbers used in `config.h` exactly as below.
@@ -106,10 +111,10 @@ numbers used in `config.h` exactly as below.
 | GP2 | 4 | `PIN_RP_OK` | `RP2040_OK` rail permit | out | `RP2040_OK` | **HIGH = permit, LOW = drop rail; fail-safe-low** |
 | GP6 | 9 | `PIN_SA` | SA — sweep cam | in | `FAST_SA` | active-low opto; 270° run-through / 360° zero |
 | GP7 | 10 | `PIN_SB` | SB — sweep cam | in | `FAST_SB` | 66° guard / 186° table-spot init |
-| GP8 | 11 | `PIN_SC` | SC — sweep-under-table interlock cam | in | `FAST_SC` | window 86°–243° |
+| GP8 | 11 | `PIN_SC` | SC — sweep-under-table interlock board position | in | `FAST_SC` | lane 21/22 SC/U is cut/labeled/unlanded; not a dry echo input |
 | GP9 | 12 | `PIN_TA1` | TA1 — table cam | in | `FAST_TA1` | 355° zero stop / 185° delay reset |
 | GP10 | 14 | `PIN_TA2` | TA2 — table cam | in | `FAST_TA2` | 260° run-through / pin-latch / ball-strike decision |
-| GP11 | 15 | `PIN_TB` | TB — table-sweep interference interlock cam | in | `FAST_TB` | window 105°–255° |
+| GP11 | 15 | `PIN_TB` | TB — table-sweep interference interlock board position | in | `FAST_TB` | **no independent field lead on lanes 21/22** |
 | GP12 | 16 | `PIN_DIELL_L` | DIELL-L — ball detect, left beam | in | `FAST_DIELL_L` | active-low opto; cushion-SS trigger |
 | GP13 | 17 | `PIN_DIELL_R` | DIELL-R — ball detect, right beam | in | `FAST_DIELL_R` | active-low opto |
 
@@ -127,14 +132,17 @@ that is one transistor in the relay-enable-rail series AND chain. A **100 kΩ ba
 pulldown** (`Rpd_AND_RP_OK`) means the rail fails **dead** whenever GP2 is Hi-Z —
 i.e. whenever the RP2040 is unpowered, in reset, or pre-`main()`. The other AND
 condition in the same chain is `ARM_PERMIT` (the Pi's arm GPIO, via `Q_AND_ARM`),
-and upstream of both are the NE555 watchdog OK and the external `J_SAFETY` loops.
+and upstream of both are the NE555 watchdog OK and the implemented `J_SAFETY` source path
+(Candidate-C controlled jumper on pins 1–2 plus the Stop/CIS pins-3/4 loop).
 This is the hardware that makes "GP2 LOW ⇒ no motion" true regardless of software.
 
-> **The cams are normally-closed and the opto inverts.** Which *edge* (`f` =
-> fall/asserted vs `r` = rise/released) corresponds to the angular **trip** of each
-> cam is a deliberately-deferred **bench-confirmation field item** (§15.9, and
-> `docs/phase8_trackB_controller_cutover_runbook.md` §3.2). The firmware reports
-> both edges and lets the Pi decide; it does **not** bake in an unconfirmed polarity.
+> **Do not apply one blanket "normally-closed" or trip polarity to every cam.**
+> The opto path is active-low at the Pico, but each landed motion-cam contact and
+> edge→angle relationship must be measured. SC/TB is a separate case: powered
+> testing proved the OEM ladder contacts are parallel closed-when-safe and both
+> levers BACK/open kill S/T, while lane 21/22 has no independent TB lead for the
+> firmware echo. The firmware reports edges but the released enforcement flags
+> remain OFF until measured polarities are qualified.
 
 ---
 
@@ -190,8 +198,8 @@ milliseconds since boot (`now_ms()`), which wraps at ~49.7 days.
 
 | `ev` | Emitted when | Fields | Example | Pi-side handling |
 |---|---|---|---|---|
-| `boot` | Once, at startup, before the watchdog is armed | `fw` (firmware version), `wdt_reset` (1 if this boot was caused by the watchdog), `rp_ok` (always 0 at boot) | `{"ev":"boot","fw":"phase8b-rp2040 v0.1.0","wdt_reset":0,"rp_ok":0}` | Counts as a sign of life; `wdt_reset:1` tells the Pi the chip self-reset from a hang. |
-| `cam` | Debounced cam edge | `id` (SA/SB/SC/TA1/TA2/TB), `e` (`f`=asserted/fall, `r`=released/rise), `t` | `{"ev":"cam","id":"SA","e":"f","t":12345}` | On the **trip** edge: SC/TB update the interlock echo; SA/SB/TA1/TA2 are queued for the FSM. |
+| `boot` | Once, at startup, before the watchdog is armed | includes `fw` (firmware version), reset/permission state, enforcement posture, and release identity fields defined by the current firmware README | `{"ev":"boot","fw":"phase8b-rp2040 v1.2.3",...}` | Counts as a sign of life; require the manifest-bound Rev-D release identity before arming. |
+| `cam` | Debounced cam edge | `id` (SA/SB/SC/TA1/TA2/TB), `e` (`f`=asserted/fall, `r`=released/rise), `t` | `{"ev":"cam","id":"SA","e":"f","t":12345}` | SA/SB/TA1/TA2 may be queued for the FSM after measured configuration. Code can update SC/TB echo state, but the lane-21/22 harness has no independent TB input and the echo is default-off/unvalidated. |
 | `ball` | One thrown ball (lockout-deduped) | `src` (`L`/`R`), `t` | `{"ev":"ball","src":"L","t":12350}` | Queued; later applied as `controller.on_ball()`. |
 | `rp_ok` | `RP2040_OK` level changed | `v` (1/0), `t` | `{"ev":"rp_ok","v":1,"t":12360}` | Updates the Pi's view of rail permission. |
 | `flt` | A fault is latched | `code` (e.g. `motion_timeout`), `m` (motor name, may be `""`), `t` | `{"ev":"flt","code":"motion_timeout","m":"S","t":20000}` | Marks the RP2040 **not healthy immediately**, even if the paired `rp_ok:0` is delayed/dropped. |
@@ -220,8 +228,9 @@ ignored** (forward-compatible).
 
 #### 15.4.3 Cam-event → FSM dispatch (Pi side)
 
-The FSM has no `cam_SC`/`cam_TB` methods — **SC and TB are interlock-only** and feed
-`interlock_ok()`, not a cam handler. The other four cams map to FSM calls in
+The FSM has no `cam_SC`/`cam_TB` methods. The code reserves them for the optional
+`interlock_ok()` echo, not a cam handler; on lanes 21/22 that echo has no independent
+TB observation and remains default-off/unvalidated. The other four cams map to FSM calls in
 `rp2040_link.dispatch_cam()`. Because the FSM guards each handler by state, calling
 **both** angle-variants of a dual-trip cam is safe — only the state-matching one
 acts.
@@ -232,16 +241,15 @@ acts.
 | `SB` | `controller.cam_SB_guard()` |
 | `TA1` | `controller.cam_TA1_delayreset()` **and** `controller.cam_TA1_zero()` |
 | `TA2` | `controller.cam_TA2_runthrough()` |
-| `SC` / `TB` | **No FSM cam call.** Updates the SC/TB danger echo → `interlock_ok()`. |
+| `SC` / `TB` | **No FSM cam call.** Code path only for the default-off, unvalidated SC/TB echo; no independent TB field input exists on lanes 21/22. |
 | `ball` | `controller.on_ball()` |
 
-**The interlock echo** (`RP2040Link.interlock_ok()`): a collision course is **SC AND
-TB both in their danger window at the same time**. The method returns `True` (no
-veto) unless both `_sc_danger` and `_tb_danger` are set. This is a **secondary
-software echo** of the authoritative hardware `J_SAFETY` loop — it can only *veto*
-motion the FSM might otherwise command; it can never *enable* motion the hardware
-would block. (See `docs/phase8_8270_SYSTEM_REFERENCE.md` §5 for the SC/TB collision
-geometry.)
+**The interlock echo** (`RP2040Link.interlock_ok()`) implements an SC∧TB software
+model, but it is **default-off, secondary, and unvalidated**. Lane 21/22 has no
+independent TB harness observation, and C2A-U is not a dry input, so this path
+cannot be credited as protection or diagnostics. The authoritative guard is the
+OEM parallel closed-when-safe S/T coil ladder, accepted only after Candidate-C G3
+proves both board-commanded coils stay dead with both levers BACK/open.
 
 ---
 
@@ -307,9 +315,9 @@ every way the firmware can fail drives, or allows, the rail to go dead.
 
 ### 15.7 Motion Max-Run Backstop ("Cam Timeout")
 
-This is the firmware's one **active** motion safety enforcement in v0.1.0 (as opposed
-to the passive health/watchdog backstop). It is the RP2040's UART-independent
-equivalent of the FSM's own `MAX_MOTION_S`.
+This is the stock v1.2.3 release's active motion-duration backstop (in addition to
+the health/watchdog path). It is the RP2040 counterpart to the FSM's own
+`MAX_MOTION_S`; measured-cam enforcement flags remain OFF.
 
 **How it works.** Each entry in `motors[]` has a `guarded` flag, a `running` flag,
 and a `t_start_ms`. When the Pi sends `RUN <m>`, the firmware sets `running=true` and
@@ -375,47 +383,49 @@ loop via `apply_events()`, keeping the non-thread-safe FSM single-threaded.
 
 ---
 
-### 15.9 v1 Scope vs v1.1 Deferral — and Cutover Gate G3
+### 15.9 v1.2.3 Release Posture — Enforcement Implemented but Default OFF
 
-v0.1.0 is intentionally scoped. Two safety features are **deliberately NOT in this
-firmware** because they depend on a measurement we have not yet taken on the machine.
+The v1.2.3 code contains the v1.1-era safety-supervision paths, but the controlled
+Rev-D release intentionally ships every measured-cam enforcement flag **OFF**.
+Code presence and host tests are not permission to use an unmeasured field signal.
 
-#### Deferred to v1.1
+#### Implemented paths whose field enablement remains deferred
 
 1. **Cam-stop OVERRUN enforcement.** The desired behavior: a *stop-cam* fires while a
    motor is RUNNING and the Pi fails to `STOP` it within a short grace window → the
    firmware drops `RP2040_OK` directly. This needs the **per-cam edge → angle
    polarity** (which of `f`/`r` is the angular trip, per cam). That polarity is a
-   deliberately-deferred **cutover field item**
-   (`docs/phase8_trackB_controller_cutover_runbook.md` §3.2). We refuse to bake in an
-   unconfirmed cam polarity into a safety path. The hook is present and marked
-   `// v1.1` in `supervise()` in `main.c`, ready to be filled once polarity is
-   bench-confirmed.
+   deliberately-deferred field item
+   (`docs/phase8_trackB_controller_cutover_runbook.md` §3.2). The implementation is
+   present, but `CAM_*_STOP_ENABLED` remains 0 until polarity is measured and bound
+   into a **new controlled release** that passes the bench gate.
 
-2. **SC/TB collision echo gating `RP2040_OK`.** The hardware `J_SAFETY` NC loop is the
-   **primary** interlock and is already wired. The firmware *echo* of SC/TB into the
-   rail-permission decision is enabled only once the SC/TB danger windows are
-   bench-confirmed. (Today the SC/TB echo exists only on the **Pi side**, as an
-   advisory `interlock_ok()` veto — it cannot enable motion the hardware blocks.)
+2. **SC/TB collision echo gating `RP2040_OK`.** This remains **default-off,
+   secondary, and unvalidated**, not merely waiting on window angles. Lane 21/22
+   has no independent TB harness input and C2A-U is a live-ladder region, so a
+   two-input SC∧TB echo cannot be credited without a separately reviewed sensing
+   redesign. Primary protection is Candidate C's OEM ladder + per-lane G3 proof.
 
-#### What v1 provides instead
+#### What stock v1.2.3 provides
 
 - **Firmware health** (watchdog → rail dead on hang).
 - **Motion max-run backstop** (the 8 s guarded-motor timeout, §15.7) — a *coarse*
   time-based catch, **not** per-cam-edge enforcement.
 
-#### Why this blocks Cutover Gate G3
+#### Why this still blocks measured-cam credit at cutover
 
-The Track-B controller cutover runbook defines a **G3 "cam-stop rail-drop" gate**: on
-the bench, a stop-cam firing while a motor runs and the Pi fails to stop it must drop
-the rail within a bounded window. **v1 cannot pass G3** because it has no per-cam-edge
-cam-stop — its only motion enforcement is the 8 s max-run timer, which is far coarser
-than a cam-stop window. Therefore:
+The Track-B runbook may credit a per-cam rail-drop only after the relevant measured
+polarity is enabled in a manifest-bound release and proven on the target hardware.
+Stock v1.2.3 cannot pass that sub-test because its cam flags are OFF; its active
+motion enforcement is the coarser 8 s max-run timer. Candidate-C G3 collision
+protection is a different, primary hardware proof: with the board commanding S and
+then T, both levers BACK/open must leave each machine coil dead.
 
-> **"Firmware done" ≠ "cutover ready."** v0.1.0 is *host-logic-tested + builds + happy
-> path*. Cutover requires **(a)** implementing **v1.1 cam-stop overrun** and **(b)**
-> on-hardware bench bring-up (§15.10). Until both land, the existing OEM controller
-> stays in charge of the machines.
+> **"Controlled bundle exists" ≠ "cutover ready."** v1.2.3 is host-tested and
+> release-packaged but not flashed. Cutover still requires first-article/on-hardware
+> bring-up and, before any measured-cam enforcement is credited, a newly controlled
+> release with confirmed polarity and the applicable bench proof. Until those gates
+> pass, the existing OEM controller stays in charge of the machines.
 
 *(VERIFY: the exact label/letter "G3" for the cam-stop rail-drop gate — taken from the
 firmware README's "G3 cam-stop rail-drop gate" wording and
@@ -469,9 +479,11 @@ gcc -std=c11 -Wall -Wextra -I test -I test/stubs test/test_main.c -o test/test_m
 ./test/test_main.exe        # exit 0 = all checks pass
 ```
 
-**Last run: 24/24 checks passed** (2026-06-03, gcc 16.1.0), clean under
-`-Wall -Wextra` plus the `printf`-format attribute (so the event format strings are
-compiler-verified too).
+**Current controlled-source host result:** 64/64 (`test_main`) + 32/32
+(`test_v11`) + 140/140 (`test_v12`) + 44/44 (`test_fi1`) checks passed
+(2026-07-23, gcc 16.1.0), clean under `-Wall -Wextra -Werror`. These tests prove
+code behavior, including default-off inertness; they do **not** validate a field
+polarity or create an independent TB lead.
 
 The **Pi-side** link has its own host test (no hardware, mocks the serial transport):
 
@@ -480,8 +492,8 @@ The **Pi-side** link has its own host test (no hardware, mocks the serial transp
 python rp2040_link.py        # exit 0 = all pass
 ```
 
-**Last run: 29/29 checks passed** (2026-06-03) — covers inbound parsing/health, the
-SC∧TB interlock echo, full cam/ball→FSM dispatch through a strike cycle, RUN/STOP
+The current Pi-side self-test reports **45/45** checks — covering parsing/health, the
+SC∧TB **software-model unit path (not field validation)**, full cam/ball→FSM dispatch through a strike cycle, RUN/STOP
 emission via the `controller_io` integration, command formatting, and the
 "bare-`flt`-marks-unhealthy" case. A companion regression guard in
 `controller_io.py`'s `__main__` re-derives `OUT_A_MAP`/`IN_A_MAP` from the netlist
@@ -496,16 +508,19 @@ Per `docs/phase8b_pcb_revB_spec.md` §12.9 — do this on a machine that is **lo
 1. **Power + boot.** Flash, power the board logic only. On USB/UART expect a `boot`
    line, then `hb` at ~4 Hz with `ok:1` after ~200 ms (`BOOT_SETTLE_MS`). Meter GP2 /
    the rail-permit test pad → **HIGH** once healthy.
-2. **Inputs.** Hand-actuate each cam / break each DIELL beam → confirm the matching
-   `cam`/`ball` event with the correct `id`. **This step also captures the per-cam edge
-   polarity** needed for the v1.1 cam-stop hook and the cutover field sheet.
+2. **Landed inputs.** Hand-actuate each independently wired motion cam / break each
+   DIELL beam → confirm the matching `cam`/`ball` event with the correct `id`, and
+   capture the edge→angle polarity for any future enforcement release. Do not expect
+   an independent TB event on lane 21/22; SC/U is not a dry input landing.
 3. **Watchdog drop.** Pause the loop (or pull power to just the Pico) → GP2 → **LOW** →
    rail drops. Force a hang and confirm the next `boot` carries `wdt_reset:1`.
 4. **Motion timeout.** Send `RUN S`, wait > 8 s without `STOP S` → expect
    `{"ev":"flt","code":"motion_timeout","m":"S"}` and GP2 → **LOW**. `CLEAR` → GP2 back
    **HIGH**.
 5. **Only then** integrate with the rail/relay section per spec §12.9 — each relay with
-   a dummy load, arm drop, interlock drop — before connecting any machine harness.
+   a dummy load and each implemented on-board drop. Opening J_SAFE1-2 tests only the
+   PCB provision. Candidate-C TB/SC protection is proven later by the per-lane live
+   G3 S-and-T coil-drop test before motion.
 
 ---
 
@@ -515,7 +530,7 @@ All from `firmware/rp2040/config.h` unless noted.
 
 | Name | Value | Purpose |
 |---|---|---|
-| `FW_VERSION` | `"phase8b-rp2040 v0.1.0"` | Reported in the `boot` and `hb` paths. |
+| `FW_VERSION` | `"phase8b-rp2040 v1.2.3"` | Reported in identity/boot telemetry; require the manifest-bound release identity. |
 | `UART_BAUD` | `115200` | UART0 line rate (8N1, no flow control). |
 | `DEBOUNCE_CAM_US` | `2000` µs | Cam input debounce window. |
 | `DEBOUNCE_DIELL_US` | `500` µs | Ball-beam input debounce window. |
@@ -524,7 +539,7 @@ All from `firmware/rp2040/config.h` unless noted.
 | `BOOT_SETTLE_MS` | `200` ms | `RP2040_OK` held LOW at least this long after boot before any permit. |
 | `WDT_TIMEOUT_MS` | `250` ms | RP2040 hardware-watchdog timeout (loop hang → chip reset → rail drop). |
 | `MAX_MOTION_MS` | `8000` ms | Max-run backstop window for guarded motors (matches FSM `MAX_MOTION_S`). |
-| `TXR_SZ` | `512` bytes | Non-blocking TX ring size (`main.c`). |
+| `TXR_SZ` | `1024` bytes | Non-blocking TX ring size (`main.c`). |
 | `DEBUG_USB` | `0` (default) | When `1`, mirror events to USB-CDC; protocol still always goes to `uart0`. |
 | Commands | `RUN <m>` · `STOP <m\|*>` · `CLEAR` · `PING` | Pi → RP2040. |
 | Events | `boot` · `cam` · `ball` · `rp_ok` · `flt` · `hb` · `ack` | RP2040 → Pi. |
@@ -535,8 +550,8 @@ All from `firmware/rp2040/config.h` unless noted.
 
 ### 15.12 Maintenance Notes & Gotchas
 
-- **The pin map's only source of truth is the netlist generator**
-  (`scripts/generate_kicad_netlist_revB.py`, `block_rp2040()` + `FAST_INPUTS`).
+- **The pin map's only source of truth is the Rev-D netlist generator**
+  (`scripts/generate_kicad_netlist_revD.py`, `block_rp2040()` + `FAST_INPUTS`).
   `config.h` cites it. If the board ever changes, re-verify `config.h` against the
   generator **before flashing**. The GPIO column in
   `docs/phase8_channel_allocation.md` §2 is **stale** (GP0–GP7) — ignore it.

@@ -72,6 +72,10 @@ os.environ.setdefault("WSL_MACHINE_LANES", "21,22")
 os.environ.setdefault(
     "WSL_SCORING_NODE_TOPOLOGY", "test-pair-21-22=21,22")
 os.environ.setdefault("WSL_ALLOW_UNAUTHENTICATED_BENCH", "1")
+os.environ.setdefault("WSL_CONTROLLER_EXPECTED_MODE", "live")
+os.environ.setdefault(
+    "WSL_RP2040_QUALIFIED_RELEASES",
+    "revD|deadbeef|aa4ff333,revD|test-release|test-config")
 os.environ.pop("LANE_FX_ENABLED", None)
 os.environ.pop("WSL_MACHINE_DIAG", None)
 os.environ.pop("WSL_MACHINE_EVENT_RETENTION_DAYS", None)
@@ -728,6 +732,11 @@ def test_api_health_gains_counts_only_machine_section():
              {'lane_id': 22, 'final_state': 'FAULT'})
         status, health = http('GET', '/api/health')
         assert_eq(status, 200, "/api/health ok")
+        assert_eq(health['site_id'], server.SITE_ID or None,
+                  "/api/health exposes process-observed site identity")
+        assert_eq(health['site_identity_ok'],
+                  server._valid_production_node_id(server.SITE_ID),
+                  "/api/health reports site-identity syntax")
         m = health['machine']
         assert_eq(m['ok'], True, "machine section healthy")
         assert_eq(m['events_total'], 2, "events counted")
@@ -1024,12 +1033,26 @@ def _contract():
         return json.load(f)
 
 
-def _heartbeat_body(lane=22, seq=1, loop_seq=1):
-    return {"heartbeat": {
+def _heartbeat_body(lane=22, seq=1, loop_seq=1, **overrides):
+    heartbeat = {
         "lane_id": lane,
         "controller_boot_id": "machine-diagnostics-test",
         "heartbeat_seq": seq,
         "control_loop_seq": loop_seq,
+        "controller_mode": "live",
+        "live_outputs_acknowledged": True,
+        "arm_state": True,
+        "fsm_state": "ready",
+        "manual_rearm_required": False,
+        "legacy_identity_mode": False,
+        "identity_assurance": "verified",
+        "arm_prerequisite_reason": None,
+        "safety_taps": {
+            "ne555": True,
+            "wdog_kick": True,
+            "arm_permit": True,
+            "rp2040_ok": True,
+        },
         "board_rev": "revD",
         "contract_sha256": server._contract_sha256(),
         "contract_loaded": True,
@@ -1059,7 +1082,9 @@ def _heartbeat_body(lane=22, seq=1, loop_seq=1):
             "reasons": [],
             "pi_probes_required": True,
         },
-    }}
+    }
+    heartbeat.update(overrides)
+    return {"heartbeat": heartbeat}
 
 
 def test_revd_approved_heartbeat_requires_complete_identity_evidence():
@@ -1072,6 +1097,158 @@ def test_revd_approved_heartbeat_requires_complete_identity_evidence():
         assert_true(
             "missing evidence" in response.get("error", ""),
             "identity rejection explains missing evidence")
+
+
+def test_controller_heartbeat_requires_complete_runtime_safety_envelope():
+    required = (
+        "controller_mode", "live_outputs_acknowledged", "arm_state",
+        "fsm_state", "manual_rearm_required", "legacy_identity_mode",
+        "identity_assurance", "arm_prerequisite_reason", "safety_taps",
+    )
+    for field in required:
+        body = _heartbeat_body()["heartbeat"]
+        body.pop(field)
+        try:
+            machine_store.validate_heartbeat(body)
+            raise AssertionError(f"heartbeat missing {field} was accepted")
+        except ValueError as exc:
+            assert_true(field in str(exc), f"missing {field} is explicit")
+
+    body = _heartbeat_body()["heartbeat"]
+    body["safety_taps"]["ne555"] = None
+    try:
+        machine_store.validate_heartbeat(body)
+        raise AssertionError("verified revD nullable safety tap was accepted")
+    except ValueError as exc:
+        assert_true(
+            "four booleans" in str(exc),
+            "verified revD requires all four sampled taps")
+
+
+def test_controller_posture_is_persisted_forwarded_and_fail_closed():
+    old_mode = os.environ.get("WSL_CONTROLLER_EXPECTED_MODE")
+    old_qualified = os.environ.get("WSL_RP2040_QUALIFIED_RELEASES")
+    os.environ["WSL_CONTROLLER_EXPECTED_MODE"] = "live"
+    os.environ["WSL_RP2040_QUALIFIED_RELEASES"] = (
+        "revD|test-release|test-config")
+    try:
+        with fresh_db():
+            status, _ = http(
+                "POST", "/api/machine/heartbeat", _heartbeat_body())
+            assert_eq(status, 200, "complete controller posture accepted")
+            entry = machine_store.machine_health()["lanes"]["22"]
+            assert_eq(entry["state"], "HEALTHY", "safe posture is healthy")
+            assert_eq(entry["controller_mode"], "live", "mode forwarded")
+            assert_eq(entry["arm_state"], True, "ARM state forwarded")
+            assert_eq(entry["fsm_state"], "ready", "FSM state forwarded")
+            assert_eq(
+                entry["identity_assurance"], "verified",
+                "identity assurance forwarded")
+            assert_eq(
+                entry["safety_taps"]["arm_permit"], True,
+                "safety taps persisted and forwarded")
+
+            status, _ = http(
+                "POST", "/api/machine/heartbeat",
+                _heartbeat_body(
+                    seq=2, loop_seq=2,
+                    controller_mode="shadow",
+                    live_outputs_acknowledged=False,
+                    arm_state=True,
+                    fsm_state="fault",
+                    manual_rearm_required=True,
+                    identity_assurance="legacy_unverified",
+                    legacy_identity_mode=True,
+                    safety_taps={
+                        "ne555": False,
+                        "wdog_kick": False,
+                        "arm_permit": False,
+                        "rp2040_ok": False,
+                    }))
+            assert_eq(status, 200, "unsafe bounded facts remain observable")
+            entry = machine_store.machine_health()["lanes"]["22"]
+            assert_eq(entry["state"], "DEGRADED", "unsafe posture degrades")
+            reasons = set(entry["degraded_reasons"])
+            for reason in (
+                    "controller_mode_mismatch",
+                    "live_outputs_not_acknowledged",
+                    "manual_rearm_required",
+                    "identity_assurance_legacy_unverified",
+                    "arm_fsm_inconsistent",
+                    "arm_without_ne555",
+                    "arm_without_rp2040_ok"):
+                assert_true(reason in reasons, f"{reason} is explicit")
+    finally:
+        if old_mode is None:
+            os.environ.pop("WSL_CONTROLLER_EXPECTED_MODE", None)
+        else:
+            os.environ["WSL_CONTROLLER_EXPECTED_MODE"] = old_mode
+        if old_qualified is None:
+            os.environ.pop("WSL_RP2040_QUALIFIED_RELEASES", None)
+        else:
+            os.environ["WSL_RP2040_QUALIFIED_RELEASES"] = old_qualified
+
+
+def test_missing_or_malformed_controller_policy_is_visible_and_degraded():
+    old_mode = os.environ.get("WSL_CONTROLLER_EXPECTED_MODE")
+    old_qualified = os.environ.get("WSL_RP2040_QUALIFIED_RELEASES")
+    try:
+        os.environ["WSL_CONTROLLER_EXPECTED_MODE"] = "live"
+        os.environ["WSL_RP2040_QUALIFIED_RELEASES"] = (
+            "revD|test-release|test-config")
+        with fresh_db():
+            status, _ = http(
+                "POST", "/api/machine/heartbeat", _heartbeat_body())
+            assert_eq(status, 200, "safe heartbeat accepted")
+
+            os.environ.pop("WSL_CONTROLLER_EXPECTED_MODE", None)
+            entry = machine_store.machine_health()["lanes"]["22"]
+            assert_eq(
+                entry["state"], "DEGRADED",
+                "missing production mode policy is fail-closed")
+            assert_true(
+                "controller_mode_policy_missing"
+                in entry["degraded_reasons"],
+                "missing mode policy is surfaced")
+
+            os.environ["WSL_CONTROLLER_EXPECTED_MODE"] = "LIVE"
+            entry = machine_store.machine_health()["lanes"]["22"]
+            assert_true(
+                "controller_mode_policy_invalid"
+                in entry["degraded_reasons"],
+                "malformed mode policy is surfaced")
+
+            os.environ["WSL_CONTROLLER_EXPECTED_MODE"] = " live "
+            entry = machine_store.machine_health()["lanes"]["22"]
+            assert_true(
+                "controller_mode_policy_invalid"
+                in entry["degraded_reasons"],
+                "whitespace-padded mode policy is rejected exactly")
+
+            os.environ["WSL_CONTROLLER_EXPECTED_MODE"] = "live"
+            os.environ.pop("WSL_RP2040_QUALIFIED_RELEASES", None)
+            entry = machine_store.machine_health()["lanes"]["22"]
+            assert_true(
+                "qualified_release_policy_missing"
+                in entry["degraded_reasons"],
+                "missing qualified-release policy is surfaced")
+
+            os.environ["WSL_RP2040_QUALIFIED_RELEASES"] = (
+                "revD |test-release|test-config")
+            entry = machine_store.machine_health()["lanes"]["22"]
+            assert_true(
+                "qualified_release_policy_invalid"
+                in entry["degraded_reasons"],
+                "malformed qualified-release policy is surfaced")
+    finally:
+        if old_mode is None:
+            os.environ.pop("WSL_CONTROLLER_EXPECTED_MODE", None)
+        else:
+            os.environ["WSL_CONTROLLER_EXPECTED_MODE"] = old_mode
+        if old_qualified is None:
+            os.environ.pop("WSL_RP2040_QUALIFIED_RELEASES", None)
+        else:
+            os.environ["WSL_RP2040_QUALIFIED_RELEASES"] = old_qualified
 
 
 def test_cycle_post_accepts_canonical_wrapped_shape():
@@ -1522,11 +1699,14 @@ def test_scoring_boot_retirement_is_durable_across_sessions():
 def test_api_health_carries_build_identity():
     # R2-8: /api/health must expose the deployed git hash so deploy.ps1
     # can record + compare it (None only when git AND VERSION both fail —
-    # this checkout has git, so expect a real short hash).
+    # this checkout has git, so expect the exact full release commit).
     _, body = http('GET', '/api/health')
     assert_true('git_hash' in body, "git_hash key present in /api/health")
-    assert_true(isinstance(body['git_hash'], str) and body['git_hash'],
-                "git identity resolved for a git checkout")
+    assert_true(
+        isinstance(body['git_hash'], str)
+        and len(body['git_hash']) == 40
+        and all(c in "0123456789abcdef" for c in body['git_hash']),
+        "git identity is an exact lowercase 40-character commit")
 
 
 TESTS = [
@@ -1548,6 +1728,9 @@ TESTS = [
     test_retention_thread_prunes_at_startup_and_is_idempotent,
     test_kill_switch_blocks_ingest_not_ack_or_reads,
     test_machine_posts_share_the_lane_token_gate,
+    test_revd_approved_heartbeat_requires_complete_identity_evidence,
+    test_controller_heartbeat_requires_complete_runtime_safety_envelope,
+    test_controller_posture_is_persisted_forwarded_and_fail_closed,
     test_cycle_post_accepts_canonical_wrapped_shape,
     test_contract_file_pins_server_vocab_and_shapes,
     test_machine_health_carries_bridge_contract_keys,

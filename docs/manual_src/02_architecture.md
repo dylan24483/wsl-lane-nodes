@@ -108,7 +108,7 @@ most important architectural decision in Phase 8; do not collapse it.
 |---|---|---|---|
 | **Server** | WSL-SRV PC | Scoring store, desk/operator UI, overhead-display feed, high-level lane commands (open/close/cycle/reset/power). | Centralized, not real-time, not safety-critical. A server outage must **not** stop a running machine. |
 | **Slow brain** | Raspberry Pi (1 per pair) | The cycle **FSM** (`cycle_control_8270.py`), camera **scoring** (`camera.py` / `pin_detect.py`), all **comms** (WebSocket to server, UART to each RP2040, I2C to each board). Two independent control loops: `controller_daemon.py` (Track B) and `lane_node.py` (Track A). | Runs Python, has the camera and the network. The FSM logic and scoring math are complex but tolerate ~10–20 ms scheduling jitter. |
-| **Fast/safe hands** | RP2040 (1 per board / per lane) | The **8 latency-critical fast inputs** (6 cams + 2 DIELL ball beams), the **RP2040_OK** rail-permission line, the **motion max-run backstop** (8 s guarded-motor timeout), and pushing cam/ball **events** to the Pi over UART. | Cam edges and motor-stop timing on a 12-RPM machine must not wait on Linux scheduling, so the fast inputs live on the RP2040 and its `RP2040_OK` line gates the relay-enable rail directly, independent of the Pi. **Firmware v0.1.0 provides RP2040 health + the max-run backstop; per-cam-edge cam-stop _overrun_ enforcement is deferred to v1.1** (needs the cutover cam-polarity capture — `main.c`). |
+| **Fast/safe hands** | RP2040 (1 per board / per lane) | Eight board fast-input positions, `RP2040_OK`, the 8 s max-run backstop, and UART events. Lane 21/22 has no independent TB lead and leaves SC/U unlanded. | The controlled v1.2.3 release provides health + max-run; its measured-cam enforcement code ships with all flags OFF pending polarity capture and a new controlled release. |
 
 Each lane's board also carries **three MCP23017 I2C I/O expanders** that handle the
 non-latency-critical I/O — the grippers, the slow switches, and the relay/lamp
@@ -234,7 +234,7 @@ architectural summary.
    | ARM OK | Pi `ARM_PERMIT` GPIO, asserted only in a safe state | false |
    | RP2040 OK | RP2040 `RP2040_OK` (GP2) heartbeat/permission | false |
    | Cam-stop OK | RP2040 immediate cam-stop drop path | false on reset/fault |
-   | TB/SC interlock OK | external hardware NC loop at J14 (the two table/sweep cams in parallel) | open/false |
+   | TB/SC interlock OK | **Candidate C:** OEM parallel closed-when-safe contacts in the S/T coil ladder; J14 pins 1–2 carry the controlled jumper | both levers BACK/open; or G3 insertion proof fails |
    | Stop/CIS/master chain OK | external machine safety chain at J14 | open/false |
 
    The Pi **cannot** bypass these in software. The rail can only de-energize a
@@ -248,9 +248,10 @@ The RP2040 firmware additionally enforces a **motion max-run backstop**: a guard
 motor (S/T/SP/M1/M2) marked RUNNING for longer than `MAX_MOTION_MS` (8 s, matching
 the FSM's `MAX_MOTION_S = 8.0`) latches a fault and drops `RP2040_OK` — UART-
 independent, so a hung Pi cannot leave a motor running. (Source: firmware
-`main.c` `supervise()`, `config.h`.) The cam-stop *overrun* enforcement is
-deferred to firmware v1.1 pending bench confirmation of per-cam edge→angle
-polarity.
+`main.c` `supervise()`, `config.h`.) The v1.2.3 code also contains cam-stop
+overrun paths, but the controlled release leaves every measured-cam flag OFF.
+Per-cam edge→angle polarity must be captured, bound into a new release, and proven
+before that protection is credited.
 
 ---
 
@@ -276,9 +277,11 @@ Key isolation facts (verified against the routed board):
 - **Dry-contact default.** Each input front end is: `FIELD_WET_V → 2.2 kΩ → PC817
   LED → field pin`; the machine contact closes that pin to `FIELD_GND`. Optos are
   **active-low at the logic pin** (contact closed → opto pulls the GPIO/MCP pin
-  LOW; idle HIGH via a 10 kΩ pull-up to 3V3). Firmware and `controller_io.py`
-  both assume `INPUT_ACTIVE_LOW`. (`opto_input()`; `config.h` electrical-sense
-  note.)
+  LOW; idle HIGH via an external `Rpu_*` to 3V3). The historical Rev-B value was
+  10 kΩ; the current Rev-D/R5 value is **47 kΩ**, with RP2040 internal pulls
+  disabled and U1/U2 MCP23017 `GPPUA/GPPUB=0x00` commanded and read back.
+  Firmware and `controller_io.py` both assume `INPUT_ACTIVE_LOW`.
+  (`opto_input()`; `config.h` electrical-sense note.)
 - **Per-channel population option.** Each field input can be populated as
   dry-contact wetting *or* 24 VAC/voltage-sense. The default per channel is set
   after at-machine measurement; field A1 measured the machine control voltage at
@@ -339,7 +342,7 @@ schematic components / 236 board footprints (incl. test pads + mounting holes) /
 | **Mask status LEDs** | J13 (J_LAMP_LED, 6-pos) | Our LEDs in the existing mask housings: VCC_5V, GND, and four LED returns. |
 | **Machine field inputs** | J3/J4/J5 | J3 (J_FAST_IN, 10-pos): SA/SB/SC/TA1/TA2/TB/DIELL-L/DIELL-R + 2× FIELD_GND. J4 (J_SLOW_IN_A, 14-pos): GS1–GS10, GP, OS, BS + FIELD_GND. J5 (J_SLOW_IN_B, 12-pos): PBZ, PBC, Foul, 10th, manual T/S/SWS/SWSR, AUX1–3 + FIELD_GND. |
 | **Machine motion outputs** | J6–J12 | One isolated 2-pin contact pair per output: J6=S, J7=T, J8=SP, J9=BE, J10=M, J11=M2, **J12=M1 (DNP)**. (5.08 mm MKDS terminal blocks.) |
-| **Safety loop** | J14 (J_SAFETY, 4-pos) | Two external NC loops in series feeding the rail: J14-1/2 = TB/SC interlock loop, J14-3/4 = Stop/CIS/master-chain loop. |
+| **Safety loop** | J14 (J_SAFETY, 4-pos) | Board-side provision for two series positions. **Field implementation:** J14-1/2 = controlled Candidate-C jumper (no machine landing); J14-3/4 = Stop/CIS/master-chain loop. Primary TB/SC protection stays in the OEM S/T coil ladder and is re-proven per lane at G3. |
 | **Machine adapter harness** | J3–J14 ↔ C1/C2A | Per-chassis. Maps the board's function-named pins to the real C1 (34-pin motor/relay/power) and C2A (50-pin switch/control) cavities. See Section 14. |
 | **Harness mating plugs** | J3/J4/J5/J13/J14 | Phoenix MC 1,5-ST-3,5 screw plugs (10/14/12/6/4-pos, MFR 1840447/1840489/1840463/1840405/1840382). Ordered with the harness, not placed on the PCB. |
 

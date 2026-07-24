@@ -104,7 +104,7 @@ This is the standard freewheel orientation: in normal operation the diode is rev
 
 #### Stage 4 — RELAY_ENABLE_RAIL gates the coil supply
 
-All seven relay coils' high sides connect to the single `RELAY_ENABLE_RAIL` net (including the DNP M1). The rail is the **electrical enable** for motion: it is sourced through a P-channel pass-FET (`AO3401A`, ref Q14, BOM line 12) that only conducts when the full series safety chain is satisfied — Watchdog OK **and** Arm OK **and** RP2040 OK **and** the external TB/SC and Stop/CIS hardware loops (`block_rail()` lines 465–504; `phase8b_pcb_revB_spec.md` §4). If any condition is false the rail collapses and **every** coil drops, regardless of what the controller commands. The controller cannot bypass this in software.
+All seven relay coils' high sides connect to `RELAY_ENABLE_RAIL` (including DNP M1). The pass-FET conducts only when the implemented on-board gates are satisfied — Watchdog OK, Arm OK, RP2040 OK/cam-stop, and Stop/CIS; Candidate C closes the PCB's J_SAFE1-2 design position with the controlled jumper. Primary TB/SC protection does **not** come from that rail position on lanes 21/22: the OEM parallel-safe contacts remain in the S/T coil circuits and every board insertion must pass G3. Any failed on-board gate collapses every board relay coil; both levers BACK/open independently block S and T when insertion is correct.
 
 The board verification in the spec confirms `RELAY_ENABLE_RAIL` reaches all 7 relay coils, all flybacks, the pass-FET, and test point TP16, and that it is a 16-node net (`phase8b_pcb_revB_spec.md` lines 13, 21). **This is the central safety property of the output stage** — full detail is in **Section 10, Safety Rail Contract**, and the watchdog that feeds it is in **Section 10, NE555 Hardware Watchdog** `(VERIFY: final section numbers for Safety Rail / NE555 / Status-Lamp once the manual TOC is fixed; cross-refs here assume Safety Rail = §4, Status Lamps = §10, NE555 = §11)`.
 
@@ -203,7 +203,7 @@ Open items that gate a populated, cutover-ready output stage (not bare-PCB fab),
 
 1. **Output relay rating** — confirm contact current/voltage for S/T/SP/BE/M/M2 against the real coil-circuit loads and decide whether the G5LE-14 contact margin is sufficient.
 2. **Coil rail budget** — confirm 5 V supply current margin with worst-case relay count (§9.6).
-3. **Safety connector form** — confirm TB/SC/Stop/CIS electrical form and `J_SAFETY` polarity (see **Section 10**).
+3. **Safety connector form** — TB/SC is resolved as Candidate C (controlled J_SAFE1-2 jumper + OEM ladder + per-lane G3); confirm the separate Stop/CIS J_SAFE3-4 landing (see **Section 10**).
 6. **M1 status** — confirm ball-return-as-separate-command before populating M1 (§9.7).
 
 ---
@@ -234,8 +234,8 @@ Footprint reference (from `generate_kicad_netlist_revB.py` lines 48–69): relay
 
 From the spec's bench sequence (`phase8b_pcb_revB_spec.md` §12), do this **only on a locked-out / off-live machine**, and in this order:
 
-1. Power rails up; confirm `VCC_5V` and that `RELAY_ENABLE_RAIL` is **dead** until the safety chain is satisfied (watchdog kicked, arm asserted, RP2040 OK, TB/SC + Stop/CIS loops closed).
-2. Verify the rail-fail cases first: drop the watchdog → rail drops → all relays release; drop arm → release; open the interlock loop → release; let RP2040_OK fall → release. (These are **Section 10** tests but they gate everything here.)
+1. Power rails up; confirm `VCC_5V` and that `RELAY_ENABLE_RAIL` is **dead** until the implemented on-board conditions are satisfied (watchdog kicked, arm asserted, RP2040 OK, controlled J_SAFE1-2 jumper installed, Stop/CIS loop closed).
+2. Verify the on-board fail cases first: drop watchdog, ARM, RP2040_OK, and Stop/CIS one at a time. Opening J_SAFE1-2 at the bench proves only the PCB's unused loop position, **not** Candidate-C machine protection. Prove TB/SC separately at the live per-lane G3 gate: board commands S then T; both levers BACK/open must leave each contactor coil dead.
 3. With the rail enabled, command each relay output **one at a time** from the controller and confirm continuity COM↔NO closes at the matching `J_MOTION_<name>` terminal **into a dummy load**, not the live machine.
 4. Confirm the per-channel fail-off: with the rail up, drive OUT-A low (or pull the expander) and confirm the contact opens (100 k base pull-down holds the MMBT3904 off).
 5. Characterize the real coil-circuit load per output at the machine, **then** decide and populate the snubber/MOV per channel (§9.5).

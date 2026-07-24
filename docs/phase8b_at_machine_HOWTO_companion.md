@@ -1,5 +1,14 @@
 # At-Machine Field Sheet — Beginner's Companion (how to actually do each measurement)
 
+> ⛔ **RETIRED 2026-06 FIELD-SESSION COMPANION — DO NOT EXECUTE ITS B1 TB/SC
+> PROCEDURE OR USE IT TO WIRE J_SAFETY.** Cold continuity cannot establish topology
+> in the ~21 Ω coil-ladder sneak paths, and lane 21/22 has no dry/independent TB
+> pair. Powered 2026-07-07 evidence proved the OEM contacts are parallel
+> closed-when-safe and both levers BACK/open kill S/T. Candidate C uses only the
+> controlled J_SAFE1-2 jumper, preserves the OEM ladder, and requires per-lane G3
+> coil proof. Use the current interlock redesign, lane harness build sheet, and
+> Track-B runbook for any new work. The body below is historical procedure context.
+
 **Read this alongside `phase8b_at_machine_fieldsheet.md`.** It answers: exact probe points, how to measure current, how to tell dry-contact vs voltage-sense, where each cam physically is, and step-by-step Parts B & C. Written assuming you've used a multimeter for continuity/resistance (you have) but not much else. No prior current-measurement or live-mains experience assumed.
 
 ---

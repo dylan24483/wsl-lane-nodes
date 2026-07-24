@@ -157,6 +157,9 @@
       "variant": "fi1"
     }
   ],
+  "qualified_releases": [
+    "revD|rel-0c746b5747143b8011b01d43|05d808411db4bb0d"
+  ],
   "release_policy": {
     "debug_usb": false,
     "fi1_is_bench_only": true,
@@ -164,6 +167,9 @@
     "requires_clean_pico_sdk": true
   },
   "schema": "wsl-rp2040-release-manifest-v1",
+  "supported_board_revisions": [
+    "revD"
+  ],
   "toolchain": {
     "arm_none_eabi_gcc": "arm-none-eabi-gcc.exe (xPack GNU Arm Embedded GCC x86_64) 13.3.1 20240614",
     "cmake": "cmake version 4.3.2",

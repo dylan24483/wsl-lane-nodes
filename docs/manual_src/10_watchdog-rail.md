@@ -28,17 +28,15 @@ the design contract (`docs/phase8b_pcb_revB_spec.md` §4), and the RP2040 firmwa
 The Pi runs the cycle FSM and commands the 7 motion relays *indirectly* over I²C
 through the `MCP23017 OUT-A` expander (see §7, Controller Interface). But software
 commanding a relay bit HIGH does **not** energize the coil. Each coil's high side
-is fed from a single net — `RELAY_ENABLE_RAIL` — and that net is only live when a
-P-channel pass-FET (`Q14`, AO3401A) is turned on. `Q14` turns on only when **all
-six** of the conditions in §10.3 are simultaneously true. Two of those conditions
-are external normally-closed (NC) loops in series with the FET's source; three are
-on-board transistors wired in a series (AND) stack that pulls the FET gate low; and
-one (cam-stop) folds into the RP2040 health condition. Lose any one — a missed
-watchdog kick, a dropped ARM GPIO, a reset/crashed RP2040, a cam-stop violation, an
-open TB/SC interlock, or an open Stop/CIS loop — and the rail collapses, dropping
-all relay coils. The design **fails open by construction**: when the RP2040 is
-unpowered or in reset its `RP2040_OK` line floats, and an on-board 100 k pulldown
-holds the AND chain (and therefore the rail) dead.
+is fed from `RELAY_ENABLE_RAIL`, passed by Q14 only when the implemented on-board
+gates permit it. The PCB was designed with two external source-loop positions plus
+the transistor stack, but Candidate C deliberately closes the first position
+(J_SAFE1-2) with a controlled jumper because this chassis has no dry TB/SC pair.
+The remaining on-board gates are watchdog, ARM, RP2040_OK/cam-stop, and Stop/CIS.
+Primary TB/SC protection is a separate hardware path: the powered-proven OEM
+parallel-safe contacts remain in the board-commanded S/T coil circuits and must pass
+the per-lane G3 insertion proof. Loss of an implemented on-board gate collapses all
+board relay coils; both TB/SC levers BACK/open independently block S and T.
 
 ---
 
@@ -145,12 +143,14 @@ from 3.3 V.
 
 ---
 
-### 10.3 The relay-enable rail — the six AND conditions
+### 10.3 The relay-enable rail — board design vs Candidate-C field implementation
 
-`RELAY_ENABLE_RAIL` is the high-side supply to every motion-relay coil. It is live
-only when the P-channel pass-FET **Q14 (AO3401A)** is on, and Q14 is on only when
-**all six** conditions below hold. The Pi cannot bypass any of them in software
-(spec §4.1). All default **false / open** (fail-safe).
+`RELAY_ENABLE_RAIL` is the high-side supply to every motion-relay coil. The table
+retains the PCB contract's six named conditions, but row 5 is **not an external
+TB/SC loop on lanes 21/22**: Candidate C installs the controlled J_SAFE1-2 jumper
+and delegates primary TB/SC blocking to the OEM S/T coil ladder. Rows 1–4 and 6
+remain the effective on-board permissions. The per-lane G3 S/T coil-drop proof is
+what validates the separate OEM path.
 
 | # | Condition | Source / device | Where it acts on the rail | Fail-safe default |
 |---|---|---|---|---|
@@ -158,30 +158,29 @@ only when the P-channel pass-FET **Q14 (AO3401A)** is on, and Q14 is on only whe
 | 2 | **Arm OK** | Pi `ARM_PERMIT` GPIO (J1 pin 8) → NPN Q15 | Top of the gate AND chain (Q15 must conduct) | false (R108 100 k base pulldown) |
 | 3 | **RP2040 OK** | RP2040 `GP2` health line (`RP2040_OK`) → NPN Q16 | Middle of the gate AND chain (Q16 must conduct) | false (R110 100 k base pulldown; GP2 Hi-Z on reset) |
 | 4 | **Cam-stop OK** | RP2040 immediate cam-stop drop | **Folds into condition 3** — the firmware drops `GP2` LOW on a cam-stop violation/timeout | false on RP2040 reset/fault |
-| 5 | **TB/SC hardware interlock** | External NC loop on J_SAFETY (J14 pins 1↔2) | In series with the FET **source** | open (loop break removes source feed) |
-| 6 | **Stop/CIS/master chain** | External NC loop on J_SAFETY (J14 pins 3↔4) | In series with the FET source, after the TB/SC loop | open |
+| 5 | **TB/SC board provision** | **Candidate C controlled jumper** on J_SAFETY pins 1↔2; no machine landing | Closes the first FET-source position; primary guard is the OEM coil ladder | only the keyed/labeled jumper is allowed; protection fails G3 if either commanded coil remains live with both levers BACK |
+| 6 | **Stop/CIS/master chain** | External NC loop on J_SAFETY (J14 pins 3↔4) | In series with the FET source, after the Candidate-C jumper position | open |
 
 Two structural facts make this a true hardware AND:
 
-- **Conditions 5 and 6 are in series with the FET's source** — they physically feed
-  the +5 V into the pass-FET. Break either loop and the FET has nothing to pass,
-  regardless of the gate.
+- **The J_SAFE1-2 and J_SAFE3-4 positions are physically in series with the FET
+  source.** In Candidate C, 1–2 is the controlled jumper and 3–4 is the Stop/CIS
+  loop. Opening either position kills the rail, but opening 1–2 only tests PCB
+  continuity; it does not prove the OEM TB/SC guard.
 - **Conditions 1, 2, and 3 (=4) are a series transistor stack on the FET's gate** —
   all three must conduct to pull the P-FET gate low enough to turn it on. Any one
   open and the gate stays pulled up to the source (FET off).
 
 > **Why cam-stop is not a separate transistor.** The contract lists Cam-stop OK as a
-> distinct rail condition (spec §4.1) with fail-safe "false on reset/fault," but the
-> **board implements it through `RP2040_OK`**: the RP2040 firmware is the cam-stop
-> enforcer and pulls its single `GP2` health/permission line LOW on a cam-stop
-> violation or cam timeout (spec §4.2; `firmware/rp2040/README.md` "Motion max-run
-> /cam timeout → drops RP_OK"). So electrically there are **five** physical gates
-> (two source loops + a three-transistor AND), and cam-stop is the *firmware
-> behavior* that drives one of them (`RP2040_OK`/Q16) false. Do not look for a sixth
-> transistor on the board — there isn't one. **Note:** the v0.1.0 firmware provides
-> RP2040 *health* + a motion **max-run** backstop; full per-cam-edge cam-stop
-> *overrun* enforcement is the deferred **v1.1** item (firmware README), still gated
-> on bench-confirmed cam edge→angle polarity.
+> distinct rail condition (spec §4.1), but the PCB implements it through
+> `RP2040_OK`: any **enabled and qualified** firmware enforcement latches a fault and
+> drives the single `GP2` permission line LOW. Electrically there are five physical
+> gates (two source positions + a three-transistor AND); do not look for a sixth
+> transistor. The current controlled **v1.2.3** Rev-D bundle keeps every
+> measured-cam enforcement flag **OFF** pending polarity capture, qualification, and
+> a new controlled release. Its active backstops are firmware health plus the 8 s
+> motion max-run timeout. The SC∧TB echo is also default-off, unvalidated, secondary,
+> and lacks an independent TB field lead on lanes 21/22.
 
 ---
 
@@ -214,8 +213,8 @@ For `RAIL_GATE` to reach ground (turning the P-FET on), **Q15 AND Q16 AND Q13 mu
 all conduct simultaneously**. That is a literal series-AND:
 
 - **Q15 conducts** only if `ARM_PERMIT` is high (Pi has armed — operator-safe state).
-- **Q16 conducts** only if `RP2040_OK` is high (RP2040 healthy *and* no cam-stop
-  violation).
+- **Q16 conducts** only if `RP2040_OK` is high (RP2040 healthy and no enabled
+  enforcement has latched a fault; stock v1.2.3 measured-cam flags are OFF).
 - **Q13 conducts** only if the NE555 says "watchdog OK" (Pi is kicking).
 
 Each base/gate has a **100 k pull-down** (R108, R110, R105) so the default state with
@@ -243,14 +242,14 @@ at the source, and the P-FET is off → rail dead.
 > (C347476). **Q12/Q13/Q14 are visually similar SOT-23 parts — do not swap N-ch and
 > P-ch during hand placement.**
 
-#### 10.4.2 The two external NC loops on J_SAFETY (J14)
+#### 10.4.2 The two J_SAFETY source positions (J14) and Candidate C
 
-The safety connector **J14 (J_SAFETY)** is a 4-pin Phoenix MCV terminal. The two
-external normally-closed loops are wired **in series** between +5 V and the pass-FET
-source:
+The safety connector **J14 (J_SAFETY)** is a 4-pin Phoenix MCV terminal. The PCB
+wires two source **positions** in series between +5 V and the pass-FET source.
+The lane-21/22 field harness does not populate both as machine loops:
 
 ```
-VCC_5V ── J14.1 ──[ external TB/SC interlock NC loop ]── J14.2
+VCC_5V ── J14.1 ──[ controlled Candidate-C jumper ]───── J14.2
                                                           │  (SAFE_TBSC_RETURN: J14.2 ↔ J14.3 on-board jumper net)
                           J14.3 ──[ external Stop/CIS/master NC loop ]── J14.4
                                                                           │
@@ -259,25 +258,23 @@ VCC_5V ── J14.1 ──[ external TB/SC interlock NC loop ]── J14.2
 
 | J14 pin | Net | Meaning |
 |---|---|---|
-| 1 | `VCC_5V` | Source feed into the first external loop |
-| 2 | `SAFE_TBSC_RETURN` | Return of the **TB/SC interlock** loop; on-board it is the same net as pin 3 |
+| 1 | `VCC_5V` | Source feed into the first board-side position |
+| 2 | `SAFE_TBSC_RETURN` | Return of the first board-side position; Candidate C jumpers it from pin 1; on-board it is the same net as pin 3 |
 | 3 | `SAFE_TBSC_RETURN` | Start of the **Stop/CIS/master** loop (jumpered to pin 2 on the board) |
 | 4 | `SAFE_STOP_RETURN` | Return of the Stop/CIS loop → pass-FET source (+ R106) |
 
-So: +5 V enters pin 1, must traverse the **closed** TB/SC loop (pins 1→2), cross the
-on-board jumper (pin 2 = pin 3, `SAFE_TBSC_RETURN`), traverse the **closed**
-Stop/CIS/master loop (pins 3→4), and only then reach the pass-FET source. **Open
-either external loop and the FET source is dead** — no gate state can re-enable the
-rail. This is condition 5 and condition 6 of §10.3, in hardware, upstream of all
-logic.
+So: +5 V enters pin 1, traverses the controlled Candidate-C jumper (pins 1→2),
+crosses the on-board pin-2/pin-3 net, traverses the closed Stop/CIS/master loop
+(pins 3→4), and only then reaches the pass-FET source. Opening either **connector
+position** makes the rail dead, but J_SAFE1-2 is not the field collision sensor.
+The OEM TB/SC contacts instead act downstream in the machine's S/T coil circuits.
 
-> **(VERIFY: final electrical form of the J14 loops.)** Spec §4.4 and §11 item 3
-> explicitly leave the TB/SC and Stop/CIS **electrical form, polarity, and final
-> connector wiring** open pending at-machine verification — the board provides the
-> NC-loop *topology* and demands the interlock be a first-class rail condition, but
-> the exact field derivation (TB/SC cam contacts vs the existing 24 V control path
-> vs a low-voltage isolated loop) is a cutover decision. Wire J14 to **break** the
-> loop on the unsafe condition (NC = closed when safe).
+> **Field resolution:** TB/SC is closed: no dry J14 landing exists. The 2026-06-27
+> cold trace found C2A-U plus ~21 Ω sneak paths but could not establish topology;
+> powered 2026-07-07 proved parallel closed-when-safe contacts and both levers
+> BACK/open kills S and T. Candidate C therefore uses only the controlled jumper on
+> pins 1–2 and a mandatory per-lane G3 coil-drop proof. The separate Stop/CIS
+> pins-3/4 landing remains subject to its own measured harness procedure.
 
 ---
 
@@ -313,7 +310,7 @@ NPN driver:
 **Two gates in series for any motion output.** A relay only energizes if (a) the Pi
 sets its `MCP23017 OUT-A` bit, turning on the per-relay NPN to ground the coil low
 side, **AND** (b) the rail is live, supplying +5 V to the coil high side. The Pi
-controls (a); the six-condition safety rail controls (b). Software alone cannot fire
+controls (a); the implemented on-board safety rail controls (b). Software alone cannot fire
 a coil. (The relay contacts themselves only open/close **existing machine control
 circuits** — the board sources no machine coil power and carries no motor current;
 see §9, Output Contract, and §10.6.)
@@ -362,12 +359,12 @@ live? "Coils" = can any motion relay energize?
 | Pi de-asserts ARM (`ARM_PERMIT` low) | Q15 base low (R108) → Q15 off → gate AND open | dead | drop |
 | RP2040 unpowered / in reset / BOOTSEL | `GP2` Hi-Z → R110 100 k holds Q16 base low → Q16 off | dead | drop |
 | RP2040 firmware crash / loop hang | RP2040 internal WDT resets chip → GP2 Hi-Z → as above | dead | drop |
-| RP2040 cam-stop violation / motion max-run timeout | firmware drives `GP2` LOW → Q16 off (condition 4 via 3) | dead | drop |
-| TB/SC interlock loop opens (collision course) | J14.1↔2 source loop broken → FET source dead | dead | drop |
+| Enabled RP2040 cam-stop violation / motion max-run timeout | firmware drives `GP2` LOW → Q16 off (condition 4 via 3); stock v1.2.3 has measured-cam flags OFF but max-run active | dead | drop |
+| TB/SC collision state (Candidate C) | both levers BACK/open in the powered-proven OEM ladder; correct board insertion leaves the commanded S or T coil dead | rail may remain live | affected S/T coil blocked; must be proven per lane at G3 |
 | Stop/CIS/master loop opens | J14.3↔4 source loop broken → FET source dead | dead | drop |
 | Board powers up (pre-init) | GP2 Hi-Z + ARM low + no kicks → all three defaults off | dead | drop |
 | Welded relay contact | rail still drops coils, **but** weld holds the contact | dead | **welded contact stays made → master breaker required (§10.6)** |
-| All six conditions true | Q15·Q16·Q13 conduct → gate low → P-FET on; both loops closed | **live** | Pi's OUT-A bit can energize that coil |
+| Implemented on-board conditions true | Q15·Q16·Q13 conduct → gate low → P-FET on; Candidate-C jumper + Stop/CIS position closed | **live** | Pi's OUT-A bit can energize a board relay; S/T still require the OEM ladder to permit their machine coils |
 
 The firmware (`firmware/rp2040/README.md` "Safety model") states the same invariant
 from the Pico side: GP2 is driven LOW first thing in `main()`, then HIGH only after
@@ -384,13 +381,13 @@ spec record **16 test pads** total, and call out `TP16` on `RELAY_ENABLE_RAIL`):
 
 | Probe / net | What you are watching | Healthy reading |
 |---|---|---|
-| `RELAY_ENABLE_RAIL` (TP16) | The gated coil supply rail | ≈ +5 V only when all six conditions true; ≈ 0 V (or pulled to coil-low through coils) otherwise |
+| `RELAY_ENABLE_RAIL` (TP16) | The gated coil supply rail | ≈ +5 V only when the implemented on-board conditions are true; this reading does **not** prove Candidate-C TB/SC insertion |
 | `RAIL_GATE` | P-FET gate | Pulled to source (≈ +5 V, FET off) by default; near GND when the AND chain conducts (FET on) |
 | `NE555_TRIG` (U36 pin 2) | Watchdog trigger | Held high by R101; pulsed low by each Pi kick |
 | `NE555_OUT` (U36 pin 3) | Watchdog output | Toggles with kicks; reverts (→ Q13 off) on missed kicks |
 | `WDOG_OK_PULLDOWN` | Bottom of the AND chain (Q13 drain) | Pulled to GND only while Q13 conducts (watchdog OK) |
-| `SAFE_STOP_RETURN` (Q14 source) | After both NC safety loops | ≈ +5 V only when BOTH external loops closed |
-| `RP2040_OK` (GP2 / J1 pin 13) | RP2040 health/permission | HIGH = permit, LOW = drop (also drops on cam-stop/timeout) |
+| `SAFE_STOP_RETURN` (Q14 source) | After both J_SAFE positions | ≈ +5 V only when Candidate-C jumper and Stop/CIS position are closed |
+| `RP2040_OK` (GP2 / J1 pin 13) | RP2040 health/permission | HIGH = permit, LOW = drop (also drops on timeout or an enabled enforcement fault) |
 | `ARM_PERMIT` (J1 pin 8) | Pi arm GPIO | HIGH only after operator-safe/zeroed state |
 | `WDOG_KICK` (J1 pin 7) | Pi kick into Q12 | periodic pulses while the Pi is alive |
 
@@ -405,11 +402,15 @@ spec §12.9, firmware README §"Bench bring-up"):
    the timeout. Also pull power to just the Pico → GP2 → LOW → rail drops (`boot`
    with `wdt_reset:1` if you force a hang).
 3. **Arm drop.** De-assert `ARM_PERMIT` → Q15 off → rail drops.
-4. **Interlock drop.** Open the J14 TB/SC loop, then the J14 Stop/CIS loop, each
-   independently → FET source dead → rail drops.
-5. **Cam-stop / motion-timeout drop.** Send `RUN S` to the RP2040 and withhold
-   `STOP S` past `MAX_MOTION_MS` (8 s) → expect `flt:motion_timeout` and GP2 → LOW →
-   rail drops; `CLEAR` → GP2 back HIGH (from a known-safe zero/ready state only).
+4. **Connector-position checks.** Open J_SAFE1-2 and then Stop/CIS J_SAFE3-4,
+   independently → FET source dead → rail drops. The 1–2 check validates PCB wiring
+   only. **Candidate-C interlock proof is separate and live/per-lane:** board commands
+   S then T; with both levers BACK/open, each corresponding coil must remain dead.
+5. **Motion-timeout drop; enabled-cam tests only under a qualified release.** Send
+   `RUN S` to the RP2040 and withhold `STOP S` past `MAX_MOTION_MS` (8 s) → expect
+   `flt:motion_timeout` and GP2 → LOW → rail drops; `CLEAR` → GP2 back HIGH (from a
+   known-safe zero/ready state only). Do not claim a per-cam drop until measured
+   polarity is enabled in a controlled release and its dedicated bench gate passes.
 6. **Each relay with a dummy load**, then — only after all of the above pass — the
    machine harness.
 

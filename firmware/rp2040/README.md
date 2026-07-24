@@ -1,15 +1,15 @@
 # WSL Phase 8b — RP2040 lane-controller firmware
 
-**v1.2.3 — controlled release artifacts built, but NOT FLASHED; bench/first-article gates remain mandatory before any live-machine use. Full version history and exact release provenance: `CHANGELOG.md` and `release/manifest.json`.**
+**v1.2.3 — controlled Rev-D-only release artifacts built, but NOT FLASHED; bench/first-article gates remain mandatory before any live-machine use. Full version history and exact release provenance: `CHANGELOG.md` and `release/firmware_manifest.json`.**
 *(v1.2.2, 2026-07-21 — Codex round-2 R2-1/R2-13/R2-6 — **NOT flashed**: pad-level OEOVER output lock + `STATUS.OETOPAD` readback on EVERY input-contract pin (the SIO-only check had an override bypass), epoch-aware rail-drop classifier (pre-reboot ring entries are history-only, never fresh diagnosis), the bench-only FI-1 fault-injection build (compile-flag + BOOTSEL-jumper + arm-command gated; separate artifact name; zero code in release), and the identity line: REV_ID strap read (GP20/GP21), Pico unique id, deterministic controlled source/toolchain build ID + config hash, hb `rid` field. All additive; `rp2040_link.py` consumes id/rid.)*
 *(v1.2.0, 2026-07-21 — rev-D remediation R3, closes Codex C2 — **NOT yet flashed**: GP16-19 rev-D diagnostic taps get an ENFORCED input-only invariant (choke-point init + register readback each heartbeat + a host direction-invariant test that fails the build if any code path drives them), the INVERTED tap decode (2N7002 stage: raw 0 = observed HIGH, one `tap_read()` inversion point), a 1 ms-timestamped rail-drop edge ring in noinit RAM that survives reboot (magic + epoch; `TAPDUMP`/`TAPCLR`), and VCC_5V ADC sampling on GP26 folded into the heartbeat. **All additive**: v1.1 line formats + command grammar unchanged, all v1.1 enforcement flags still default OFF, safety-critical paths byte-for-byte logic-identical. Rev-D board only — on rev-B/rev-C these pins are unconnected (an IRQ storm guard keeps floating-pin noise harmless). Binding contract: `docs/phase8_revD_remediation_spec_2026-07-21.md` §R3.)*
 *(v1.1.1, 2026-07-06 review fixes (findings 37/56/58): boot `v11` enforcement-posture field; cam-stop grace arms on FIRST trip only; sliding chatter window. v1.1.0, 2026-06-10: cam-stop OVERRUN / SC-TB echo / motion-without-RUN, all default OFF. v0.2.0, 2026-06-10: audit hardening. See CHANGELOG.md.)*
 
-> ⛔ **BENCH-CONFIRM BEFORE ENABLING the v1.1 flags.** `config.h` ships every v1.1 enforcement flag OFF and every per-cam trip edge as `'?'` (UNCONFIRMED). Confirm the per-cam edge→angle polarity on the spare cabinet (`docs/phase8_trackB_controller_cutover_runbook.md` §3.2) FIRST, then set `CAM_*_TRIP` + flip the matching `*_ENABLED` cam-by-cam and re-flash. Enabling with wrong polarity nuisance-trips the rail (safe direction) or, for the SC/TB echo, fails to add its backstop. ⚠️ **The hardware J_SAFETY loop does NOT exist yet as designed** — the 2026-06-27 metering proved SC+TB is a series interlock at one node with no isolatable dry NC pair (design OPEN, `docs/phase8_interlock_redesign.md`); until a redesigned loop is landed, the software echo is the ONLY controller-side interlock guard. Never enable blind.
+> ⛔ **BENCH-CONFIRM BEFORE ENABLING the v1.1 flags.** `config.h` ships every v1.1 enforcement flag OFF and every per-cam trip edge as `'?'` (UNCONFIRMED). Confirm the per-cam edge→angle polarity on the spare cabinet (`docs/phase8_trackB_controller_cutover_runbook.md` §3.2) FIRST, then set `CAM_*_TRIP` + flip the matching `*_ENABLED` cam-by-cam and generate a new controlled release. Enabling with wrong polarity nuisance-trips the rail (safe direction) or fails to add the intended secondary diagnostic. **Candidate C is decided:** J_SAFE1-2 uses the documented keyed/labeled engineered jumper, while the OEM SC/TB ladder remains the primary hardware collision interlock and must pass the per-lane G3 S/T coil-drop proof. The firmware SC/TB echo remains default-off, unvalidated, and secondary. Never enable it blind or substitute it for the OEM-ladder proof.
 
-One RP2040 (a stock Raspberry Pi Pico module) sits on each rev-B controller board and is the **fast + safety half** of the lane controller. The Raspberry Pi runs the cycle FSM (`lane_node/cycle_control_8270.py`) and commands relays over I²C/MCP23017; this firmware owns the latency-critical inputs and the hardware rail-permission line.
+One RP2040 (a stock Raspberry Pi Pico module) sits on each Rev-D controller board and is the **fast + safety half** of the lane controller. The Raspberry Pi runs the cycle FSM (`lane_node/cycle_control_8270.py`) and commands relays over I²C/MCP23017; this firmware owns the latency-critical inputs and the hardware rail-permission line. The controlled v1.2.3 bundle supports exactly `["revD"]`; do not flash it on Rev-B or Rev-C hardware.
 
-> ⚠️ **Safety co-processor.** It drives `RP2040_OK` (GP2), a non-bypassable condition in the relay-enable-rail AND chain (spec §4.1). It is **never the only safety device** — the TB/SC collision interlock (J_SAFETY hardware loop), the Stop/CIS/master-breaker chain, the NE555 watchdog (which watches the *Pi*), and regenerative motor braking are all in hardware, independent of this firmware. Read the safety section before editing.
+> ⚠️ **Safety co-processor.** It drives `RP2040_OK` (GP2), a non-bypassable condition in the relay-enable-rail AND chain (spec §4.1). It is **never the only safety device** — the TB/SC collision interlock is the OEM parallel-safe-contact ladder in the S/T coil circuits (Candidate C), while the Stop/CIS/master-breaker chain, NE555 watchdog (which watches the *Pi*), and regenerative motor braking remain hardware-independent of this firmware. Read the safety section before editing.
 
 ## What it does (v1)
 
@@ -25,12 +25,12 @@ One RP2040 (a stock Raspberry Pi Pico module) sits on each rev-B controller boar
 These are the cutover **G3 cam-stop rail-drop** backstops. The *code* is present + host-tested; the *enforcement* is gated OFF in `config.h` until the per-cam edge→angle polarity is bench-confirmed (`docs/phase8_trackB_controller_cutover_runbook.md` §3.2). Each only ever `latch_fault()`s (fail-safe: RP_OK → LOW).
 
 1. **Cam-stop OVERRUN** — a stop cam's TRIP edge fires while its guarded motor is marked RUNNING and the Pi fails to `STOP` it within the per-cam grace window → latch `cam_overrun`. Per-cam: `CAM_SA_STOP_ENABLED`/`CAM_SA_TRIP`/`CAM_SA_GRACE_MS` (SA→sweep S), `CAM_TA1_*` (TA1→table T). **The Pi-independent, per-edge stop the post-cutover machine relies on** (runbook §0: cam-stops are SOLELY the RP2040's job once the Omniboard is unplugged).
-2. **SC/TB collision-interlock echo** — both SC and TB asserted at once while a motion motor runs → latch `interlock_collision`. `INTERLOCK_ECHO_ENABLED`. The hardware J_SAFETY NC loop stays **primary**; this is a firmware backstop of it (the hb `in` mask already *reports* SC/TB regardless of the flag).
+2. **SC/TB collision-interlock echo** — both firmware inputs asserted at once while a motion motor runs → latch `interlock_collision`. `INTERLOCK_ECHO_ENABLED`. This default-off path is an unvalidated secondary diagnostic. The **primary** guard is Candidate C’s OEM ladder, proven per lane by forcing both levers BACK while the board commands S and T and verifying both coils remain dead.
 3. **Motion-without-RUN** — a stop-cam TRIP edge while NO motion motor is marked RUNNING = the machine turning uncommanded (Pi wedged / external start / welded relay) → latch `motion_no_run`. `MOTION_NO_RUN_ENABLED`. The one check that works even if the Pi is fully wedged.
 
 ## Authoritative pin map
 
-Source of truth: `scripts/generate_kicad_netlist_revB.py` → `block_rp2040()` (the live board netlist). Re-verify against it if the board changes. **Do not** use the older `docs/phase8_channel_allocation.md` §2 GPIO column — it predates the as-built board (it had the fast inputs on GP0–GP7; the real board uses GP6–GP13).
+Source of truth: `scripts/generate_kicad_netlist_revD.py` → `block_rp2040()` and `kicad/wsl-phase8b-revD.net`. Re-verify against both if the board changes. **Do not** use the older `docs/phase8_channel_allocation.md` §2 GPIO column — it predates the live board (it had the fast inputs on GP0–GP7; Rev-D uses GP6–GP13).
 
 | GPIO | Pico pin | Signal | Dir | Net | Notes |
 |---|---|---|---|---|---|
@@ -74,14 +74,31 @@ writes `release/firmware_manifest.json`. The manifest binds both UF2 SHA-256 val
 - the exact on-wire `id.build`, `id.cfg`, and `id.fi1`;
 - full config/source-input SHA-256 values and the variant compile options;
 - the clean Pico SDK commit, ARM compiler/CMake/Ninja versions, and CMake-cache hashes.
+- an exact `supported_board_revisions: ["revD"]` deployment policy.
+- an authoritative exact release tuple:
+  `qualified_releases: ["revD|rel-0c746b5747143b8011b01d43|05d808411db4bb0d"]`.
+
+The two exact manifest-named UF2s are committed as ordinary binary Git blobs:
+
+- production `release/wsl_phase8b_rp2040.uf2` — SHA-256
+  `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`;
+- bench-only `release/wsl_phase8b_rp2040_FI1.uf2` — SHA-256
+  `7c1daabad0a102f55fa61d617d3b4f0722705770f109e2d941b5356b3378ae6c`.
+
+`.gitattributes` pins every byte-hashed controlled source input to LF, so
+`core.autocrlf` cannot change a clean-clone identity. The UF2 rules explicitly
+disable text conversion, diff/merge drivers, and inherited LFS filters.
 
 `id.build` is derived from the explicit firmware source/recipe allowlist,
 image-affecting options, exact clean Pico SDK commit, and C compiler ID/version. A
 different SDK/compiler therefore cannot announce the allowlisted identity. Application
 repository Git status, timestamps, and unrelated dirty files are not inputs. `id.cfg` is
 exactly the first 16 hex characters of `sha256(config.h)`. The manifest's
-`deployment_identity` lists contain exactly the release values accepted by the lane
-controller; the FI-1 identity is deliberately excluded.
+`qualified_releases` tuple is the authoritative ARM policy and is emitted as
+`WSL_RP2040_QUALIFIED_RELEASES`; `supported_board_revisions` is emitted as
+`WSL_RP2040_SUPPORTED_BOARD_REVISIONS`. Both must be provisioned. The independent
+build/config lists remain provenance records only; they must never authorize their
+Cartesian product. The FI-1 identity is deliberately excluded from every production policy.
 
 `build.ps1` and direct CMake remain useful for developer/debug builds, but their output is
 not a release artifact until the two-image manifest path above completes. **v1.2.3
@@ -126,17 +143,25 @@ Last run: **64/64** (`test_main`) + **32/32** (`test_v11`) + **140/140** (`test_
 
 ## Flash
 
-1. Run `release.ps1 -VerifyOnly`. Do not flash if any source digest, UF2 SHA-256, or
-   embedded identity check fails.
-2. Record the release image SHA-256 plus `deployment_identity.build_allowlist[0]` and
-   `deployment_identity.config_allowlist[0]` from `release/firmware_manifest.json`.
-3. **USB BOOTSEL (preferred):** hold BOOTSEL while connecting USB; when `RPI-RP2`
+1. Read the physical PCB marking and Rev-ID straps. Stop unless the board is Rev-D.
+2. Run `release.ps1 -VerifyOnly`. Do not flash if any source digest, UF2 SHA-256,
+   embedded identity check, or exact `supported_board_revisions: ["revD"]` policy fails.
+   Never use this bundle on Rev-B/Rev-C.
+3. Record the release-manifest SHA-256, release-image SHA-256,
+   `supported_board_revisions`, and the exact `qualified_releases[0]` tuple from
+   `release/firmware_manifest.json`. Provision that tuple as
+   `WSL_RP2040_QUALIFIED_RELEASES` and provision the board list as
+   `WSL_RP2040_SUPPORTED_BOARD_REVISIONS`; never reconstruct authorization by
+   mixing independent build/config allowlists.
+4. **USB BOOTSEL (preferred):** hold BOOTSEL while connecting USB; when `RPI-RP2`
    mounts, drag-drop **`release/wsl_phase8b_rp2040.uf2`**. Never substitute the
    `_FI1.uf2` bench image.
-4. **SWD fallback:** `picotool load -x release/wsl_phase8b_rp2040.uf2`, or OpenOCD via
+5. **SWD fallback:** `picotool load -x release/wsl_phase8b_rp2040.uf2`, or OpenOCD via
    the board's SWD test points.
-5. After boot, request `ID` and require `fw`, `build`, `cfg`, and `fi1:0` to match the
-   verified manifest exactly. A filename or version banner alone is not proof of the image.
+6. After boot, request `ID` and require `pcb:"revD"`, `fw`, `build`, `cfg`, and
+   `fi1:0` to match the verified manifest exactly. A filename or version banner alone
+   is not proof of the image. The current v1.2.3 image still is not cutover-ready
+   because its cam-stop enforcement flags are OFF.
 
 ## UART protocol (115200 8N1, newline-delimited)
 
@@ -248,8 +273,10 @@ v1.2 tap fields: hb `tap` = post-inversion observed-net levels (bit 0..3 = 555, 
 - `fi1_bootsel.c` — FI-1 bench build ONLY: BOOTSEL physical-jumper gate (never linked into release).
 - `gen_build_id.cmake` / `release_provenance.py` — deterministic controlled-input
   `build_id.h` generation plus UF2/manifest verification.
+- `release_manifest_policy.py` — stamps/verifies the exact Rev-D deployment scope
+  without changing the identity-bearing firmware source set.
 - `release.ps1` / `release/firmware_manifest.json` — the only controlled two-image
-  release path and its machine-readable artifact/source/toolchain record.
+  release path and its machine-readable artifact/source/toolchain/board-policy record.
 - `CHANGELOG.md` — full version history (v0.1.0 → v1.2.3) with per-version flash status.
 - `test/mock_pico.h` / `test/mock_impl.h` — host-test mock SDK surface (declarations / one shared implementation; v1.2 adds per-pin direction/write recording + IRQ/ADC/sync mocks; v1.2.2 adds the IO_BANK0 OEOVER/OETOPAD register file with real-SDK whole-CTRL-rewrite semantics, pulls/floating, unique-id).
 - `test/test_main.c` — default host test (flags OFF) + Section J off-by-default inertness.
@@ -266,4 +293,4 @@ v1.2 tap fields: hb `tap` = post-inversion observed-net levels (bit 0..3 = 555, 
 - **v1.2.0 rev-D tap telemetry 2026-07-21** (remediation spec R3 — closes Codex C2): enforced input-only invariant on GP16-19 (choke-point init + register readback + host direction-invariant test), inverted tap decode, noinit rail-drop edge ring with reboot persistence + `TAPDUMP`/`TAPCLR`, VCC_5V ADC in the heartbeat. Host tests **64/64 + 32/32 + 71/71** (new `test_v12`), all `-Werror`-clean; ARM cross-build verified (`.uf2` = 56 KB, 32.7 KB flash / 5.4 KB RAM; `.map` confirms `tap_ring` in `.uninitialized_data`, outside crt0 zero-fill). `rp2040_link.py` verified compatible unmodified (38/38 + v1.2-line feed check). **NOT yet flashed.** Bench gates: real-silicon reboot persistence, ADC-vs-DMM, `TAP_KICK_STARVE_MS` vs measured NE555 window (v1.2.1: 2000 ms, derived from the real 1 Hz Pi kick cadence — v1.2.0's 300 ms was sized against a nonexistent "~250 ms kick" and misclassified live-train 555 drops), and the R1.9 fault-injection procedure.
 - **v1.2.2 Codex round-2 slice 2026-07-21** (R2-1 + R2-13 + R2-6): pad-level OEOVER lock + `OETOPAD` readback on every input-contract pin (the R2-1 override bypass — with the mandated OEOVER *mutation* test), epoch-aware rail-drop classifier (pre-reboot edges history-only), the FI-1 bench fault-injection build (compile-flag + BOOTSEL-jumper + arm-gated; **separate artifact name `wsl_phase8b_rp2040_FI1.uf2`; zero FI-1 code in release** — the R1.9 target that was previously "not yet written"), and the identity line (REV_ID strap read GP20/21 with floating detection, Pico unique id, deterministic controlled-source build ID + config hash via `build_id.h`, hb `rid`). Host tests **64/64 + 32/32 + 111/111 + 28/28** (`test_fi1` new), `-Werror`-clean; ARM cross-builds verified: release `.uf2` = 60.5 KB (real build identity embedded, `tap_ring` still noinit) + FI-1 bench 63 KB. Pi-side `rp2040_link.py` consumes `id`/`rid` (self-test 45/45; `tests/test_fw_identity_line.py`). **NOT flashed.** New bench gates: BOOTSEL-read on silicon, REV_ID strap levels, FA-7 OEOVER/pad behavior on real pads.
 - ⚠️ **NOT cutover-ready.** "Done" = host-logic + build only. The cutover runbook's **G3 cam-stop rail-drop gate** now has its firmware *logic*, but the **enforcement is gated OFF** pending the per-cam edge→angle polarity field capture (runbook §3.2). A stock build still provides only health + the motion **max-run backstop**.
-- Next: build/flash, bench bring-up steps 1–4 (above), wire the Pi-side reader (contract above), then **bench step 5**: capture cam polarity (§3.2), set `CAM_*_TRIP` + flip `*_ENABLED` cam-by-cam, re-flash, and run the G3 cam-stop drop sub-test per cam.
+- Next: first-article bring-up steps 1–4 (above), wire the Pi-side reader (contract above), then **bench step 5**: capture cam polarity (§3.2), set `CAM_*_TRIP` + flip `*_ENABLED` cam-by-cam, generate a **new controlled Rev-D-only bundle** through `release.ps1`, record its manifest/UF2 hashes, and run the G3 cam-stop drop sub-test per cam.

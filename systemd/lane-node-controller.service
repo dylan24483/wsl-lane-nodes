@@ -31,21 +31,34 @@ Type=simple
 User=pi
 Group=pi
 WorkingDirectory=/home/pi/wsl-lane-nodes
+# Durable one-way per-lane identity-capability evidence. systemd creates and
+# owns /var/lib/wsl-lane-node before ExecStart; corrupt/unreadable lane state
+# makes board construction fail closed. The daemon also holds a crash-released
+# nonblocking per-lane controller-owner lease here for its entire lifetime.
+StateDirectory=wsl-lane-node
+StateDirectoryMode=0750
 
 # R2-9 (Codex round-2, 2026-07-21): the default deployment ships the HTTP
 # diagnostics leg CONFIGURED, not JSONL-only. /etc/wsl-lane-node.env carries
-# WSL_DIAG_SERVER_URL + LANE_NODE_TOKEN + WSL_BOARD_REVS (R2-6 — this daemon
-# REFUSES a board whose PCB revision is unprovisioned) — template:
+# WSL_DIAG_SERVER_URL + LANE_NODE_TOKEN + WSL_BOARD_REVS, an optional exact
+# WSL_CONTROLLER_EXPECTED_MODE assertion, and exactly one explicit output
+# posture: WSL_CONTROLLER_SHADOW=1 or WSL_LIVE_OUTPUTS=1. The daemon refuses
+# startup before opening GPIO/I2C/UART on a missing/conflicting/mismatched mode.
+# It also requires an identity-bearing board's exact
+# board_rev|fw_build|fw_cfg tuple in WSL_RP2040_QUALIFIED_RELEASES.
 # systemd/wsl-lane-node.env.example; install per docs/phase8_pi_provisioning.md
-# §8. The leading '-' keeps a bench Pi bootable without the file, but a
-# production install MUST create it (the daemon then runs JSONL-only and
-# skips every board — loud, fail-safe).
+# §8. This EnvironmentFile is intentionally mandatory (no leading '-'):
+# systemd refuses to start the controller when it is missing, before ExecStart
+# can open GPIO/I2C/UART. Bench installs must provision the explicit SHADOW
+# template rather than relying on implicit defaults.
 EnvironmentFile=/etc/wsl-lane-node.env
 
 # The controller daemon: RP2040 link (cam/ball events + RP_OK) + MCP23017 relays
 # + the cycle FSM + the per-board arm/watchdog GPIOs. It runs a tight synchronous
 # control loop and kicks the NE555 from INSIDE that loop, so a stalled loop stops
 # kicking -> the watchdog drops the relay-enable rail -> motion stops.
+# CAUTION: switching from SHADOW to LIVE is a deliberate configuration change:
+# set WSL_CONTROLLER_SHADOW=0 and WSL_LIVE_OUTPUTS=1 together, then restart.
 ExecStart=/home/pi/wsl-lane-nodes/.venv/bin/python3 lane_node/controller_daemon.py
 
 # GPIO-level safe-off after the daemon is reaped for ANY reason: force the ARM and

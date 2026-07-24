@@ -69,6 +69,26 @@ see followups; the field is defined here and repeated on boot/id/hb).
   FI-1 remains bench-only. Host provenance tests pin that unrelated files do not perturb
   identity and that release/FI-1 identities are distinct.
 
+- **Round-5 release/board custody (2026-07-24; metadata/tooling only, no firmware
+  rebuild).** The committed manifest now requires
+  `supported_board_revisions: ["revD"]` and the authoritative exact tuple
+  `qualified_releases: ["revD|rel-0c746b5747143b8011b01d43|05d808411db4bb0d"]`;
+  `release.ps1` stamps/verifies both through `release_manifest_policy.py` and emits
+  `WSL_RP2040_QUALIFIED_RELEASES` plus
+  `WSL_RP2040_SUPPORTED_BOARD_REVISIONS`. Independent build/config lists are
+  provenance only and cannot authorize their unsafe Cartesian product. The two
+  manifest-named UF2s are
+  committed as ordinary binary Git blobs, explicitly outside text conversion and LFS:
+  production SHA-256
+  `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`;
+  FI-1 bench SHA-256
+  `7c1daabad0a102f55fa61d617d3b4f0722705770f109e2d941b5356b3378ae6c`.
+  Controlled identity inputs are pinned to LF for `core.autocrlf` invariance. The
+  embedded build IDs, config ID, UF2 bytes, and firmware behavior did **not** change;
+  only the manifest metadata/hash changed (current manifest SHA-256
+  `ea8ea4ceb273df98e888aeb5d1f1327d39577e8492fda455c932fea3768bd7b5`).
+  This bundle must never be flashed on Rev-B/Rev-C, and `_FI1.uf2` remains bench-only.
+
 - **Rev-D 47 kΩ fast-input contract.** `init_inputs()` now disables RP2040 internal
   pulls. Leaving the internal ~50–80 kΩ pull-up enabled in parallel would reduce the
   effective pull-up to ~24–30 kΩ and invalidate the new optocoupler sink-current margin.

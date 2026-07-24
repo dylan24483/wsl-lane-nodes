@@ -59,7 +59,16 @@ class FakeBoardIdentity:
 
 def mk_board(roles=None, writer=None, shipper=None, board_rev="revC"):
     return BoardController(
-        BoardConfig(21, 1, "sim", 0, 0, board_rev=board_rev), sim=True,
+        BoardConfig(
+            21, 1, "sim", 0, 0, board_rev=board_rev,
+            allowed_fw_builds=("abc1234",),
+            allowed_fw_cfgs=("aa4ff333",),
+            qualified_fw_releases=(
+                (board_rev, "abc1234", "aa4ff333"),),
+            supported_fw_board_revisions=(board_rev,),
+            allow_legacy_revc_no_identity=(board_rev == "revC"),
+            legacy_revc_no_identity_enrolled=(board_rev == "revC")),
+        sim=True,
         diag_writer=writer, cycle_shipper=shipper, aux_roles=roles or {},
         slow_debounce_n=1)
 
@@ -72,7 +81,25 @@ def hb(bc, extra=""):
             int(bc.io.now() * 1000))
     bc._test_hb_up = max(
         getattr(bc, "_test_hb_up", 0), int(fields["up"]))
-    fields.update({"ev": "hb", "ok": 1, "bn": 123})
+    fields.update({"ev": "hb", "ok": 1})
+    modern = (
+        bc.cfg.board_rev == "revD"
+        or "bn" in fields
+        or "rid" in fields
+    )
+    if modern:
+        fields.setdefault("bn", 123)
+        fields.setdefault("rid", 1 if bc.cfg.board_rev == "revD" else 255)
+        fields.setdefault("flt", "")
+        fields.setdefault("drp", 0)
+        fields.setdefault("in", 0)
+        fields.setdefault("run", 0)
+        fields.setdefault("tap", 13)
+        fields.setdefault("rd", 0)
+        fields.setdefault("ep", 1)
+        fields.setdefault("v5", 5000)
+        fields.setdefault("v5n", 4990)
+        fields.setdefault("v5x", 5010)
     bc.link.feed_line(json.dumps(fields, separators=(",", ":")))
 
 
@@ -211,20 +238,20 @@ def test_run_mismatch_promotes_to_fault_after_hold():
     bc.link.run("S")
     bc.link.stop("S")
     for i in range(5):     # firmware keeps showing S running (lost STOP)
-        bc.link.feed_line('{"ev":"hb","ok":1,"bn":123,"flt":"","up":%d,"run":1}'
+        bc.link.feed_line('{"ev":"hb","ok":1,"flt":"","up":%d,"run":1}'
                           % (100 + 250 * i))
         bc.tick()
     assert w.of_type("run_mismatch") == []   # hold time not yet elapsed
     bc.io.advance(4.0)
     bc.link.feed_line(
-        '{"ev":"hb","ok":1,"bn":123,"flt":"","up":2000,"run":1}')
+        '{"ev":"hb","ok":1,"flt":"","up":2000,"run":1}')
     bc.tick()
     evs = w.of_type("run_mismatch")
     assert len(evs) == 1 and evs[0].severity == "fault"
     assert "S" in evs[0].detail["motors"]
     # firmware reconciles -> recovered
     bc.link.feed_line(
-        '{"ev":"hb","ok":1,"bn":123,"flt":"","up":2300,"run":0}')
+        '{"ev":"hb","ok":1,"flt":"","up":2300,"run":0}')
     bc.tick()
     assert [e for e in w.of_type("recovered") if e.code == "run_mismatch"]
 
@@ -234,6 +261,7 @@ def test_fw_config_mismatch_fault_on_maxrun_desync():
     bc = mk_board(writer=w)
     bc.link.feed_line('{"ev":"boot","fw":"t","maxrun_ms":1000}')
     to_ready(bc)
+    assert bc.fsm.state is State.MANUAL_INTERVENTION
     assert bc.io.armed is False
     evs = w.of_type("fw_config_mismatch")
     assert len(evs) == 1 and evs[0].severity == "fault"
@@ -345,6 +373,7 @@ def test_fw_identity_revC_expects_floating_straps():
     w = FakeWriter()
     bc = mk_board(writer=w, board_rev="revC")
     to_ready(bc)
+    hb(bc, ',"up":1230,"bn":123,"rid":255')
     bc.link.feed_line(ID_LINE % ("unknown", 255, 0))
     bc.tick()
     evs = w.of_type("fw_identity")

@@ -554,7 +554,7 @@ def zip_paths(zip_path: Path, files: list[Path], base: Path) -> None:
             z.write(path, path.relative_to(base).as_posix())
 
 
-def load_firmware_release_identity() -> dict[str, str]:
+def load_firmware_release_identity(expected_board_revision: str) -> dict[str, object]:
     """Load and hash-check the one production image named by the release manifest."""
     if not FW_RELEASE_MANIFEST.exists():
         raise SystemExit(f"Missing firmware release manifest: {FW_RELEASE_MANIFEST}")
@@ -583,12 +583,25 @@ def load_firmware_release_identity() -> dict[str, str]:
     if policy.get("build_allowlist") != [build] or policy.get("config_allowlist") != [cfg]:
         raise SystemExit(
             "Firmware release manifest allowlists do not exactly match the production image")
+    supported_boards = data.get("supported_board_revisions")
+    if supported_boards != [expected_board_revision]:
+        raise SystemExit(
+            "Firmware release board policy must contain exactly the exported revision: "
+            f"expected {[expected_board_revision]!r}, got {supported_boards!r}")
+    expected_qualified = [f"{expected_board_revision}|{build}|{cfg}"]
+    qualified_releases = data.get("qualified_releases")
+    if qualified_releases != expected_qualified:
+        raise SystemExit(
+            "Firmware release policy must bind the exact board/build/config tuple: "
+            f"expected {expected_qualified!r}, got {qualified_releases!r}")
     return {
         "version": str(data.get("firmware_version", "")),
         "build": build,
         "cfg": cfg,
         "sha256": sha,
         "manifest_sha256": sha256(FW_RELEASE_MANIFEST),
+        "supported_board_revisions": supported_boards,
+        "qualified_releases": qualified_releases,
     }
 
 
@@ -621,7 +634,7 @@ def main() -> int:
         raise SystemExit(f"Missing netlist for rev-{rev}: {NETLIST_PATH}")
     if not KICAD_CLI.exists():
         raise SystemExit(f"Missing KiCad CLI: {KICAD_CLI}")
-    fw_release = load_firmware_release_identity()
+    fw_release = load_firmware_release_identity(f"rev{rev}")
 
     # P3 / change-list item 12: NEVER overwrite an as-ordered package. No rmtree, ever.
     if out.exists():
@@ -964,7 +977,13 @@ def main() -> int:
         f"  build={fw_release['build']}; cfg={fw_release['cfg']};",
         f"  release UF2 SHA-256={fw_release['sha256']}. Verify the release manifest",
         f"  SHA-256={fw_release['manifest_sha256']} before flash; filename/version alone",
-        "  is not proof. FA-9/FA-11 require live pull-register confirmation.",
+        "  is not proof. The manifest must contain supported_board_revisions="
+        f"{json.dumps(fw_release['supported_board_revisions'])}.",
+        "  Provision only qualified_releases="
+        f"{json.dumps(fw_release['qualified_releases'])};",
+        "  independent build/config allowlists must not authorize a cross-product.",
+        "  This exact bundle is Rev-D only: never flash Rev-B/Rev-C, and never deploy",
+        "  wsl_phase8b_rp2040_FI1.uf2. FA-9/FA-11 require live pull-register confirmation.",
         "",
         "Uploads:",
         f"- {stem}-gerber-drill.zip  -> JLC PCB order (4-layer FR-4 1.6mm, 1oz/0.5oz,",

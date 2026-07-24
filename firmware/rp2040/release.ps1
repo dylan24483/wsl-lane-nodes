@@ -58,11 +58,24 @@ if (-not $python) {
 }
 if (-not $python) { throw "Python 3 not found" }
 $provenance = Join-Path $here "release_provenance.py"
+$boardPolicy = Join-Path $here "release_manifest_policy.py"
+
+function Invoke-BoardRevisionPolicy {
+    param(
+        [Parameter(Mandatory=$true)]
+        [ValidateSet("stamp", "verify")]
+        [string]$Mode
+    )
+    Invoke-Checked -FilePath $python -Arguments ($pythonPrefix + @(
+        $boardPolicy, $Mode, "--manifest", $manifest
+    ))
+}
 
 if ($VerifyOnly) {
     Invoke-Checked -FilePath $python -Arguments ($pythonPrefix + @(
         $provenance, "verify-manifest", "--source-dir", $here, "--manifest", $manifest
     ))
+    Invoke-BoardRevisionPolicy -Mode "verify"
     Write-Host "VERIFIED: $manifest"
     exit 0
 }
@@ -142,9 +155,11 @@ Invoke-Checked -FilePath $python -Arguments ($pythonPrefix + @(
     "--ninja", $ninja,
     "--output", $manifest
 ))
+Invoke-BoardRevisionPolicy -Mode "stamp"
 Invoke-Checked -FilePath $python -Arguments ($pythonPrefix + @(
     $provenance, "verify-manifest", "--source-dir", $here, "--manifest", $manifest
 ))
+Invoke-BoardRevisionPolicy -Mode "verify"
 
 $parsed = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
 Write-Host "`nVERIFIED RP2040 release bundle:"
@@ -153,7 +168,7 @@ foreach ($image in $parsed.images) {
         $image.variant, $image.identity.'id.build', $image.image.sha256)
 }
 Write-Host "  manifest $manifest"
-Write-Host ("  deploy WSL_RP2040_BUILD_ALLOWLIST={0}" -f `
-    $parsed.deployment_identity.build_allowlist[0])
-Write-Host ("  deploy WSL_RP2040_CFG_ALLOWLIST={0}" -f `
-    $parsed.deployment_identity.config_allowlist[0])
+Write-Host ("  deploy WSL_RP2040_QUALIFIED_RELEASES={0}" -f `
+    $parsed.qualified_releases[0])
+Write-Host ("  deploy WSL_RP2040_SUPPORTED_BOARD_REVISIONS={0}" -f `
+    ($parsed.supported_board_revisions -join ","))

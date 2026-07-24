@@ -4,6 +4,15 @@
 
 **Read with:** `phase8_controller_interface_MAP.md` (the signal contract), `phase8_controller_interface_fieldsheet.md` (exact-pin lock-in at the bench), `phase8_8270_SYSTEM_REFERENCE.md` (full system spec), `phase8_C1_C2A_pinout_p288.md` (connector extraction).
 
+> **SUPERSEDED ARCHITECTURE / CURRENT SAFETY CORRECTION (2026-07-24):** retain
+> this Rev-B concept spec for channel-count and design history only. It is **not**
+> current Rev-D pin, J_SAFETY, firmware, or cutover authority. Lane 21/22 has no
+> dry/independent TB pair; powered evidence proved an OEM parallel
+> closed-when-safe S/T coil ladder, with both levers BACK/open killing both coils.
+> Candidate C uses the controlled J_SAFE1-2 jumper and requires per-lane G3 S-and-T
+> insertion proof. Use the current manual sources, interlock redesign, harness build
+> sheet, and Track-B runbook.
+
 > **Scope honesty:** this spec fixes the *channel architecture* (counts, electrical domains, bus, safety, power) — which is what gates the PCB. Exact C1/C2A pin numbers are bench-verified separately (fieldsheet) and do **not** change the board design, only the harness. Anything not yet confirmed is marked `# CONFIRM`.
 
 ---
@@ -12,7 +21,10 @@
 1. **One board per lane-pair** drives/reads **both decks** (mirrors one-Pi-per-pair + one-camera-per-pair). Channel counts below are **per lane**; the board carries **2×** (one set per deck) — OR we run two stacked single-lane boards. See §9 decision.
 2. **Galvanic isolation** between the 82-70 machine (115 VAC / 24 VAC / dirty switch rails) and the Pi (3.3 V). Optos in, relays/SSR out. The Pi never shares a ground with the motor rails.
 3. **Fail-safe-off**: on Pi death, power loss, or watchdog timeout, **all motor relays drop**. Motion only resumes after a deliberate operator "First Ball Zero" (SYSTEM_REFERENCE §5 power-down rule).
-4. **Hardware safety stays in hardware** — the TB+SC interlock, stop/CIS → master breaker, and regenerative braking are NOT on this board and are never bypassed by it (§6).
+4. **Hardware safety stays in hardware** — the OEM TB+SC ladder, Stop/CIS →
+   master breaker, and regenerative braking are never bypassed. Candidate C puts no
+   TB/SC field loop on J_SAFE1-2; correct S/T output insertion preserves the ladder
+   and must pass G3 (§6).
 5. **Beginner-buildable + Codex-auditable** — through-hole-friendly where it matters, explicit part numbers, current budgets, and test points.
 
 ---
@@ -67,7 +79,7 @@
   lamps                                                    |
                                                            |
             HARDWARE SAFETY (NOT on Pi path):              |   NE555 WATCHDOG (on board):
-            TB+SC interlock ‖ in 24 V relay-control path   |   Pi kicks GPIO12 < ~10 s →
+            OEM TB+SC parallel-safe S/T coil ladder       |   Pi kicks GPIO12 < ~10 s →
             Stop/CIS → master breaker                      |   else relay-enable rail dropped
             Regenerative braking on relay N.C. contacts    |   (drops M/S/T/SP/M1/M2)
 ```
@@ -132,12 +144,21 @@
 ## 6. Safety integration (PRESERVE — do not put on the Pi path)
 
 1. **NE555 hardware watchdog (on board, bench-validated):** Pi pulses **GPIO12** (`watchdog_kick_loop`, WS-independent — see daemon fix 2026-05-29). Miss the kick (~10 s) → 555 output drops the **relay-enable rail** → all motion relays open. `relay_cleanup.py` also drives GPIO12 low on shutdown.
-2. **TB + SC interlock (hardware, off-board):** the two cam switches **in parallel** in the **24 V relay-control path** drop both motor relays on a table↔sweep collision course. The board's relay coils sit *downstream* of this interlock so it can always kill them. **Never route motor power around it.**
+2. **TB + SC interlock (hardware, off-board):** powered testing proved the two
+   contacts are **parallel closed-when-safe** in the 24 VAC S/T coil ladder. Either
+   pressed lever permits a coil; both levers BACK/open block both S and T. The
+   board's dry output contacts must be inserted without bypassing that ladder.
+   J_SAFE1-2 is the controlled Candidate-C jumper, not a machine landing; G3 proves
+   each lane's S/T insertion.
 3. **Stop switch + C.I.S. → master breaker (hardware):** cuts all control. Off-board.
 4. **Regenerative braking** on relay N.C. contacts + caps — hardware, in the motor wiring. The board's relays must use the **same N.C.-brake contact arrangement** the machine expects `# CONFIRM` against p287/p290.
 5. **Power-down rule (firmware + this rail):** after any 115 VAC loss in "Bowl", the **arm GPIO stays de-asserted** on restore → no motion until operator presses **PBZ (First Ball Zero)**. Implemented in `cycle_control_8270.py` MANUAL_INTERVENTION/POWER_OFF states; the board enforces it because the arm GPIO + watchdog both gate the relay-enable rail.
 
-**Relay-enable rail logic:** `MOTOR_RELAYS_ENABLED = watchdog_ok AND pi_arm_gpio AND (hardware TB/SC interlock closed) AND master-breaker-on`. All four required. Any one drops the motors.
+**Current lane-21/22 separation:** the **board relay rail** requires watchdog OK,
+Pi ARM, RP2040 OK, the controlled J_SAFE1-2 source jumper, and Stop/CIS J_SAFE3-4.
+The **separate OEM ladder** then decides whether the board-commanded S/T machine
+coils may energize. TP16 can be live while both S/T coils are correctly blocked;
+only the per-lane G3 coil test proves that primary collision path.
 
 ---
 

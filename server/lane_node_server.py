@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import os
+import re
 import socket
 import sqlite3
 import subprocess
@@ -117,6 +118,11 @@ HTTP_IO_TIMEOUT_S = 5.0
 HTTP_MAX_HANDLERS = 32
 SCORING_NODE_TOPOLOGY_ENV = "WSL_SCORING_NODE_TOPOLOGY"
 SCORING_NODE_TOKENS_ENV = "WSL_SCORING_NODE_TOKENS"
+SITE_ID_ENV = "WSL_SITE_ID"
+# Site identity is provisioned on the WSL host from the committed fleet
+# manifest.  It is deliberately exposed as observed process state; the WSL
+# dead-man compares it with its independently loaded manifest authority.
+SITE_ID = os.environ.get(SITE_ID_ENV, "").strip()
 try:
     DIAGNOSTIC_DB_TIMEOUT_S = max(
         0.05, min(5.0, float(os.environ.get(
@@ -725,7 +731,7 @@ def _verify_backup_fence(fence_id, expected_lanes):
 
 
 def _build_identity():
-    """Resolve the deployed code identity ONCE at startup: short git hash
+    """Resolve the deployed code identity ONCE at startup: full Git commit
     of this checkout, falling back to a VERSION file, else None. Exposed
     at /api/health as 'git_hash' (Codex R2-8, 2026-07-21) so deploy.ps1
     on WSL-SRV can record + compare the lane-node build across deploys —
@@ -733,16 +739,19 @@ def _build_identity():
     repo_root = Path(__file__).resolve().parent.parent
     try:
         out = subprocess.run(
-            ['git', '-C', str(repo_root), 'rev-parse', '--short', 'HEAD'],
+            ['git', '-C', str(repo_root), 'rev-parse', 'HEAD'],
             capture_output=True, text=True, timeout=5)
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
+        value = out.stdout.strip().lower()
+        if out.returncode == 0 and re.fullmatch(r'[0-9a-f]{40}', value):
+            return value
     except Exception:
         pass
     try:
-        text = (repo_root / 'VERSION').read_text(encoding='utf-8').strip()
-        if text:
-            return text
+        value = (
+            repo_root / 'VERSION'
+        ).read_text(encoding='utf-8').strip().lower()
+        if re.fullmatch(r'[0-9a-f]{40}', value):
+            return value
     except OSError:
         pass
     return None
@@ -3399,6 +3408,9 @@ class HttpHandler(BaseHTTPRequestHandler):
                         _project_server_clock_authority(
                             machine_store.machine_health()),
                         nodes_meta))
+                payload["site_id"] = SITE_ID or None
+                payload["site_identity_ok"] = _valid_production_node_id(
+                    SITE_ID)
             except Exception as e:
                 log.warning(f"machine_health failed: {e}")
                 return self._send(500, 'application/json',
@@ -3467,6 +3479,8 @@ class HttpHandler(BaseHTTPRequestHandler):
             )
             health = {
                 "ok": service_ok,
+                "site_id": SITE_ID or None,
+                "site_identity_ok": _valid_production_node_id(SITE_ID),
                 "uptime_sec": round(uptime_sec, 1),
                 "uptime_human": f"{int(uptime_sec // 3600)}h {int((uptime_sec % 3600) // 60)}m {int(uptime_sec % 60)}s",
                 "protocol_version": PROTOCOL_VERSION,

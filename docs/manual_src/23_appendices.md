@@ -10,6 +10,13 @@
 
 ### 23.A Appendix A — Full Bill of Materials (rev-B controller board, one lane)
 
+> **HISTORICAL REV-B BOM — NOT A REV-D ORDER SOURCE.** Current Rev-D/R5 uses
+> exactly forty 47 kΩ `Rpu_*` refs (`R4,R6,…,R82`), UNI-ROYAL
+> `0805W8F4702T5E` / LCSC C17713. Unrelated 10 kΩ networks remain unchanged.
+> Use `kicad/fab_revD_2026-07-23_r5/manifest.json` and its package README for
+> current fabrication data; the Rev-D board remains NO-GO for ordering pending
+> the recorded physical release gates.
+
 **Authoritative sources for this appendix (all under `kicad/fab_revB_routed_manual/`):**
 
 | File | What it is |
@@ -50,7 +57,7 @@ Reproduced verbatim from `assembly/wsl-phase8b-revB-jlc-standard-pcba-bom.csv`. 
 | AO3401A P-channel MOSFET, SOT-23 | Q14 | SOT-23 | 1 | **C347476** | AO3401A | UMW | Extended | Relay-enable-rail pass element (`Q_RAIL`). |
 | 4.7k 1% 1/8W 0805 | R1, R2 | R_0805_2012Metric | 2 | **C17673** | 0805W8F4701T5E | UNI-ROYAL | Basic | I²C SDA/SCL pull-ups (`R_I2C_SDA`, `R_I2C_SCL`). |
 | 2.2k 1% 1/8W 0805 | R3, R5, R7 … R65 (32 refs) | R_0805_2012Metric | 32 | **C17520** | 0805W8F2201T5E | UNI-ROYAL | Basic | Opto-LED series resistors `Rin_*` (one per of the 32 input channels). |
-| 10k 1% 1/8W 0805 | R4, R6, R8 … R66, R101–R109 odd (37 refs) | R_0805_2012Metric | 37 | **C17414** | 0805W8F1002T5E | UNI-ROYAL | Basic | Opto logic-side pull-ups `Rpu_*` + watchdog/AND-gate pull-ups. |
+| 10k 1% 1/8W 0805 | R4, R6, R8 … R66, R101–R109 odd (37 refs) | R_0805_2012Metric | 37 | **C17414** | 0805W8F1002T5E | UNI-ROYAL | Basic | **Historical Rev-B:** 32 opto logic-side `Rpu_*` refs plus five unrelated watchdog/AND-gate resistors. Rev-D/R5 changes only `Rpu_*` to 47 kΩ. |
 | 1k 1% 1/8W 0805 | R67, R70, R73 … R104 (12 refs) | R_0805_2012Metric | 12 | **C17513** | 0805W8F1001T5E | UNI-ROYAL | Basic | Relay base resistors `Rb_*` + LED gate resistors `Rgled_*` + watchdog gate resistors. |
 | 100k 1% 1/8W 0805 | R68, R71, R74 … R110 (14 refs) | R_0805_2012Metric | 14 | **C149504** | 0805W8F1003T5E | UNI-ROYAL | Basic | Drive/gate pulldowns `Rpd_*`, `Rpdled_*`, rail-gate + watchdog timing/pulldowns (fail-safe-off). |
 | 330R 1% 1/8W 0805 | R90, R93, R96, R99 | R_0805_2012Metric | 4 | **C17630** | 0805W8F3300T5E | UNI-ROYAL | Basic | Status-LED current-limit `Rled_*`. **Value provisional** — see 23.A.5 note. |
@@ -154,7 +161,12 @@ The 20 `excluded_non_dnp_refs` are not in any assembly file but exist on the boa
 | TP7 | I2C_SCL | TP15 | SAFE_STOP_RETURN |
 | TP8 | WDOG_KICK | TP16 | RELAY_ENABLE_RAIL |
 
-> **Bring-up tip (ties to §19/§21):** TP1/TP2/TP3/TP5 verify the rails and the GND↔FIELD_GND isolation (TP2 vs TP5 must show no continuity). TP8–TP12 walk the NE555 watchdog. TP13/TP14/TP16 verify the relay-enable-rail AND chain: TP16 (the rail) should be dead unless ARM (TP13) **and** RP2040_OK (TP14) **and** the watchdog **and** the external J_SAFETY loops are all satisfied.
+> **Bring-up tip (ties to §19/§21):** TP1/TP2/TP3/TP5 verify the rails and the
+> GND↔FIELD_GND isolation (TP2 vs TP5 must show no continuity). TP8–TP12 walk the
+> NE555 watchdog. TP13/TP14/TP16 verify the board rail: TP16 should be dead unless
+> ARM, RP2040_OK, the watchdog, the controlled Candidate-C J_SAFE1-2 jumper, and
+> Stop/CIS J_SAFE3-4 are satisfied. This does **not** prove TB/SC; G3 separately
+> commands S and T and requires both coils dead with both OEM levers BACK/open.
 
 #### 23.A.6 Provisional / unconfirmed BOM values
 
@@ -178,10 +190,10 @@ The 82-70 sequences the table and sweep by reading rotating **timing cams** — 
 |---|---|---|---|---|---|
 | **SA** | Sweep | **270°** and **360° / zero** | Stop sweep **run-through @270°**; stop sweep **@360°/zero** | **GP6** | 9 |
 | **SB** | Sweep | **66°** and **186°** | **Guard stop @66°** (sweep forward limit); **initiate table spotting @186°** | **GP7** | 10 |
-| **SC** | Sweep | **86°–243°** (window) | Sweep-under-table window → **table/sweep INTERLOCK** (hardware) | **GP8** | 11 |
+| **SC** | Sweep | **86°–243°** (window) | Sweep-under-table window → OEM ladder interlock; lane 21/22 SC/U stays unlanded as a dry input | **GP8 board position** | 11 |
 | **TA1** | Table | **355°** (and **185°**) | **Table-zero stop @355°**; **@185° resets the 3-s time delay** + flips ball-cycle memory | **GP9** | 12 |
 | **TA2** | Table | **260°** | **Initiate sweep run-through**; **latch pin lamps** (legacy 12 VDC / KX to scorer); **ball vs strike decision** | **GP10** | 14 |
-| **TB** | Table | **105°–255°** (window) | Table-sweep interference window → **table/sweep INTERLOCK** (hardware) | **GP11** | 15 |
+| **TB** | Table | **105°–255°** (window) | Table-sweep interference window → OEM ladder interlock; **no independent lane-21/22 field lead** | **GP11 board position** | 15 |
 | *(3-s time delay)* | — | 3 s, gated by **GP** closed | **Pin-settle** dwell between sweep-guard and table descent | *(software/RP2040 timed)* | — |
 
 **Ball-detect inputs (not cams, but on the same fast/RP2040 bank, included for completeness — `config.h`):**
@@ -191,7 +203,12 @@ The 82-70 sequences the table and sweep by reading rotating **timing cams** — 
 | **DIELL-L** | Ball detect, **left** beam — the **cycle trigger** (replaces the OEM cushion start switch "SS") | **GP12** | 16 |
 | **DIELL-R** | Ball detect, **right** beam | **GP13** | 17 |
 
-> **Electrical sense (all 8 fast inputs):** opto-isolated and **ACTIVE-LOW at the Pico** — machine contact **closed / asserted ⇒ GPIO LOW**; idle is HIGH via an on-board 10k pull-up to 3V3 (`generate_kicad_netlist_revB.py` `opto_input()`; `config.h` header). Cams are **dry contacts, normally-closed at rest** per the at-machine measurement (field result A4).
+> **Electrical-sense boundary:** a populated opto position is active-low at the
+> Pico, but do not generalize one "normally-closed at rest" polarity to every cam.
+> Independently landed motion cams require measured edge→angle polarity. SC/TB is
+> separate: powered evidence proved parallel closed-when-safe OEM ladder contacts,
+> both levers BACK/open kills S/T; it did not create two firmware inputs. Lane 21/22
+> has no independent TB lead and leaves SC/U unlanded.
 
 #### 23.B.2 Where each cam fires within the cycle of operation
 
@@ -204,14 +221,23 @@ The cam roles above drive these four cycle types (full narrative in `phase8_8270
 | **Strike** | as first ball but **no pins** (all GS open); at **TA2 260°** the **strike memory** sets → strike lamp + hold table at 360° for spotting → spot + sweep as 2nd ball → strike memory resets when sweep+table reach zero. |
 | **Foul** | foul detector (Radaray) → foul lamp + logic → sweep→**SB 66°** → **foul memory** holds table → sweep run-through to **SA 270°** → **BS** → table spotting → ball-memory flips (→2nd ball). |
 
-#### 23.B.3 Cam-stop overrun — deferred firmware item (read before relying on the table)
+#### 23.B.3 Cam-stop overrun — v1.2.3 release posture (read before relying on the table)
 
 The **angle values** above are authoritative from the manuals, but **which edge (rising/falling) of a given cam input corresponds to which angle on our specific chassis is NOT yet confirmed.** Consequently:
 
-- Firmware **v0.1.0** does **not** enforce cam-stop *overrun* (a stop-cam firing while a motor is still RUNNING and the Pi failing to STOP it in time → drop RP2040_OK). That feature is **deferred to firmware v1.1** and is bench-gated on the per-cam edge→angle polarity (`config.h` "DEFERRED to v1.1"; `main.c` safety-model header; cutover runbook §3.2).
-- What v0.1.0 *does* provide as the UART-independent backstop is the **motion max-run timeout = 8000 ms** (`MAX_MOTION_MS`, matching `cycle_control_8270.MAX_MOTION_S = 8.0 s`): any guarded motor marked RUNNING longer than this latches a fault and drops the rail. **BE (continuous)** and **M (master)** are **not** guarded.
+- Firmware **v1.2.3** contains cam-stop-overrun paths, but its controlled Rev-D
+  release keeps every measured-cam enforcement flag **OFF**. Capture per-cam
+  edge→angle polarity, create a new controlled release with only confirmed values,
+  and pass the bench gate before crediting any per-cam rail drop.
+- Stock v1.2.3 provides health plus the **motion max-run timeout = 8000 ms**
+  (`MAX_MOTION_MS`, matching `cycle_control_8270.MAX_MOTION_S = 8.0 s`). **BE**
+  (continuous) and **M** (master) are not guarded. The SC∧TB echo is default-off,
+  secondary, unvalidated, and lacks an independent TB observation on lanes 21/22.
 
-> `(VERIFY: per-cam edge→angle polarity (which logic edge = which shaft angle) is unconfirmed on the SS+Omega-Tek chassis — it is a cutover-day field measurement and the precondition for the v1.1 cam-stop-overrun feature. Do not hand-derive it from this table.)`
+> `(VERIFY: capture each independently landed motion-cam edge→angle polarity and
+> bind it into a new manifest-controlled release; do not hand-derive it from this
+> table. SC/TB ladder polarity is already powered-proven but is not a two-input
+> firmware landing.)`
 
 ---
 
@@ -243,7 +269,7 @@ This expands the seed in **§1.11**. Entries already defined there are not repea
 | **VSYS** | The Raspberry Pi Pico's main 5 V system-input pin (module pin 39). The board feeds the logic 5 V rail into VSYS; the Pico's on-board regulator supplies the 3V3 rail. |
 | **uart0 / 115200 8N1** | The Pi↔RP2040 serial link: hardware UART0 on **GP0 (TX) / GP1 (RX)**, 115200 baud, 8 data / no parity / 1 stop. The RP2040 **pushes** edge events; the FSM consumes them (no polling). |
 | **RP2040_OK** | The RP2040's fail-safe-low rail-permission output (**GP2**). HIGH only when firmware is healthy and past `BOOT_SETTLE_MS`; Hi-Z (unpowered/reset) → external 100k pulldown → rail dead. A first-class safety-rail condition. |
-| **relay-enable rail (`RELAY_ENABLE_RAIL`)** | The hardware-gated coil supply for the on-board relays (16 nodes incl. TP16). Passes through the AO3401A only when the series AND chain (ARM · RP2040_OK · NE555-OK) **and** the external J_SAFETY loops (TB/SC, Stop/CIS) are all satisfied. Software cannot bypass it. |
+| **relay-enable rail (`RELAY_ENABLE_RAIL`)** | Hardware-gated board-relay coil supply. On lanes 21/22 it requires ARM · RP2040_OK · NE555-OK, the controlled Candidate-C J_SAFE1-2 jumper, and Stop/CIS J_SAFE3-4. TB/SC is **not** a J14 loop: the OEM parallel-safe ladder separately blocks the S/T machine coils and is accepted only by per-lane G3 proof. |
 | **ARM / ARM_PERMIT** | The Pi GPIO permission (one AND-chain input) asserted only in a verified operator-safe state; part of replicating the OEM "Power-Down / require First Ball Zero on power restore" rule. |
 | **watchdog kick (`WDOG_KICK`)** | The Pi-driven pulse (lane_node GPIO12) that pets the NE555 monostable. A missed kick times out and drops the rail. Independent of the RP2040's own hardware watchdog. |
 | **GND vs FIELD_GND** | Logic ground vs the isolated machine-sense ground. They share **0 nodes** (verified: GND=92 nodes, FIELD_GND=6 nodes) — the isolation barrier is intact and only crosses inside the opto/relay/DC-DC packages. |
@@ -257,7 +283,7 @@ This expands the seed in **§1.11**. Entries already defined there are not repea
 | **BS (bin switch) / GP / OS** | Machine slow inputs: **BS** = #9-bin "all 10 pins arrived" switch (gates spotting); **GP** = the gate/pin switch that gates the 3-s settle delay; **OS** = (out-of-range / over-stroke style) machine switch. (Exact OS semantics per chassis — `(VERIFY: precise OS switch meaning against an OEM source; the netlist treats it as a generic slow input on IN-A.)`) |
 | **PBZ / PBC** | Pushbuttons: **PBZ** = zero / 1st-2nd-ball / manual-intervention; **PBC** = cycle. Both on IN-A. |
 | **VIXLW dongle** | The owned USB composite-video capture device (UVC "USB Video" class) that reads the T-Camera for Track A. (Seed §1.11.) |
-| **`.uf2`** | The RP2040 firmware binary format. v0.1.0 cross-builds to ~24 KB flash / 2.6 KB RAM (`firmware/rp2040/build.ps1`). |
+| **`.uf2`** | RP2040 firmware binary. Use only the manifest-verified production artifact from the controlled v1.2.3 release path; never substitute a developer build or the FI-1 bench image. The current bundle is not flashed/cutover-ready. |
 | **IPC-D-356** | The netlist-export format (`reports/wsl-phase8b-revB.ipc`) the fab uses for bare-board electrical test. |
 
 > **Carried-over flag from §1.11 (unchanged):** the **DIELL** ball-detector's exact rest/broken voltages (≈16 V rest / ≈0.7 V broken, NPN active-low) live in project memory `project_amf_8270_interface_research`, **not** in the named live files. `(VERIFY: 16 V rest / 0.7 V broken figures against a live source before relying on exact voltages.)` The **active-low, contact-closed-asserts** sense *is* confirmed in the live netlist generator.
@@ -274,7 +300,7 @@ This maps every source document, script, runbook, and key artifact to what it au
 |---|---|---|
 | `scripts/generate_kicad_netlist_revB.py` | **As-built board wiring** — the single source of truth for every pin/net/part assignment (FAST_INPUTS, SLOW_INPUT_PINS, OUTPUT_PINS, all blocks). | §5, §11, §12 |
 | `firmware/rp2040/config.h` | RP2040 pin map (GP6–GP13 fast, GP2 RP_OK, GP0/1 UART), timing constants, baud. Derived from the netlist generator. | §15, §12, 23.B |
-| `firmware/rp2040/main.c` | RP2040 firmware behavior: edge-push protocol, RP_OK fail-safe model, max-run backstop, watchdog, deferred v1.1 hooks. | §15 |
+| `firmware/rp2040/main.c` | RP2040 v1.2.3 behavior: edge protocol, RP_OK fail-safe model, max-run, diagnostic taps/identity, and measured-cam enforcement paths whose release flags remain OFF. | §15 |
 | `lane_node/controller_io.py` | Pi-side hardware `io` object: MCP23017 addresses + **OUT_A_MAP / IN_A_MAP** bit maps (current+correct), gripper read, watchdog/arm, the generator drift-guard. | §5, §12 |
 | `lane_node/cycle_control_8270.py` | The controller **FSM** (states, cam handlers, time delays, MAX_MOTION_S). | §3, §21 |
 | `kicad/fab_revB_routed_manual/assembly/*.csv` | The **BOM/CPL/DNP/hand-solder/harness** part lists (locked LCSC numbers). | §10, 23.A |
@@ -298,7 +324,7 @@ This maps every source document, script, runbook, and key artifact to what it au
 
 | File | Covers |
 |---|---|
-| `docs/phase8b_at_machine_fieldsheet.md` | The completed at-machine field session results (A1/A3/A4 voltages, gripper chassis-return correction, Stop/CIS, TB/SC). |
+| `docs/phase8b_at_machine_fieldsheet.md` | Historical 2026-06-03 field-session record; its original TB/SC-to-J_SAFE inference is explicitly superseded by the 2026-06-27/2026-07-07 reconciliation banner. |
 | `docs/phase8b_at_machine_HOWTO_companion.md` | How the field session was run (procedure companion). |
 | `docs/phase8b_field_concepts_primer.md` | Field-concepts primer for the session. |
 | `docs/phase8_bench_session1_FINDINGS.md` | Bench (spare cabinet) characterization: C1/C2A roles, coil voltages, relay IDs. |
@@ -312,11 +338,11 @@ This maps every source document, script, runbook, and key artifact to what it au
 | File | Covers | Manual section |
 |---|---|---|
 | `docs/phase8_trackA_golive_runbook.md` | **Track A scoring go-live** on the Pi at 21/22 (empty-ref capture → `--test` → camera mode → soak). The only currently-live procedure. | §18 |
-| `docs/phase8_trackB_controller_cutover_runbook.md` | **Track B controller swap** cutover: lockout/tagout, staged rail-disabled bring-up, go/no-go gates, rollback, and the consolidated deferred field captures (gripper labels, cam polarity, J_SAFETY terminals). | §21 |
+| `docs/phase8_trackB_controller_cutover_runbook.md` | **Current Track B controller swap authority:** lockout/tagout, staged bring-up, Candidate-C jumper + per-lane G3 coil proof, go/no-go gates, and rollback. | §21 |
 | `docs/phase8_pi_provisioning.md` | **Pi node provisioning**: `config.txt` boot overlays (the 2nd I²C bus + 2nd UART), focused pinned deps (`requirements-lane-node.txt`), installing both systemd units, the Pi-GPIO pin table + the **Track-A coexistence constraint** (`Conflicts=lane-node.service`), and the `systemctl enable` trap. | §17 (Pi daemon), §20 (operations) |
 | `docs/phase8_PLAN_A_full_replacement.md`, `phase8_PLAN_B_scoring_first.md` | The Plan A (full controller replacement) vs Plan B (scoring-first) fork analysis. | §1 |
 | `docs/phase8_8270_replacement_plan.md` | The 82-70 replacement plan overview. | §1 |
-| `firmware/rp2040/README.md` | Firmware v0.1.0: authoritative pin map, UART event/command protocol, Pi-side integration contract, fail-safe model, bench bring-up checklist. | §15, §21 |
+| `firmware/rp2040/README.md` | Current v1.2.3 release posture, authoritative Rev-D pin map/protocol, manifest verification, fail-safe model, and bench gates; measured-cam enforcement flags remain OFF. | §15, §21 |
 
 #### 23.D.5 Track A (camera scoring) artifacts
 
@@ -344,7 +370,7 @@ This maps every source document, script, runbook, and key artifact to what it au
 
 | File | Covers |
 |---|---|
-| `docs/phase8_session_close_2026-06-03.md` | **Current live state** (this manual's "as-of"): rev-B routed + bare-PCB fab package generated, field session complete, firmware v0.1.0 written/tested, the Claude↔Codex audit loop, locked decisions. |
+| `docs/phase8_session_close_2026-06-03.md` | Historical 2026-06-03 snapshot of the Rev-B package and then-current v0.1 firmware; **not current wiring, firmware, or cutover authority**. |
 | `docs/HANDOFF.md` | Deeper background + mixed-fleet reality + artifact index. |
 | `docs/phase8_status_2026-05-30.md`, `phase8_session_close_2026-06-01.md` | Earlier status snapshots (superseded by 06-03). |
 | `README.md` (repo root) | Repository orientation. |
@@ -360,7 +386,7 @@ This is a stub to be maintained going forward. Record every change to **this man
 | Date | Rev | Area | Change | Source / commit | Author |
 |---|---|---|---|---|---|
 | 2026-06-04 | manual r0 | §23 | Initial appendices authored: full BOM (JLC-placed + hand-solder + harness + DNP + test pads), consolidated cam timing, expanded glossary, document index, change-log stub. Grounded in the `2026-06-04T14:42:42` fab package + netlist generator + `config.h` + `controller_io.py` + SYSTEM_REFERENCE §3. | `kicad/fab_revB_routed_manual/manifest.json`; `scripts/generate_kicad_netlist_revB.py`; `firmware/rp2040/config.h` | (manual) |
-| *(pending)* | — | firmware | Cam-stop **overrun** enforcement (v1.1) once per-cam edge→angle polarity is confirmed at cutover. Update 23.B.3. | `phase8_trackB_controller_cutover_runbook.md` §3.2 | — |
+| *(pending)* | — | firmware | Capture measured motion-cam polarity, enable only confirmed enforcement flags, create a new controlled release, and pass its bench/cutover sub-gates. | `phase8_trackB_controller_cutover_runbook.md` §3.2 | — |
 | *(pending)* | — | BOM | Lock `Rled_*` (status-LED current-limit) value after LED selection; populate snubber/MOV (C4–C10 / R72–R87 / D2–D14) after at-machine contact-load measurement. Update 23.A.1 / 23.A.4 / 23.A.6. | `phase8b_pcb_revB_BOM_power.md` §6 | — |
 | *(pending)* | — | BOM | Confirm/replace **J1** Pi header + ribbon socket candidates (3020-20-0100-00 / 3030-20-0102-00). Update 23.A.2 / 23.A.3. | `…-hand-solder-bom.csv` / `…-harness-mating-parts.csv` | — |
 | *(pending)* | — | board | If `.kicad_dru` creepage is relaxed 250 VAC → 24 VAC (measured) for a future shrink/spin, re-run DRC + `export_fab_revB.py` and bump the BOM/board rev. Update §13 + 23.A counts. | `phase8b_pcb_revB_netclass_creepage.md` §3 | — |

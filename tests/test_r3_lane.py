@@ -62,6 +62,10 @@ os.environ.setdefault("WSL_MACHINE_LANES", "21,22")
 os.environ.setdefault(
     "WSL_SCORING_NODE_TOPOLOGY", "test-pair-21-22=21,22")
 os.environ.setdefault("WSL_ALLOW_UNAUTHENTICATED_BENCH", "1")
+os.environ.setdefault("WSL_CONTROLLER_EXPECTED_MODE", "live")
+os.environ.setdefault(
+    "WSL_RP2040_QUALIFIED_RELEASES",
+    "revD|deadbeef|aa4ff333,revD|test-release|test-config")
 os.environ.pop("WSL_MACHINE_DIAG", None)
 
 import machine_store  # noqa: E402
@@ -109,6 +113,20 @@ def _heartbeat(lane=21, *, heartbeat_seq=1, control_loop_seq=1, **kw):
         "controller_boot_id": "test-controller-boot",
         "heartbeat_seq": heartbeat_seq,
         "control_loop_seq": control_loop_seq,
+        "controller_mode": "live",
+        "live_outputs_acknowledged": True,
+        "arm_state": True,
+        "fsm_state": "ready",
+        "manual_rearm_required": False,
+        "legacy_identity_mode": False,
+        "identity_assurance": "verified",
+        "arm_prerequisite_reason": None,
+        "safety_taps": {
+            "ne555": True,
+            "wdog_kick": True,
+            "arm_permit": True,
+            "rp2040_ok": True,
+        },
         "board_rev": "revD",
         "contract_sha256": digest,
         "contract_loaded": True,
@@ -133,7 +151,7 @@ def _heartbeat(lane=21, *, heartbeat_seq=1, control_loop_seq=1, **kw):
             "pi_probes_required": True,
         },
         "observed_pcb": "revD",
-        "observed_rid": "revD",
+        "observed_rid": "1",
         "observed_uid": "test-pico-uid",
         "fw_build": "deadbeef",
         "fw_cfg": "aa4ff333",

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -12,9 +13,49 @@ if str(LANE_DIR) not in sys.path:
 import health_drop  # noqa: E402
 
 
+def _controller_board(**overrides):
+    board = {
+        "lane_id": 21,
+        "controller_boot_id": "test-controller-boot",
+        "control_loop_seq": 10,
+        "board_rev": "revD",
+        "fw_build": "test-build",
+        "fw_cfg": "test-cfg",
+        "identity_ok": True,
+        "identity_reason": None,
+        "controller_mode": "live",
+        "live_outputs_acknowledged": True,
+        "arm_state": True,
+        "fsm_state": "ready",
+        "manual_rearm_required": False,
+        "legacy_identity_mode": False,
+        "identity_assurance": "verified",
+        "arm_prerequisite_reason": None,
+        "safety_taps": {
+            "ne555": True,
+            "wdog_kick": True,
+            "arm_permit": True,
+            "rp2040_ok": True,
+        },
+    }
+    board.update(overrides)
+    return board
+
+
+def _controller_payload(**overrides):
+    payload = {
+        "ok": True,
+        "lanes": [21],
+        "boards": [_controller_board()],
+        "platform": {"ok": True, "reasons": []},
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_snapshot_id_is_stable_for_identical_payload(tmp_path):
     path = tmp_path / "health_drop.json"
-    payload = {"ok": True, "platform": {"filesystem_writable": True}}
+    payload = _controller_payload()
     assert health_drop.write_drop(
         str(path), health_drop.SERVICE_CONTROLLER, payload)
     first = json.loads(path.read_text(encoding="utf-8"))["controller"]
@@ -22,7 +63,8 @@ def test_snapshot_id_is_stable_for_identical_payload(tmp_path):
         str(path), health_drop.SERVICE_CONTROLLER, payload)
     second = json.loads(path.read_text(encoding="utf-8"))["controller"]
     assert second["snapshot_id"] == first["snapshot_id"]
-    changed = {"ok": False, "platform": {"filesystem_writable": False}}
+    changed = _controller_payload(
+        ok=False, platform={"ok": False, "reasons": ["filesystem_readonly"]})
     assert health_drop.write_drop(
         str(path), health_drop.SERVICE_CONTROLLER, changed)
     third = json.loads(path.read_text(encoding="utf-8"))["controller"]
@@ -50,7 +92,7 @@ def test_stale_and_missing_foreign_drop_are_explicit(tmp_path):
 def test_future_and_nonfinite_written_at_are_stale_not_false_fresh(tmp_path):
     path = tmp_path / "health_drop.json"
     assert health_drop.write_drop(
-        str(path), health_drop.SERVICE_CONTROLLER, {"ok": True})
+        str(path), health_drop.SERVICE_CONTROLLER, _controller_payload())
     cases = [
         (1001.0, "future_written_at"),
         (float("nan"), "invalid_written_at"),
@@ -76,7 +118,7 @@ def test_payload_and_snapshot_identity_tamper_are_rejected(tmp_path):
     path = tmp_path / "health_drop.json"
     assert health_drop.write_drop(
         str(path), health_drop.SERVICE_CONTROLLER,
-        {"ok": True, "lanes": [21, 22]})
+        _controller_payload())
     raw = json.loads(path.read_text(encoding="utf-8"))
     raw["controller"]["payload"]["ok"] = False
     path.write_text(json.dumps(raw), encoding="utf-8")
@@ -91,7 +133,7 @@ def test_payload_and_snapshot_identity_tamper_are_rejected(tmp_path):
     # stable id must then be detected independently of the payload digest.
     assert health_drop.write_drop(
         str(path), health_drop.SERVICE_CONTROLLER,
-        {"ok": False, "lanes": [21, 22]})
+        _controller_payload(ok=False))
     raw = json.loads(path.read_text(encoding="utf-8"))
     raw["controller"]["snapshot_id"] = "controller-1-deadbeefdead"
     path.write_text(json.dumps(raw), encoding="utf-8")
@@ -99,6 +141,75 @@ def test_payload_and_snapshot_identity_tamper_are_rejected(tmp_path):
         str(path), health_drop.SERVICE_CAMERA)[0]
     assert status["status"] == "stale"
     assert status["integrity_error"] == "snapshot_id_mismatch"
+
+
+def test_controller_drop_requires_complete_board_safety_schema(tmp_path):
+    path = tmp_path / "health_drop.json"
+    board = _controller_board()
+    board.pop("controller_mode")
+    assert health_drop.write_drop(
+        str(path), health_drop.SERVICE_CONTROLLER,
+        _controller_payload(boards=[board])) is False
+    assert not path.exists()
+
+    board = _controller_board()
+    board["safety_taps"]["ne555"] = None
+    assert health_drop.write_drop(
+        str(path), health_drop.SERVICE_CONTROLLER,
+        _controller_payload(boards=[board])) is False
+    assert not path.exists()
+
+
+def test_controller_drop_relays_mode_rearm_assurance_and_tap_faults(monkeypatch):
+    monkeypatch.setenv("WSL_CONTROLLER_EXPECTED_MODE", "live")
+    monkeypatch.setenv(
+        "WSL_RP2040_QUALIFIED_RELEASES",
+        "revD|test-build|test-cfg")
+    healthy = health_drop.snapshot_fault_events(
+        health_drop.SERVICE_CONTROLLER, _controller_payload())
+    assert not [
+        event for event in healthy
+        if event["event_type"] == "health_drop_unhealthy"]
+
+    board = _controller_board(
+        controller_mode="shadow",
+        live_outputs_acknowledged=False,
+        arm_state=True,
+        fsm_state="fault",
+        manual_rearm_required=True,
+        identity_assurance="legacy_unverified",
+        legacy_identity_mode=True,
+        safety_taps={
+            "ne555": False,
+            "wdog_kick": False,
+            "arm_permit": False,
+            "rp2040_ok": False,
+        })
+    events = health_drop.snapshot_fault_events(
+        health_drop.SERVICE_CONTROLLER,
+        _controller_payload(ok=False, boards=[board]))
+    codes = {event["code"] for event in events}
+    assert "controller:21:controller_mode_mismatch" in codes
+    assert "controller:21:live_outputs_not_acknowledged" in codes
+    assert "controller:21:manual_rearm_required" in codes
+    assert "controller:21:identity_assurance_legacy_unverified" in codes
+    assert "controller:21:arm_fsm_inconsistent" in codes
+    assert "controller:21:arm_without_ne555" in codes
+    assert "controller:21:arm_without_rp2040_ok" in codes
+
+
+def test_controller_drop_rejects_approximate_mode_policy(monkeypatch):
+    monkeypatch.setenv("WSL_CONTROLLER_EXPECTED_MODE", " live ")
+    monkeypatch.setenv(
+        "WSL_RP2040_QUALIFIED_RELEASES",
+        "revD|test-build|test-cfg")
+    codes = {
+        event["code"]
+        for event in health_drop.snapshot_fault_events(
+            health_drop.SERVICE_CONTROLLER, _controller_payload())
+    }
+    assert "controller:21:controller_mode_policy_invalid" in codes
+    assert "controller:21:controller_mode_mismatch" not in codes
 
 
 def test_write_drop_fsyncs_parent_directory(tmp_path, monkeypatch):
@@ -261,8 +372,10 @@ def test_snapshot_relay_preserves_specific_faults_and_lane_scope():
                 "reasons": ["filesystem_readonly", "thermal"],
             },
             "boards": [
-                {"lane_id": 22, "identity_ok": False,
-                 "identity_reason": "uid_mismatch"},
+                _controller_board(
+                    lane_id=22, identity_ok=False,
+                    identity_reason="uid_mismatch",
+                    identity_assurance="invalid"),
             ],
         })
     by_type = {event["event_type"]: event for event in events}

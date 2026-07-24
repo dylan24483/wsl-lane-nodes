@@ -5,12 +5,17 @@ This section documents the three Python modules that run **on the Raspberry Pi**
 | File (in `lane_node/`) | Class(es) | Job |
 |---|---|---|
 | `controller_io.py` | `MachineIO`, `RecordingIO` | The hardware `io` object the cycle FSM drives: 3× MCP23017 over I²C (relays, lamps, slow inputs), gripper-mask read, watchdog kick, arm-relay control. `RecordingIO` is the no-hardware test fake. |
-| `rp2040_link.py` | `RP2040Link` (+ `dispatch_cam`) | The Pi side of the UART link to the on-board RP2040 co-processor: parses fast cam/ball events, dispatches them to the FSM, echoes the SC/TB interlock, tracks RP2040 health, and sends `RUN`/`STOP`/`CLEAR`/`PING`. |
+| `rp2040_link.py` | `RP2040Link` (+ `dispatch_cam`) | Parses fast cam/ball events, dispatches them to the FSM, contains a **default-off/unvalidated SC∧TB software-model path**, tracks RP2040 health, and sends `RUN`/`STOP`/`CLEAR`/`PING`. |
 | `controller_daemon.py` | `BoardController`, `run()` | Assembles `RP2040Link` + `MachineIO` + the cycle FSM per lane and runs the real-time control loop, including the health-loss safety trip and the SIGTERM safe-off. |
 
 These modules sit **above** the rev-B board hardware (Sections 5–13) and **beside** the RP2040 firmware (Section 15 — RP2040 Firmware & Cam Timing). They are driven by, and drive, the cycle finite-state machine in `lane_node/cycle_control_8270.py` (`CycleController`), whose state sequence is described in Section 3 — *The AMF 82-70 Machine: Assemblies, Sequence of Operation & Cam Timing*.
 
-> **Where this fits in the safety architecture.** Everything in this section is the **software half** of the controller. The authoritative safety devices are all in **hardware**: the six-condition relay-enable rail (Section 10 — *NE555 Watchdog + Relay-Enable Rail*), the RP2040's fail-safe `RP2040_OK` line (Section 15), the TB/SC collision interlock as a hardware NC loop on `J_SAFETY`/J14 (Section 11), the Stop/CIS/master-breaker chain (Section 14), and regenerative motor braking on the machine's own contactors. **No software in this section can enable motion that the hardware rail would block.** The software's safety contribution is *additive*: it drops the arm GPIO and latches the FSM into a manual-recovery state when it detects trouble, so the operator and the FSM also see the fault. Read Sections 10 and 15 before relying on any statement here.
+> **Where this fits in the safety architecture.** Everything here is software. The
+> authoritative TB/SC guard is Candidate C's powered-proven OEM parallel-safe S/T
+> coil ladder, with a controlled J_SAFE1-2 jumper and per-lane G3 proof — not a J14
+> NC machine loop. Other hardware layers include the implemented relay-enable gates,
+> fail-safe `RP2040_OK`, Stop/CIS/master breaker, and regenerative braking. The
+> software SC∧TB path is default-off, secondary, and unvalidated.
 
 ---
 
@@ -29,7 +34,7 @@ These modules sit **above** the rev-B board hardware (Sections 5–13) and **bes
 | `gp_closed()` | input | Gripper-protect switch state. |
 | `bs_closed()` | input | Bin/#9 switch state. |
 | `read_input(name)` | input | Generic slow-input read used by the daemon (`PBZ`, `PBC`, `Foul`, `OS`, …). |
-| `interlock_ok()` | input | **Secondary** software echo of the TB/SC interlock (see §17.3, §17.4). |
+| `interlock_ok()` | input | Default-true/default-off **secondary, unvalidated** SC∧TB software model (see §17.3, §17.4). |
 | `watchdog_kick()` | housekeeping | Pet the NE555 watchdog. Called by `CycleController.poll()`. |
 | `arm(on)` | housekeeping | Assert/deassert the relay-enable **arm** GPIO (power-down rule). |
 | `now()` | housekeeping | Monotonic clock (injectable, for delay tests). |
@@ -38,7 +43,7 @@ These modules sit **above** the rev-B board hardware (Sections 5–13) and **bes
 Two behaviours of this contract are load-bearing for safety and are easy to get wrong when extending the code:
 
 - **`poll()` kicks the watchdog.** The NE555 is petted *only* from inside the FSM's `poll()` (via `io.watchdog_kick()`), which the daemon calls once per tick. If the control loop stalls, the kicks stop, and the NE555 drops the rail in hardware (Section 10). This coupling is deliberate and must be preserved (contrast with the Track-A scoring node, where scoring must **never** be able to stop the machine).
-- **`arm(on)` only *gates* the rail.** Asserting arm does not energize anything by itself; the rail still requires watchdog-OK, RP2040-OK, cam-stop-OK, TB/SC, and the Stop/CIS chain (Section 10, §4.1). De-asserting arm is a real, hardware-honored disable.
+- **`arm(on)` only *gates* the rail.** Asserting arm does not energize anything by itself; implemented on-board gates still include watchdog, RP2040-OK/cam-stop, Candidate-C J_SAFE source continuity, and Stop/CIS. S/T additionally require the OEM TB/SC ladder to permit their coils. De-asserting arm is a real disable.
 
 ---
 
@@ -61,9 +66,9 @@ MachineIO(lane_id, bus_id, *, watchdog_kick=None, arm_relays=None,
 | `arm_relays` | `callable(bool)` that drives the board's **arm** GPIO (the `ARM_PERMIT` rail condition). Defaults to a no-op. |
 | `now` | Monotonic clock, injectable; defaults to `time.monotonic`. |
 | `enable_pin_lamps` | If `True`, also open OUT-B (0x23) for the optional physical pin mask. Default `False` — the camera supplies pin state in the baseline. |
-| `rp2040` | An `RP2040Link` (or `None`). When present, `MachineIO` echoes its SC/TB interlock through `interlock_ok()` **and** sends `RUN`/`STOP` to the firmware whenever a motion relay toggles. |
+| `rp2040` | An `RP2040Link` (or `None`). When present, `MachineIO` contains the default-off/unvalidated SC/TB software model and sends `RUN`/`STOP`. Lane 21/22 has no independent TB lead, so the echo is not a field guard or credited diagnostic. |
 
-The constructor imports `smbus2` (falling back to `smbus`) **lazily** so the module — and the `RecordingIO` test path — load on any machine without I²C hardware. It then configures the MCPs (all-inputs for IN-A/IN-B with pull-ups on, all-outputs for OUT-A) and logs the bus + addresses.
+The constructor imports `smbus2` (falling back to `smbus`) **lazily** so the module — and the `RecordingIO` test path — load on any machine without I²C hardware. It then configures the MCPs (all-inputs for IN-A/IN-B with **internal pulls off**, all-outputs for OUT-A) and logs the bus + addresses. On Rev-D/R5, the external 47 kΩ `Rpu_*` network is the sole input bias.
 
 > **Pi-only dependency:** `MachineIO` needs `smbus2` (or `smbus`) on the Pi for the MCP23017s. The library import is deferred to construction time, not module import time.
 
@@ -73,12 +78,12 @@ Each board carries three MCP23017 I²C I/O expanders (part **MCP23017-E/SO**, LC
 
 | Constant | Address | Role | `dir_mask_a` / `dir_mask_b` | Pull-ups | Populated in baseline? |
 |---|---|---|---|---|---|
-| `ADDR_IN_A` | **0x20** | Grippers GS1–10 + GP/OS/BS/PBZ/PBC/Foul | `0xFF` / `0xFF` (all inputs) | `0xFF` / `0xFF` (all on) | Yes |
-| `ADDR_IN_B` | **0x21** | 10th-frame + manual + spare inputs | `0xFF` / `0xFF` (all inputs) | `0xFF` / `0xFF` (all on) | Yes (initialized; **not yet read** by the FSM) |
+| `ADDR_IN_A` | **0x20** | Grippers GS1–10 + GP/OS/BS/PBZ/PBC/Foul | `0xFF` / `0xFF` (all inputs) | **`0x00` / `0x00` (all off, read back)** | Yes |
+| `ADDR_IN_B` | **0x21** | 10th-frame + manual + spare inputs | `0xFF` / `0xFF` (all inputs) | **`0x00` / `0x00` (all off, read back)** | Yes (initialized; **not yet read** by the FSM) |
 | `ADDR_OUT_A` | **0x22** | 7 relay drives + 4 status-lamp drives | `0x00` / `0x00` (all outputs) | — | Yes |
 | `ADDR_OUT_B` | **0x23** | Optional physical pin lamps + neon | `0x00` / `0x00` (all outputs) | — | **No** (only opened if `enable_pin_lamps=True`) |
 
-In the MCP23017 IODIR convention used here, **`1` = input, `0` = output**. IN-A and IN-B are therefore `0xFF` on both ports (all inputs, all internal pull-ups enabled); OUT-A is `0x00` (all outputs). The expander A2/A1/A0 address-strap wiring that produces these addresses lives in the netlist `block_mcp()` calls — `MCP_IN_A` straps `(0,0,0)`→0x20, `MCP_IN_B` straps `(1,0,0)`→0x21, `MCP_OUT_A` straps `(0,1,0)`→0x22 (see Section 7).
+In the MCP23017 IODIR convention used here, **`1` = input, `0` = output**. IN-A and IN-B are therefore `0xFF` on both ports (all inputs), while OUT-A is `0x00` (all outputs). Historical Rev-B software enabled input GPPU, but current Rev-D/R5 commands and reads back **`GPPUA=GPPUB=0x00`** on U1/U2; any mismatch is STOP-SHIP because it invalidates the external-47 kΩ qualification and can mask an open `Rpu_*`. The expander A2/A1/A0 address-strap wiring that produces these addresses lives in the netlist `block_mcp()` calls — `MCP_IN_A` straps `(0,0,0)`→0x20, `MCP_IN_B` straps `(1,0,0)`→0x21, `MCP_OUT_A` straps `(0,1,0)`→0x22 (see Section 7).
 
 > **3.3 V, not 5 V.** All three MCP23017s and every opto logic-side pull-up run on the **3.3 V** rail (`VCC_3V3`, the Pico's 3V3 output), specifically so the I²C bus and all logic highs stay Pi-safe (Section 6 — *Rev-B Power Architecture*). Do not move them to 5 V.
 
@@ -184,7 +189,7 @@ GRIPPER_ORDER = [f"GS{i}" for i in range(1, 11)]   # GS1=bit0 ... GS10=bit9
 
 #### 17.2.9 Interlock echo, watchdog, arm, and shutdown
 
-- `interlock_ok()` — **secondary** software echo of the TB/SC interlock. The **authoritative** interlock is the hardware TB+SC loop on `J_SAFETY`. If an RP2040 link is wired, this returns the link's `interlock_ok()`; otherwise it returns `True`. Returning `True` by default is the safe choice here: the software echo can only *withhold* a command, never *enable* motion the hardware would block. (See §17.3 for how the link computes the echo, and §17.4 for why the firmware echo is currently disabled.)
+- `interlock_ok()` — default-true software model only. It is **default-off as a firmware safety feature, secondary, and unvalidated** because lanes 21/22 have no independent TB field input. The authoritative guard is the OEM S/T coil ladder accepted by Candidate-C G3, not J_SAFETY.
 - `watchdog_kick()` calls the injected `watchdog_kick` callable (the NE555 pet).
 - `arm(on)` calls the injected `arm_relays` callable — the `ARM_PERMIT` rail condition.
 - `all_off()` drives every output LOW (OUT-A, and OUT-B if present). Used on fault/shutdown.
@@ -194,7 +199,7 @@ GRIPPER_ORDER = [f"GS{i}" for i in range(1, 11)]   # GS1=bit0 ... GS10=bit9
 
 ### 17.3 `rp2040_link.py` — `RP2040Link`
 
-`RP2040Link` is the Pi side of the UART link to the on-board RP2040 (the firmware in `firmware/rp2040/`, Section 15). The firmware owns the eight fast inputs (6 cams + 2 DIELL ball beams), debounces them, and pushes edge events to the Pi; it also drives the hardware `RP2040_OK` rail-permission line. This class parses those events, feeds cam/ball events to the FSM, echoes SC/TB, tracks RP2040 health, and sends commands back.
+`RP2040Link` is the Pi side of the UART link to the on-board RP2040. The PCB allocates eight fast inputs, but the lane-21/22 harness has no TB lead and leaves SC/U unlanded absent a reviewed observe-only input. This class parses valid events, feeds cam/ball events to the FSM, contains the unvalidated SC/TB software model, tracks health, and sends commands back.
 
 #### 17.3.1 Wire protocol
 
@@ -287,7 +292,11 @@ def interlock_ok(self):
         return not (self._sc_danger and self._tb_danger)
 ```
 
-This is the software echo of the hardware `J_SAFETY` loop. A genuine **collision course is SC AND TB both in their danger window at the same time** (per the SYSTEM_REFERENCE collision-interlock definition); either one alone is not a veto. So the echo returns `True` (no veto) unless **both** danger flags are set. It is advisory only — the hardware TB/SC NC loop is primary (Section 10, Section 14).
+This implements an SC∧TB software model, but it is **not a field-validated echo**:
+lane 21/22 has no independent TB observation and C2A-U is not a dry input. It
+therefore remains default-off/secondary and cannot be credited as protection or
+diagnostics. Powered truth is the OEM parallel closed-when-safe ladder; both levers
+BACK/open block both S and T coils, re-proven per lane at G3.
 
 #### 17.3.8 Reader thread lifecycle (`start` / `_read_loop` / `close`)
 
@@ -302,7 +311,7 @@ RP2040Link(port=None, baud=115200, *, serial_obj=None,
            hb_timeout=1.0, trip_edge="f", now=None)
 ```
 
-Three ways to instantiate: a real `port` (opens `serial.Serial(port, baud, timeout=0.1)` — pyserial imported lazily), an injected `serial_obj` (anything with `read()`/`write()`/`close()`), or neither (feed lines by hand via `feed_line()` — used by the host tests and the daemon's `sim` mode). `trip_edge` selects which edge (`f`/`r`) is the cam's angular trip; **the trip edge is configurable** precisely because cams are normally-closed and the opto inverts, so which physical edge is the "trip" is a bench-confirm item (default `"f"`).
+Three ways to instantiate: a real `port` (opens `serial.Serial(port, baud, timeout=0.1)` — pyserial imported lazily), an injected `serial_obj` (anything with `read()`/`write()`/`close()`), or neither (feed lines by hand via `feed_line()` — used by the host tests and the daemon's `sim` mode). `trip_edge` selects which edge (`f`/`r`) is a landed motion cam's angular trip. **Do not assume one normally-closed polarity for every cam:** measure each edge→angle relationship. Stock v1.2.3 enforcement flags remain OFF until those results are bound into a new controlled release.
 
 ---
 
@@ -465,9 +474,12 @@ For a healthy lane, one ~20 ms tick on the Pi does this:
 4. `_slow_edges()` reads PBZ/BS/Foul off **MCP IN-A (0x20)** via `MachineIO.read_input` and fires `first_ball_zero+CLEAR` / `bin_full` / `on_foul` on a rising edge.
 5. `fsm.poll()` advances the state machine; inside it, any relay change calls `MachineIO.set_*` → an **OUT-A (0x22)** bit write **and** a `RUN`/`STOP <motor>` to the firmware; `poll()` also calls `io.watchdog_kick()` → the daemon toggles the **NE555 kick GPIO**.
 6. `io.arm(state not in DISARMED_STATES)` sets the **ARM_PERMIT** GPIO.
-7. Meanwhile the FSM reads pin state via `MachineIO.read_grippers()` (a single dual-port read of **IN-A**) and consults `interlock_ok()` (the link's SC∧TB echo, advisory).
+7. Meanwhile the FSM reads pin state via `MachineIO.read_grippers()` and calls `interlock_ok()`; on lanes 21/22 that default-off/default-true software model is unvalidated and adds no credited protection.
 
-At no point can this software energize a relay unless the hardware rail's other five conditions (watchdog, RP2040_OK, cam-stop, TB/SC, Stop/CIS) are simultaneously satisfied (Section 10). The software's job is to drive the *right* outputs at the *right* time and to *fail closed* — drop arm and latch `MANUAL_INTERVENTION` — the moment it loses confidence in the RP2040.
+At no point can this software energize a board relay unless the implemented on-board
+gates permit it. For S/T, correct Candidate-C insertion also leaves the OEM ladder
+in series with each machine coil. The software's job is to drive the right outputs
+and fail closed; G3, not `interlock_ok()`, proves the physical TB/SC path.
 
 ---
 
@@ -479,9 +491,12 @@ At no point can this software energize a relay unless the hardware rail's other 
 - **Section 7 — Rev-B Logic: RP2040 + MCP23017 + I²C** — the chips, addresses, and bus this software talks to.
 - **Section 8 — Rev-B Field Inputs: PC817 Opto-isolators** — the active-low front-ends behind `INPUT_ACTIVE_LOW`.
 - **Section 9 — Rev-B Machine Outputs: G5LE Relays** — the relays `OUT_A_MAP` drives (and the M1 DNP decision).
-- **Section 10 — Rev-B Safety Hardware: NE555 Watchdog + Relay-Enable Rail** — the authoritative six-condition rail this software only *contributes* to.
-- **Section 11 — Rev-B Connector Pinouts (J1–J14)** — `J_PI`/J1 (watchdog kick, arm), `J_SAFETY`/J14 (TB/SC loop), `J_FAST_IN`/J3, `J_SLOW_IN_A`/J4.
+- **Section 10 — Rev-B Safety Hardware: NE555 Watchdog + Relay-Enable Rail** — implemented on-board gates plus Candidate-C OEM-ladder boundary.
+- **Section 11 — Rev-B Connector Pinouts (J1–J14)** — `J_PI`/J1, `J_SAFETY`/J14 (controlled pins-1/2 jumper + Stop/CIS), `J_FAST_IN`/J3, `J_SLOW_IN_A`/J4.
 - **Section 12 — Rev-B Channel Maps: RP2040 GPIO + MCP23017 Bit Maps** — the canonical channel/bit tables (`OUT_A_MAP`/`IN_A_MAP`/fast-input GPIO) this section mirrors.
 - **Section 14 — Machine Interface: C1/C2A Connectors & the Adapter Harness** — where each signal lands on the machine, and the exact LCSC part numbers.
 - **Section 21 — Cutover Procedure (Track B)** — where the `# CONFIRM` bench items get nailed down.
-- **Section 15 — RP2040 Firmware & Cam Timing** — the other side of the UART: the fast-input pin map (GP6–GP13, RP2040_OK=GP2, UART=GP0/GP1), the fail-safe `RP2040_OK` line, the motion max-run backstop, and the deferred v1.1 cam-stop overrun.
+- **Section 15 — RP2040 Firmware & Cam Timing** — the other side of the UART:
+  fast-input board positions, the fail-safe `RP2040_OK` line, the motion max-run
+  backstop, and v1.2.3's measured-cam enforcement paths, which remain OFF pending
+  polarity capture and a new controlled release.

@@ -29,7 +29,7 @@ Each state **sets motor / solenoid / lamp outputs on entry**; each cam-event han
 
 The FSM performs **zero direct hardware access**. Every input and output goes through an injected `io` object, which is why the same FSM is fully bench-testable with a simulator and runs unchanged on real hardware. The two concrete implementations live in `lane_node/controller_io.py`:
 
-- **`MachineIO`** — real hardware: the three MCP23017 I²C expanders (relays + status LEDs + slow inputs), the RP2040 co-processor (fast cam/ball events + the SC/TB interlock echo + RUN/STOP run-tracking), and the NE555 watchdog kick. (Pinouts and part numbers: see Section 9 and Section 12.)
+- **`MachineIO`** — real hardware: the three MCP23017 I²C expanders (relays + status LEDs + slow inputs), the RP2040 co-processor (fast cam/ball events + a default-off SC/TB echo code path + RUN/STOP run-tracking), and the NE555 watchdog kick. (Pinouts and part numbers: see Section 9 and Section 12.)
 - **`RecordingIO`** — a no-hardware fake that records every output call and serves scripted inputs, used to bench-test the FSM off-Pi.
 
 The contract the FSM depends on (verbatim from the `CycleController` docstring):
@@ -44,12 +44,17 @@ The contract the FSM depends on (verbatim from the `CycleController` docstring):
 | `io.read_grippers() -> int` | IN | 10-bit standing-pin mask from GS1–GS10 (**0 = no pins = strike**) |
 | `io.gp_closed() -> bool` | IN | Gripper-protect closed — **enables** the time delay |
 | `io.bs_closed() -> bool` | IN | Bin switch: 10th pin delivered (gates fresh-rack spotting) |
-| `io.interlock_ok() -> bool` | IN | TB/SC collision interlock — **SECONDARY software guard** |
+| `io.interlock_ok() -> bool` | IN | TB/SC collision **software model — default-off, secondary, unvalidated on lanes 21/22** |
 | `io.watchdog_kick()` | OUT | Pet the NE555 hardware watchdog |
 | `io.now() -> float` | IN | Monotonic seconds (injectable for tests) |
 | `io.log(msg)` | — | Diagnostic log line |
 
-> **Critical safety note on `interlock_ok()`.** This is the **software echo** of the TB/SC interlock, not the interlock itself. The authoritative interlock is the hardware TB+SC NC loop in the relay-enable rail (Section 10; SYSTEM_REFERENCE §5). `MachineIO.interlock_ok()` returns the RP2040's SC/TB collision state when the RP2040 link is wired, and otherwise **defaults to `True`** specifically so the software echo can never *enable* motion that the hardware would block — it can only decline to command into a known-bad state. The hardware rail is what actually prevents a collision.
+> **Critical safety note on `interlock_ok()`.** This is only a software model. It
+> defaults to `True`, is default-off as a firmware safety feature, and is
+> **unvalidated on lanes 21/22 because the harness has no independent TB input**.
+> The authoritative interlock is Candidate C's powered-proven OEM parallel-safe
+> S/T coil ladder, not a J14 NC machine loop. Every lane must pass G3 with the board
+> commanding S and then T while both levers are BACK/open.
 
 The mapping from these logical output names to physical relay/lamp bits is defined in `controller_io.py` (`OUT_A_MAP`) and is **locked to the PCB netlist generator** `scripts/generate_kicad_netlist_revB.py` (`OUTPUT_PINS`) — a regression test in `controller_io.py.__main__` re-derives the map from the generator and fails on any drift. The full bit map is in Section 12 (Channel Maps); the relevant motor/solenoid/lamp outputs are `S`, `T`, `SP`, and the four status lamps `first_ball` / `second_ball` / `strike` / `foul`. The fast cam/ball inputs that feed the cam-event handlers arrive from the RP2040 on **GP6–GP13** (`RP2040_OK` = GP2, UART = GP0/GP1); see Section 15.
 
@@ -164,7 +169,7 @@ Mechanically this works because of *where* the standing-pin mask is latched and 
 
 The FSM contains four software safety mechanisms. **Every one of them has an independent hardware backstop** — the software guards are echoes and conveniences, never the sole protection. (Hardware safety: Section 10, Watchdog & Safety Rail; SYSTEM_REFERENCE §5.)
 
-**1. Interlock gate on every motor energize.** Both `_safe_sweep(True)` and `_safe_table(True)` first check `io.interlock_ok()`; if the interlock is open, the energize is **refused and logged**, not performed. `bin_full()` likewise refuses to energize `SP` if the interlock is open, and `on_ball()` refuses to start a cycle at all if the interlock is open. The authoritative interlock is the hardware **TB + SC** NC loop wired in series with the relay-enable rail (Section 10); this software gate simply avoids commanding into a state the hardware would block.
+**1. Interlock-model gate on every motor energize.** The FSM calls `io.interlock_ok()` before several commands, but on lanes 21/22 this default-true/default-off echo cannot be credited as collision protection because TB is not independently wired. The authoritative guard is the OEM **parallel closed-when-safe** TB/SC ladder in the S/T coil circuits, with both levers BACK/open proven to block both coils and each board insertion re-proven at G3.
 
 **2. Power-down rule → require First-Ball-Zero.** `power_restore()` puts the FSM in `MANUAL_INTERVENTION` and drives **nothing**. The machine will not move until the operator deliberately presses **First-Ball-Zero** (`first_ball_zero()`), which is the only transition out of `MANUAL_INTERVENTION`. This reproduces the AMF MP "Power-Down" feature (SYSTEM_REFERENCE §5): after any 115 VAC loss while bowling, there is **no machine motion on power restore** until a deliberate operator action. It is the controller-level sibling of the NE555 watchdog (which drops the rail if the Pi dies).
 

@@ -1,5 +1,15 @@
 # Phase 8 Rev-B — BOM + Power Architecture (the pre-SKiDL parts contract)
 
+> ⛔ **FROZEN REV-B DESIGN RECORD — NOT CURRENT WIRING OR CUTOVER AUTHORITY.**
+> Preserve this file for its 2026-06 parts/power rationale, but do not follow its
+> B1 TB/SC→J_SAFETY conclusion. Later evidence proved no dry/independent TB pair:
+> powered 2026-07-07 established an OEM parallel closed-when-safe ladder, with both
+> levers BACK/open killing S and T. Current lane-21/22 implementation is Candidate C
+> (controlled J_SAFE1-2 jumper + preserved OEM ladder + per-lane G3 S/T coil proof).
+> Use `phase8_interlock_redesign.md`, the lane harness build sheet, and the Track-B
+> cutover runbook. Firmware v1.2.3 measured-cam and SC∧TB echo enforcement flags
+> remain OFF.
+
 **Status:** DRAFT v1.1 (2026-06-02). Updated after the corrected Rev-B SKiDL scaffold and Dylan's logic-driven mask LED decision. Resolves the relay footprint/current, status LED source, isolated wetting supply, Pi-safe I2C voltage, and valid KiCad-footprint blockers into concrete part recommendations plus the power-rail plan.
 
 **Rule:** recommendations here are **schematic-stable** (lets us build a stubbed netlist) but **NOT fab-locked** until the at-machine current/voltage measurements land (called out per item). Footprints follow rev-A conventions (KiCad stock libs; see `generate_kicad_netlist.py` header).

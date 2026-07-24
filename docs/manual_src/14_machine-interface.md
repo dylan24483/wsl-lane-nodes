@@ -2,7 +2,7 @@
 
 This section is the physical map between the AMF 82-70 pinsetter and the Phase 8 Rev-B lane-controller board. It tells you which machine wire carries which signal, on which connector, on which contact cavity, and how that lands on the board's function-named terminals through a per-chassis **adapter harness**. Read it together with:
 
-- **Section 13 — Rev-B Board Architecture & Safety Rail** (the board the harness lands on: the relay outputs, opto inputs, MCP23017 banks, RP2040, and the six-condition relay-enable rail).
+- **Section 13 — Rev-B Board Architecture & Safety Rail** (the board the harness lands on: relay outputs, opto inputs, MCP23017 banks, RP2040, and the Candidate-C rail implementation).
 - **Section 21 — Cutover Procedure (Track B)** (the run-of-show that *uses* this map to swap the OEM brain for the Pi controller; the items marked **CONFIRM AT CUTOVER** below get nailed down there).
 - **Section 15 — RP2040 Firmware & Cam Timing** (the fast-input pin map and cam-stop behavior referenced here).
 
@@ -64,7 +64,7 @@ The harness mates to **function-named pluggable terminals** on the Rev-B board. 
 | **J_MOTION_M2** | J11 | Phoenix MKDS 1,5/2 | Sweep-reverse relay K6 dry contact |
 | **J_MOTION_M1** | J12 | Phoenix MKDS 1,5/2 — **DNP / not harnessed** | Ball-return; footprint present, **depopulated** (see §14.9) |
 | **J_LAMP_LED** | J13 | Phoenix MCV 1,5/6-G-3,5 → mate **MC 1,5/6-ST-3,5** (PN 1840405) | 5 V, GND, + 4 LED returns (1st/2nd/strike/foul) to our mask LEDs |
-| **J_SAFETY** | J14 | Phoenix MCV 1,5/4-G-3,5 → mate **MC 1,5/4-ST-3,5** (PN 1840382) | TB/SC NC loop (pins 1–2) in series with Stop/CIS NC loop (pins 3–4) |
+| **J_SAFETY** | J14 | Phoenix MCV 1,5/4-G-3,5 → mate **MC 1,5/4-ST-3,5** (PN 1840382) | **pins 1–2 = controlled Candidate-C jumper, no machine landing**; pins 3–4 = Stop/CIS loop |
 
 Every motion output is an **isolated dry relay contact** (Omron **G5LE-14, 5 VDC coil**, LCSC **C116963** — see §14.8). The board never sources machine power; it only opens/closes a dry contact inside the existing machine control circuit.
 
@@ -72,7 +72,7 @@ Every motion output is an **isolated dry relay contact** (Omron **G5LE-14, 5 VDC
 
 ### 14.4 The adapter-harness concept
 
-The adapter harness is the **only** chassis-specific deliverable. It is a set of flying leads with the board-side pluggable plugs on one end (the Phoenix `…-ST-3,5` mates above, plus the 5.08 mm screw plugs for the motion terminals) and ring/spade/fork lugs on the other that land on the C1/C2A cavities (or, for the safety loop, into the machine's 24 V control path).
+The adapter harness is the **only** chassis-specific deliverable. It is a set of flying leads with the board-side pluggable plugs on one end and machine-side C1/C2A landings on the other. The OEM TB/SC live ladder is **not** brought onto J_SAFE: Candidate C uses the controlled pin-1/2 jumper and preserves TB/SC through the S/T output insertion points.
 
 Design rules for the harness (these are board-design contract, not optional):
 
@@ -89,7 +89,7 @@ The consolidated harness map (function → machine landing → front-end form) f
 | **J_MOTION_SP, _M, _M2, _BE** | SP, M, M2, BE | **C2A** (BE also straddles C1) per §14.5 | Same; **M2 must preserve the Expander/sweep-reverse interlock**, not merely jumper the cavity |
 | **J_MOTION_M1** | M1 | — | **DNP, not landed** (§14.9) |
 | **J_FAST_IN** | SA, SB, TA1, TA2 | C2A cam cavities — **CONFIRM AT CUTOVER** | Dry contact, **normally-closed**; dry-wetting population |
-| | SC, TB | C2A interlock cams — **CONFIRM AT CUTOVER** | Dry-wetting **and** also feed the J_SAFETY hardware path |
+| | SC, TB | SC pink lead cold-locates at C2A-U but stays CUT+LABEL-ONLY; TB has **no standalone cavity / NO-LEAD** | Do not assume dry and do **not** feed J_SAFETY; firmware echo default-off/unvalidated |
 | | DIELL-L, DIELL-R | DIELL ball-detector leads | NPN open-collector: **idle HIGH ~13–17 V, beam broken LOW ~0 V**; 12 V supply, 10 kΩ pull-up (see §14.7) |
 | **J_SLOW_IN_A** | GS1–GS10 | C2A "4-bank" (≈ 41C…410U) — **per-GS# binding CONFIRM AT CUTOVER** | Dry contact, **gripped (pin standing) = CLOSED to chassis**; chassis return (§14.6) |
 | | GP, OS, BS | C2A (GP ≈ 412DD, BS ≈ 112cc) — confirm | Dry contact |
@@ -97,7 +97,7 @@ The consolidated harness map (function → machine landing → front-end form) f
 | | Foul (Radaray) | Foul-detector lead | Edge; confirm form at cutover |
 | | 10th / MAN_T/S/SWS/SWSR / AUX | Spare (future) | — |
 | **J_LAMP_LED** | L_FIRST/SECOND/STRIKE/FOUL | **Our LEDs in the mask housings** | 5 V logic via low-side FET; the machine's 15 VDC mask supply is abandoned |
-| **J_SAFETY** | TB/SC NC loop | 24 V control path — **terminals CONFIRM AT CUTOVER** | Hardware NC series loop; first-class rail condition |
+| **J_SAFETY** | TB/SC board position | **controlled, keyed/labeled jumper on pins 1–2; no machine landing** | Candidate C delegates primary protection to the OEM parallel-safe S/T coil ladder; G3 proves both commanded coil drops per lane |
 | | Stop/CIS/master sense | Upstream machine safety chain | Preserve intact; rail condition |
 | **J_PI** | I²C, UART, WDOG-kick, ARM, INT | Pi 40-pin | Per-board bus (the second board of a pair uses a software-bit-banged I²C bus) |
 | **J_PWR** | 5 V logic, isolated field-wetting, DIELL 12 V | Enclosure supplies | Reverse-polarity + transient protection on input |
@@ -174,20 +174,25 @@ The OEM DETAIL-K read **TAC-n = GS-n 1:1 (no scramble)**, so the board reads the
 
 ### 14.7 Input side: the cams (SA/SB/SC/TA1/TA2/TB) on C2A
 
-The cams are microswitches **on the machine** that report the sweep and table mechanism angle. Their wires enter via the machine-control plug (the OEM schematic calls it the **A&MC**, "Approach & Machine Control") and land on C2A. These are the **fast inputs** — they go to the RP2040, not the MCP23017, because they must be captured with low latency on the RP2040, which drives the fail-safe rail-permission line + the max-run backstop (per-cam-edge cam-stop *overrun* is the deferred v1.1 firmware item — Section 15).
+The motion cams are microswitches **on the machine** that report sweep/table angle.
+Independently landed SA/SB/TA1/TA2 inputs go to the RP2040, not the MCP23017. The
+RP2040 drives the fail-safe rail-permission line and the max-run backstop. Its v1.2.3
+code contains per-cam overrun paths, but all measured-cam enforcement flags remain
+OFF until polarity is captured and bound into a new controlled release (Section 15).
+Do not infer from the PCB positions that SC/TB are both field-observable.
 
-**Electrical form (confirmed at machine, A4):** cam inputs are **dry switch closures, normally-closed.** The board's input front-end is populated for dry-contact wetting on these channels.
+**Electrical-form boundary:** do not generalize the earlier dry-contact field result to SC/TB. C2A-U is a non-isolatable live-ladder region and the cold ~21 Ω paths invalidate dry/topology inference. SA/SB/TA1/TA2 still require the powered cavity/class/polarity capture; SC stays unlanded pending a reviewed observe-only design; TB has no independent landing.
 
-**Board side (firmware `config.h` — the authoritative pin map; the stale `phase8_channel_allocation.md` GPIO column must be ignored):** the eight fast inputs are opto-isolated, **active-low at the Pico** (contact closed pulls the GPIO LOW; idle HIGH via on-board 10 kΩ pull-up to 3V3), and land on **GP6–GP13**:
+**Board side (firmware `config.h` — the authoritative pin map; the stale `phase8_channel_allocation.md` GPIO column must be ignored):** the eight fast inputs are opto-isolated, **active-low at the Pico** (contact closed pulls the GPIO LOW; idle HIGH through external `Rpu_*` to 3V3), and land on **GP6–GP13**. Rev-B used 10 kΩ; current Rev-D/R5 uses **47 kΩ** and disables the RP2040 internal pulls:
 
 | Fast input | Pico GPIO | Pico pin | Netlist FAST pin | Cam role (OEM training manual) | C2A cavity |
 |---|---|---|---|---|---|
 | **SA** | GP6 | 9 | 9 | Sweep cam: stop @2nd guard / run-up / stop @zero (270 run-through, 360 zero) | CONFIRM AT CUTOVER |
 | **SB** | GP7 | 10 | 10 | Sweep cam: stop @1st guard 66° / start table spotting 186° | CONFIRM AT CUTOVER |
-| **SC** | GP8 | 11 | 11 | Sweep-under-table interlock window (~86–243°) | CONFIRM AT CUTOVER (also feeds J_SAFETY) |
+| **SC** | GP8 | 11 | 11 | Sweep-under-table interlock window (~86–243°) | **C2A-U cold location only; CUT+LABEL-ONLY, not J_SAFETY** |
 | **TA1** | GP9 | 12 | 12 | Table cam: run table up / stop @zero (355° zero, 185° delay reset) | CONFIRM AT CUTOVER |
 | **TA2** | GP10 | 14 | 14 | Table cam: start sweep run-through / pin-latch (260°) | CONFIRM AT CUTOVER |
-| **TB** | GP11 | 15 | 15 | Table-sweep interference interlock (~105–255°) | CONFIRM AT CUTOVER (also feeds J_SAFETY) |
+| **TB** | GP11 | 15 | 15 | Table-sweep interference interlock (~105–255°) | **NO standalone cavity on 21/22; NO-LEAD** |
 | **DIELL-L** | GP12 | 16 | 16 | Ball detect, left beam (cushion start-switch trigger) | DIELL lead, not C2A |
 | **DIELL-R** | GP13 | 17 | 17 | Ball detect, right beam | DIELL lead, not C2A |
 
@@ -234,19 +239,23 @@ These three machine-interface details are safety- or harness-critical and are ea
 
 **Gripper chassis-return (recap, because it bites).** The gripper field side wets *through the gripper switch to the machine frame.* The harness must tie the gripper-bank return to **clean bare chassis metal**, not to a C2A "common" pin. There is no TAC-GND bus on this chassis. The isolation domains are unchanged (grippers are FIELD-side), but the return node identity is chassis, not a dedicated wire. When probing grippers, the black meter lead clips to scrubbed bare chassis metal anywhere — distance is irrelevant, the frame bridges it.
 
-**TB/SC interlock (the hardware collision-prevention loop → J_SAFETY pins 1–2).** Per OEM, the **TB and SC cam contacts are wired in parallel in the 24 V relay-control path**; on a table/sweep collision course both open and both motor relays drop. This is the machine's hardware collision-prevention and **must be preserved as a hardware series condition on the relay-enable rail** — never softened into a firmware-only advisory input. The board exposes it as a **normally-closed series loop** on J_SAFETY pins 1–2. SC and TB are *also* read by the RP2040 as fast inputs (echo only); the **authoritative** interlock is the hardware loop. The board's `interlock_ok()` software read is explicitly a secondary echo that defaults True so software can never *enable* motion the hardware blocks.
+**TB/SC interlock (Candidate C — OEM ladder, not a J_SAFETY machine loop).** Powered 2026-07-07 proved the OEM TB and SC contacts are **parallel closed-when-safe** in the 24 VAC S/T coil ladder: either pressed lever permits a coil; **both levers BACK/open kill both S and T coils**. Cold 2026-06-27 proved only that C2A-U is a shared live-ladder region, TB has no standalone/dry pair, and ~21 Ω sneak paths prevent topology inference. Candidate C places the controlled jumper on J_SAFE1-2 and keeps the OEM ladder primary. Every lane must prove the board's S and T insertion points at G3. The SC∧TB firmware echo is default-off, secondary, and unvalidated because there is no independent TB observation.
 
-> **CONFIRM AT CUTOVER (TB/SC terminals).** The exact terminals where the NC loop lands are deferred to cutover (easier with the machine apart). Find the TB + SC cam switches locked-out, confirm the NC loop, and land J_SAFETY pins 1–2 into it. This is a first-class rail condition (Section 10).
+> **Do not search for or land TB/SC terminals on J_SAFE1-2.** Build the controlled
+> jumper exactly per the lane-21 harness sheet. At G3, body clear, command S and then
+> T with the board and force both levers BACK/open; each corresponding contactor coil
+> must remain dead. Any energized coil means the output tap bypassed the OEM ladder:
+> abort, reselect the insertion point, and re-prove.
 
 **Stop / CIS chain (→ J_SAFETY pins 3–4).** The machine's existing **Stop switch** (post-1979, left of the power plug) and **C.I.S.** (1981, under the plug-duct cover) are wired **in parallel and both cut the rear-panel MASTER circuit breaker** (OEM service manual p11). This upstream safety chain **stays live and intact** — the master breaker remains the final physical stop, including for a welded relay contact (the rail can drop a coil but cannot open a welded contact). J_SAFETY pins 3–4 carry the Stop/CIS sense as a second NC loop in series so the board's rail *also* requires this chain OK; the chain itself is not replaced. **CONFIRM AT CUTOVER:** continuity that Stop in RUN vs STOP drops the motor-relay coil rail.
 
-> **Cam-stops are now solely the RP2040's job.** Bench work found the OEM machine uses **logic stops** (cam → triac driver board → coil), *not* a hardwired cam-in-series motor latch. Removing the Omega-Tek board therefore removes the existing cam-stop, and the **RP2040 hardware cam-stop replaces it** (Section 15). The TB/SC loop and the contactors' OEM regenerative braking remain as hardware backstops. Whether any bonus hardwired cam-stop survives is a non-gating "nice to have" recorded at cutover via a cam-flip test.
+> **Cam-stops are now solely the RP2040's job once measured enforcement is enabled and proven.** The OEM machine uses logic stops, not a hardwired cam-in-series stop latch. The TB/SC **OEM coil ladder** and regenerative braking remain separate hardware backstops. The default-off SC∧TB firmware echo is not a substitute for that ladder.
 
 ---
 
 ### 14.11 Per-chassis note (11/12 needs its own pass)
 
-Everything in §14.5–§14.8 is the **21/22 (SS + Omega-Tek)** map. The **board is fleet-common; the harness and the per-channel input populations are per-chassis-type.** Before cutting over **11/12 (Active-98 MP)**, run a short field pass on that pair for the chassis-specific items: working voltage (A1), input electrical forms (A4 dry-vs-AC), and the harness map (output cavities, cam→cavity, gripper return reference, TB/SC terminals). The retrofit already diverged from OEM on M2/S cavities and on the gripper return — **do not assume 21/22's cavities carry over.** Clone the board; re-capture the harness.
+Everything in §14.5–§14.8 is the **21/22 (SS + Omega-Tek)** map. The **board is fleet-common; the harness and input populations are per-chassis-type.** Before cutting over **11/12 (Active-98 MP)**, repeat the working-voltage, input-class, cavity, gripper-return, and **Candidate-C S/T insertion/G3** captures. Do not assume either the 21/22 cavities or its no-independent-TB observation carries over. Clone the board; re-capture and re-prove the harness.
 
 ---
 
@@ -284,7 +293,9 @@ Mating plugs for the field/safety/lamp connectors are the Phoenix `MC 1,5/n-ST-3
 - Exact C2A cavity for each cam (SA/SB/SC/TA1/TA2/TB) — rotate mechanism, watch the fast input.
 - Per-GS# → exact C2A cavity (lift one pin at a time, watch the live feed).
 - Exact cavities for M2/SP/M on C2A; re-confirm S/T/BE C1 cavities on the in-place machine.
-- Exact TB/SC NC-loop terminals (J_SAFETY pins 1–2) and Stop/CIS continuity (pins 3–4).
+- Stop/CIS continuity and its J_SAFE3-4 landing. **TB/SC J_SAFE1-2 is resolved:**
+  no machine landing; install only the controlled Candidate-C jumper and prove S/T
+  insertion per lane at G3.
 - GP/OS/BS/Foul exact cavities + Foul electrical form.
 - Whether M1 ball-return exists as a separate command on this chassis.
 - The whole map again, fresh, for **lanes 11/12 (Active-98 MP)**.

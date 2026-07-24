@@ -43,8 +43,8 @@ SAFETY notes:
 
 Run the off-hardware self-test:   python controller_daemon.py --selftest
 Run for real (on the Pi):         python controller_daemon.py        # needs gpiozero/smbus/pyserial
-                                  # ⚠️ LIVE by default (shadow is opt-in) — see the
-                                  # WSL_CONTROLLER_SHADOW / WSL_LIVE_OUTPUTS notes below.
+                                  # Refuses hardware unless EXACTLY ONE of
+                                  # WSL_LIVE_OUTPUTS=1 / WSL_CONTROLLER_SHADOW=1.
 One-board bench rig (D3):         python controller_daemon.py --lanes 21   # or WSL_LANES=21
 """
 from __future__ import annotations
@@ -52,7 +52,9 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -66,8 +68,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cycle_control_8270 import CycleController, State, MOTION_STATES
-from controller_io import MachineIO, RecordingIO, ShadowIO
-from rp2040_link import RP2040Link, REBOOT_FAULT, IDENTITY_MAX_RETRIES
+from controller_io import (
+    FreshnessGuardIO, LinkFreshnessError, MachineIO, RecordingIO, ShadowIO,
+    require_positive_actuation_freshness)
+from rp2040_link import (
+    HEARTBEAT_SCHEMA_FAULT, IDENTITY_MAX_RETRIES, REBOOT_FAULT, RP2040Link)
+from identity_evidence import ControllerOwnerLease, IdentityEvidenceStore
 from flight_recorder import FlightRecorder
 from cam_telemetry import CamTelemetry, CycleShipper
 from diag_events import (DiagWriter, HttpSink, make_event, stamp_delivery,
@@ -82,29 +88,63 @@ log = logging.getLogger("controller_daemon")
 # counters from the previous controller process.
 _CONTROLLER_BOOT_ID = uuid.uuid4().hex
 
-# Shadow/canary soak (idea #11). When WSL_CONTROLLER_SHADOW is truthy the FSM runs
+# Shadow/canary soak (idea #11). When WSL_CONTROLLER_SHADOW=1 the FSM runs
 # on the REAL inputs but every output is routed to a record-only shim (ShadowIO) and
 # the relay-enable ARM is hard-held LOW — no relay is ever energized.
-# ⚠️ SHADOW IS OPT-IN — THE DEFAULT IS LIVE (review #52): a bare
-# `python controller_daemon.py` on wired hardware drives REAL outputs. main()
-# logs an unmissable LIVE-vs-SHADOW banner at startup either way.
+# LIVE is equally explicit: WSL_LIVE_OUTPUTS=1. Bare invocation, approximate
+# truthy spellings, and conflicting flags all fail before hardware is opened.
 # See ShadowIO in controller_io.py.
 SHADOW_ENV = "WSL_CONTROLLER_SHADOW"
-# Explicit live acknowledgment (review #52). NOT a gate — the default stays
-# live-when-shadow-off so existing bench workflows are byte-for-byte unchanged;
-# it only selects which startup banner prints: LIVE-acknowledged vs a loud
-# LIVE-BY-DEFAULT warning. Flip this into a hard gate at/after the §12.9 bench
-# sign-off if the accidental-run posture must match the bench-gated claims.
 LIVE_ENV = "WSL_LIVE_OUTPUTS"
+EXPECTED_MODE_ENV = "WSL_CONTROLLER_EXPECTED_MODE"
+# General feature/diagnostic flags retain the house truthy/falsey parser.
+# Output-mode flags intentionally do not use this set; they require exact 0/1.
 _FALSEY = ("0", "false", "no", "off", "")
 
 
+def _explicit_mode_flag(env_name):
+    """Return whether a safety-significant output-mode flag is exactly ``1``.
+
+    Missing/blank/``0`` means not selected. Any other value is rejected instead
+    of accepting broad "truthy" spellings: an operator must acknowledge the
+    selected physical-output posture exactly and unambiguously.
+    """
+    raw = os.environ.get(env_name)
+    if raw is None or raw in ("", "0"):
+        return False
+    if raw != "1":
+        raise ValueError(f"{env_name} must be exactly 0 or 1 (got {raw!r})")
+    return True
+
+
+def _controller_output_mode():
+    """Resolve the explicit startup posture, or fail before hardware opens."""
+    shadow = _explicit_mode_flag(SHADOW_ENV)
+    live = _explicit_mode_flag(LIVE_ENV)
+    if shadow == live:
+        raise ValueError(
+            f"set exactly one of {LIVE_ENV}=1 (physical outputs) or "
+            f"{SHADOW_ENV}=1 (record-only); both/neither is forbidden")
+    selected = "shadow" if shadow else "live"
+    expected = os.environ.get(EXPECTED_MODE_ENV)
+    if expected is not None:
+        if expected not in ("live", "shadow"):
+            raise ValueError(
+                f"{EXPECTED_MODE_ENV} must be exactly live or shadow "
+                f"(got {expected!r})")
+        if expected != selected:
+            raise ValueError(
+                f"{EXPECTED_MODE_ENV}={expected} does not match selected "
+                f"controller mode {selected}")
+    return selected
+
+
 def _shadow_enabled():
-    return os.environ.get(SHADOW_ENV, "0").strip().lower() not in _FALSEY
+    return _explicit_mode_flag(SHADOW_ENV)
 
 
 def _live_acknowledged():
-    return os.environ.get(LIVE_ENV, "0").strip().lower() not in _FALSEY
+    return _explicit_mode_flag(LIVE_ENV)
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +175,45 @@ AUX_ROLES_ENV = "WSL_DIAG_AUX_ROLES"          # e.g. "aux1=be_current,aux2=exit_
 BOARD_REVS_ENV = "WSL_BOARD_REVS"             # R2-6: EXPLICIT per-lane PCB rev, e.g. "revC" or "21=revC,22=revD"
 FW_BUILD_ALLOWLIST_ENV = "WSL_RP2040_BUILD_ALLOWLIST"
 FW_CFG_ALLOWLIST_ENV = "WSL_RP2040_CFG_ALLOWLIST"
+FW_SUPPORTED_BOARD_REVISIONS_ENV = "WSL_RP2040_SUPPORTED_BOARD_REVISIONS"
+FW_QUALIFIED_RELEASES_ENV = "WSL_RP2040_QUALIFIED_RELEASES"
+ALLOW_LEGACY_REVC_NO_IDENTITY_ENV = "WSL_ALLOW_LEGACY_REVC_NO_IDENTITY"
+LEGACY_REVC_NO_IDENTITY_LANES_ENV = \
+    "WSL_LEGACY_REVC_NO_IDENTITY_LANES"
 PICO_UIDS_ENV = "WSL_RP2040_UIDS"             # optional per-lane pin: "21=UID,22=UID"
+IDENTITY_STATE_DIR_ENV = "WSL_CONTROLLER_STATE_DIR"
+DEFAULT_IDENTITY_STATE_DIR = "/var/lib/wsl-lane-node"
+
+
+def _identity_state_dir(*, sim, shadow):
+    """Resolve the monotonic identity-evidence store without weakening LIVE.
+
+    LIVE is deliberately pinned to the systemd-managed StateDirectory.  A
+    custom absolute directory is useful for simulation and explicit SHADOW
+    bench runs, but accepting one in LIVE would let volatile media silently
+    turn a permanent capability latch back into a per-boot latch.
+    """
+    state_dir = os.environ.get(IDENTITY_STATE_DIR_ENV)
+    if state_dir is not None and (
+            not state_dir
+            or state_dir != state_dir.strip()
+            or (state_dir != DEFAULT_IDENTITY_STATE_DIR
+                and not os.path.isabs(state_dir))):
+        raise ValueError(
+            f"{IDENTITY_STATE_DIR_ENV} must be an exact non-empty "
+            "absolute path")
+    if not sim and not shadow:
+        if (state_dir is not None
+                and state_dir != DEFAULT_IDENTITY_STATE_DIR):
+            raise ValueError(
+                f"{IDENTITY_STATE_DIR_ENV} is fixed to "
+                f"{DEFAULT_IDENTITY_STATE_DIR!r} in LIVE mode; custom "
+                "directories are permitted only in simulation or explicit "
+                "SHADOW mode")
+        return DEFAULT_IDENTITY_STATE_DIR
+    if state_dir is None:
+        return None if sim else DEFAULT_IDENTITY_STATE_DIR
+    return state_dir
 V5_MIN_ENV = "WSL_DIAG_V5_MIN_MV"             # R2-11: VCC_5V hb-window min alert floor (mV)
 V5_MAX_ENV = "WSL_DIAG_V5_MAX_MV"             # R2-11: VCC_5V hb-window max alert ceiling (mV)
 STALE_CYCLES_ENV = "WSL_DIAG_STALE_CHANNEL_CYCLES"  # R2-12: cycles w/o a pulse on a pulse-role channel
@@ -295,6 +373,72 @@ def _normalize_allowlist(value, env_name):
         str(v).strip() for v in values if str(v).strip()))
 
 
+def _normalize_qualified_releases(value):
+    """Parse exact ``board_rev|fw_build|fw_cfg`` release tuples.
+
+    Environment values are comma-delimited for systemd ``EnvironmentFile``
+    compatibility. Programmatic configuration may supply either those strings
+    or 3-item sequences. A non-empty malformed entry is a startup error; an
+    absent/empty policy remains empty and therefore fails ARM closed.
+    """
+    if value is None:
+        value = os.environ.get(FW_QUALIFIED_RELEASES_ENV, "")
+    if isinstance(value, str):
+        if value == "":
+            entries = []
+        else:
+            if value != value.strip() or any(c.isspace() for c in value):
+                raise ValueError(
+                    f"{FW_QUALIFIED_RELEASES_ENV} cannot contain whitespace")
+            entries = value.split(",")
+    else:
+        try:
+            entries = list(value)
+        except Exception as exc:
+            raise ValueError(
+                f"{FW_QUALIFIED_RELEASES_ENV} must contain exact release "
+                "tuples") from exc
+
+    out = []
+    for entry in entries:
+        if isinstance(entry, str):
+            raw = entry
+            if not raw:
+                raise ValueError(
+                    f"invalid qualified release {entry!r}; empty entry")
+            parts = raw.split("|")
+        else:
+            try:
+                parts = list(entry)
+            except Exception as exc:
+                raise ValueError(
+                    f"invalid qualified release entry {entry!r}") from exc
+        if len(parts) != 3:
+            raise ValueError(
+                f"invalid qualified release {entry!r}; expected "
+                "board_rev|fw_build|fw_cfg")
+        release = tuple(str(part) for part in parts)
+        if any(not part for part in release):
+            raise ValueError(
+                f"invalid qualified release {entry!r}; fields cannot be empty")
+        if any(part != part.strip() or any(c.isspace() for c in part)
+               for part in release):
+            raise ValueError(
+                f"invalid qualified release {entry!r}; whitespace is forbidden")
+        if any("," in part or "|" in part for part in release):
+            raise ValueError(
+                f"invalid qualified release {entry!r}; ',' and '|' are "
+                "reserved delimiters")
+        if re.fullmatch(r"rev[A-Za-z0-9._-]+", release[0]) is None:
+            raise ValueError(
+                f"invalid qualified release {entry!r}; bad board revision")
+        if release in out:
+            raise ValueError(
+                f"invalid qualified release {entry!r}; duplicate tuple")
+        out.append(release)
+    return tuple(out)
+
+
 def _parse_lane_values(spec):
     """Parse ``lane=value`` pairs used for optional per-Pico UID pinning."""
     out = {}
@@ -314,6 +458,27 @@ def _parse_lane_values(spec):
             raise ValueError(f"duplicate lane {lane} in lane=value mapping")
         out[lane] = value
     return out
+
+
+def _parse_lane_set(spec, *, env_name=LEGACY_REVC_NO_IDENTITY_LANES_ENV):
+    """Parse an exact comma-separated set of lane integers (1..32)."""
+    if spec is None or spec == "":
+        return frozenset()
+    if not isinstance(spec, str):
+        raise ValueError(f"{env_name} must be a comma-separated lane list")
+    out = set()
+    for raw in spec.split(","):
+        if not raw or raw != raw.strip() or not raw.isdecimal():
+            raise ValueError(
+                f"{env_name} has invalid lane token {raw!r}")
+        lane = int(raw)
+        if not 1 <= lane <= 32:
+            raise ValueError(
+                f"{env_name} lane {lane} is outside 1..32")
+        if lane in out:
+            raise ValueError(f"{env_name} repeats lane {lane}")
+        out.add(lane)
+    return frozenset(out)
 
 
 class SlowDebounce:
@@ -454,6 +619,44 @@ _STATE_EVENTS = {
 # States in which the relay-enable ARM must stay de-asserted (power-down rule §5).
 DISARMED_STATES = (State.POWER_OFF, State.MANUAL_INTERVENTION, State.FAULT)
 
+
+class HardSafeError(RuntimeError):
+    """One or more independent hard-safe actions failed."""
+
+
+class _InhibitedEventSink:
+    """No-op target used to drain firmware motion edges while ARM is inhibited.
+
+    Feeding those edges to the real FSM is unsafe even while ARM is LOW: an
+    event could bank a relay latch that becomes live when a prerequisite later
+    recovers. The bounded queue is drained, but its control meaning is discarded
+    until an operator supplies a fresh PBZ after recovery.
+    """
+
+    def on_ball(self):
+        pass
+
+    def cam_SB_guard(self):
+        pass
+
+    def cam_TA2_runthrough(self):
+        pass
+
+    def cam_SA_runthrough(self):
+        pass
+
+    def cam_SA_zero(self):
+        pass
+
+    def cam_TA1_delayreset(self):
+        pass
+
+    def cam_TA1_zero(self):
+        pass
+
+
+_INHIBITED_EVENT_SINK = _InhibitedEventSink()
+
 # Sanity bound on a FwClock-mapped edge time vs its Pi receive time. Events are
 # drained within ~1 tick of receipt, so a legitimate mapping never strays more
 # than transport jitter from t_pi. A bigger gap means the mapping used the
@@ -472,6 +675,28 @@ FW_EST_MAX_SKEW_S = 2.0
 # 50 ms works; 50 ms is NOT usable inline at 50 Hz). If 2 ms turns out too short
 # the failure mode is fail-SAFE: the NE555 expires and drops the rail.
 WDOG_PULSE_S = 0.002
+
+# A controller that stops completing ticks must not silently resume from the
+# old FSM/output posture merely because the independent serial reader obtained
+# a fresh RP2040 heartbeat first.  One second is deliberately far below the
+# board's nominal ~11 s NE555 expiry and ~50x the normal 20 ms tick period.
+# Production samples CLOCK_BOOTTIME where Python/Linux expose it so system
+# suspend is included.  The fallback monotonic clock may exclude suspend on
+# some platforms; the physical NE555/RP_OK/OEM chain remains load-bearing
+# there, and this software latch still covers ordinary scheduler/thread gaps.
+CONTROL_LOOP_GAP_MAX_S = 1.0
+
+
+def _suspend_aware_monotonic():
+    """Monotonic seconds including system suspend where the host supports it."""
+    clock_boottime = getattr(time, "CLOCK_BOOTTIME", None)
+    clock_gettime = getattr(time, "clock_gettime", None)
+    if clock_boottime is not None and callable(clock_gettime):
+        try:
+            return clock_gettime(clock_boottime)
+        except (OSError, ValueError):
+            pass
+    return time.monotonic()
 
 # Consecutive tick() exceptions tolerated per board before that board alone is
 # safety-tripped (safe_off + skipped); the healthy board keeps running. A tripped
@@ -530,12 +755,25 @@ class BoardConfig:
     # line. BoardController REFUSES to construct when this is still None
     # (the board is skipped fail-safe: never ticked, NE555 never kicked).
     board_rev: str = None
-    # Rev-D ARM identity policy. Config values beat the matching environment
-    # allowlists; an empty build/config allowlist is deliberately fail-closed
-    # for Rev-D. UID pinning is optional, but every accepted identity must
-    # still carry a non-empty observed UID.
+    # Deprecated independent build/config lists retained for config-loading
+    # compatibility and diagnostics only; they never authorize ARM.
     allowed_fw_builds: tuple = field(default=None)
     allowed_fw_cfgs: tuple = field(default=None)
+    # Authoritative policy: ARM requires an exact
+    # (declared board revision, firmware build, firmware config) tuple. The
+    # independent allowlists above remain parseable for rollout compatibility
+    # but never authorize their unsafe Cartesian product.
+    qualified_fw_releases: tuple = field(default=None)
+    # Board revisions the provisioned release allowlists are qualified to run.
+    # Required for every identity-bearing board. This prevents an allowlisted
+    # Rev-D-only build/config from being treated as safe on unstrapped Rev-C.
+    supported_fw_board_revisions: tuple = field(default=None)
+    # Explicit installed-base escape for pre-identity Rev-C firmware. Default
+    # false: a temporarily missing modern identity must never look "legacy".
+    allow_legacy_revc_no_identity: bool = None
+    # Positive per-lane enrollment, required in addition to the global legacy
+    # acknowledgment. None reads WSL_LEGACY_REVC_NO_IDENTITY_LANES.
+    legacy_revc_no_identity_enrolled: bool = None
     expected_uid: str = None
 
 
@@ -1355,16 +1593,18 @@ class PlatformHealth(threading.Thread):
         try:
             board_health = []
             for b in self.boards:
-                identity_ok, identity_reason = b._identity_arm_ok(
-                    allow_shadow_bypass=False)
-                board_health.append({
-                    "lane_id": b.cfg.lane,
-                    "controller_boot_id": _CONTROLLER_BOOT_ID,
-                    "control_loop_seq": b.control_loop_seq,
-                    "identity_ok": identity_ok,
-                    "identity_reason": identity_reason,
-                    **b.link.parse_health(),
-                })
+                board = b.telemetry_snapshot()
+                if board is None:
+                    board = b.unavailable_telemetry_snapshot()
+                board.pop("_link_hb_generation", None)
+                board.pop("_link_discontinuity_generation", None)
+                # Health-drop has a narrower board envelope than the HTTP
+                # heartbeat; retain only its accepted/current evidence.
+                for field in (
+                        "observed_pcb", "observed_rid", "observed_uid",
+                        "fw_version"):
+                    board.pop(field, None)
+                board_health.append(board)
             platform_reasons = list(
                 self._common_platform.get("reasons") or [])
             if self._readonly_warned:
@@ -1377,10 +1617,11 @@ class PlatformHealth(threading.Thread):
             # historical bits alone must not hold a relay episode open forever.
             if self._last_throttled & 0xF:
                 platform_reasons.append("pi_power_or_throttle")
-            identity_ok = all(
-                board.get("identity_ok") is True for board in board_health)
+            board_policy_ok = all(
+                not health_drop.controller_board_policy_reasons(board)
+                for board in board_health)
             payload = {
-                "ok": not platform_reasons and identity_ok,
+                "ok": not platform_reasons and board_policy_ok,
                 "service_starts": self.start_count,
                 "vcgencmd_missing": self._vcgencmd_missing,
                 "last_throttled": self._last_throttled,
@@ -1501,27 +1742,17 @@ class PlatformHealth(threading.Thread):
             pass
         for b in self.boards:
             try:
-                ident = b.link.fw_identity() or {}
-                parse_health = b.link.parse_health()
-                identity_ok, identity_reason = b._identity_arm_ok(
-                    allow_shadow_bypass=False)
-                body = {
-                    "lane_id": b.cfg.lane,
-                    "controller_boot_id": _CONTROLLER_BOOT_ID,
+                body = b.telemetry_snapshot()
+                if body is None:
+                    # No exact current link/control generation: do not renew
+                    # remote liveness from a stale or partial sample.
+                    continue
+                body.pop("_link_hb_generation", None)
+                body.pop("_link_discontinuity_generation", None)
+                body.update({
                     "heartbeat_seq": self._heartbeat_seq,
-                    "control_loop_seq": b.control_loop_seq,
-                    "board_rev": b.cfg.board_rev,
-                    "observed_pcb": ident.get("pcb"),
-                    "observed_rid": (str(ident.get("rid"))
-                                     if ident.get("rid") is not None else None),
-                    "observed_uid": ident.get("uid"),
-                    "fw_build": ident.get("build"),
-                    "fw_cfg": ident.get("cfg"),
-                    "fw_version": ident.get("fw") or b.link.fw_version(),
                     "contract_sha256": self._contract_sha,
                     "contract_loaded": self._contract_loaded,
-                    "identity_ok": identity_ok,
-                    "identity_reason": identity_reason,
                     # R3-10: a read-only FS blocks the JSONL outbox, so the
                     # pi_fs_readonly EVENT can't be persisted — the heartbeat
                     # (direct network POST, no disk) is the only channel left
@@ -1529,9 +1760,11 @@ class PlatformHealth(threading.Thread):
                     "ro_fs": bool(self._readonly_warned),
                     "outbox": outbox,
                     "platform": dict(self._common_platform),
-                    "serial_parse_errors": parse_health["parse_errors"],
-                    "diag_record_drops": parse_health["diag_record_drops"],
-                }
+                    "serial_parse_errors": body.pop("parse_errors"),
+                    "diag_record_drops": body.pop("diag_record_drops"),
+                })
+                body.pop("quarantined_lines", None)
+                body.pop("pending_diag_records", None)
                 self._post_heartbeat(body)
             except Exception:
                 self.errors += 1
@@ -1932,9 +2165,11 @@ class BoardController:
 
     def __init__(self, cfg: BoardConfig, *, sim: bool = False, shadow=None,
                  cam_sink=None, diag_writer=None, cycle_shipper=None,
-                 aux_roles=None, slow_debounce_n=None, fsm_debounce_n=None):
+                 aux_roles=None, slow_debounce_n=None, fsm_debounce_n=None,
+                 control_loop_clock=None):
         self.cfg = cfg
         self.sim = sim
+        self.shadow = _shadow_enabled() if shadow is None else bool(shadow)
         # R2-6: the PCB revision is load-bearing config (it selects the IN-B
         # channel map). REFUSE to construct without an explicit one — the
         # board is then skipped by _build_boards (fail-safe: never ticked,
@@ -1949,17 +2184,73 @@ class BoardController:
             cfg.allowed_fw_builds, FW_BUILD_ALLOWLIST_ENV)
         self._allowed_fw_cfgs = _normalize_allowlist(
             cfg.allowed_fw_cfgs, FW_CFG_ALLOWLIST_ENV)
+        self._qualified_fw_releases = _normalize_qualified_releases(
+            cfg.qualified_fw_releases)
+        self._supported_fw_board_revisions = _normalize_allowlist(
+            cfg.supported_fw_board_revisions,
+            FW_SUPPORTED_BOARD_REVISIONS_ENV)
+        if cfg.allow_legacy_revc_no_identity is not None:
+            if type(cfg.allow_legacy_revc_no_identity) is not bool:
+                raise ValueError(
+                    "allow_legacy_revc_no_identity must be a bool when "
+                    "provided programmatically")
+            self._allow_legacy_revc_no_identity = \
+                cfg.allow_legacy_revc_no_identity
+        else:
+            self._allow_legacy_revc_no_identity = _explicit_mode_flag(
+                ALLOW_LEGACY_REVC_NO_IDENTITY_ENV)
+        if cfg.legacy_revc_no_identity_enrolled is not None:
+            if type(cfg.legacy_revc_no_identity_enrolled) is not bool:
+                raise ValueError(
+                    "legacy_revc_no_identity_enrolled must be a bool when "
+                    "provided programmatically")
+            self._legacy_revc_no_identity_enrolled = \
+                cfg.legacy_revc_no_identity_enrolled
+        else:
+            enrolled = _parse_lane_set(os.environ.get(
+                LEGACY_REVC_NO_IDENTITY_LANES_ENV))
+            self._legacy_revc_no_identity_enrolled = cfg.lane in enrolled
         uid_map = _parse_lane_values(os.environ.get(PICO_UIDS_ENV))
         self._expected_uid = (str(cfg.expected_uid).strip()
                               if cfg.expected_uid is not None
                               else uid_map.get(cfg.lane))
+        # Production preflights a writable, strict durable record before any
+        # GPIO/I2C/UART hardware is opened. LIVE is bound to the systemd-owned
+        # persistent directory; only simulation/explicit SHADOW may override
+        # it for an isolated bench. Tests/simulation stay in-memory unless
+        # they explicitly provide an override.
+        state_dir = _identity_state_dir(sim=sim, shadow=self.shadow)
+        self._identity_store = None
+        self._controller_owner_lease = None
+        identity_protocol_seen = False
+        identity_evidence_callback = None
+        if state_dir:
+            self._identity_store = IdentityEvidenceStore(
+                state_dir, cfg.lane)
+            # All physical modes, including SHADOW, own a nonblocking
+            # process-lifetime per-lane lease. Acquire it BEFORE loading
+            # legacy authorization and before any GPIO/I2C/UART import/open.
+            # safe_off()/mid-run trips deliberately do not release it.
+            if not sim:
+                lease = ControllerOwnerLease(state_dir, cfg.lane)
+                lease.acquire()
+                self._controller_owner_lease = lease
+            try:
+                identity_state = self._identity_store.load_or_initialize()
+            except Exception:
+                if self._controller_owner_lease is not None:
+                    self._controller_owner_lease.release()
+                    self._controller_owner_lease = None
+                raise
+            identity_protocol_seen = identity_state["identity_capable"]
+            identity_evidence_callback = \
+                self._identity_store.mark_identity_capable
         # Incremented only after a complete tick() return. PlatformHealth
         # reports it so an independent heartbeat thread cannot make a stalled
         # 50 Hz controller loop look alive.
         self.control_loop_seq = 0
         self._wdog = None
         self._arm_led = None
-        self.shadow = _shadow_enabled() if shadow is None else bool(shadow)
 
         # Flight recorder (idea #10): observe-only, bounded, default ON. Injected into
         # the io so every output change + arm is captured; dumped on a safety trip.
@@ -1969,14 +2260,20 @@ class BoardController:
             # The link shares the io's (fake, advanceable) clock so fw-estimated
             # edge times and Pi-side telemetry times live on ONE timebase — the
             # lambda resolves self.io lazily (io is built on the next line).
-            self.link = RP2040Link(now=lambda: self.io.now())
+            self.link = RP2040Link(
+                now=lambda: self.io.now(),
+                identity_protocol_seen=identity_protocol_seen,
+                identity_evidence_callback=identity_evidence_callback)
             self.io = RecordingIO(rp2040=self.link, recorder=self.recorder,
                                   board_rev=cfg.board_rev)
         else:
             from gpiozero import LED                       # lazy: Pi-only
             self._arm_led = LED(cfg.arm_pin)               # de-asserted by default
             self._wdog = LED(cfg.wdog_pin)
-            self.link = RP2040Link(port=cfg.uart_port)
+            self.link = RP2040Link(
+                port=cfg.uart_port,
+                identity_protocol_seen=identity_protocol_seen,
+                identity_evidence_callback=identity_evidence_callback)
             self.io = MachineIO(
                 cfg.lane, cfg.i2c_bus, rp2040=self.link,
                 watchdog_kick=self._kick_wdog,             # poll() calls this
@@ -1986,14 +2283,35 @@ class BoardController:
             )
             self.link.start()                              # background serial reader
 
+        # Even while the link lock freezes mutations, its monotonic heartbeat
+        # deadline can expire during a slow I2C/event operation. Guard every
+        # safety-positive physical actuation at the call site.
+        self.io = FreshnessGuardIO(self.io, self.link)
+
         # SHADOW/CANARY SOAK (idea #11): wrap the real io so the FSM drives NOTHING.
         # The wrapper records every command the FSM WOULD have issued and hard-holds
-        # the real ARM LOW. Shadow is OPT-IN (env gate, default off) — a run WITHOUT
-        # it is LIVE on wired hardware; see the mode banner in main() (review #52).
+        # the real ARM LOW. main() permits construction only after exactly one
+        # explicit LIVE/SHADOW acknowledgment; direct test construction may inject
+        # `shadow=` without consulting process environment.
         if self.shadow:
             self.io = ShadowIO(self.io, recorder=self.recorder)
             log.warning("L%s: SHADOW MODE active (%s set) — FSM runs on real inputs but "
                         "drives NOTHING; ARM hard-held LOW", cfg.lane, SHADOW_ENV)
+
+        # Separate from RP2040 heartbeat freshness: the reader thread can keep
+        # receiving heartbeats while the control thread is descheduled.  Keep a
+        # per-board completion clock so that fresh link state cannot erase a
+        # control-loop discontinuity. Production and ordinary simulation use
+        # the suspend-aware host clock above; tests that model scheduler gaps
+        # inject a dedicated fake clock so advancing machine/FSM time does not
+        # accidentally model a stopped controller thread.
+        self._control_loop_clock = (
+            control_loop_clock if control_loop_clock is not None
+            else _suspend_aware_monotonic
+        )
+        self._last_control_tick_complete_at = None
+        self._control_loop_gap_latched = False
+        self._control_loop_gap_detail = None
 
         # Diagnostics event pipe (2026-07-19 scope): per-lane rules + suppression
         # over the shared DiagWriter. writer=None (sim/tests default) keeps the
@@ -2087,14 +2405,32 @@ class BoardController:
         self._maxrun_refused = False   # review #30: one-time log latch for the arm refusal
         self._identity_refused = False  # R3-5: one-time log latch for id arm refusal
         self._identity_escape_logged = False  # R3-5: bench-escape warned once
+        # A failed identity/max-run prerequisite is a latched safe-state episode.
+        # Recovery only re-enables PBZ processing; it never re-arms by itself.
+        self._arm_prereq_latched = False
+        self._arm_prereq_reason = None
+        # A safety inhibit requires a successfully sampled, debounce-stable PBZ
+        # release before any later press may dispatch. Set by _hard_safe before
+        # its first hardware action and cleared only after a complete input
+        # sample succeeds; exceptions cannot erase it.
+        self._pbz_release_required = False
+        self._pbz_release_samples = 0
         self._was_healthy = True
         self._prev_arm = False     # rail_drop emitter: last commanded arm value
+        # Last successfully commanded PHYSICAL ARM posture. In shadow mode a
+        # successful `io.arm(True)` is only a recorded wish, so this stays False.
+        self._arm_state = False
+        self._live_outputs_acknowledged = bool(
+            not self.shadow and _live_acknowledged())
         # machine_cycles row bookkeeping (assembled at cycle completion, shipped
         # via the CycleShipper thread — scope §2 schema)
         self._cycle_open = False
         self._cycle_started_utc = None
         self._cycle_ball = None
         self.failed = False        # set by run() when TICK_ERROR_BUDGET is exhausted
+        # Any incomplete hard-safe action is daemon-fatal: exiting nonzero lets
+        # systemd ExecStopPost retry both lanes' GPIO safe-off.
+        self.fatal = False
         self.tick_errors = 0       # consecutive tick() exceptions (reset on success)
         # R2-12 promotion state (all edge-triggered, once per episode)
         self._bank_fail_n = 0      # consecutive IN-B read failures
@@ -2103,22 +2439,41 @@ class BoardController:
         self._run_mm_warned = False
         self._v5_warned = False
         self._tapdump_requested_ep = None  # one TAPDUMP request per boot epoch
+        # Immutable-generation report committed only after a complete control
+        # tick. PlatformHealth never assembles a mixed-time view from mutable
+        # board/link fields.
+        self._runtime_snapshot_lock = threading.Lock()
+        self._runtime_snapshot = None
+        discontinuity = self.link.heartbeat_discontinuity_status()
+        self._seen_link_discontinuity = discontinuity["generation"]
+        self._seen_reboot_discontinuity = \
+            discontinuity["reboot_generation"]
+        self._seen_wdt_reboot_discontinuity = \
+            discontinuity["wdt_reboot_generation"]
 
     # ---- real-hardware GPIO callbacks -------------------------------------
     def _kick_wdog(self):
         if self._wdog is not None:
             # Bounded pulse, resting LOW (see WDOG_PULSE_S). Never toggle(): a
             # stall with the pin latched HIGH would defeat the NE555 forever.
-            self._wdog.on()
-            time.sleep(WDOG_PULSE_S)
-            self._wdog.off()
+            require_positive_actuation_freshness(
+                self.link, "watchdog-kick-gpio")
+            try:
+                self._wdog.on()
+                time.sleep(WDOG_PULSE_S)
+            finally:
+                # Also runs if gpiozero reports an error after changing the pad.
+                self._wdog.off()
 
     def _set_arm(self, on):
         if self._arm_led is not None:
+            if on:
+                require_positive_actuation_freshness(
+                    self.link, "arm-high-gpio")
             self._arm_led.value = 1 if on else 0
 
     # ---- per-tick control logic -------------------------------------------
-    def _slow_edges(self):
+    def _slow_edges(self, *, dispatch_actions=True):
         """Read the watched IN-A slow inputs, fire FSM actions on rising edges,
         and return this tick's RAW {name: level} so the diagnostics rules reuse
         the SAME reads (no duplicate I²C traffic; _diag_poll applies the
@@ -2128,25 +2483,57 @@ class BoardController:
         is EXACT legacy raw behavior; see SLOW_DEBOUNCE_FSM_ENV (safety-path
         semantics only change when that knob is deliberately raised)."""
         levels = {}
+        # Snapshot the gate for the whole sample. A release may clear it only
+        # after every watched input read succeeds; the same tick never turns a
+        # release into a dispatch.
+        pbz_blocked = self._pbz_release_required
         for name in self._watched:
             raw = bool(self.io.read_input(name))
             levels[name] = raw
             cur = self._fsm_deb[name].update(raw)          # n=1 -> cur == raw
             action = self._actions.get(name)
-            if action is not None and cur and not self._prev_slow[name]:
+            if (dispatch_actions and action is not None
+                    and not (name == "PBZ" and pbz_blocked)
+                    and cur and not self._prev_slow[name]):
                 action()                                   # rising (debounce-stable) edge
             self._prev_slow[name] = cur
+        # Commit the release only after the complete read batch. If any later
+        # read above raises, this line is unreachable and the latch survives.
+        if self._pbz_release_required:
+            if levels.get("PBZ") is False:
+                self._pbz_release_samples += 1
+                if self._pbz_release_samples >= max(1, self._fsm_deb_n):
+                    self._pbz_release_required = False
+                    self._pbz_release_samples = 0
+            else:
+                self._pbz_release_samples = 0
         return levels
+
+    def _legacy_identity_mode(self):
+        """Whether this lane is currently eligible for unverified legacy Rev-C.
+
+        Both explicit acknowledgments are required and durable per-lane
+        evidence permanently closes the escape once a modern protocol record
+        is observed, including after daemon restart.
+        """
+        return bool(
+            self.cfg.board_rev == "revC"
+            and self._allow_legacy_revc_no_identity
+            and self._legacy_revc_no_identity_enrolled
+            and not self.link.identity_protocol_seen()
+            and self.link.fw_identity() is None)
 
     def _identity_arm_ok(self, *, allow_shadow_bypass=True):
         """Return whether firmware identity is trustworthy enough to ARM.
 
-        Rev-D is fail-closed immediately and requires current nonce evidence,
-        PCB/RID agreement, a clean allowlisted build/config, non-FI1 posture,
-        and (when provisioned) its expected Pico UID. Legacy rev-C operation is
-        compatible, but any identity it does report must not be FI-1 or claim a
-        conflicting PCB. The old live-output environment bypass is honored
-        only in SHADOW mode, where physical ARM is already held low.
+        Every identity-bearing board requires current nonce evidence, PCB/RID
+        agreement, an exact qualified revision/build/config tuple, an explicitly supported
+        declared board revision, non-FI1 posture, and (when provisioned) its
+        expected Pico UID. A truly legacy Rev-C image that emits no identity is
+        the sole compatibility exception, and only behind the explicit
+        WSL_ALLOW_LEGACY_REVC_NO_IDENTITY=1 installed-base acknowledgment. The
+        old mismatch escape is honored only in SHADOW mode, where physical ARM
+        is already held low.
         """
         if _env_on("WSL_ALLOW_IDENTITY_MISMATCH", default="0"):
             if not self._identity_escape_logged:
@@ -2157,44 +2544,47 @@ class BoardController:
             if self.shadow and allow_shadow_bypass:
                 return True, None
 
+        if self.link.identity_evidence_error() is not None:
+            return False, "identity_evidence_persist_failed"
         ident = self.link.fw_identity()
         declared = self.cfg.board_rev
-        if declared != "revD":
-            if ident is None:
+        if ident is None:
+            # Rev-C predates the identity protocol. Keep that installed-base
+            # path available, but do not generalize the exception to Rev-B or
+            # Rev-D, and never use it once an identity-bearing image responds.
+            if self._legacy_identity_mode():
                 return True, None
-            if ident.get("fi1") is not False:
-                return False, "fi1_image"
-            expected = "unknown" if declared == "revC" else declared
-            if ident.get("pcb") != expected:
-                return False, "pcb_rev_mismatch"
-            return True, None
+            if (declared == "revC"
+                    and self.link.identity_protocol_seen()):
+                return False, "identity_protocol_required"
+            return False, "identity_not_received"
 
         link_ok, reason = self.link.identity_status()
         if not link_ok:
             return False, reason
-        if ident.get("pcb") != "revD":
+        expected_pcb = "unknown" if declared == "revC" else declared
+        if ident.get("pcb") != expected_pcb:
             return False, "pcb_rev_mismatch"
-        if ident.get("rid") != 1:
+        expected_rid = 255 if declared == "revC" else 1
+        if ident.get("rid") != expected_rid:
             return False, "rid_mismatch"
         hb_rid = self.link.pcb_rev_id()
         if hb_rid is not None and hb_rid != ident.get("rid"):
             return False, "rid_heartbeat_mismatch"
+        if declared not in self._supported_fw_board_revisions:
+            return False, "board_revision_not_supported"
 
         build = ident.get("build")
         if build == "unknown" or str(build).endswith("-dirty"):
             return False, "build_unreleaseable"
-        if not self._allowed_fw_builds:
-            return False, "build_allowlist_unconfigured"
-        if build not in self._allowed_fw_builds:
-            return False, "build_not_allowed"
 
         fw_cfg = ident.get("cfg")
         if fw_cfg == "unknown":
             return False, "cfg_unreleaseable"
-        if not self._allowed_fw_cfgs:
-            return False, "cfg_allowlist_unconfigured"
-        if fw_cfg not in self._allowed_fw_cfgs:
-            return False, "cfg_not_allowed"
+        if not self._qualified_fw_releases:
+            return False, "qualified_release_policy_unconfigured"
+        if (declared, build, fw_cfg) not in self._qualified_fw_releases:
+            return False, "qualified_release_not_allowed"
 
         if self._expected_uid is not None:
             if str(ident.get("uid", "")).casefold() != \
@@ -2203,10 +2593,420 @@ class BoardController:
         return True, None
 
     def tick(self):
-        self._tick_once()
-        self.control_loop_seq += 1
+        tick_started_at = self._latch_control_loop_gap_before_tick()
+        # One bounded transaction freezes health/identity/max-run facts and
+        # snapshots inbound motion before the precheck. No identity
+        # invalidation can race event dispatch while ARM remains permitted.
+        try:
+            with self.link.control_transaction() as events:
+                entered_healthy = self.link.health_ok()
+                self._tick_once(events)
+                self.control_loop_seq += 1
+                try:
+                    self._commit_runtime_snapshot()
+                    # Observe/report work runs after the final positive
+                    # command. If it stalls past a heartbeat deadline, do not
+                    # return with ARM asserted or expose its snapshot.
+                    # Initially-unhealthy safe-drain ticks remain non-raising.
+                    if entered_healthy:
+                        self._require_link_fresh("tick_completion")
+                except Exception:
+                    # The public progress counter advances only for a fully
+                    # completed, freshness-checked control tick.
+                    self.control_loop_seq -= 1
+                    raise
+            # Commit continuity only after the complete, freshness-checked tick
+            # returned from its transaction.  A raised/partial tick cannot move
+            # the baseline forward and hide the next gap.
+            if tick_started_at is not None:
+                self._last_control_tick_complete_at = tick_started_at
+        except LinkFreshnessError:
+            # A point-of-actuation deadline guard is an immediate safety trip,
+            # not an ordinary transient tick error that may consume a budget.
+            with self._runtime_snapshot_lock:
+                self._runtime_snapshot = None
+            self._was_healthy = False
+            self._hard_safe("rp2040_heartbeat_expired_during_tick")
+            raise
+        except Exception:
+            with self._runtime_snapshot_lock:
+                self._runtime_snapshot = None
+            raise
 
-    def _tick_once(self):
+    def _latch_control_loop_gap_before_tick(self):
+        """Latch a control-thread discontinuity before any positive operation.
+
+        Returns the valid entry-clock sample for commit after a complete tick,
+        or ``None`` when the clock itself is invalid.  Once set, the latch is
+        cleared only after `_tick_once` completes the hard-safe/drain path.
+        """
+        try:
+            raw_now = self._control_loop_clock()
+            valid = (
+                isinstance(raw_now, (int, float))
+                and not isinstance(raw_now, bool)
+                and math.isfinite(float(raw_now))
+            )
+            now = float(raw_now) if valid else None
+        except Exception as exc:
+            now = None
+            raw_now = f"{type(exc).__name__}: {exc}"
+
+        previous = self._last_control_tick_complete_at
+        if now is None:
+            self._control_loop_gap_latched = True
+            self._control_loop_gap_detail = {
+                "reason": "clock_invalid",
+                "sample": str(raw_now)[:120],
+            }
+            return None
+        if previous is not None:
+            gap = now - previous
+            if (
+                    not math.isfinite(gap)
+                    or gap < 0.0
+                    or gap > CONTROL_LOOP_GAP_MAX_S):
+                self._control_loop_gap_latched = True
+                self._control_loop_gap_detail = {
+                    "reason": (
+                        "clock_regressed" if gap < 0.0
+                        else "completion_gap_exceeded"),
+                    "gap_s": gap,
+                    "limit_s": CONTROL_LOOP_GAP_MAX_S,
+                }
+        return now
+
+    def _commit_runtime_snapshot(self):
+        """Commit one exact, immutable-generation controller report.
+
+        Called only after a complete tick while the link transaction lock is
+        still held. A reporting thread can therefore never combine identity,
+        taps, posture, and progress from different heartbeat generations.
+        """
+        hb = self.link.heartbeat_sample()
+        if hb is None:
+            sample = None
+        else:
+            ident = self.link.fw_identity() or {}
+            identity_ok, identity_reason = self._identity_arm_ok(
+                allow_shadow_bypass=False)
+            sample = {
+                "lane_id": self.cfg.lane,
+                "controller_boot_id": _CONTROLLER_BOOT_ID,
+                "control_loop_seq": self.control_loop_seq,
+                "board_rev": self.cfg.board_rev,
+                "observed_pcb": ident.get("pcb"),
+                "observed_rid": (
+                    str(ident.get("rid"))
+                    if ident.get("rid") is not None else None),
+                "observed_uid": ident.get("uid"),
+                "fw_build": ident.get("build"),
+                "fw_cfg": ident.get("cfg"),
+                "fw_version": ident.get("fw") or self.link.fw_version(),
+                "identity_ok": identity_ok,
+                "identity_reason": identity_reason,
+                **self.runtime_diagnostics(
+                    (identity_ok, identity_reason)),
+                **self.link.parse_health(),
+                "_link_hb_generation": hb["generation"],
+                "_link_discontinuity_generation":
+                    self.link.heartbeat_discontinuity_generation(),
+            }
+        with self._runtime_snapshot_lock:
+            self._runtime_snapshot = sample
+
+    @staticmethod
+    def _copy_runtime_snapshot(snapshot):
+        result = dict(snapshot)
+        result["safety_taps"] = dict(snapshot["safety_taps"])
+        return result
+
+    def telemetry_snapshot(self):
+        """Return a current exact-generation report, or ``None`` fail-closed."""
+        with self.link.state_transaction():
+            hb = self.link.heartbeat_sample()
+            if hb is None:
+                return None
+            with self._runtime_snapshot_lock:
+                snapshot = self._runtime_snapshot
+                if snapshot is None:
+                    return None
+                if (
+                        snapshot["_link_hb_generation"] != hb["generation"]
+                        or snapshot["_link_discontinuity_generation"]
+                        != self.link.heartbeat_discontinuity_generation()):
+                    return None
+                return self._copy_runtime_snapshot(snapshot)
+
+    def unavailable_telemetry_snapshot(self, reason="runtime_sample_unavailable"):
+        """Build a schema-complete red health-drop board without stale taps."""
+        state = getattr(self.fsm.state, "value", str(self.fsm.state))
+        return {
+            "lane_id": self.cfg.lane,
+            "controller_boot_id": _CONTROLLER_BOOT_ID,
+            "control_loop_seq": self.control_loop_seq,
+            "board_rev": self.cfg.board_rev,
+            "fw_build": None,
+            "fw_cfg": None,
+            "identity_ok": False,
+            "identity_reason": reason,
+            "controller_mode": "shadow" if self.shadow else "live",
+            "live_outputs_acknowledged":
+                bool(self._live_outputs_acknowledged),
+            "arm_state": bool(self._arm_state),
+            "fsm_state": str(state),
+            "manual_rearm_required": True,
+            "legacy_identity_mode": False,
+            "identity_assurance": "invalid",
+            "arm_prerequisite_reason": reason,
+            "safety_taps": {
+                "ne555": None,
+                "wdog_kick": None,
+                "arm_permit": None,
+                "rp2040_ok": None,
+            },
+            **self.link.parse_health(),
+        }
+
+    def _command_arm(self, on, reason):
+        """Command ARM and update diagnostics only after the write succeeds."""
+        self.io.arm(bool(on))
+        self._note_arm(bool(on), reason)
+        self._arm_state = bool(on) and not self.shadow
+
+    def _hard_safe(self, reason, *, raise_on_failure=True):
+        """Best-effort hard-safe sequence with independent failure handling.
+
+        ARM-low is always attempted first. Firmware STOP, physical all-off, and
+        FSM relatch each run even when a prior action failed. Any failed action
+        immediately retires this board and forces its watchdog pin low so the
+        shared run loop cannot resume/kick a board whose safe state is unknown.
+        """
+        self._pbz_release_required = True
+        self._pbz_release_samples = 0
+        errors = []
+
+        def attempt(name, action, *, require_truthy=False):
+            try:
+                result = action()
+                if require_truthy and result is not True:
+                    raise RuntimeError(f"{name} was not acknowledged")
+            except Exception as exc:
+                errors.append((name, exc))
+                log.exception("L%s hard-safe %s failed", self.cfg.lane, name)
+
+        # Order is safety-significant: cut the external permit before any
+        # serial/I2C work, logging, recorder dump, or logical state repair.
+        attempt("arm_low", lambda: self._command_arm(False, reason))
+        attempt("firmware_stop_all", self.link.stop_all, require_truthy=True)
+
+        all_off = getattr(self.io, "all_off", None)
+        if callable(all_off):
+            attempt("physical_outputs_off", all_off)
+        else:
+            # RecordingIO/older adapters expose only per-output methods. Keep
+            # these independent so one injected failure cannot skip the rest.
+            attempt("physical_sweep_off", lambda: self.io.set_sweep(False))
+            attempt("physical_table_off", lambda: self.io.set_table(False))
+            attempt("physical_spot_off", lambda: self.io.set_spot(False))
+
+        attempt("fsm_relatch", self.fsm.power_restore)
+        # power_restore sets state only after its output calls. If one of those
+        # calls raised, force the in-memory safety latch anyway; the board is
+        # retired below because physical state is no longer provable.
+        def force_fsm_latch():
+            self.fsm.state = State.MANUAL_INTERVENTION
+            for motor in getattr(self.fsm, "_energized_since", {}):
+                self.fsm._energized_since[motor] = None
+        attempt("fsm_memory_relatch", force_fsm_latch)
+
+        if errors:
+            self.failed = True
+            self.fatal = True
+            try:
+                if self._wdog is not None:
+                    self._wdog.off()
+            except Exception as exc:
+                errors.append(("watchdog_low", exc))
+                log.exception("L%s hard-safe watchdog-low failed",
+                              self.cfg.lane)
+            message = ", ".join(
+                f"{name}: {type(exc).__name__}: {exc}"
+                for name, exc in errors)
+            if raise_on_failure:
+                raise HardSafeError(
+                    f"L{self.cfg.lane} hard-safe incomplete ({message})")
+        return not errors
+
+    def _active_motion_latches(self):
+        """Return motion outputs active in either FSM tracking or IO state."""
+        energized = getattr(self.fsm, "_energized_since", {})
+        active = {name for name, since in energized.items()
+                  if since is not None}
+        # RecordingIO exposes human-readable keys; MachineIO retains the last
+        # commanded relay state under firmware motor names. Inspect both so an
+        # FSM/IO bookkeeping divergence cannot hide a latent physical command.
+        outputs = getattr(self.io, "outputs", {})
+        for name in ("sweep", "table", "spot"):
+            if bool(outputs.get(name, False)):
+                active.add(name)
+        out_state = getattr(self.io, "_out_state", {})
+        for raw, name in (("S", "sweep"), ("T", "table"), ("SP", "spot")):
+            if bool(out_state.get(raw, False)):
+                active.add(name)
+        return sorted(active)
+
+    def _evaluate_arm_preconditions(self):
+        """Evaluate and episode-log every non-FSM prerequisite for ARM."""
+        mr_ok = self.link.maxrun_ok()
+        if not mr_ok and not self._maxrun_refused:
+            log.error("L%s: REFUSING to arm — firmware maxrun_ms=%s is below the "
+                      "FSM's MAX_MOTION_S (constants desynchronized; reconcile + "
+                      "reflash before arming)", self.cfg.lane,
+                      self.link.maxrun_ms())
+            self.diag.emit_event(
+                "fault", "fw_config_mismatch", code="maxrun_desync",
+                detail={"fw_maxrun_ms": self.link.maxrun_ms(),
+                        "fw_version": self.link.fw_version()},
+                t=self.io.now())
+        elif mr_ok and self._maxrun_refused:
+            log.info("L%s: max-run ceiling reconciled; a fresh First-Ball-Zero "
+                     "is still required", self.cfg.lane)
+            self.diag.emit_event("info", "recovered",
+                                 code="fw_config_mismatch", t=self.io.now())
+        self._maxrun_refused = not mr_ok
+
+        id_ok, id_reason = self._identity_arm_ok()
+        prior_id_reason = getattr(self, "_identity_refusal_reason", None)
+        if not id_ok and (not self._identity_refused
+                          or prior_id_reason != id_reason):
+            log.error("L%s: REFUSING to arm — firmware identity %s "
+                      "(no live-output bypass)", self.cfg.lane, id_reason)
+        elif id_ok and self._identity_refused:
+            log.info("L%s: firmware identity resolved; a fresh First-Ball-Zero "
+                     "is still required", self.cfg.lane)
+        self._identity_refused = not id_ok
+        self._identity_refusal_reason = id_reason if not id_ok else None
+
+        if not mr_ok:
+            return False, "maxrun_desync"
+        if not id_ok:
+            return False, "identity_" + str(id_reason)
+        return True, None
+
+    def _latch_arm_precondition(self, reason):
+        """Hard-safe an identity/max-run inhibit and require a new PBZ edge."""
+        active = self._active_motion_latches()
+        prior_state = getattr(self.fsm.state, "value", "?")
+        first_episode = not self._arm_prereq_latched
+        self._arm_prereq_reason = reason
+        self._arm_prereq_latched = True
+        self._last_inhibit_active = list(active)
+
+        if first_episode or active or \
+                self.fsm.state is not State.MANUAL_INTERVENTION:
+            hard_safe_error = None
+            try:
+                self._hard_safe(reason)
+            except HardSafeError as exc:
+                hard_safe_error = exc
+            if active:
+                log.critical(
+                    "L%s: ARM prerequisite %s failed with motion latch(es) %s "
+                    "active -> HARD SAFETY TRIP", self.cfg.lane, reason, active)
+                self._on_safety_trip("arm_inhibit_with_motion_latched")
+            if hard_safe_error is not None:
+                raise hard_safe_error
+            if not active:
+                log.error("L%s: ARM prerequisite %s failed -> motors off, "
+                          "MANUAL_INTERVENTION; fresh First-Ball-Zero required",
+                          self.cfg.lane, reason)
+        return prior_state, active
+
+    def _drain_inhibited_control_inputs(self, events):
+        """Discard motion/PBZ control edges while preserving input baselines."""
+        discarded = self.link.apply_event_batch(
+            events, _INHIBITED_EVENT_SINK)
+        slow_levels = self._slow_edges(dispatch_actions=False)
+        if discarded:
+            log.warning("L%s: discarded %d firmware control edge(s) while ARM "
+                        "prerequisite was inhibited", self.cfg.lane, discarded)
+        return slow_levels
+
+    def _finish_inhibited_tick(self, slow_levels):
+        """Keep the watchdog and observe-only diagnostics alive while safe-off."""
+        if self.link.health_ok():
+            self.fsm.poll()
+        self._observe()
+        self._diag_poll(slow_levels)
+
+    def _require_link_fresh(self, stage):
+        if not self.link.health_ok():
+            raise LinkFreshnessError(
+                f"RP2040 heartbeat/health expired during {stage}")
+
+    def _tick_once(self, events):
+        discontinuity_status = self.link.heartbeat_discontinuity_status()
+        discontinuity = discontinuity_status["generation"]
+        link_discontinuity = discontinuity != self._seen_link_discontinuity
+        reboot_discontinuity = (
+            discontinuity_status["reboot_generation"]
+            != self._seen_reboot_discontinuity)
+        wdt_reboot_discontinuity = (
+            discontinuity_status["wdt_reboot_generation"]
+            != self._seen_wdt_reboot_discontinuity)
+        if link_discontinuity or self._control_loop_gap_latched:
+            # A malformed sample followed by a good sample can be buffered and
+            # parsed before the 50 Hz loop runs. Firmware reboot and local
+            # control-loop gap generations obey the same rule: current good
+            # health can never erase an intervening loss before a hard-safe
+            # sample/drain and fresh operator PBZ.
+            reasons = []
+            if link_discontinuity:
+                # Preserve the established rail-drop reason: the monotonic
+                # generation proves an intervening unhealthy episode even if
+                # current heartbeat fields have already recovered.
+                reasons.append("rp2040_link_unhealthy")
+            if self._control_loop_gap_latched:
+                reasons.append("controller_loop_gap")
+                log.error(
+                    "L%s: controller-loop continuity LOST (%s) -> hard-safe; "
+                    "fresh First-Ball-Zero required",
+                    self.cfg.lane, self._control_loop_gap_detail)
+            hard_safe_error = None
+            try:
+                self._hard_safe("+".join(reasons))
+            except HardSafeError as exc:
+                hard_safe_error = exc
+            self._was_healthy = False
+            if link_discontinuity:
+                self._on_safety_trip(
+                    "rp2040_link_lost",
+                    fw_fault_override=(
+                        REBOOT_FAULT if reboot_discontinuity
+                        else HEARTBEAT_SCHEMA_FAULT),
+                    reboot_wdt_override=wdt_reboot_discontinuity)
+            if self._control_loop_gap_latched:
+                # Record the discontinuity even if ARM was already low.  The
+                # arm-transition rail_drop event is useful when asserted, but
+                # it cannot be the only durable evidence of a stopped control
+                # thread because a disarmed/maintenance lane can still suffer
+                # the same scheduler, suspend, or clock fault.
+                self._on_safety_trip("controller_loop_gap")
+            if hard_safe_error is not None:
+                raise hard_safe_error
+            slow_levels = self._drain_inhibited_control_inputs(events)
+            self._finish_inhibited_tick(slow_levels)
+            # Commit only after the complete safe sample/drain. Any exception
+            # above leaves both discontinuities pending for the retry.
+            self._seen_link_discontinuity = discontinuity
+            self._seen_reboot_discontinuity = \
+                discontinuity_status["reboot_generation"]
+            self._seen_wdt_reboot_discontinuity = \
+                discontinuity_status["wdt_reboot_generation"]
+            self._control_loop_gap_latched = False
+            self._control_loop_gap_detail = None
+            return
         healthy = self.link.health_ok()
 
         if not healthy:
@@ -2215,88 +3015,147 @@ class BoardController:
             # and latch the FSM into MANUAL_INTERVENTION so recovery REQUIRES a deliberate
             # First-Ball-Zero. Without this, a heartbeat blip drops ARM while sweep is still
             # latched, then silently re-arms with the stale latch -> uncommanded motion.
-            if self._was_healthy:
+            first_loss = self._was_healthy
+            self._was_healthy = False
+            if first_loss:
+                hard_safe_error = None
+                try:
+                    self._hard_safe("rp2040_link_unhealthy")
+                except HardSafeError as exc:
+                    hard_safe_error = exc
                 self.io.log(f"L{self.cfg.lane}: RP2040 link LOST "
                             f"(fault={self.link.fault()!r} alive={self.link.is_alive()} "
                             f"rp_ok={self.link.rp_ok()}) -> SAFETY TRIP: motors off, require First-Ball-Zero")
-                self.fsm.power_restore()      # _all_motors_off() (clears latches) + MANUAL_INTERVENTION
-                self._on_safety_trip("rp2040_link_lost")   # flight-recorder dump (observe-only)
-            self._was_healthy = False
-            self._note_arm(False, "rp2040_link_unhealthy")
-            self.io.arm(False)
-            self.link.apply_events(self.fsm, self._edge_observer)  # drain; FSM ignores when not READY
-            self.fsm.poll()                   # keep kicking the NE555 (the Pi itself is alive)
-            self._observe()                   # instrumentation (idea #10/#15): never affects control
-            self._consume_link_records()      # R2-11: tapdumps arrive EXACTLY when unhealthy
+                self._on_safety_trip("rp2040_link_lost")
+                if hard_safe_error is not None:
+                    raise hard_safe_error
+            slow_levels = self._drain_inhibited_control_inputs(events)
+            self._finish_inhibited_tick(slow_levels)
             return
 
         if not self._was_healthy:
+            # One safe recovery tick baselines PBZ and discards any queued
+            # motion edge. A PBZ pressed/held during the outage cannot become a
+            # synthetic recovery edge on the first healthy sample.
+            self._hard_safe("rp2040_link_recovered_wait_pbz")
+            slow_levels = self._drain_inhibited_control_inputs(events)
+            self._finish_inhibited_tick(slow_levels)
+            # Commit recovery only after the whole safe sample/poll completed;
+            # an input-read exception leaves the outage latch intact.
+            self._was_healthy = True
             self.io.log(f"L{self.cfg.lane}: RP2040 link recovered -> awaiting First-Ball-Zero")
+            return
         self._was_healthy = True
 
-        self.link.apply_events(self.fsm, self._edge_observer)  # cam/ball -> FSM (single-threaded here)
+        prereq_ok, prereq_reason = self._evaluate_arm_preconditions()
+        if not prereq_ok:
+            self._latch_arm_precondition(prereq_reason)
+            slow_levels = self._drain_inhibited_control_inputs(events)
+            self._finish_inhibited_tick(slow_levels)
+            return
+
+        if self._arm_prereq_latched:
+            # Recovery is deliberately one safe tick: drain any edge that raced
+            # the prerequisite transition and baseline PBZ. A PBZ already held
+            # before recovery therefore cannot count; release + re-press it.
+            prior_reason = self._arm_prereq_reason
+            self._hard_safe("arm_prerequisite_recovered_wait_pbz")
+            slow_levels = self._drain_inhibited_control_inputs(events)
+            self._finish_inhibited_tick(slow_levels)
+            # Commit recovery only after the complete input batch succeeds.
+            self._arm_prereq_latched = False
+            self._arm_prereq_reason = None
+            log.info("L%s: ARM prerequisite %s recovered -> still DISARMED; "
+                     "awaiting a fresh First-Ball-Zero", self.cfg.lane,
+                     prior_reason)
+            return
+
+        self.link.apply_event_batch(
+            events, self.fsm, self._edge_observer)
+        self._require_link_fresh("event_dispatch")
         slow_levels = self._slow_edges()      # PBZ/BS/Foul -> FSM (+ levels for diagnostics)
+        self._require_link_fresh("slow_input_sample")
         self.fsm.poll()                       # advance FSM + kick NE555 via io
-        # Arm gate (review #30): a KNOWN firmware/FSM max-run desync (firmware
-        # maxrun_ms below the FSM's MAX_MOTION_S) means the firmware backstop
-        # would kill legitimate motions mid-cycle — REFUSE to arm until the
-        # constants are reconciled, exactly as maxrun_ok()'s contract specifies.
-        # Unknown (v0.1.0 firmware / sim) returns True, so behavior is unchanged
-        # unless a desync is positively known. Safe direction = refuse.
+        self._require_link_fresh("fsm_poll")
+
+        # Recheck immediately before ARM assertion. The link transaction keeps
+        # the safety snapshot stable; this second check also catches any
+        # controller-side mutation introduced by dispatch/poll.
+        prereq_ok, prereq_reason = self._evaluate_arm_preconditions()
+        self._require_link_fresh("pre_arm_evaluation")
+        if not prereq_ok:
+            self._latch_arm_precondition(prereq_reason)
+            self._observe()
+            self._diag_poll(slow_levels)
+            return
+
         want_arm = self.fsm.state not in DISARMED_STATES
-        if want_arm:
-            mr_ok = self.link.maxrun_ok()
-            if not mr_ok and not self._maxrun_refused:
-                log.error("L%s: REFUSING to arm — firmware maxrun_ms=%s is below the "
-                          "FSM's MAX_MOTION_S (constants desynchronized; reconcile + "
-                          "reflash before arming)", self.cfg.lane, self.link.maxrun_ms())
-                # R2-12: a firmware/config constant desync is a structured
-                # fault, not just a log line — desk + SMS must see it.
-                self.diag.emit_event(
-                    "fault", "fw_config_mismatch", code="maxrun_desync",
-                    detail={"fw_maxrun_ms": self.link.maxrun_ms(),
-                            "fw_version": self.link.fw_version()},
-                    t=self.io.now())
-            elif mr_ok and self._maxrun_refused:
-                log.info("L%s: max-run ceiling reconciled — arm no longer refused",
-                         self.cfg.lane)
-                self.diag.emit_event("info", "recovered",
-                                     code="fw_config_mismatch",
-                                     t=self.io.now())
-            self._maxrun_refused = not mr_ok
-            want_arm = mr_ok
-        # Rev-D identity is a fail-closed precondition from process start, not
-        # merely after the retry budget: unknown/incomplete identity, wrong
-        # PCB/RID/UID, unapproved build/config, or FI-1 must NOT arm.
-        # The identity EVENTS are emitted by the dedicated paths
-        # (_consume_link_records for mismatch/FI-1, PlatformHealth._poll_identity
-        # for identity_missing) — the arm gate only enforces the CONTROL
-        # decision (inhibit + a one-time log) so it can't double-emit.
-        id_refused = False
-        if want_arm:
-            id_ok, id_reason = self._identity_arm_ok()
-            if not id_ok:
-                id_refused = True
-                want_arm = False
-                if not self._identity_refused:
-                    log.error("L%s: REFUSING to arm — firmware identity %s "
-                              "(no live-output bypass)", self.cfg.lane,
-                              id_reason)
-            elif self._identity_refused:
-                log.info("L%s: firmware identity resolved — arm no longer "
-                         "refused", self.cfg.lane)
-            self._identity_refused = id_refused
         reason = None
         if not want_arm:
-            reason = (("fsm_" + self.fsm.state.value)
-                      if self.fsm.state in DISARMED_STATES
-                      else ("maxrun_desync" if self._maxrun_refused
-                            else (("identity_" + str(id_reason))
-                                  if id_refused else "unknown")))
-        self._note_arm(want_arm, reason)
-        self.io.arm(want_arm)
+            reason = ("fsm_" + self.fsm.state.value
+                      if self.fsm.state in DISARMED_STATES else "unknown")
+            # A disarmed FSM must never retain a logical motion command. Treat
+            # this as the same hard invariant even if a future FSM change
+            # creates the impossible state outside a prerequisite episode.
+            if self._active_motion_latches():
+                self._latch_arm_precondition(reason)
+                self._observe()
+                self._diag_poll(slow_levels)
+                return
+        self._command_arm(want_arm, reason)
         self._observe()                       # instrumentation (idea #10/#15): never affects control
         self._diag_poll(slow_levels)          # diagnostics rules (enqueue-only, never raises)
+
+    def runtime_diagnostics(self, identity_verdict=None):
+        """Snapshot safety-relevant controller posture for remote diagnosis."""
+        if identity_verdict is None:
+            identity_verdict = self._identity_arm_ok(
+                allow_shadow_bypass=False)
+        identity_ok, identity_reason = identity_verdict
+        legacy_mode = self._legacy_identity_mode()
+        if identity_ok and not legacy_mode and \
+                self.link.fw_identity() is not None:
+            assurance = "verified"
+        elif identity_ok and legacy_mode:
+            assurance = "legacy_unverified"
+        else:
+            assurance = "invalid"
+
+        prereq_reason = self._arm_prereq_reason
+        if prereq_reason is None:
+            if not self.link.maxrun_ok():
+                prereq_reason = "maxrun_desync"
+            elif not identity_ok:
+                prereq_reason = "identity_" + str(identity_reason)
+
+        tap_levels = self.link.tap_levels()
+        def tap(name):
+            if tap_levels is None or name not in tap_levels:
+                return None
+            return bool(tap_levels[name])
+        safety_taps = {
+            "ne555": tap("NE555"),
+            "wdog_kick": tap("KICK"),
+            "arm_permit": tap("ARM"),
+            "rp2040_ok": tap("RPOK"),
+        }
+        state = getattr(self.fsm.state, "value", str(self.fsm.state))
+        return {
+            "controller_mode": "shadow" if self.shadow else "live",
+            "live_outputs_acknowledged":
+                bool(self._live_outputs_acknowledged),
+            "arm_state": bool(self._arm_state),
+            "fsm_state": str(state),
+            "manual_rearm_required": bool(
+                self._pbz_release_required
+                or self.fsm.state in DISARMED_STATES),
+            "legacy_identity_mode": bool(legacy_mode),
+            "identity_assurance": assurance,
+            "arm_prerequisite_reason": (
+                str(prereq_reason)[:120]
+                if prereq_reason is not None else None),
+            "safety_taps": safety_taps,
+        }
 
     # ---- instrumentation (OBSERVE-ONLY; idea #10 flight recorder + #15 cam timing) --
     def _edge_observer(self, kind, ident, t_fw, t_pi):
@@ -2606,13 +3465,14 @@ class BoardController:
                     link_identity_ok, link_reason = self.link.identity_status()
                     policy_ok, policy_reason = self._identity_arm_ok(
                         allow_shadow_bypass=False)
-                    sev = ("fault" if (fi1 or mismatch
+                    sev = ("fault" if (fi1 or mismatch or not policy_ok
                                        or (declared == "revD"
                                            and not link_identity_ok))
                            else "info")
                     code = ("fi1_image" if fi1
                             else ("pcb_rev_mismatch" if mismatch
-                                  else (link_reason if sev == "fault" else None)))
+                                  else ((policy_reason or link_reason)
+                                        if sev == "fault" else None)))
                     detail = {k: rec.get(k) for k in
                               ("fw", "bn", "pcb", "rid", "uid", "build",
                                "cfg", "fi1")}
@@ -2643,19 +3503,24 @@ class BoardController:
         except Exception:
             pass
 
-    def _on_safety_trip(self, reason):
+    def _on_safety_trip(
+            self, reason, *, fw_fault_override=None,
+            reboot_wdt_override=None):
         """Flush the flight recorder on a safety trip / fault. Best-effort, bounded,
         never raises. Captures FSM state + the firmware fault for the dump context.
         dump_async (review #21/#54): the snapshot copy happens here (microseconds);
         the disk write runs on a writer thread — an SD-card stall during one
         board's dump must not freeze the shared tick loop (the OTHER lane's cam
         dispatch, fsm.poll() backstops and NE555 kick)."""
+        trip_fw_fault = (
+            self.link.fault() if fw_fault_override is None
+            else fw_fault_override)
         try:
             self.recorder.dump_async(reason=reason, extra={
                 "fsm_state": getattr(self.fsm.state, "value", "?"),
                 "fsm_cycle": getattr(getattr(self.fsm, "cycle", None), "value", None),
                 "fsm_ball": getattr(getattr(self.fsm, "ball", None), "name", None),
-                "fw_fault": self.link.fault(),
+                "fw_fault": trip_fw_fault,
                 "rp_ok": self.link.rp_ok(),
                 "shadow": self.shadow,
             })
@@ -2665,7 +3530,7 @@ class BoardController:
         # point every fault path funnels through). Enqueue-only, never raises.
         try:
             t = self.io.now()
-            fw_flt = self.link.fault()
+            fw_flt = trip_fw_fault
             if reason == "fsm_fault":
                 lf = self.fsm.last_fault or {}
                 self.diag.emit_event("fault", "fsm_fault",
@@ -2677,7 +3542,11 @@ class BoardController:
                                      detail={"alive": self.link.is_alive(),
                                              "rp_ok": self.link.rp_ok()}, t=t)
                 if fw_flt == REBOOT_FAULT:
-                    et = ("rp2040_wdt_reset" if self.link.boot_wdt_reset()
+                    reboot_wdt = (
+                        self.link.boot_wdt_reset()
+                        if reboot_wdt_override is None
+                        else bool(reboot_wdt_override))
+                    et = ("rp2040_wdt_reset" if reboot_wdt
                           else "fw_reboot")
                     self.diag.emit_event("fault", et, code=fw_flt, t=t)
                 elif fw_flt:
@@ -2688,29 +3557,52 @@ class BoardController:
                     "fault", "rail_drop", code="tick_error_budget",
                     detail={"reason": "tick error budget exhausted; NE555 kick "
                                       "stops for this board"}, t=t)
+            elif reason == "controller_loop_gap":
+                self.diag.emit_event(
+                    "fault", "rail_drop", code="controller_loop_gap",
+                    detail={
+                        "reason": "controller-loop continuity lost; hard-safe "
+                                  "latched and a fresh PBZ is required",
+                        "continuity": dict(
+                            self._control_loop_gap_detail or {}),
+                    },
+                    t=t)
+            elif reason == "arm_inhibit_with_motion_latched":
+                self.diag.emit_event(
+                    "fault", "fsm_fault",
+                    code="arm_inhibit_with_motion_latched",
+                    detail={
+                        "why": "ARM prerequisite failed while a motion output "
+                               "latch was active",
+                        "state": getattr(self.fsm.state, "value", "?"),
+                        "arm_precondition": self._arm_prereq_reason,
+                        "active_motion_latches":
+                            list(getattr(
+                                self, "_last_inhibit_active",
+                                self._active_motion_latches())),
+                    },
+                    t=t)
         except Exception:
             log.debug("L%s _on_safety_trip diag emit swallowed", self.cfg.lane,
                       exc_info=True)
 
     # ---- shutdown ----------------------------------------------------------
     def safe_off(self):
-        # FIRST: force the NE555 kick pin LOW (review #26). _kick_wdog is
-        # on() -> sleep -> off(); if the exception that tripped this board fired
-        # between on() and off() (the same GPIO-write fault class that exhausts
-        # the error budget), the pad latches HIGH and level-holds the NE555
-        # alive forever — a tripped board inside a still-running daemon never
-        # reaches controller_cleanup.py, so this is the only place to drop it.
-        for step in (
-            lambda: self._wdog.off() if self._wdog is not None else None,
-            lambda: self.io.arm(False),
-            lambda: self.io.all_off() if hasattr(self.io, "all_off") else None,
-            self.link.stop_all,
-            self.link.close,
+        # ARM/STOP/all-off/relatch first via the shared runtime routine. Then
+        # force the NE555 kick pin LOW and close transport independently.
+        self._hard_safe("shutdown", raise_on_failure=False)
+        for name, step in (
+            ("watchdog_low",
+             lambda: self._wdog.off() if self._wdog is not None else None),
+            ("link_close", self.link.close),
         ):
             try:
                 step()
             except Exception as e:
-                log.warning("L%s shutdown step failed: %s", self.cfg.lane, e)
+                self.failed = True
+                self.fatal = True
+                log.warning("L%s shutdown %s failed: %s",
+                            self.cfg.lane, name, e)
 
 
 def run(boards, hz: float = 50.0):
@@ -2751,19 +3643,21 @@ def run(boards, hz: float = 50.0):
                         b.recorder.record("tick_error", type(e).__name__, str(e)[:120])
                     except Exception:
                         pass
-                    # C-02 (hw-independence audit 2026-07-09): fail safe on the FIRST
-                    # I/O exception, not the third. A failed write may have desynced
-                    # commanded vs physical output state, so treat all software output
-                    # state as invalid: motors off + MANUAL_INTERVENTION (recovery
-                    # requires a deliberate First-Ball-Zero) + ARM dropped. A bare
-                    # arm(False) is not enough — the next healthy tick would re-arm
-                    # from FSM state with possibly-stale latches.
-                    try:
-                        b.fsm.power_restore()
-                        b.io.arm(False)
-                    except Exception:
-                        log.exception("L%s post-exception safe-state attempt raised "
-                                      "(budget/trip path still runs)", b.cfg.lane)
+                    # Fail safe on the FIRST exception through the same
+                    # independent ARM/STOP/all-off/FSM routine used by every
+                    # trip. An incomplete safe-off is pair/daemon-fatal so
+                    # systemd ExecStopPost gets a prompt chance to force both
+                    # GPIOs low; it must never be isolated as one skipped lane.
+                    safe_complete = b._hard_safe(
+                        "tick_exception", raise_on_failure=False)
+                    if b.fatal or not safe_complete:
+                        log.critical(
+                            "L%s hard-safe incomplete -> DAEMON-FATAL pair "
+                            "shutdown", b.cfg.lane)
+                        b._on_safety_trip("tick_error_budget")
+                        rc = 1
+                        stop["flag"] = True
+                        break
                     if b.tick_errors >= TICK_ERROR_BUDGET:
                         log.error("L%s tick error budget exhausted -> SAFETY TRIP "
                                   "this board (outputs off, ARM dropped, kick stops); "
@@ -2771,6 +3665,12 @@ def run(boards, hz: float = 50.0):
                         b._on_safety_trip("tick_error_budget")   # dump black box
                         b.failed = True
                         b.safe_off()
+                        if b.fatal:
+                            rc = 1
+                            stop["flag"] = True
+                            break
+            if stop["flag"] and rc:
+                break
             if all(b.failed for b in boards):
                 log.error("ALL boards safety-tripped -> exiting 1 "
                           "(Restart=on-failure restarts only on nonzero)")
@@ -2784,6 +3684,8 @@ def run(boards, hz: float = 50.0):
         log.info("controller_daemon shutting down -> safe-off all boards")
         for b in boards:
             b.safe_off()
+        if any(getattr(b, "fatal", False) for b in boards):
+            rc = 1
         # After safe-off: give any in-flight async black-box writers a moment to
         # land before the process (and its daemon threads) dies. Observe-only.
         for b in boards:
@@ -2872,21 +3774,20 @@ def main(argv=None):
     if args.selftest:
         return _selftest()
 
-    # LIVE/SHADOW mode banner (review #52): one unmissable line BEFORE any
-    # hardware is opened. Shadow is opt-in; a run without WSL_CONTROLLER_SHADOW
-    # IS live on wired hardware — the banner makes that explicit every start.
-    if _shadow_enabled():
+    # LIVE/SHADOW is a hard, mutually-exclusive acknowledgment gate checked
+    # before diagnostics threads or GPIO/I2C/UART hardware are opened.
+    try:
+        output_mode = _controller_output_mode()
+    except ValueError as exc:
+        log.critical("OUTPUT MODE REFUSED: %s", exc)
+        return 1
+    if output_mode == "shadow":
         log.warning("=== MODE: SHADOW (%s set) — FSM runs on real inputs; outputs "
                     "are record-only, ARM hard-held LOW; no relay can energize ===",
                     SHADOW_ENV)
-    elif _live_acknowledged():
+    else:
         log.warning("=== MODE: LIVE (%s acknowledged) — outputs DRIVE REAL RELAYS "
                     "on wired hardware ===", LIVE_ENV)
-    else:
-        log.warning("=== MODE: LIVE **BY DEFAULT** — outputs DRIVE REAL RELAYS on "
-                    "wired hardware. Set %s=1 to acknowledge a deliberate live run, "
-                    "or %s=1 for a no-actuation shadow soak ===",
-                    LIVE_ENV, SHADOW_ENV)
 
     spec = args.lanes if args.lanes is not None else os.environ.get(LANES_ENV)
     try:
@@ -2988,7 +3889,11 @@ def _selftest():
             n["f"] += 1
 
     print("== controller_daemon self-test (sim) ==")
-    bc = BoardController(BoardConfig(21, 1, "sim", 0, 0, board_rev="revC"), sim=True)
+    bc = BoardController(
+        BoardConfig(21, 1, "sim", 0, 0, board_rev="revC",
+                    allow_legacy_revc_no_identity=True,
+                    legacy_revc_no_identity_enrolled=True),
+        sim=True)
     chk(bc.fsm.state is State.MANUAL_INTERVENTION, "boots into MANUAL_INTERVENTION (power-down rule)")
 
     bc.link.feed_line('{"ev":"hb","ok":1,"up":250}')     # RP2040 healthy
@@ -3061,14 +3966,19 @@ def _selftest():
     chk(bc.fsm.state is State.READY and bc.io.armed is True, "second PBZ -> READY + armed")
 
     # --- review #30: a KNOWN firmware/FSM max-run desync must REFUSE to arm ---
-    bc2 = BoardController(BoardConfig(21, 1, "sim", 0, 0, board_rev="revC"), sim=True)
+    bc2 = BoardController(
+        BoardConfig(21, 1, "sim", 0, 0, board_rev="revC",
+                    allow_legacy_revc_no_identity=True,
+                    legacy_revc_no_identity_enrolled=True),
+        sim=True)
     bc2.link.feed_line('{"ev":"boot","fw":"test","maxrun_ms":1000}')   # << MAX_MOTION_S
     bc2.link.feed_line('{"ev":"hb","ok":1,"up":250}')
     bc2.io.slow["PBZ"] = True; bc2.tick(); bc2.io.slow["PBZ"] = False
-    chk(bc2.fsm.state is State.READY, "(setup) maxrun-desync rig reaches READY")
+    chk(bc2.fsm.state is State.MANUAL_INTERVENTION,
+        "maxrun desync blocks PBZ and latches MANUAL_INTERVENTION")
     bc2.link.feed_line('{"ev":"hb","ok":1,"up":500}'); bc2.tick()
     chk(bc2.io.armed is False,
-        "maxrun desync (fw 1000ms < FSM MAX_MOTION_S) REFUSES to arm despite READY")
+        "maxrun desync (fw 1000ms < FSM MAX_MOTION_S) REFUSES to arm")
 
     print(f"\n{n['c'] - n['f']}/{n['c']} checks passed" + ("  <<< FAILURES" if n["f"] else ""))
     return 1 if n["f"] else 0

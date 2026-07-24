@@ -102,7 +102,8 @@ Every named net on the board is assigned to exactly one of five KiCad net classe
 > **Classification correction worth remembering (the `SAFE_*` reclass).** An early draft put
 > `SAFE_STOP_RETURN` / `SAFE_TBSC_RETURN` in **Machine_Output**, which forced the ≥3.2 mm
 > LOGIC↔MACHINE creepage against the very rail/gate those nets are supposed to drive → 7 false DRC
-> violations. They are **low-voltage TB/SC interlock + Stop/CIS sense**, logic/rail-domain, not
+> violations. They are board-side **Candidate-C source-jumper + Stop/CIS sense**
+> positions, logic/rail-domain, not
 > 250 VAC machine contacts. They were moved to **Safety_Rail** and take logic-domain clearance.
 > If you ever re-derive classes, do not put the interlock-sense nets in the machine-output class.
 
@@ -279,7 +280,9 @@ probe map for Section 21 (bench bring-up).
 | MK1–MK4 | M3, 3.2 mm NPTH (`MountingHole_3.2mm_M3`) |
 
 The four rail-permission conditions are directly probeable: TP13 (ARM_PERMIT), TP14 (RP2040_OK),
-TP15 (SAFE_STOP_RETURN, the Stop/CIS + TB/SC loop return), and TP16 (RELAY_ENABLE_RAIL, the result).
+TP15 (SAFE_STOP_RETURN, after the Candidate-C jumper + Stop/CIS source positions),
+and TP16 (RELAY_ENABLE_RAIL, the result). Neither proves the separate OEM TB/SC
+S/T-coil path; that is the per-lane G3 test.
 If TP16 is low with TP13/TP14 high and the loop closed, work backward through the watchdog
 (TP9/TP10/TP11/TP12) and the AND chain. See Section 10 for the rail logic and Section 21 for the
 bring-up sequence.
@@ -416,5 +419,7 @@ If you edit the schematic/netlist or placement, the **only** trustworthy sequenc
 7. The one step a script cannot do for you: **upload `wsl-phase8b-revB-gerber-drill.zip` and visually inspect the vendor's layer/drill/outline preview** against `review/wsl-phase8b-revB-review-layers.pdf` (mirroring, origin, layer assignment) before ordering. Upload the *gerber* zip — **not** the `JLC_UPLOAD_READY` transport zip — as the PCB Gerber file.
 
 This is bare-PCB fab-ready under the conservative DRC contract. It is **not** assembly/cutover-ready:
-PCBA part sourcing/orientation approval, on-hardware bench bring-up (Section 21), the RP2040 v1.1
-cam-stop overrun work, and the Track-B cutover gates all remain separate and downstream.
+PCBA part sourcing/orientation approval, on-hardware bench bring-up (Section 21),
+the controlled RP2040 v1.2.3 first-article gates, a future polarity-bound
+measured-cam enforcement release, and the Track-B cutover gates all remain
+separate and downstream.

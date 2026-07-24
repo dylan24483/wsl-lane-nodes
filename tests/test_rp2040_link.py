@@ -19,6 +19,7 @@ Run with:
 """
 
 import logging
+import json
 import os
 import random
 import sys
@@ -54,6 +55,16 @@ def mklink(**kw):
     kw.setdefault("now", fake_now)
     kw.setdefault("hb_timeout", 1.0)
     return RP2040Link(**kw)
+
+
+def modern_hb(up, bn, **changes):
+    row = {
+        "ev": "hb", "ok": 1, "flt": "", "up": up, "drp": 0,
+        "in": 0, "run": 0, "tap": 13, "rd": 0, "ep": 1,
+        "v5": 5000, "v5n": 4990, "v5x": 5010, "rid": 1, "bn": bn,
+    }
+    row.update(changes)
+    return json.dumps(row, separators=(",", ":"))
 
 
 class LogCapture(logging.Handler):
@@ -103,6 +114,7 @@ class FlakySerial:
         if self.fail:
             raise OSError("EIO: simulated UART write failure")
         self.writes.append(b)
+        return len(b)
     def read(self, n):
         return b""
     def close(self):
@@ -143,7 +155,7 @@ nonce_link.feed_line(
     '{"ev":"boot","fw":"phase8b-rp2040 v1.2.3","bn":111,'
     '"wdt_reset":0,"rp_ok":0}')
 nonce_link.feed_line(
-    '{"ev":"hb","ok":1,"flt":"","up":10,"bn":111}')
+    modern_hb(10, 111))
 check(nonce_link.health_ok(), "nonce-bearing heartbeat establishes health")
 clk["t"] += 0.6
 nonce_link.feed_line('{"ev":"hb","ok":1,"flt":"","up":20}')
@@ -296,15 +308,15 @@ link.feed_line('{"ev":"boot","fw":"phase8b-rp2040 v1.2.3","bn":111,'
                '"wdt_reset":0,"rp_ok":0,"maxrun_ms":8000}')
 link.feed_line('{"ev":"id","fw":"phase8b-rp2040 v1.2.3","bn":111,"pcb":"revD",'
                '"rid":1,"uid":"ABC0000000000000","build":"g1234567","cfg":"deadbeef","fi1":0}')
-link.feed_line('{"ev":"hb","ok":1,"flt":"","up":1000,"bn":111}')
-link.feed_line('{"ev":"hb","ok":1,"flt":"","up":1250,"bn":111}')
+link.feed_line(modern_hb(1000, 111))
+link.feed_line(modern_hb(1250, 111))
 check(link.health_ok(), "(setup) v1.2.3 healthy, stable nonce")
 _ident = link.fw_identity()
 check(_ident is not None and _ident.get("build") == "g1234567",
       "(setup) identity cached as the v1.2.3 build")
 cap.clear()
 # THE ADVERSARIAL CASE: nonce changes, uptime does NOT regress (1500 >= 1250).
-link.feed_line('{"ev":"hb","ok":1,"flt":"","up":1500,"bn":222}')
+link.feed_line(modern_hb(1500, 222))
 check(not link.health_ok(), "nonce change w/o uptime regression -> NOT healthy")
 check(link.fault() == REBOOT_FAULT, "nonce change latches the fw_reboot fault")
 check(link.rp_ok() is False, "nonce change clears rp_ok")
@@ -313,11 +325,11 @@ check(link.fw_identity() is None,
       "misidentified silicon)")
 check(any("nonce" in m.lower() for m in cap.msgs(logging.ERROR)),
       "boot-nonce reboot logged LOUDLY (error)")
-link.feed_line('{"ev":"hb","ok":1,"flt":"","up":1750,"bn":222}')
+link.feed_line(modern_hb(1750, 222))
 check(link.health_ok(), "stable nonce after the reboot: no repeated trip")
 # first nonce ever seen is NOT a trip (nothing to compare against)
 link = mklink()
-link.feed_line('{"ev":"hb","ok":1,"flt":"","up":100,"bn":999}')
+link.feed_line(modern_hb(100, 999))
 check(link.fault() == "", "first boot-nonce seen does NOT latch a reboot")
 # older firmware without "bn": the nonce path is inert; uptime regression still
 # catches reboots (backward-compat pinned).

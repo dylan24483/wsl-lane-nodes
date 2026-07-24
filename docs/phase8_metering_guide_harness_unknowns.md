@@ -19,7 +19,7 @@
 - **Grippers (drop-a-pin) — COMPLETE 10/10:** GS1=**C** · GS2=**H** · GS3=**M** · GS4=**S** · GS5=**W** · GS6=**a** · GS7=**e** · GS8=**K** *(✓ 2026-07-07)* · GS9=**r** · GS10=**v**. (GS1–5 match the schematic; GS6–10 resolve/correct it — the old GS8=48H collided with GS2=H, and GS10=U is a common, both wrong. GS8=K breaks the loose alphabetic run — measurement over pattern; the cutover drop-one-pin gate re-verifies each anyway.)
 - **PBZ** (zero button) **→ EE** (shorts to common U when pressed).
 - **BS** (#9 bin) **→ CC.**
-- **SC** (interlock) **→ U.** · **TB → none** (interlock-only, shares the U node).
+- **SC** cold trace **→ U.** · **TB → no standalone cavity** (neither TB lead isolates from the shared U live-ladder region; this is a harness fact, not a topology result).
 - **Common/ground rails — ignore these, they ring to everything:** **J, F, U** (gripper/control common, chassis return) + **N** (the 5-cam motion common).
 - **Deferred to powered cutover:** motion cams **SA / SB / TA1 / TA2** (buried in the relay ladder — a clean one-read each once powered).
 - **Still open:** GP (gripper-protect — **DEFERRED 2026-07-07 to a later session or the powered cutover**; predicted ~412DD, no manual photo exists, method = watch DD/sweep while working one gripper's fingers fully open) · OS / PBC / 10th / MAN_* (spare/future) · Foul · DIELL re-check.
@@ -42,8 +42,8 @@
 
 | Device | Clip the long lead to… | Beep / sweep at C2A | Priority | Reading |
 |---|---|---|---|---|
-| **SC** | sweep-under-table interlock cam (read N.O. = pink) | **→ C2A-U** ✓ 2026-06-27 | ★ HIGH | **U** |
-| **TB** | table-sweep interlock — both wires tie to the SC/pin-U node, no switched signal of its own | **no standalone cavity** ✓ 2026-06-27 (interlock-only) | ★ HIGH | — shares U |
+| **SC** | sweep-under-table interlock cam (pink lead) | **→ C2A-U cold trace** ✓ 2026-06-27; live-ladder node, not a dry landing | ★ HIGH | **U (location only)** |
+| **TB** | table-sweep interlock — neither lead isolates from the SC/U live-ladder region | **no standalone cavity** ✓ 2026-06-27 (no independent observation) | ★ HIGH | — shared region |
 | **TA2** | table run-through cam switch | ~~confirm 21A, else 30N~~ cold read INVALID (30N impossible — N = cam common; coil sneak paths) | **DEFERRED → powered cutover (§3)** | — |
 | SA | sweep cam (270/360) switch | ~~confirm 31N~~ cold read INVALID (N = cam common) | **DEFERRED → powered cutover (§3)** | — |
 | SB | sweep guard cam switch | ~~confirm 31H~~ cold read INVALID | **DEFERRED → powered cutover (§3)** | — |
@@ -74,9 +74,9 @@
 | TA2 | **BLUE** | gray | bused → TA1 | TS-33 |
 | TB | *(N.O. only)* **GREEN** | — | brown | TSA-5 |
 
-**SC & TB are a series hardware interlock** sharing node TSG-1 (= C2A-**U**): SC reads at U; **TB has no independent cavity** — both its wires tie to that node (confirmed at machine 2026-06-27, neither isolates). Read the interlock at U; infer TB from the table-cam angle. **Harness + firmware-echo redesign for the single shared interlock signal: see `docs/phase8_interlock_redesign.md`** (in progress).
+**SC/TB reconciliation:** the cold 2026-06-27 trace located SC at TSG-1/C2A-**U** and proved **TB has no independent cavity or dry pair**; neither TB lead isolated from that live-ladder region. Because the same cold measurements include ~21 Ω relay-coil sneak paths, they did **not** establish contact topology or danger polarity. The powered 2026-07-07 test is authoritative: the OEM contacts behave **parallel closed-when-safe**; either pressed lever permits a coil and **both levers BACK/open kill both S and T coils**. Candidate C therefore uses the controlled J_SAFE1-2 jumper and keeps the OEM ladder primary, subject to a per-lane G3 S/T coil-drop proof. Do not treat U as a dry J_SAFE or firmware-input landing; the SC∧TB firmware echo remains default-off, secondary, and unvalidated because no independent TB observation exists.
 
-**Motion cams share a COMMON → C2A-N.** The cam COM wires bus together to one cavity, **N** (confirmed 2026-06-27 — both SA and TA2 ring to N regardless of lever). Because they share this common, **cold per-cam cavity reads are ambiguous** (every cam shows N + maybe its own cavity). **Finish the per-cam SA/SB/TA1/TA2 → cavity mapping at powered cutover** — rotate the mechanism, watch which cavity goes live as each cam trips (§4.2 PART C2); it does **not** gate the board. Cold sweeps also pick up **sneak paths through relay coils** — SA's lower wire reads ~21Ω to CC (a coil path, ≈BE's 22Ω coil) plus ~0Ω to N/FF/F (commons) — because the cam contacts sit **in series in the machine's relay ladder**, not as isolated dry contacts. That's the real reason no cam isolates cold. **Do them powered** (rotate, watch the cavity go live); doesn't gate the board.
+**Motion cams share a COMMON → C2A-N.** The cam COM wires bus together to one cavity, **N** (confirmed 2026-06-27 — both SA and TA2 ring to N regardless of lever). Because they share this common, **cold per-cam cavity reads are ambiguous** (every cam shows N + maybe its own cavity). **Finish the per-cam SA/SB/TA1/TA2 → cavity mapping at powered cutover** — rotate the mechanism, watch which cavity goes live as each cam trips (§4.2 PART C2); it does **not** gate the board. Cold sweeps also pick up **sneak paths through relay coils** — SA's lower wire reads ~21 Ω to CC (a coil path, ≈BE's 22 Ω coil) plus ~0 Ω to N/FF/F (commons). Those paths prove the region is not an isolated dry harness and make cold topology inference invalid; they do not prove whether the safety contacts themselves are series or parallel. **Do the mapping powered** (rotate, watch the cavity go live).
 
 **Isolate it (for one clean beep):** actuate the switch to the state that **opens the contact you're reading**, so that wire disconnects from the bused common — then only its own cavity beeps. **N.C. (motion cams): press** the lever to open it. **N.O. (SC/TB interlock): release / pull the lever off** the button to open it. (Or skip isolating and just take the single *unique* cavity, ignoring the common-bus beeps.)
 **Even easier if it survived the retrofit:** every wire lands on a numbered terminal strip (the "TS-nn" above). If that strip is still in the machine, clip there instead of piercing.
@@ -86,7 +86,7 @@
 - ~~**Heavy-lug S/T contactor coil V**~~ **✓ CLOSED 2026-07-07: both S and T motor-contactor coils = 24 VAC** (measured live across A1–A2 during the interlock test-2A session). The suspect T<1Ω cold read is moot for the harness (it was a contact, not the coil — the live coil reads confirm).
 
 ### 3. At-machine, POWERED (during cutover prep — one deliberate test at a time, locked out otherwise)
-- **Front-end class (dry vs 24 VAC):** **no reach problem here** — you meter right at the cabinet: the cam's signal is present at its C2A cavity once the machine is powered, so meter **cavity → FIELD_GND** (both in the cabinet) with the probe **loaded (LoZ)**. **< 2 V or open = dry** (keep the opto front-end); **12–24 VAC = live** (that channel needs the 24 VAC-rectified sense). The **six cam channels** (SA/SB/SC/TA1/TA2/TB) are the ones in question.
+- **Front-end class (dry vs 24 VAC):** **no reach problem here** — meter each actually observable cam cavity at the cabinet with a loaded/LoZ probe. **< 2 V or open = dry** (keep the opto front-end); **12–24 VAC = live** (that channel needs the 24 VAC-rectified sense). SA/SB/SC/TA1/TA2 are the observable candidates; **TB has no independent cavity on lanes 21/22 and must not be invented as a sixth input.** C2A-U remains unlanded unless a separately reviewed observe-only input design is released.
 - **Foul tap:** meter the foul **lamp wire** voltage → decide dry vs 24 VAC front-end for J5-3.
 - **DIELL re-check:** signal line ~16 V beam-clear / ~0.7 V blocked (already proven). Tap **signal + GND only** into J3-7/8.
 - **Safety chain (§A):** stop switch RUN → coil rail live; STOP → dead. **Break-on-STOP = hardware-in-series (preserve).** No break = **FLAG: add hardware interlock before any Pi-driven motor.**
@@ -104,4 +104,4 @@ DMM (continuity/beep, AC + DC volts, **LoZ/low-Z** mode if it has one), **back-p
 ## What to send back
 Photos or typed copy of the **B1 table** (+ any straggler readings). I turn them straight into the corrected Section F input map — and the harness goes from spec to cut-and-crimp.
 
-> **Bottom line (post-2026-07-07):** the cold tracing is **done** — SC/TB, all 10 grippers, PBZ, BS measured. Remaining cold = **GP + ⊕ stragglers**; the four motion cams map at **POWERED cutover** (§3). The bench output side was already done.
+> **Bottom line (reconciled 2026-07-24):** the cold tracing is **done** — it located the shared SC/U region, proved no standalone TB/dry pair, and measured all 10 grippers, PBZ, and BS. It did **not** prove SC/TB topology; the powered result controls and is parallel closed-when-safe. Remaining cold = **GP + ⊕ stragglers**; the four motion cams map at **POWERED cutover** (§3). The bench output side was already done.

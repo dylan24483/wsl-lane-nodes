@@ -2,11 +2,11 @@
 
 This section is the operate-and-reproduce reference for the Phase 8 system as a whole:
 how the running software is laid out across the network and how it is brought up,
-followed by how the lane-controller PCB is generated, audited, and ordered from a
-bare repository checkout. It is written to be self-contained — an engineer with no
+followed by how the lane-controller PCB is generated, audited, and held behind its
+fabrication-release gates from a bare repository checkout. It is written to be self-contained — an engineer with no
 prior context should be able to (a) bring a node back online after a power event,
-(b) re-point the fleet after a network change, and (c) regenerate and re-order the
-board.
+(b) re-point the fleet after a network change, and (c) verify the controlled fab
+package without mistaking package generation for authorization to order.
 
 Cross-references:
 - Hardware topology and the FSM that consumes the I/O are covered in the controller
@@ -45,9 +45,10 @@ Key facts (all grounded in the live code):
   when the server's external IP changes — see § 20.4).
 
 > **Safety reminder (carried from the controller sections):** none of the software
-> in this section is a safety device. Motion permission is gated by the on-board
-> hardware safety rail (NE555 watchdog + ARM + RP2040_OK + TB/SC interlock +
-> Stop/CIS chain). The Pi/FSM cannot bypass that rail in software. See
+> in this section is a safety device. The on-board rail gates watchdog + ARM +
+> RP2040_OK/cam-stop + Stop/CIS; Candidate C closes J_SAFE1-2 with the controlled
+> jumper and keeps the primary TB/SC guard in the OEM S/T coil ladder, proven per
+> lane at G3. The default-off SC∧TB software model is unvalidated. See
 > `docs/phase8b_pcb_revB_spec.md` § 4.
 
 ---
@@ -394,16 +395,18 @@ GP0-GP7) — **ignore it**; the as-built board uses **GP6..GP13**.
 | `SC` | GP8 | 11 | in, **active-low** | Sweep-under-table interlock window (86-243) |
 | `TA1` | GP9 | 12 | in, **active-low** | Table cam (355 zero stop / 185 delay reset) |
 | `TA2` | GP10 | 14 | in, **active-low** | Table cam (260 run-through / pin-latch) |
-| `TB` | GP11 | 15 | in, **active-low** | Table-sweep interference interlock (105-255) |
+| `TB` | GP11 | 15 | in, **active-low** | Board position only; no independent lane-21/22 field lead |
 | `DIELL_L` | GP12 | 16 | in, **active-low** | Ball detect, left beam (cushion SS trigger) |
 | `DIELL_R` | GP13 | 17 | in, **active-low** | Ball detect, right beam |
 
 Electrical sense (from `opto_input()`): every fast input is opto-isolated and
 **active-low at the Pico** — machine contact closed pulls the GPIO LOW; idle is HIGH
-(on-board 10 k pull-up to 3V3). `RP2040_OK`/GP2 drives an NPN in the relay-enable
-AND chain; a 100 k base pull-down makes the rail **fail-safe-dead** whenever GP2 is
-Hi-Z (unpowered / in reset / pre-init). Firmware: `FW_VERSION "phase8b-rp2040
-v0.1.0"`, UART `115200`.
+through external `Rpu_*` to 3V3 (Rev-B 10 kΩ; current Rev-D/R5 **47 kΩ**).
+Current firmware disables GP6–GP13 internal pulls. `RP2040_OK`/GP2 drives an NPN
+in the relay-enable AND chain; a 100 k base pull-down makes the rail
+**fail-safe-dead** whenever GP2 is Hi-Z (unpowered / in reset / pre-init). Current
+controlled firmware identifies as `phase8b-rp2040 v1.2.3` and UART remains
+`115200`; require the manifest-bound Rev-D identity, not the version string alone.
 
 Firmware timing/backstop constants (`config.h`):
 
@@ -470,17 +473,24 @@ Motion relays (`MOTION_RELAYS = S, T, SP, BE, M, M1, M2`) get RUN/STOP forwarded
 the RP2040 over UART so the firmware's max-run backstop knows what is energized;
 lamps are not motors and are not forwarded.
 
-#### 20.6.5 The JLCPCB Standard-PCBA order
+#### 20.6.5 Historical Rev-B JLCPCB Standard-PCBA order
 
-The board is ordered from JLCPCB as a **Standard PCBA**: JLC fabricates the bare
-4-layer board *and* places all SMD parts plus the through-hole PC817 optos and G5LE
-relays (wave-soldered); a short list of parts is hand-soldered after the boards
-arrive (§ 20.6.6).
+> **HISTORICAL REV-B ONLY — DO NOT ORDER FROM THIS SECTION.** The current
+> Rev-D/R5 immutable package is `kicad/fab_revD_2026-07-23_r5/`, with forty
+> 47 kΩ `Rpu_*` parts and the binding internal-pulls-off runtime gate. The
+> Rev-D board is **NO-GO and not authorized for upload or purchase** until the
+> recorded sign-offs, JLC preview, first-article, FA-9, powered, and bench gates
+> close. Never substitute these Rev-B files for the current package.
 
-**Upload files** — use the three files from
-`kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/`, in this order:
+The historical Rev-B board flow used JLCPCB **Standard PCBA**: JLC fabricated the
+bare 4-layer board *and* placed all SMD parts plus the through-hole PC817 optos and
+G5LE relays (wave-soldered); a short list of parts was hand-soldered after the
+boards arrived (§ 20.6.6).
 
-| Order step | File | Role |
+**Historical Rev-B upload record** — that flow used the three files from
+`kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/` in this order:
+
+| Historical order step | File | Role |
 |---|---|---|
 | 1 | `01_wsl-phase8b-revB_gerbers.zip` | the PCB Gerber/drill upload |
 | 2 | choose **Standard PCBA**, assembly **top side only** | — |
@@ -488,12 +498,12 @@ arrive (§ 20.6.6).
 | 4 | `03_wsl-phase8b-revB_CPL_JLC.csv` | position/CPL (174 placed designators) |
 | 5 | `04_…_part-lock-audit.csv` | use during part-match review (audit only) |
 
-> **Do not** upload the transport zip
-> (`wsl-phase8b-revB-JLC_UPLOAD_READY.zip`) as the Gerber file — unzip it and use the
-> three files above. Files `05`/`06`/`07` are exclusion/hand-solder/harness audits,
-> not order inputs.
+> In that historical flow, the transport zip
+> (`wsl-phase8b-revB-JLC_UPLOAD_READY.zip`) was not itself the Gerber input; the
+> three files above were extracted from it. Files `05`/`06`/`07` were
+> exclusion/hand-solder/harness audits, not order inputs.
 
-**PCB settings** (set or confirm in the JLC form):
+**Historical Rev-B PCB settings** (record only; not current order instructions):
 
 | Setting | Value |
 |---|---|
@@ -509,7 +519,7 @@ arrive (§ 20.6.6).
 | Vias | standard through vias only |
 | Castellated / impedance control / edge plating / panelization | no (panelize only if JLC requires it for assembly handling) |
 
-**PCBA settings / placement contract** (the generator
+**Historical Rev-B PCBA settings / placement contract** (the generator
 `prepare_jlc_standard_pcba_revB.py` *aborts* unless these hold):
 
 - JLC-placed refs: **174**. JLC BOM unique lines: **20**. Filtered CPL rows: **174**.
@@ -520,8 +530,8 @@ arrive (§ 20.6.6).
 - Existing **DNP** refs stay excluded — the **M1** optional channel
   (J12/K7/Q7 + M1 support passives) is **not populated**.
 
-**Locked JLC part map** (the as-built `02_…_BOM_JLC.csv`; this is the source of
-truth, and it supersedes any older doc that cites different designators):
+**Historical Rev-B locked JLC part map** (the as-built `02_…_BOM_JLC.csv`; this
+is authoritative only for Rev-B and must not be used for a Rev-D/R5 order):
 
 | Comment (value) | Qty | Designators | LCSC # | MFR part | Footprint |
 |---|---:|---|---|---|---|
@@ -538,7 +548,7 @@ truth, and it supersedes any older doc that cites different designators):
 | AO3401A P-ch MOSFET | 1 | Q14 | C347476 | AO3401A | SOT-23 |
 | 4.7k 1% 0805 | 2 | R1,R2 | C17673 | 0805W8F4701T5E | 0805 |
 | 2.2k 1% 0805 | 32 | R3..R65 (odd) | C17520 | 0805W8F2201T5E | 0805 |
-| 10k 1% 0805 | 37 | R4..R66 (even) + R101-R109 | C17414 | 0805W8F1002T5E | 0805 |
+| 10k 1% 0805 | 37 | R4..R66 (even) + R101-R109 | C17414 | 0805W8F1002T5E | 0805 (historical Rev-B; its 32 `Rpu_*` refs are 47 kΩ in Rev-D/R5) |
 | 1k 1% 0805 | 12 | R67..R104 (subset) | C17513 | 0805W8F1001T5E | 0805 |
 | 100k 1% 0805 | 14 | R68..R110 (subset) | C149504 | 0805W8F1003T5E | 0805 |
 | 330R 1% 0805 | 4 | R90,R93,R96,R99 | C17630 | 0805W8F3300T5E | 0805 |
@@ -553,7 +563,7 @@ truth, and it supersedes any older doc that cites different designators):
 > authoritative current designators are in the BOM CSV above (U1-U3 / U36)** — trust
 > the CSV.
 
-**Mandatory preview checks before paying** (from the order checklist):
+**Historical Rev-B preview checks** (record only; not authorization to upload or pay):
 
 - Relay row is `C116963 / G5LE-14 5VDC` — **reject any 9 V / 12 V / 24 V coil
   substitution.** The coil is **5 VDC**, not 12/24 V.
@@ -630,12 +640,13 @@ Run the audit standalone with KiCad's Python:
 & "C:\Program Files\KiCad\10.0\bin\python.exe" scripts\audit_revB_board.py kicad\wsl-phase8b.routed-manual.kicad_pcb
 ```
 
-#### 20.6.8 Regenerating the whole fab package
+#### 20.6.8 Historical Rev-B fab-package regeneration
 
-After **any** board edit, regenerate the package (this re-runs the DRC + audit gate,
-re-exports gerbers/drill/CPL/PDF/IPC-D-356/stats, regenerates all BOM/CPL CSV
-variants, rebuilds the JLC upload-ready folder, and writes a `manifest.json` with
-SHA-256s):
+This was the Rev-B regeneration command after a Rev-B board edit. It re-ran the
+DRC + audit gate, re-exported gerbers/drill/CPL/PDF/IPC-D-356/stats, regenerated
+the BOM/CPL CSV variants, rebuilt the old upload-ready folder, and wrote a
+`manifest.json` with SHA-256s. **Do not run it to create, replace, or authorize a
+Rev-D package:**
 
 ```powershell
 & "C:\Program Files\KiCad\10.0\bin\python.exe" scripts\export_fab_revB.py
@@ -644,9 +655,9 @@ SHA-256s):
 Output lands in `kicad/fab_revB_routed_manual/`. The package gate also checks that
 at least one Excellon `.drl` and ≥ 11 Gerber layer files were produced, that the
 JLC upload pair exists, and (again) DRC `0/0/0` + audit `ALL PASS`. The package is
-**fab-ready, not cutover-ready** — the export README explicitly carries the caveat
-that RP2040 v1.1 cam-stop-overrun work and on-hardware bench bring-up remain before
-live-machine use.
+**historical Rev-B fab-ready, not cutover-ready**. Current live-machine gates still
+include v1.2.3 first-article/on-hardware bring-up and a new controlled release with
+only measured cam polarities enabled; stock measured-cam flags remain OFF.
 
 ---
 
@@ -687,6 +698,6 @@ procedure is `docs/phase_8a_infrastructure_plan.md`. The shape:
 | Stop auto-scoring now | `systemctl edit lane-node` → `WSL_LANE_SCORING_MODE=manual` → `restart`. No machine impact. |
 | Check the server is up | `curl http://<WSL-SRV>:8766/api/health`. |
 | Open the scoring display | `http://<WSL-SRV>:8766/display?lane=21` (and `?lane=22`). |
-| Regenerate the fab package | `& "C:\Program Files\KiCad\10.0\bin\python.exe" scripts\export_fab_revB.py` |
-| Re-order the board | Upload the three files in `kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/` to JLC; run the § 20.6.5 preview checklist before paying. |
+| Verify the current fab package | Use the immutable `kicad/fab_revD_2026-07-23_r5/` manifest and README; do not regenerate or substitute a Rev-B package. |
+| Order the board | **NO-GO. Do not upload or purchase** until every current Rev-D release gate closes; then use only the approved R5 package and its recorded JLC preview. |
 | Verify the on-board pin maps before trusting hardware | Run `controller_io.py` as a script (KiCad python not needed) — its `__main__` asserts `OUT_A_MAP`/`IN_A_MAP` match the netlist generator and fails on drift. |

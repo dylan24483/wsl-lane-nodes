@@ -24,11 +24,17 @@ Every map in this section is **per lane**. A lane *pair* is built as **two physi
 
 ### 12.2 RP2040 (Raspberry Pi Pico) GPIO map — fast inputs + UART + rail permit
 
-The RP2040 co-processor handles the **latency-critical** signals: the six cam microswitches and the two ball-detect beams. It also carries the UART link to the Pi and the single most safety-critical output on the board, `RP2040_OK`. The Pi never reads these fast signals directly — the RP2040 debounces them, drives the fail-safe `RP2040_OK` rail line + a motion max-run backstop, and *pushes* the resulting events to the Pi over UART (per-cam-edge cam-stop *overrun* is the deferred v1.1 firmware item) (see [§12.5](#125-why-the-fast-inputs-live-on-the-rp2040-operating-theory)).
+The RP2040 owns eight **board fast-input positions**, UART, `RP2040_OK`, and the
+motion max-run backstop. Field landing is separate: lane 21/22 has no independent
+TB lead and leaves SC/U unlanded. The v1.2.3 code contains per-cam overrun paths,
+but the controlled release keeps every measured-cam flag OFF pending polarity
+capture and a new controlled release (see §12.5).
 
 #### 12.2.1 Authoritative GPIO table
 
-Source of truth: `FAST_INPUTS` and `block_rp2040()` in `generate_kicad_netlist_revB.py` (physical Pico module pin numbers), confirmed pin-for-pin against the `PIN_*` GPIO numbers in `firmware/rp2040/config.h`. The KiCad footprint is `Module:RaspberryPi_Pico_SMD`.
+Source of truth: `FAST_INPUTS` and `block_rp2040()` in
+`generate_kicad_netlist_revD.py`, confirmed against `firmware/rp2040/config.h`.
+The table distinguishes board positions from lane-21/22 field landings.
 
 | GPIO | Pico module pin | Net name | Signal | Direction | Front-end | Function (firmware comment) |
 |---|---|---|---|---|---|---|
@@ -37,10 +43,10 @@ Source of truth: `FAST_INPUTS` and `block_rp2040()` in `generate_kicad_netlist_r
 | **GP2** | 4 | `RP2040_OK` | Rail permission | **OUT** | NPN AND-chain | **HIGH = permit motion, LOW = drop the relay-enable rail.** Firmware health / cam-stop permit. |
 | **GP6** | 9 | `FAST_SA` | **SA** sweep cam | IN (opto, active-low) | PC817B opto | Sweep cam: 270° run-through stop / 360° zero. → `cam_SA_*` |
 | **GP7** | 10 | `FAST_SB` | **SB** sweep cam | IN (opto, active-low) | PC817B opto | Sweep cam: 66° guard / 186° table-spot init. → `cam_SB_guard` |
-| **GP8** | 11 | `FAST_SC` | **SC** interlock cam | IN (opto, active-low) | PC817B opto | Sweep-under-table interlock window (86–243°). HW interlock + software echo. |
+| **GP8** | 11 | `FAST_SC` | **SC** board position | IN (opto, active-low) | PC817B opto | Lane 21/22 SC/U is cut/labeled/unlanded; optional echo position only. |
 | **GP9** | 12 | `FAST_TA1` | **TA1** table cam | IN (opto, active-low) | PC817B opto | Table cam: 355° zero stop / 185° delay reset. → `cam_TA1_*` |
 | **GP10** | 14 | `FAST_TA2` | **TA2** table cam | IN (opto, active-low) | PC817B opto | Table cam: 260° run-through / pin-latch / decision. → `cam_TA2_runthrough` |
-| **GP11** | 15 | `FAST_TB` | **TB** interlock cam | IN (opto, active-low) | PC817B opto | Table-sweep interference interlock (105–255°). HW interlock + software echo. |
+| **GP11** | 15 | `FAST_TB` | **TB** board position | IN (opto, active-low) | PC817B opto | **No independent lane-21/22 field lead**; optional echo position only. |
 | **GP12** | 16 | `FAST_DIELL_L` | **DIELL** left beam | IN (opto, active-low) | PC817B opto | Ball detect, left beam (cushion SS / cycle trigger). → `on_ball` |
 | **GP13** | 17 | `FAST_DIELL_R` | **DIELL** right beam | IN (opto, active-low) | PC817B opto | Ball detect, right beam. → `on_ball` |
 
@@ -53,7 +59,8 @@ The eight grounded Pico pins tied to board `GND` (`block_rp2040()`): module pins
 Every fast input is **opto-isolated and active-LOW at the Pico.** From `opto_input()` in the generator and the header comment in `config.h`:
 
 - The field side of each PC817B LED is fed from the isolated **`FIELD_WET_V`** rail through a **2.2 kΩ** series resistor (`Rin_*`). The machine contact closes that channel's field pin to **`FIELD_GND`** at the harness, completing the LED loop.
-- When the machine contact is **closed (signal asserted)**, the opto transistor conducts and pulls the Pico GPIO **LOW**. Idle (contact open) = **HIGH**, held up by an on-board **10 kΩ pull-up** (`Rpu_*`) to `VCC_3V3`.
+- When the machine contact is **closed (signal asserted)**, the opto transistor conducts and pulls the Pico GPIO **LOW**. Idle (contact open) = **HIGH**, held up by external `Rpu_*` to `VCC_3V3`: 10 kΩ on historical Rev-B and **47 kΩ on current Rev-D/R5**.
+- Current Rev-D production firmware keeps GP6–GP13 internal PUE/PDE disabled so the external 47 kΩ is authoritative. A missing `Rpu_*` must be detected as a board fault, not hidden by an internal pull.
 - So: **asserted = GPIO LOW, idle = GPIO HIGH.** The firmware constant for this is the implicit active-low handling in the debounce path; the Pi-side equivalent is `INPUT_ACTIVE_LOW = True` in `controller_io.py`.
 - The logic side runs at **3.3 V**, so both the Pico and the MCP23017 inputs are Pi-safe (no 5 V on any GPIO). This is the optocoupler's whole job here and it satisfies the hard project rule that **Pi/Pico GPIO is 3.3 V only.**
 
@@ -76,8 +83,8 @@ The board carries **three** MCP23017 16-bit I²C expanders in the baseline build
 
 | Ref | I²C addr | A2 A1 A0 strap | Role | Pins used / 16 | Direction (IODIR) |
 |---|---|---|---|---|---|
-| **IN-A** | `0x20` | 0 0 0 | Grippers GS1–10 + GP/OS/BS/PBZ/PBC/Foul | 16 / 16 (full) | All inputs (`0xFF`), pull-ups on |
-| **IN-B** | `0x21` | **1** 0 0 | 10th-frame + manual switches + spares | 5 / 16 | All inputs (`0xFF`), pull-ups on |
+| **IN-A** | `0x20` | 0 0 0 | Grippers GS1–10 + GP/OS/BS/PBZ/PBC/Foul | 16 / 16 (full) | All inputs (`IODIR=0xFF`); Rev-D/R5 internal `GPPU=0x00`, read back |
+| **IN-B** | `0x21` | **1** 0 0 | 10th-frame + manual switches + spares | 5 / 16 | All inputs (`IODIR=0xFF`); Rev-D/R5 internal `GPPU=0x00`, read back |
 | **OUT-A** | `0x22` | 0 **1** 0 | 7 relay coils + 4 status lamps | 11 / 16 | All outputs (`0x00`) |
 | **OUT-B** | `0x23` | (optional) | Physical pin-mask lamps + neon | OPTIONAL | All outputs — *omitted in baseline* |
 
@@ -116,7 +123,7 @@ This is exactly the `_pin_to_portbit()` helper in the `controller_io.py` self-te
 
 ### 12.4 MCP23017 IN-A bit map (I²C `0x20`) — slow inputs
 
-IN-A is **full** (all 16 pins used). It carries the ten gripper switches (the standing-pin mask) plus the gripper-protect, off-spot, bin-switch, two pushbuttons, and the foul signal. All sixteen channels are opto-isolated front-ends identical to the fast inputs ([§12.2.2](#1222-electrical-sense-of-the-fast-inputs-operating-theory)): **active-low at the MCP pin — switch closed pulls the pin LOW.** `controller_io.py` reads them with internal MCP pull-ups enabled (`pullup_a=0xFF, pullup_b=0xFF`) and inverts in software via `INPUT_ACTIVE_LOW = True`.
+IN-A is **full** (all 16 pins used). It carries the ten gripper switches (the standing-pin mask) plus the gripper-protect, off-spot, bin-switch, two pushbuttons, and the foul signal. All sixteen channels are opto-isolated front-ends identical to the fast inputs ([§12.2.2](#1222-electrical-sense-of-the-fast-inputs-operating-theory)): **active-low at the MCP pin — switch closed pulls the pin LOW.** Current Rev-D/R5 `controller_io.py` reads them with the external 47 kΩ `Rpu_*` as the sole bias, commands `pullup_a=0x00, pullup_b=0x00`, verifies those GPPU bytes by readback, and inverts in software via `INPUT_ACTIVE_LOW = True`.
 
 Source of truth: `IN_A_MAP` in `controller_io.py`, cross-checked against the `MCP_IN_A` entries of `SLOW_INPUT_PINS` in the generator.
 
@@ -147,7 +154,7 @@ Source of truth: `IN_A_MAP` in `controller_io.py`, cross-checked against the `MC
 
 #### IN-B (`0x21`) — initialized, not yet read
 
-`controller_io.py` opens and configures IN-B (`self.in_b`, all-inputs, pull-ups on) so all three board expanders are live, **but the current FSM does not read it.** Its channels (10th-frame, manual table/sweep/sweep-switch/sweep-reverse, three aux) are spare-allocated for when the FSM grows to full machine control. From `SLOW_INPUT_PINS` (the `MCP_IN_B` entries) and the `J_SLOWB` connector order:
+`controller_io.py` opens and configures IN-B (`self.in_b`, all inputs, internal GPPU off and read back) so all three board expanders are live, **but the current FSM does not read it.** Its channels (10th-frame, manual table/sweep/sweep-switch/sweep-reverse, three aux) are spare-allocated for when the FSM grows to full machine control. From `SLOW_INPUT_PINS` (the `MCP_IN_B` entries) and the `J_SLOWB` connector order:
 
 | Signal | MCP pin | Port,bit | Register | Status |
 |---|---|---|---|---|
@@ -168,10 +175,13 @@ IN-B's entire B-bank (GPB0–7) is free → expansion headroom. (VERIFY: `contro
 
 This is the single most important architectural decision in the I/O design, and it is the reason the cams/ball are *not* simply more MCP23017 bits.
 
-- **Latency + hardware cam-stop.** The cam microswitches define exact angular windows where a motor *must* be cut (e.g., SA at 270° run-through, the SC/TB interlock windows). The RP2040 is the element positioned to **drop the relay-enable rail in hardware** the instant a stop edge fires — independent of Pi scheduling, the UART link, or Linux jitter (this per-cam-edge *overrun* drop is the deferred v1.1 firmware feature; v0.1.0 provides the `RP2040_OK` health line + the 8 s max-run backstop). An MCP23017 cannot do this; it would require the Pi to poll, decode, and react, adding tens of milliseconds of software latency to a safety-critical cut.
+- **Latency + hardware cam-stop.** The motion cams define exact stop edges (for example SA at run-through/zero), and the RP2040 is positioned to drop `RP2040_OK` without Linux latency once measured cam enforcement is enabled. **TB/SC is different:** its primary guard is the OEM parallel-safe S/T coil ladder. The SC∧TB firmware echo is default-off/unvalidated and cannot be counted as cam-stop protection because lanes 21/22 have no independent TB input.
 - **Push, not poll.** The RP2040 *forwards cam/ball events to the Pi as messages* over UART (newline-delimited JSON, e.g. `{"ev":"SB_guard"}` / `{"ev":"ball"}`, at 115200 baud). The FSM in `cycle_control_8270.py` consumes **events** (method calls like `cam_SB_guard()`), not pin polls, so nothing is lost by moving the pins off the Pi header. A UART/IRQ device can *initiate*; an I²C/SPI peripheral cannot — that is why UART was chosen over an MCP-style expander or an SPI/I²C slave for these signals.
 - **Pin budget.** Sixteen fast inputs across a pair would consume too much of the Pi's 40-pin header. Putting them on a per-board RP2040 keeps the Pi's GPIO free for the two I²C buses, the watchdog kick, and the per-board INT/arm lines.
-- **Fail-safe link.** The **safety stop logic stays local to the RP2040** — its `RP2040_OK` health line + the motion max-run backstop gate the rail directly, independent of the UART (per-cam-edge cam-stop *overrun* is the deferred v1.1 item). A dead UART therefore cannot cause unsafe motion — it only means the FSM stops receiving event notifications, which trips the motion-timeout fault (fail-safe). See the safety section for the full rail logic.
+- **Fail-safe link.** `RP2040_OK` health + the active max-run backstop gate the rail
+  independently of UART. Per-cam overrun may be credited only after measured
+  polarity is enabled in a new controlled release; stock v1.2.3 flags are OFF.
+  The OEM TB/SC ladder remains the separate primary collision guard.
 
 The `RP2040_OK` (GP2) output is the RP2040's "I am alive and permitting motion" line into the AND chain; the firmware holds it LOW for `BOOT_SETTLE_MS = 200 ms` after boot before ever permitting, and the on-chip watchdog (`WDT_TIMEOUT_MS = 250 ms`) resets the chip — dropping GP2 → dropping the rail — if the firmware loop ever hangs.
 
@@ -261,7 +271,13 @@ The generator's `block_connectors()` lays out function-named field terminals so 
 | **J_SLOW_IN_B** | Phoenix MCV 1×12 | IN-B field inputs | pins 1–11 = PBZ, PBC, FOUL, TENTH, MAN_T, MAN_S, MAN_SWS, MAN_SWSR, AUX1, AUX2, AUX3; pin 12 = FIELD_GND |
 | **J_MOTION_{S,T,SP,BE,M,M2,M1}** | seven Phoenix 2-pos (`MKDS-1,5-2-5.08`) | one relay contact pair each | pin 1 = `OUT_*_B` (NO), pin 2 = `OUT_*_A` (COM) — vertical order matches the G5LE pad order (B above A) |
 | **J_LAMP_LED** | Phoenix MCV 1×6 | 4 status lamps + power | 1=VCC_5V, 2=GND, 3–6 = L_FIRST, L_SECOND, L_STRIKE, L_FOUL returns |
-| **J_SAFETY** | Phoenix MCV 1×4 | two NC safety loops in series | 1→2 = TB/SC loop, 3→4 = Stop/CIS loop, feeding the rail PMOS source |
+| **J_SAFETY** | Phoenix MCV 1×4 | two board-side source positions in series | **1→2 = controlled Candidate-C jumper (no TB/SC machine landing)**; 3→4 = Stop/CIS loop, feeding the rail PMOS source |
+
+> **Lane-21/22 fast-input caveat:** the PCB allocates J_FAST_IN/GP11 to TB, but the
+> measured harness has no standalone TB cavity. Leave TB NO-LEAD. SC/U is a
+> non-isolatable live-ladder region and stays CUT+LABEL-ONLY unless a separately
+> reviewed observe-only input is released. Do not infer usable field inputs from the
+> copper allocation alone.
 
 > **Important field note (from `phase8_channel_allocation.md` §3, bench-confirmed):** the machine-side outputs are **split across machine connectors C1 and C2A** — the high-current main motors **S, T** land on **C1**, while **SP, M2, BE** land on **C2A**. This does **not** change the OUT-A bit map (the board always drives the relay coils); it only affects which machine connector each relay *contact* wires to in the field. The enclosure harness therefore needs leads from the relay bank to **both** C1 and C2A. Exact C1/C2A cavity digits are bench-gated in the fieldsheet pass (the one remaining hard blocker for board finalization).
 
@@ -311,20 +327,21 @@ The design intent is a kick-or-die window of roughly **~10 s** (the bench-valida
 | `WDT_TIMEOUT_MS` | 250 ms | RP2040 on-chip watchdog: loop hang → chip reset → RP2040_OK drops → rail drops |
 | `MAX_MOTION_MS` | 8000 ms | Motion max-run backstop (matches `cycle_control_8270.MAX_MOTION_S = 8.0 s`). A guarded motor marked RUNNING over UART longer than this latches a fault and drops RP2040_OK. **BE (continuous) and M (master/power) are NOT guarded.** |
 
-`FW_VERSION` is `"phase8b-rp2040 v0.1.0"`.
+`FW_VERSION` is `"phase8b-rp2040 v1.2.3"`; require the manifest-bound Rev-D
+release identity, not the version string alone.
 
 ---
 
 ### 12.11 Cross-reference: the relay-enable rail
 
-Everything in [§12.7](#127-mcp23017-out-a-bit-map-i²c-0x22--relays--status-lamps) (relay coils) is powered through the series **`RELAY_ENABLE_RAIL`**, which is gated by the AND of four conditions (`block_rail()` + safety section):
+Everything in [§12.7](#127-mcp23017-out-a-bit-map-i²c-0x22--relays--status-lamps) (relay coils) is powered through **`RELAY_ENABLE_RAIL`**. Candidate C leaves four effective on-board permission classes:
 
 1. **NE555 watchdog OK** — Pi kicks GPIO12 within the timeout, else the rail drops. ([§12.10](#1210-watchdog-timing-reference-ne555--firmware-timing-constants))
 2. **Pi "arm" GPIO** asserted (`ARM_PERMIT`, J_PI pin 8) — de-asserts on the power-down rule until an operator First-Ball-Zero.
 3. **RP2040_OK** (GP2) HIGH — firmware healthy + cam-stop permitting. ([§12.2.2](#1222-electrical-sense-of-the-fast-inputs-operating-theory))
-4. **Hardware TB+SC interlock + Stop/CIS chain** closed — the two NC safety loops on **J_SAFETY** in series, feeding the rail PMOS (`Q_RAIL`, AO3401A) source.
+4. **J_SAFE source path complete** — controlled Candidate-C jumper on pins 1–2 and the implemented Stop/CIS loop on pins 3–4 feed the rail PMOS source.
 
-The AND is built from two MMBT3904s (`Q_AND_ARM`, `Q_AND_RP_OK`) driving the PMOS pass-FET gate. **Any one false → every motion relay coil loses power.** None of this is bypassable by the Pi in software. For the complete safety theory (regenerative braking, contactor preservation, the "we drive coils, the machine switches motors" principle) see the dedicated safety section.
+The primary TB/SC guard is separate from that on-board list: the powered-proven OEM contacts are parallel closed-when-safe in the S/T coil circuits. Correct board insertion is accepted only after G3 proves that both levers BACK/open leave the board-commanded S and T coils dead. The default-off SC∧TB firmware echo is secondary/unvalidated. Any failed on-board gate still drops every board relay coil; normal Pi software cannot bypass either correctly installed hardware path.
 
 ---
 

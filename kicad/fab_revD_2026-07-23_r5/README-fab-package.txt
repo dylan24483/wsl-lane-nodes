@@ -28,8 +28,12 @@ Release gates re-proven by this export run:
   Production firmware identity: phase8b-rp2040 v1.2.3;
   build=rel-0c746b5747143b8011b01d43; cfg=05d808411db4bb0d;
   release UF2 SHA-256=d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae. Verify the release manifest
-  SHA-256=5bcbd2df1980acdd365865fc6527c96a3d0c1f51210a9d4a5fdd1f6cfcc279fd before flash; filename/version alone
-  is not proof. FA-9/FA-11 require live pull-register confirmation.
+  SHA-256=ea8ea4ceb273df98e888aeb5d1f1327d39577e8492fda455c932fea3768bd7b5 before flash; filename/version alone
+  is not proof. The manifest must contain supported_board_revisions=["revD"].
+  Provision only qualified_releases=["revD|rel-0c746b5747143b8011b01d43|05d808411db4bb0d"];
+  independent build/config allowlists must not authorize a cross-product.
+  This exact bundle is Rev-D only: never flash Rev-B/Rev-C, and never deploy
+  wsl_phase8b_rp2040_FI1.uf2. FA-9/FA-11 require live pull-register confirmation.
 
 Uploads:
 - wsl-phase8b-revD-gerber-drill.zip  -> JLC PCB order (4-layer FR-4 1.6mm, 1oz/0.5oz,
