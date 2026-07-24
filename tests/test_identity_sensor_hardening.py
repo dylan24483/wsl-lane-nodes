@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import types
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -788,6 +789,39 @@ def test_fresh_reader_heartbeat_cannot_erase_control_loop_gap():
     board.tick()
     assert board.fsm.state is State.READY
     assert board.io.armed is True
+
+
+def test_fresh_heartbeat_after_prelock_stall_cannot_get_one_positive_tick():
+    loop_clock = {"t": 0.0}
+    board = _revd_board(control_loop_clock=lambda: loop_clock["t"])
+    board.link.feed_line(_id_line())
+    _to_ready(board)
+    assert board.io.armed is True
+
+    original_transaction = board.link.control_transaction
+
+    @contextmanager
+    def delayed_transaction():
+        # tick() has already taken its first continuity sample. Model the
+        # controller blocking on the link lock while the reader completes a
+        # fresh heartbeat immediately before releasing it.
+        delay = cd.CONTROL_LOOP_GAP_MAX_S + 0.25
+        loop_clock["t"] += delay
+        board.io.advance(delay)
+        board.link.feed_line(_modern_hb(up=3000))
+        with original_transaction() as events:
+            yield events
+
+    board.link.control_transaction = delayed_transaction
+    board.tick()
+
+    # The same resumed tick must consume the post-lock continuity latch before
+    # event dispatch, ARM assertion, or motor-on. The already-disarmed
+    # inhibited path may continue its deliberate safe-state watchdog service.
+    assert board.fsm.state is State.MANUAL_INTERVENTION
+    assert board.io.armed is False
+    assert not any(board.io.outputs.get(k, False)
+                   for k in ("sweep", "table", "spot"))
 
 
 def test_identity_capability_evidence_survives_daemon_restart(

@@ -2599,6 +2599,15 @@ class BoardController:
         # invalidation can race event dispatch while ARM remains permitted.
         try:
             with self.link.control_transaction() as events:
+                # Acquiring the link transaction can itself be delayed (for
+                # example, if the serial reader is descheduled while holding
+                # the state lock). Re-sample only after ownership is obtained:
+                # a fresh heartbeat admitted just before lock release must not
+                # hide a stopped controller thread and permit one resumed
+                # positive tick. No event has been dispatched at this point.
+                locked_started_at = \
+                    self._latch_control_loop_gap_before_tick()
+                tick_started_at = locked_started_at
                 entered_healthy = self.link.health_ok()
                 self._tick_once(events)
                 self.control_loop_seq += 1
