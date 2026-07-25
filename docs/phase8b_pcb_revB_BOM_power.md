@@ -2,10 +2,15 @@
 
 > ⛔ **FROZEN REV-B DESIGN RECORD — NOT CURRENT WIRING OR CUTOVER AUTHORITY.**
 > Preserve this file for its 2026-06 parts/power rationale, but do not follow its
-> B1 TB/SC→J_SAFETY conclusion. Later evidence proved no dry/independent TB pair:
+> B1 TB/SC→J_SAFETY or B3 Stop/C.I.S. conclusions. Later evidence proved no
+> dry/independent TB pair:
 > powered 2026-07-07 established an OEM parallel closed-when-safe ladder, with both
 > levers BACK/open killing S and T. Current lane-21/22 implementation is Candidate C
 > (controlled J_SAFE1-2 jumper + preserved OEM ladder + per-lane G3 S/T coil proof).
+> A 2026-07-24 physical inspection found **no C.I.S. device or wiring** on lanes
+> 21/22: they are Stop-only unless another pit-entry interlock is found or installed.
+> The required Stop/control-power interface is unresolved, J14.3–4 remains OPEN,
+> and the field rail must not arm.
 > Use `phase8_interlock_redesign.md`, the lane harness build sheet, and the Track-B
 > cutover runbook. Firmware v1.2.3 measured-cam and SC∧TB echo enforcement flags
 > remain OFF.
@@ -103,7 +108,7 @@ Drive 4 status indicators mounted in the existing mask housings. These indicator
 - **A4 — cams are DRY CONTACTS** (tested a cam lever switch: ~0 Ω closed at rest, opens when lever moved off the lobe; no applied voltage → dry switch, and **normally-closed** at rest). → cam input front-ends use the **dry-contact wetting** path, NOT the 24 VAC-sense path. Default population for the 6 cams = dry. (Grippers/other switches expected dry too; confirm per channel at cutover, but dry is now the confirmed default.)
 
 ## PART B SAFETY RESULTS (2026-06-02, from OEM docs + field)
-- **B3 — Stop/CIS chain: ANSWERED from OEM service manual p11** (no probing needed). The **Stop Switch** (red button, left of power plug) and the **C.I.S.** (plug-duct cover switch) are **wired in PARALLEL** and BOTH **cut the master circuit breaker in the rear control panel** → whole machine dead. This is the hardware safety chain we preserve UPSTREAM of our board, exactly as the spec assumed. ✅
+- **B3 — HISTORICAL CONCLUSION SUPERSEDED 2026-07-24.** The OEM manual describes a Stop/C.I.S. arrangement, but physical inspection found **no C.I.S. device or wiring on pilot lanes 21/22**. Treat those lanes as Stop-only while determining whether another pit-entry interlock exists. The approved Stop/control-power sensing and demand-proof architecture is still unresolved; J14.3–4 stays OPEN and the field rail must not arm. Do not infer a pass from the generic OEM drawing or omit at-machine proof.
 - **B1 — TB/SC interlock: ANSWERED at design level; terminal landing DEFERRED to cutover.** OEM (svc p71 "cams/switches control... interlock protection (TB & SC)" + the 9807 MP schematic) confirms **TB + SC are wired in parallel into the 24 V control path; on a table/sweep collision course the interlock removes controlling voltage** → both motor relays drop. Our `J_SAFETY` is designed to accept exactly this (a normally-closed series safety loop). **The exact terminals differ on our SS+Omega-Tek chassis vs the OEM 9800-MP** (same chassis-divergence we hit on M2/S cavities), so the precise J_SAFETY landing is a **cutover-day wiring task** — far easier with the machine partially apart for the swap than reaching behind a live one. Design is NOT blocked; only the field harness landing waits.
 - **B2 — cam-stop logic-vs-hardwired:** still the deferred-to-cutover item (cam-flip test); not a design gate (we add HW end-stops + RP2040 timing regardless). Leans LOGIC.
 

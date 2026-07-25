@@ -10,6 +10,13 @@
 > ladder through the S/T output insertion points, and requires per-lane G3 proof.
 > The firmware SC∧TB echo is default-off, unvalidated, secondary, and not
 > field-observable as two inputs on lanes 21/22.
+>
+> **CURRENT STOP / PIT-ENTRY RECONCILIATION (2026-07-24):** the OEM Stop+C.I.S.
+> description below is historical architecture, not proof of installed pilot
+> hardware. Physical inspection found no C.I.S. device or wiring on lanes
+> 21/22; their chain is Stop-only and another pit-entry interlock remains
+> unresolved. J14.3–4 stays OPEN/no-arm until a reviewed isolated
+> Stop/control-power interface and bounded demand-to-power-drop proof exist.
 
 > **Not in this manual:** the big foldout schematics — *9807 MP Chassis & Machine*, *6730 5-Board Chassis & Machine*, *5500 82-70 Machine Wiring*. They're in the **161 MB Service & Parts manual (#2)**. Get that for the exact node-by-node schematic if/when needed.
 >
@@ -60,7 +67,10 @@ The controller **reads machine switches/cams** (via the **C2A** plug + the **TAC
 ~22 output channels (7 relay coils + 4 status lamps + 10 pin lamps + spot) → relay/SSR bank.
 
 ## SAFETY — preserve in hardware
-- **Stop switch** (post-1979, left of power plug) + **C.I.S.** (1981, under plug-duct cover): both **cut the rear-panel MASTER circuit breaker** → kills control power. Hardware.
+- **Stop / C.I.S. OEM model:** the manuals describe both devices cutting the
+  rear-panel MASTER circuit breaker. Pilot lanes 21/22 have the Stop but no
+  C.I.S.; demand-prove Stop, record C.I.S. N/A, and resolve any other installed
+  or proposed pit-entry interlock separately. Hardware.
 - **Table-sweep INTERLOCK** (p15): **TB + SC contacts in PARALLEL** in the 24 V
   relay-control path. Powered lane-21/22 evidence establishes the polarity: either
   pressed lever permits; both levers BACK/open block both S and T coils. Preserve

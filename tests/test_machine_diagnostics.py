@@ -235,8 +235,21 @@ def test_schema_check_on_severity_only_plus_indexes():
                 "SELECT name, sql FROM sqlite_master WHERE type='table'"))
             events_sql = rows['machine_events']
             cycles_sql = rows['machine_cycles']
-            index_names = [r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index'")]
+            indexes = dict(conn.execute(
+                "SELECT name,sql FROM sqlite_master WHERE type='index'"))
+            index_names = list(indexes)
+            latch_plan = [
+                row[3] for row in conn.execute(
+                    "EXPLAIN QUERY PLAN "
+                    "SELECT lane_id,id,created_at,code,severity,"
+                    "acknowledged_at FROM ("
+                    "SELECT lane_id,id,created_at,code,severity,"
+                    "acknowledged_at,ROW_NUMBER() OVER ("
+                    "PARTITION BY lane_id "
+                    "ORDER BY created_at DESC,id DESC) AS newest_rank "
+                    "FROM machine_events WHERE severity='fault' "
+                    "AND resolved_at IS NULL"
+                    ") WHERE newest_rank=1")]
         # severity is the ONLY enum CHECK (lane_id range CHECK is
         # structural, not a vocabulary).
         assert_true("CHECK(severity IN ('info','warn','fault'))"
@@ -258,6 +271,17 @@ def test_schema_check_on_severity_only_plus_indexes():
                     "events lane/created index exists")
         assert_true('idx_me_open_fault' in index_names,
                     "partial open-fault index exists")
+        assert_true('idx_me_open_fault_chrono' in index_names,
+                    "partial chronological open-fault index exists")
+        assert_true(
+            any('idx_me_open_fault_chrono' in step for step in latch_plan)
+            and not any('TEMP B-TREE' in step for step in latch_plan),
+            "newest-fault latch is index ordered without an unbounded sort")
+        assert_true('idx_me_open_condition' in index_names,
+                    "partial unresolved warn/fault index exists")
+        assert_true(
+            '(code IS NULL)' in indexes['idx_incident_one_open'],
+            "active-incident identity distinguishes null from empty code")
         assert_true('idx_mc_lane_started' in index_names,
                     "cycles lane/started index exists")
 
@@ -316,6 +340,9 @@ def test_post_events_validation_rejects():
             ([make_event(ts_mono=True)], 'ts_mono boolean'),
             ([make_event(ts_mono=-1)], 'ts_mono negative'),
             ([make_event(code=123)], 'code non-string'),
+            ([make_event(
+                source_id='oversize-seq', boot_id='boot',
+                seq=1 << 80)], 'delivery seq outside SQLite int64'),
             (['not-an-object'], 'event non-dict'),
         ]
         # R3-1b (2026-07-23): ingest is PER-RECORD now — a bad record no
@@ -340,6 +367,19 @@ def test_post_events_validation_rejects():
         assert_eq(body['rejected'][0]['index'], 1, "index points at the bad one")
         assert_eq(machine_store.health_counts()['events_total'], 1,
                   "per-record: the valid one survived")
+        status, body = http(
+            'POST', '/api/machine/events', [
+                make_event(
+                    source_id='oversize-seq', boot_id='boot',
+                    seq=1 << 80),
+                make_event(
+                    severity='info', event_type='recovered',
+                    source_id='valid-after-oversize', boot_id='boot', seq=1),
+            ])
+        assert_eq(status, 200, "oversize integer is a row rejection, not 500")
+        assert_eq(body['inserted'], 1, "row after oversize integer survives")
+        assert_eq(body['rejected'][0]['index'], 0,
+                  "oversize integer rejection identifies its row")
         # Non-array / empty bodies are still a hard 400 (malformed request).
         for payload in ({}, {'events': []}, {'events': 'x'}):
             status, _ = http('POST', '/api/machine/events', payload)
@@ -549,6 +589,815 @@ def test_ack_is_idempotent_and_resolve_closes_fault():
         assert status == 400
 
 
+def test_resolve_accepts_only_exact_recovered_fault_family():
+    """Health-drop recovery rows identify the original family in detail.
+
+    Their top-level code names the recovered event type, so exact family
+    metadata must be usable evidence without allowing a wrong-code recovery to
+    close an unrelated fault.
+    """
+    with fresh_db():
+        _, fault = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault',
+                event_type='pi_fs_readonly', code='diag_volume')])
+        fault_id = fault['ids'][0]
+
+        _, wrong = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='pi_fs_readonly',
+                detail={
+                    'recovered_event_type': 'pi_fs_readonly',
+                    'recovered_code': 'different_volume',
+                })])
+        status, body = http(
+            'POST', f'/api/machine/events/{fault_id}/resolve',
+            {'resolved_by': 7, 'recovery_event_id': wrong['ids'][0]})
+        assert_eq(status, 400, "wrong recovered family code is rejected")
+        assert_true('fault family' in body['error'],
+                    "wrong-family rejection is explicit")
+        _, diag = http('GET', '/api/lane/22/diagnostics')
+        assert_eq(len(diag['open_faults']), 1,
+                  "wrong family cannot false-green the fault")
+
+        _, unrelated = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='manual_override',
+                code='diag_volume',
+                detail={'recovery_of_event_id': fault_id})])
+        status, _ = http(
+            'POST', f'/api/machine/events/{fault_id}/resolve',
+            {'resolved_by': 7,
+             'recovery_event_id': unrelated['ids'][0]})
+        assert_eq(
+            status, 400,
+            "same-code/explicit metadata on a non-recovered event is rejected")
+
+        _, exact = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='pi_fs_readonly',
+                detail={
+                    'recovered_event_type': 'pi_fs_readonly',
+                    'recovered_code': 'diag_volume',
+                })])
+        status, body = http(
+            'POST', f'/api/machine/events/{fault_id}/resolve',
+            {'resolved_by': 7, 'recovery_event_id': exact['ids'][0]})
+        assert_eq(status, 200, "exact recovered family resolves the fault")
+        assert_true(body['event']['resolved_at'],
+                    "family recovery evidence sets resolved_at")
+        _, diag = http('GET', '/api/lane/22/diagnostics')
+        assert_eq(len(diag['open_faults']), 0,
+                  "exact family recovery closes the fault")
+
+
+def test_resolve_rejects_contradictory_or_non_integer_selectors():
+    with fresh_db():
+        _, fault = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault',
+                event_type='pi_fs_readonly', code='shared')])
+        fault_id = fault['ids'][0]
+
+        _, contradictory = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='shared',
+                detail={
+                    'recovered_event_type': 'pi_disk_low',
+                    'recovered_code': 'other',
+                })])
+        status, _ = http(
+            'POST', f'/api/machine/events/{fault_id}/resolve',
+            {'resolved_by': 7,
+             'recovery_event_id': contradictory['ids'][0]})
+        assert_eq(
+            status, 400,
+            "top-level code cannot override contradictory family metadata")
+
+        _, float_target = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='pi_fs_readonly',
+                detail={'recovery_of_event_id': float(fault_id)})])
+        status, _ = http(
+            'POST', f'/api/machine/events/{fault_id}/resolve',
+            {'resolved_by': 7, 'recovery_event_id': float_target['ids'][0]})
+        assert_eq(
+            status, 400,
+            "float recovery_of_event_id cannot equal an integer event id")
+        _, diag = http('GET', '/api/lane/22/diagnostics')
+        assert_eq(len(diag['open_faults']), 1,
+                  "invalid selectors cannot false-green the fault")
+
+
+def test_resolve_requires_explicit_selector_even_for_event_type_code():
+    with fresh_db():
+        _, fault = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault',
+                event_type='fw_config_mismatch', code='maxrun_desync')])
+        fault_id = fault['ids'][0]
+        _, recovery = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='fw_config_mismatch')])
+        status, _ = http(
+            'POST', f'/api/machine/events/{fault_id}/resolve',
+            {'resolved_by': 7, 'recovery_event_id': recovery['ids'][0]})
+        assert_eq(
+            status, 400,
+            "top-level event-type code alone is not exact family evidence")
+        _, exact = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='fw_config_mismatch',
+                detail={
+                    'recovered_event_type': 'fw_config_mismatch',
+                    'recovered_code': 'maxrun_desync',
+                })])
+        status, _ = http(
+            'POST', f'/api/machine/events/{fault_id}/resolve',
+            {'resolved_by': 7, 'recovery_event_id': exact['ids'][0]})
+        assert_eq(status, 200,
+                  "exact producer metadata resolves the fault family")
+
+
+def test_legacy_event_type_code_rejects_ambiguous_open_code_families():
+    with fresh_db():
+        _, faults = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault',
+                event_type='configured_role_missing', code='aux:AUX1'),
+            make_event(
+                lane=22, severity='fault',
+                event_type='configured_role_missing', code='aux:AUX2'),
+        ])
+        _, ambiguous = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='configured_role_missing',
+                detail={'input': 'AUX1', 'role': 'be_current'})])
+        status, _ = http(
+            'POST', f"/api/machine/events/{faults['ids'][1]}/resolve",
+            {'resolved_by': 7,
+             'recovery_event_id': ambiguous['ids'][0]})
+        assert_eq(
+            status, 400,
+            "legacy event-type code cannot choose among open code families")
+        _, diag = http('GET', '/api/lane/22/diagnostics')
+        assert_eq(len(diag['open_faults']), 2,
+                  "ambiguous legacy recovery leaves both families open")
+
+        _, exact = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='configured_role_missing',
+                detail={
+                    'input': 'AUX1',
+                    'role': 'be_current',
+                    'recovered_event_type': 'configured_role_missing',
+                    'recovered_code': 'aux:AUX1',
+                })])
+        status, _ = http(
+            'POST', f"/api/machine/events/{faults['ids'][0]}/resolve",
+            {'resolved_by': 7, 'recovery_event_id': exact['ids'][0]})
+        assert_eq(status, 200,
+                  "exact family metadata resolves only the intended code")
+        _, diag = http('GET', '/api/lane/22/diagnostics')
+        assert_eq(
+            [(row['event_type'], row['code'])
+             for row in diag['open_faults']],
+            [('configured_role_missing', 'aux:AUX2')],
+            "exact family leaves unrelated code-specific incident open")
+
+
+def test_fault_incidents_distinguish_null_and_empty_code():
+    with fresh_db() as db_path:
+        _, faults = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault', event_type='pi_fs_readonly',
+                code=None),
+            make_event(
+                lane=22, severity='fault', event_type='pi_fs_readonly',
+                code=''),
+        ])
+        null_id, empty_id = faults['ids']
+        health = machine_store.machine_health()['lanes']['22']
+        assert_eq(health['current_condition_count'], 2,
+                  "null and empty code are two exact conditions")
+        with sqlite3.connect(db_path) as conn:
+            active = conn.execute(
+                "SELECT code FROM lane_incidents "
+                "WHERE state IN ('open','override_pending') "
+                "ORDER BY id").fetchall()
+        assert_eq(active, [(None,), ('',)],
+                  "null and empty code have separate active incidents")
+
+        _, empty_recovery = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='pi_fs_readonly', detail={
+                    'recovery_of_event_id': empty_id,
+                    'recovered_event_type': 'pi_fs_readonly',
+                    'recovered_code': '',
+                })])
+        status, _ = http(
+            'POST', f'/api/machine/events/{empty_id}/resolve',
+            {'resolved_by': 7,
+             'recovery_event_id': empty_recovery['ids'][0]})
+        assert_eq(status, 200, "empty-code fault recovery accepted")
+        health = machine_store.machine_health()['lanes']['22']
+        assert_eq(health['current_condition_count'], 1,
+                  "empty-code recovery leaves null-code sibling open")
+        assert_eq(health['current_conditions'][0]['event_id'], null_id,
+                  "remaining condition keeps exact null-code identity")
+        assert_eq(health['current_conditions'][0]['code'], None,
+                  "remaining condition is the null-code family")
+
+
+def test_fault_incident_timestamps_follow_producer_chronology():
+    with fresh_db() as db_path:
+        base = datetime.now(timezone.utc)
+        newer_at = machine_store._normalize_utc_iso(
+            base - timedelta(minutes=1))
+        delayed_old_at = machine_store._normalize_utc_iso(
+            base - timedelta(minutes=2))
+        _, rows = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault', event_type='pi_fs_readonly',
+                code='delayed-family', created_at=newer_at),
+            make_event(
+                lane=22, severity='fault', event_type='pi_fs_readonly',
+                code='delayed-family', created_at=delayed_old_at),
+        ])
+        with sqlite3.connect(db_path) as conn:
+            events = conn.execute(
+                "SELECT incident_id FROM machine_events "
+                "WHERE id IN (?,?) ORDER BY id", tuple(rows['ids'])).fetchall()
+            incident = conn.execute(
+                "SELECT opened_at,last_seen_at,repeat_count "
+                "FROM lane_incidents WHERE id=?",
+                (events[0][0],)).fetchone()
+        assert_eq(events[0][0], events[1][0],
+                  "same exact family remains one incident")
+        assert_eq(incident, (delayed_old_at, newer_at, 2),
+                  "incident bounds use producer min/max despite delivery order")
+
+
+def test_legacy_mixed_code_incident_migration_remaps_audit_and_recovery():
+    with fresh_db() as db_path:
+        machine_store.health_counts()
+        base = datetime.now(timezone.utc) - timedelta(minutes=3)
+        null_at = machine_store._normalize_utc_iso(base)
+        empty_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=1))
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("DROP INDEX idx_incident_one_open")
+            conn.execute(
+                "CREATE UNIQUE INDEX idx_incident_one_open "
+                "ON lane_incidents(lane_id,event_type,COALESCE(code,'')) "
+                "WHERE state IN ('open','override_pending')")
+            incident_id = conn.execute(
+                "INSERT INTO lane_incidents "
+                "(lane_id,event_type,code,opened_at,last_seen_at,"
+                "repeat_count,state) VALUES (?,?,?,?,?,2,'override_pending')",
+                (
+                    22, 'pi_fs_readonly', None, null_at, empty_at,
+                )).lastrowid
+            null_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,"
+                "code,incident_id) VALUES (?,?,?,?,?,?,?)",
+                (
+                    22, base.date().isoformat(), null_at, 'fault',
+                    'pi_fs_readonly', None, incident_id,
+                )).lastrowid
+            empty_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,"
+                "code,incident_id) VALUES (?,?,?,?,?,?,?)",
+                (
+                    22, base.date().isoformat(), empty_at, 'fault',
+                    'pi_fs_readonly', '', incident_id,
+                )).lastrowid
+            audit_id = conn.execute(
+                "INSERT INTO machine_resolution_audit "
+                "(event_id,incident_id,action,actor_id,reason,created_at) "
+                "VALUES (?,?,'override_requested',?,?,?)",
+                (
+                    empty_id, incident_id, 7,
+                    'Legacy empty-code family override remains visible',
+                    empty_at,
+                )).lastrowid
+            conn.execute(
+                "DELETE FROM machine_schema_meta "
+                "WHERE key='incident-code-identity-v2'")
+            conn.commit()
+
+        health = machine_store.machine_health()['lanes']['22']
+        assert_eq(health['current_condition_count'], 2,
+                  "migration preserves both unresolved fault conditions")
+        with sqlite3.connect(db_path) as conn:
+            events = conn.execute(
+                "SELECT id,code,incident_id FROM machine_events "
+                "WHERE id IN (?,?) ORDER BY id",
+                (null_id, empty_id)).fetchall()
+            incidents = conn.execute(
+                "SELECT id,code,state FROM lane_incidents "
+                "WHERE state IN ('open','override_pending') "
+                "ORDER BY id").fetchall()
+            audit = conn.execute(
+                "SELECT incident_id FROM machine_resolution_audit "
+                "WHERE id=?", (audit_id,)).fetchone()
+            index_sql = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' "
+                "AND name='idx_incident_one_open'").fetchone()[0]
+        assert_true(events[0][2] != events[1][2],
+                    "legacy mixed event rows are split by exact code identity")
+        assert_eq(incidents, [
+            (events[0][2], None, 'open'),
+            (events[1][2], '', 'override_pending'),
+        ], "override state follows only the moved empty-code family")
+        assert_eq(audit[0], events[1][2],
+                  "legacy override audit follows its remapped event")
+        assert_true('(code IS NULL)' in index_sql,
+                    "legacy coalesce-only index is replaced atomically")
+
+        _, recovery = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='pi_fs_readonly', detail={
+                    'recovery_of_event_id': empty_id,
+                    'recovered_event_type': 'pi_fs_readonly',
+                    'recovered_code': '',
+                })])
+        status, _ = http(
+            'POST', f'/api/machine/events/{empty_id}/resolve',
+            {'resolved_by': 7, 'recovery_event_id': recovery['ids'][0]})
+        assert_eq(status, 200,
+                  "remapped empty-code family accepts exact recovery")
+        health = machine_store.machine_health()['lanes']['22']
+        assert_eq(
+            [(item['event_id'], item['code'])
+             for item in health['current_conditions']],
+            [(null_id, None)],
+            "exact recovery cannot clear migrated null-code sibling")
+
+
+def test_closed_mixed_incident_upgrade_reopens_uncovered_exact_sibling():
+    with fresh_db() as db_path:
+        machine_store.health_counts()
+        base = datetime.now(timezone.utc) - timedelta(minutes=4)
+        null_at = machine_store._normalize_utc_iso(base)
+        empty_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=1))
+        recovery_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=2))
+        closed_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=3))
+        with sqlite3.connect(db_path) as conn:
+            incident_id = conn.execute(
+                "INSERT INTO lane_incidents "
+                "(lane_id,event_type,code,opened_at,last_seen_at,"
+                "repeat_count,state,closed_at,closed_by) "
+                "VALUES (?,?,?,?,?,2,'closed',?,7)",
+                (
+                    22, 'pi_fs_readonly', None, null_at, empty_at,
+                    closed_at,
+                )).lastrowid
+            null_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,"
+                "code,incident_id,resolved_at,resolved_by) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    22, base.date().isoformat(), null_at, 'fault',
+                    'pi_fs_readonly', None, incident_id, closed_at, 7,
+                )).lastrowid
+            empty_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,"
+                "code,incident_id,resolved_at,resolved_by) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    22, base.date().isoformat(), empty_at, 'fault',
+                    'pi_fs_readonly', '', incident_id, closed_at, 7,
+                )).lastrowid
+            recovery_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,"
+                "code,detail_json) VALUES (?,?,?,?,?,?,?)",
+                (
+                    22, base.date().isoformat(), recovery_at, 'info',
+                    'recovered', 'pi_fs_readonly', json.dumps({
+                        'recovery_of_event_id': empty_id,
+                        'recovered_event_type': 'pi_fs_readonly',
+                        'recovered_code': '',
+                    }),
+                )).lastrowid
+            conn.execute(
+                "UPDATE lane_incidents SET recovery_event_id=? WHERE id=?",
+                (recovery_id, incident_id))
+            audit_id = conn.execute(
+                "INSERT INTO machine_resolution_audit "
+                "(event_id,incident_id,action,actor_id,recovery_event_id,"
+                "created_at) VALUES (?,?,'recovery',7,?,?)",
+                (empty_id, incident_id, recovery_id, closed_at)).lastrowid
+            conn.execute(
+                "DELETE FROM machine_schema_meta "
+                "WHERE key='closed-incident-revalidation-v1'")
+            conn.commit()
+
+        entry = machine_store.machine_health()['lanes']['22']
+        assert_eq(
+            [(row['event_id'], row['code'])
+             for row in entry['current_conditions']],
+            [(null_id, None)],
+            "exact empty recovery cannot preserve false-closed null sibling")
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT id,code,resolved_at,resolved_by,incident_id "
+                "FROM machine_events WHERE id IN (?,?) ORDER BY id",
+                (null_id, empty_id)).fetchall()
+            closed = conn.execute(
+                "SELECT code,state,recovery_event_id FROM lane_incidents "
+                "WHERE id=?", (incident_id,)).fetchone()
+            active = conn.execute(
+                "SELECT id,code,state FROM lane_incidents "
+                "WHERE state IN ('open','override_pending')").fetchall()
+            audit_incident = conn.execute(
+                "SELECT incident_id FROM machine_resolution_audit "
+                "WHERE id=?", (audit_id,)).fetchone()[0]
+        assert_eq(rows[0][1:4], (None, None, None),
+                  "uncovered null fault is durably reopened")
+        assert_true(rows[1][2] is not None,
+                    "exactly covered empty fault remains resolved")
+        assert_eq(closed, ('', 'closed', recovery_id),
+                  "closed incident is rebound to covered empty family")
+        assert_eq(active, [(rows[0][4], None, 'open')],
+                  "null sibling receives an exact active incident")
+        assert_eq(audit_incident, incident_id,
+                  "historical recovery audit stays with the closed attempt")
+
+
+def test_closed_mixed_upgrade_rejects_cross_family_audit_binding():
+    with fresh_db() as db_path:
+        machine_store.health_counts()
+        base = datetime.now(timezone.utc) - timedelta(minutes=3)
+        fault_at = machine_store._normalize_utc_iso(base)
+        recovery_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=1))
+        closed_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=2))
+        with sqlite3.connect(db_path) as conn:
+            incident_id = conn.execute(
+                "INSERT INTO lane_incidents "
+                "(lane_id,event_type,code,opened_at,last_seen_at,"
+                "repeat_count,state,closed_at,closed_by) "
+                "VALUES (?,?,?,?,?,2,'closed',?,7)",
+                (
+                    22, 'pi_fs_readonly', None, fault_at, fault_at,
+                    closed_at,
+                )).lastrowid
+            ids = []
+            for code in (None, ''):
+                ids.append(conn.execute(
+                    "INSERT INTO machine_events "
+                    "(lane_id,business_date,created_at,severity,event_type,"
+                    "code,incident_id,resolved_at,resolved_by) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        22, base.date().isoformat(), fault_at, 'fault',
+                        'pi_fs_readonly', code, incident_id, closed_at, 7,
+                    )).lastrowid)
+            recovery_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,"
+                "detail_json) VALUES (?,?,?,?,?,?)",
+                (
+                    22, base.date().isoformat(), recovery_at, 'info',
+                    'recovered', json.dumps({
+                        'recovery_of_event_id': ids[1],
+                        'recovered_event_type': 'pi_fs_readonly',
+                        'recovered_code': '',
+                    }),
+                )).lastrowid
+            conn.execute(
+                "UPDATE lane_incidents SET recovery_event_id=? WHERE id=?",
+                (recovery_id, incident_id))
+            # Actor audit names the NULL API target while selectors name the
+            # empty-code family.  Current exact-family resolver rejects this.
+            conn.execute(
+                "INSERT INTO machine_resolution_audit "
+                "(event_id,incident_id,action,actor_id,recovery_event_id,"
+                "created_at) VALUES (?,?,'recovery',7,?,?)",
+                (ids[0], incident_id, recovery_id, closed_at))
+            conn.execute(
+                "DELETE FROM machine_schema_meta "
+                "WHERE key='closed-incident-revalidation-v1'")
+            conn.commit()
+
+        entry = machine_store.machine_health()['lanes']['22']
+        assert_eq(
+            {row['event_id'] for row in entry['current_conditions']},
+            set(ids),
+            "selector/audit family mismatch conservatively reopens both")
+        with sqlite3.connect(db_path) as conn:
+            reopened = conn.execute(
+                "SELECT COUNT(*) FROM machine_events "
+                "WHERE id IN (?,?) AND resolved_at IS NULL",
+                tuple(ids)).fetchone()[0]
+        assert_eq(reopened, 2,
+                  "cross-family actor binding cannot preserve a closed row")
+
+
+def test_closed_incident_upgrade_reopens_post_recovery_recurrence():
+    with fresh_db() as db_path:
+        machine_store.health_counts()
+        base = datetime.now(timezone.utc) - timedelta(minutes=4)
+        first_at = machine_store._normalize_utc_iso(base)
+        recovery_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=1))
+        recurrence_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=2))
+        closed_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=3))
+        with sqlite3.connect(db_path) as conn:
+            incident_id = conn.execute(
+                "INSERT INTO lane_incidents "
+                "(lane_id,event_type,code,opened_at,last_seen_at,"
+                "repeat_count,state,closed_at,closed_by) "
+                "VALUES (?,?,?,?,?,2,'closed',?,7)",
+                (
+                    22, 'pi_fs_readonly', 'recurrence', first_at,
+                    recurrence_at, closed_at,
+                )).lastrowid
+            first_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,"
+                "code,incident_id,resolved_at,resolved_by) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    22, base.date().isoformat(), first_at, 'fault',
+                    'pi_fs_readonly', 'recurrence', incident_id,
+                    closed_at, 7,
+                )).lastrowid
+            recovery_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,"
+                "code,detail_json) VALUES (?,?,?,?,?,?,?)",
+                (
+                    22, base.date().isoformat(), recovery_at, 'info',
+                    'recovered', 'pi_fs_readonly', json.dumps({
+                        'recovery_of_event_id': first_id,
+                        'recovered_event_type': 'pi_fs_readonly',
+                        'recovered_code': 'recurrence',
+                    }),
+                )).lastrowid
+            recurrence_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,"
+                "code,incident_id,resolved_at,resolved_by) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    22, base.date().isoformat(), recurrence_at, 'fault',
+                    'pi_fs_readonly', 'recurrence', incident_id,
+                    closed_at, 7,
+                )).lastrowid
+            conn.execute(
+                "UPDATE lane_incidents SET recovery_event_id=? WHERE id=?",
+                (recovery_id, incident_id))
+            conn.execute(
+                "INSERT INTO machine_resolution_audit "
+                "(event_id,incident_id,action,actor_id,recovery_event_id,"
+                "created_at) VALUES (?,?,'recovery',7,?,?)",
+                (first_id, incident_id, recovery_id, closed_at))
+            conn.execute(
+                "DELETE FROM machine_schema_meta "
+                "WHERE key='closed-incident-revalidation-v1'")
+            conn.commit()
+
+        entry = machine_store.machine_health()['lanes']['22']
+        assert_eq(
+            [row['event_id'] for row in entry['current_conditions']],
+            [recurrence_id],
+            "occurrence inserted after recovery is reopened")
+        with sqlite3.connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT id,resolved_at,incident_id FROM machine_events "
+                "WHERE id IN (?,?) ORDER BY id",
+                (first_id, recurrence_id)).fetchall()
+        assert_true(rows[0][1] is not None,
+                    "pre-recovery exact occurrence stays resolved")
+        assert_eq(rows[1][1], None,
+                  "post-recovery recurrence is durably unresolved")
+        assert_true(rows[0][2] != rows[1][2],
+                    "closed history and active recurrence are separated")
+
+
+def test_closed_incident_upgrade_reopens_ambiguous_or_wrong_type_evidence():
+    with fresh_db() as db_path:
+        machine_store.health_counts()
+        base = datetime.now(timezone.utc) - timedelta(minutes=3)
+        fault_at = machine_store._normalize_utc_iso(base)
+        recovery_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=1))
+        closed_at = machine_store._normalize_utc_iso(
+            base + timedelta(minutes=2))
+        fault_ids = []
+        with sqlite3.connect(db_path) as conn:
+            for code, recovery_type, detail in (
+                    ('ambiguous', 'recovered', {}),
+                    ('wrong-type', 'manual_override', {
+                        'recovered_event_type': 'pi_fs_readonly',
+                        'recovered_code': 'wrong-type',
+                    })):
+                incident_id = conn.execute(
+                    "INSERT INTO lane_incidents "
+                    "(lane_id,event_type,code,opened_at,last_seen_at,"
+                    "repeat_count,state,closed_at,closed_by) "
+                    "VALUES (?,?,?,?,?,1,'closed',?,7)",
+                    (
+                        22, 'pi_fs_readonly', code, fault_at, fault_at,
+                        closed_at,
+                    )).lastrowid
+                fault_id = conn.execute(
+                    "INSERT INTO machine_events "
+                    "(lane_id,business_date,created_at,severity,event_type,"
+                    "code,incident_id,resolved_at,resolved_by) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        22, base.date().isoformat(), fault_at, 'fault',
+                        'pi_fs_readonly', code, incident_id, closed_at, 7,
+                    )).lastrowid
+                recovery_id = conn.execute(
+                    "INSERT INTO machine_events "
+                    "(lane_id,business_date,created_at,severity,event_type,"
+                    "code,detail_json) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        22, base.date().isoformat(), recovery_at, 'info',
+                        recovery_type, 'pi_fs_readonly',
+                        json.dumps(detail),
+                    )).lastrowid
+                conn.execute(
+                    "UPDATE lane_incidents SET recovery_event_id=? WHERE id=?",
+                    (recovery_id, incident_id))
+                conn.execute(
+                    "INSERT INTO machine_resolution_audit "
+                    "(event_id,incident_id,action,actor_id,recovery_event_id,"
+                    "created_at) VALUES (?,?,'recovery',7,?,?)",
+                    (fault_id, incident_id, recovery_id, closed_at))
+                fault_ids.append(fault_id)
+            conn.execute(
+                "DELETE FROM machine_schema_meta "
+                "WHERE key='closed-incident-revalidation-v1'")
+            conn.commit()
+
+        entry = machine_store.machine_health()['lanes']['22']
+        assert_eq(
+            {row['event_id'] for row in entry['current_conditions']},
+            set(fault_ids),
+            "broad recovered and exact non-recovered evidence both reopen")
+        with sqlite3.connect(db_path) as conn:
+            reopened = conn.execute(
+                "SELECT COUNT(*) FROM machine_events "
+                "WHERE id IN (?,?) AND resolved_at IS NULL "
+                "AND resolved_by IS NULL",
+                tuple(fault_ids)).fetchone()[0]
+            active = conn.execute(
+                "SELECT COUNT(*) FROM lane_incidents "
+                "WHERE state IN ('open','override_pending')").fetchone()[0]
+        assert_eq(reopened, 2,
+                  "ambiguous legacy closures are durably cleared")
+        assert_eq(active, 2,
+                  "each ambiguous family becomes an active incident")
+
+
+def test_resolve_rejects_recovery_older_in_producer_time():
+    with fresh_db():
+        now = datetime.now(timezone.utc)
+        fault_at = (now - timedelta(minutes=1)).isoformat()
+        stale_recovery_at = (now - timedelta(minutes=2)).isoformat()
+        _, fault = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault',
+                event_type='pi_fs_readonly', code='diag_volume',
+                created_at=fault_at)])
+        fault_id = fault['ids'][0]
+        _, stale = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='pi_fs_readonly', created_at=stale_recovery_at,
+                detail={
+                    'recovered_event_type': 'pi_fs_readonly',
+                    'recovered_code': 'diag_volume',
+                })])
+        status, _ = http(
+            'POST', f'/api/machine/events/{fault_id}/resolve',
+            {'resolved_by': 7, 'recovery_event_id': stale['ids'][0]})
+        assert_eq(
+            status, 400,
+            "later insert with older producer timestamp cannot resolve")
+        _, diag = http('GET', '/api/lane/22/diagnostics')
+        assert_eq(len(diag['open_faults']), 1,
+                  "out-of-order historical recovery leaves fault open")
+
+
+def test_incident_recurrence_after_recovery_evidence_stays_open():
+    with fresh_db():
+        now = datetime.now(timezone.utc)
+        _, first = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault', event_type='pi_fs_readonly',
+                code='diag_volume',
+                created_at=(now - timedelta(minutes=3)).isoformat())])
+        first_id = first['ids'][0]
+        _, stale_recovery = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='pi_fs_readonly',
+                created_at=(now - timedelta(minutes=2)).isoformat(),
+                detail={
+                    'recovered_event_type': 'pi_fs_readonly',
+                    'recovered_code': 'diag_volume',
+                })])
+        _, recurrence = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault', event_type='pi_fs_readonly',
+                code='diag_volume',
+                created_at=(now - timedelta(minutes=1)).isoformat())])
+
+        status, _ = http(
+            'POST', f'/api/machine/events/{first_id}/resolve',
+            {'resolved_by': 7,
+             'recovery_event_id': stale_recovery['ids'][0]})
+        assert_eq(
+            status, 400,
+            "recovery before newest incident recurrence is rejected")
+        _, diag = http('GET', '/api/lane/22/diagnostics')
+        assert_eq(
+            {row['id'] for row in diag['open_faults']},
+            {first_id, recurrence['ids'][0]},
+            "stale recovery cannot close any occurrence in the incident")
+
+        _, current_recovery = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='pi_fs_readonly', created_at=now.isoformat(),
+                detail={
+                    'recovered_event_type': 'pi_fs_readonly',
+                    'recovered_code': 'diag_volume',
+                })])
+        status, _ = http(
+            'POST', f'/api/machine/events/{first_id}/resolve',
+            {'resolved_by': 7,
+             'recovery_event_id': current_recovery['ids'][0]})
+        assert_eq(
+            status, 200,
+            "recovery after newest recurrence may close the incident")
+        _, diag = http('GET', '/api/lane/22/diagnostics')
+        assert_eq(len(diag['open_faults']), 0,
+                  "current recovery closes all incident occurrences")
+
+
+def test_incident_requires_both_insertion_and_producer_time_maxima():
+    with fresh_db():
+        now = datetime.now(timezone.utc)
+        _, current = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault', event_type='pi_fs_readonly',
+                code='diag_volume',
+                created_at=(now - timedelta(minutes=1)).isoformat())])
+        _, historical = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='fault', event_type='pi_fs_readonly',
+                code='diag_volume',
+                created_at=(now - timedelta(minutes=3)).isoformat())])
+        _, stale = http('POST', '/api/machine/events', [
+            make_event(
+                lane=22, severity='info', event_type='recovered',
+                code='pi_fs_readonly',
+                created_at=(now - timedelta(minutes=2)).isoformat(),
+                detail={
+                    'recovered_event_type': 'pi_fs_readonly',
+                    'recovered_code': 'diag_volume',
+                })])
+        status, _ = http(
+            'POST', f"/api/machine/events/{current['ids'][0]}/resolve",
+            {'resolved_by': 7, 'recovery_event_id': stale['ids'][0]})
+        assert_eq(
+            status, 400,
+            "historical max-id fault cannot hide newer producer-time fault")
+        _, diag = http('GET', '/api/lane/22/diagnostics')
+        assert_eq(
+            {row['id'] for row in diag['open_faults']},
+            {current['ids'][0], historical['ids'][0]},
+            "independent chronology maxima keep whole incident open")
+
+
 def test_resolution_override_is_audited_but_cannot_false_green():
     with fresh_db():
         _, body = http('POST', '/api/machine/events', [
@@ -581,7 +1430,11 @@ def test_resolution_override_is_audited_but_cannot_false_green():
 
         _, recovery = http('POST', '/api/machine/events', [
             make_event(lane=22, severity='info',
-                       event_type='recovered', code='link:lost')])
+                       event_type='recovered', code='fsm_fault',
+                       detail={
+                           'recovered_event_type': 'fsm_fault',
+                           'recovered_code': 'link:lost',
+                       })])
         status, body = http(
             'POST', f'/api/machine/events/{event_id}/resolve',
             {'resolved_by': 7,
@@ -638,7 +1491,10 @@ def test_machine_health_per_lane_rollup():
             make_event(lane=21, severity='fault', code='motion_timeout:S'),
             make_event(lane=21, severity='fault', code='old_resolved'),
             make_event(lane=21, severity='info', event_type='recovered',
-                       code='old_resolved'),
+                       code='fsm_fault', detail={
+                           'recovered_event_type': 'fsm_fault',
+                           'recovered_code': 'old_resolved',
+                       }),
             make_event(lane=21, severity='warn', event_type='drift_alarm',
                        code='ta2_to_sa:4sigma'),
             make_event(lane=22, severity='info', event_type='recovered'),
@@ -707,9 +1563,15 @@ def test_machine_health_per_lane_rollup():
         # ...and resolving every open fault clears the flag entirely.
         _, recovery_body = http('POST', '/api/machine/events', [
             make_event(lane=21, severity='info', event_type='recovered',
-                       code='motion_timeout:T'),
+                       code='fsm_fault', detail={
+                           'recovered_event_type': 'fsm_fault',
+                           'recovered_code': 'motion_timeout:T',
+                       }),
             make_event(lane=21, severity='info', event_type='recovered',
-                       code='motion_timeout:S'),
+                       code='fsm_fault', detail={
+                           'recovered_event_type': 'fsm_fault',
+                           'recovered_code': 'motion_timeout:S',
+                       }),
         ])
         for eid, recovery_id in zip(
                 body['ids'][:2], recovery_body['ids']):
@@ -721,6 +1583,307 @@ def test_machine_health_per_lane_rollup():
                   "all faults resolved -> fault False")
         assert_eq(health['lanes']['21']['code'], None,
                   "no open fault -> code None")
+
+
+def test_machine_health_warn_visibility_and_exact_recovery():
+    with fresh_db() as db_path:
+        status, _ = http(
+            'POST', '/api/machine/heartbeat', _heartbeat_body(lane=21))
+        assert_eq(status, 200, "fresh controller heartbeat accepted")
+        base = datetime.now(timezone.utc) - timedelta(minutes=3)
+
+        def stamp(seconds):
+            return (base + timedelta(seconds=seconds)).isoformat()
+
+        _, first = http('POST', '/api/machine/events', [
+            make_event(
+                lane=21, severity='warn', event_type='drift_alarm',
+                code=None, created_at=stamp(0))])
+        first_id = first['ids'][0]
+        _, health = http('GET', '/api/machine/health')
+        entry = health['lanes']['21']
+        assert_eq(entry['state'], 'DEGRADED',
+                  "an unresolved warning degrades a fresh lane")
+        assert_eq(entry['current_condition_count'], 1,
+                  "warning is counted as current")
+        assert_eq(entry['current_conditions'], [{
+            'event_type': 'drift_alarm',
+            'code': None,
+            'severity': 'warn',
+            'since': machine_store._normalize_utc_iso(stamp(0)),
+            'event_id': first_id,
+        }], "warning is visible through the strict condition shape")
+        condition_reason = 'condition:["drift_alarm",null]'
+        assert_true(condition_reason in entry['degraded_reasons'],
+                    "nullable code has an unambiguous stable condition reason")
+
+        # A broad same-code recovery and exact metadata on a non-recovered
+        # event are evidence rows, not permission to clear operational state.
+        status, invalid_recovery = http('POST', '/api/machine/events', [
+            make_event(
+                lane=21, severity='info', event_type='recovered',
+                code=None, created_at=stamp(5)),
+            make_event(
+                lane=21, severity='info', event_type='manual_override',
+                code=None, created_at=stamp(6), detail={
+                    'recovery_of_event_id': first_id,
+                    'recovered_event_type': 'drift_alarm',
+                    'recovered_code': None,
+                }),
+            make_event(
+                lane=21, severity='info', event_type='recovered',
+                code=None, created_at=stamp(7), detail={
+                    'recovery_of_event_id': 1 << 80,
+                    'recovered_event_type': 'drift_alarm',
+                    'recovered_code': None,
+                }),
+        ])
+        assert_eq(status, 200,
+                  "invalid recovery selector cannot overflow SQLite")
+        assert_eq(invalid_recovery['inserted'], 3,
+                  "invalid selector remains auditable as an info row")
+        entry = machine_store.machine_health()['lanes']['21']
+        assert_eq(entry['current_condition_count'], 1,
+                  "broad/non-recovered info cannot clear a warning")
+
+        _, second = http('POST', '/api/machine/events', [
+            make_event(
+                lane=21, severity='warn', event_type='drift_alarm',
+                code=None, created_at=stamp(30))])
+        second_id = second['ids'][0]
+
+        # An exact id for an older occurrence is not the newest unresolved
+        # occurrence, and a producer timestamp before that newest occurrence
+        # cannot clear the family even though it was inserted later.
+        http('POST', '/api/machine/events', [
+            make_event(
+                lane=21, severity='info', event_type='recovered',
+                code='drift_alarm', created_at=stamp(40), detail={
+                    'recovery_of_event_id': first_id,
+                    'recovered_event_type': 'drift_alarm',
+                    'recovered_code': None,
+                }),
+            make_event(
+                lane=21, severity='info', event_type='recovered',
+                code='drift_alarm', created_at=stamp(20), detail={
+                    'recovery_of_event_id': second_id,
+                    'recovered_event_type': 'drift_alarm',
+                    'recovered_code': None,
+                }),
+        ])
+        entry = machine_store.machine_health()['lanes']['21']
+        assert_eq(entry['current_condition_count'], 2,
+                  "older-target/stale-time recoveries cannot false-green")
+
+        _, recovered = http('POST', '/api/machine/events', [
+            make_event(
+                lane=21, severity='info', event_type='recovered',
+                code='drift_alarm', created_at=stamp(60), detail={
+                    'recovery_of_event_id': second_id,
+                    'recovered_event_type': 'drift_alarm',
+                    'recovered_code': None,
+                })])
+        assert_eq(recovered['inserted'], 1, "exact recovery stored")
+        entry = machine_store.machine_health()['lanes']['21']
+        assert_eq(entry['current_condition_count'], 0,
+                  "exact later recovery clears every prior family occurrence")
+        assert_eq(entry['current_conditions'], [],
+                  "recovered warning disappears from bounded detail")
+        assert_true(condition_reason not in entry['degraded_reasons'],
+                    "recovered warning reason disappears")
+        assert_eq(entry['state'], 'HEALTHY',
+                  "warning-only lane returns healthy after exact recovery")
+        with sqlite3.connect(db_path) as conn:
+            resolved = conn.execute(
+                "SELECT COUNT(*) FROM machine_events "
+                "WHERE id IN (?,?) AND resolved_at IS NOT NULL "
+                "AND resolved_by IS NULL",
+                (first_id, second_id)).fetchone()[0]
+        assert_eq(resolved, 2,
+                  "automatic warning recovery is durable and actor-neutral")
+
+
+def test_machine_health_condition_count_is_exact_when_detail_is_bounded():
+    with fresh_db():
+        status, _ = http(
+            'POST', '/api/machine/heartbeat', _heartbeat_body(lane=21))
+        assert_eq(status, 200, "fresh controller heartbeat accepted")
+        created_at = (
+            datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+        events = [
+            make_event(
+                lane=21, severity='warn', event_type='drift_alarm',
+                code=f'condition-{i:03d}', created_at=created_at)
+            for i in range(machine_store.CURRENT_CONDITION_LIMIT + 5)
+        ]
+        status, body = http('POST', '/api/machine/events', events)
+        assert_eq(status, 200, "large warning batch accepted")
+        assert_eq(body['inserted'], len(events), "all warning rows stored")
+
+        entry = machine_store.machine_health()['lanes']['21']
+        conditions = entry['current_conditions']
+        assert_eq(entry['current_condition_count'], len(events),
+                  "condition count remains exact beyond response bound")
+        assert_eq(len(conditions), machine_store.CURRENT_CONDITION_LIMIT,
+                  "condition detail list is bounded")
+        assert_eq(
+            [condition['event_id'] for condition in conditions],
+            list(reversed(body['ids'][-machine_store.CURRENT_CONDITION_LIMIT:])),
+            "same-time conditions use descending event id deterministically")
+        for condition in conditions:
+            assert_eq(
+                set(condition),
+                {'event_type', 'code', 'severity', 'since', 'event_id'},
+                "condition object has no missing or extra fields")
+            assert_eq(condition['severity'], 'warn',
+                      "bounded condition severity is strict")
+        assert_true('condition_list_truncated' in entry['degraded_reasons'],
+                    "truncated detail is explicit")
+        assert_eq(entry['state'], 'DEGRADED',
+                  "exact warning count drives degraded state")
+
+
+def test_legacy_fault_latch_uses_same_producer_chronology_as_conditions():
+    with fresh_db():
+        base = datetime.now(timezone.utc)
+        _, producer_new = http('POST', '/api/machine/events', [
+            make_event(
+                lane=21, severity='fault', event_type='fsm_fault',
+                code='producer-new',
+                created_at=(base - timedelta(minutes=1)).isoformat())])
+        _, delayed_old = http('POST', '/api/machine/events', [
+            make_event(
+                lane=21, severity='fault', event_type='fsm_fault',
+                code='delayed-old',
+                created_at=(base - timedelta(minutes=2)).isoformat())])
+        entry = machine_store.machine_health()['lanes']['21']
+        assert_true(producer_new['ids'][0] < delayed_old['ids'][0],
+                    "fixture inserts delayed old producer row last")
+        assert_eq(
+            [condition['event_id']
+             for condition in entry['current_conditions']],
+            [producer_new['ids'][0], delayed_old['ids'][0]],
+            "conditions order by producer time before insertion id")
+        assert_eq(entry['event_id'], producer_new['ids'][0],
+                  "legacy fault latch selects the same newest fault")
+        assert_eq(entry['code'], 'producer-new',
+                  "legacy latch cannot point at delayed older producer state")
+        assert_eq(entry['since'],
+                  entry['current_conditions'][0]['since'],
+                  "legacy and condition timestamps stay in parity")
+
+
+def test_existing_exact_warn_recovery_is_backfilled_once():
+    with fresh_db() as db_path:
+        machine_store.health_counts()  # create current schema + migration marker
+        warning_at = machine_store._normalize_utc_iso(
+            datetime.now(timezone.utc) - timedelta(minutes=2))
+        recovery_at = machine_store._normalize_utc_iso(
+            datetime.now(timezone.utc) - timedelta(minutes=1))
+        recurrence_at = machine_store._normalize_utc_iso(
+            datetime.now(timezone.utc) - timedelta(seconds=30))
+        with sqlite3.connect(db_path) as conn:
+            warn_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,code) "
+                "VALUES (?,?,?,?,?,?)",
+                (21, '2026-07-24', warning_at, 'warn',
+                 'drift_alarm', 'historical')).lastrowid
+            conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,code,"
+                "detail_json) VALUES (?,?,?,?,?,?,?)",
+                (
+                    21, '2026-07-24', recovery_at, 'info', 'recovered',
+                    'drift_alarm', json.dumps({
+                        'recovery_of_event_id': warn_id,
+                        'recovered_event_type': 'drift_alarm',
+                        'recovered_code': 'historical',
+                    }),
+                ))
+            recurrence_id = conn.execute(
+                "INSERT INTO machine_events "
+                "(lane_id,business_date,created_at,severity,event_type,code) "
+                "VALUES (?,?,?,?,?,?)",
+                (21, '2026-07-24', recurrence_at, 'warn',
+                 'drift_alarm', 'historical')).lastrowid
+            conn.execute(
+                "DELETE FROM machine_schema_meta "
+                "WHERE key='warn-recovery-backfill-v2'")
+            conn.commit()
+
+        entry = machine_store.machine_health()['lanes']['21']
+        assert_eq(entry['current_condition_count'], 1,
+                  "upgrade backfill preserves recurrence after recovery")
+        assert_eq(entry['current_conditions'][0]['event_id'], recurrence_id,
+                  "only the post-recovery recurrence remains current")
+        with sqlite3.connect(db_path) as conn:
+            resolution_rows = conn.execute(
+                "SELECT id,resolved_at FROM machine_events "
+                "WHERE id IN (?,?) ORDER BY id",
+                (warn_id, recurrence_id)).fetchall()
+            marker = conn.execute(
+                "SELECT value FROM machine_schema_meta "
+                "WHERE key='warn-recovery-backfill-v2'").fetchone()[0]
+        assert_eq(resolution_rows, [
+            (warn_id, recovery_at),
+            (recurrence_id, None),
+        ], "backfill reconstructs warning/recovery chronology")
+        assert_eq(resolution_rows[0][1], recovery_at,
+                  "upgrade backfill durably stamps recovery producer time")
+        assert_eq(marker, 'complete', "upgrade backfill records completion")
+
+
+def test_machine_health_excludes_unknown_severities_from_conditions():
+    with fresh_db() as db_path:
+        status, _ = http(
+            'POST', '/api/machine/heartbeat', _heartbeat_body(lane=21))
+        assert_eq(status, 200, "fresh controller heartbeat accepted")
+        stamp = machine_store._utc_now_iso()
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("PRAGMA ignore_check_constraints=ON")
+            for severity in ('critical', 'WARN'):
+                conn.execute(
+                    "INSERT INTO machine_events "
+                    "(lane_id,business_date,created_at,severity,event_type) "
+                    "VALUES (?,?,?,?,?)",
+                    (21, '2026-07-24', stamp, severity, 'fsm_fault'))
+            conn.commit()
+        entry = machine_store.machine_health()['lanes']['21']
+        assert_eq(entry['current_condition_count'], 0,
+                  "unknown severities are excluded from exact count")
+        assert_eq(entry['current_conditions'], [],
+                  "unknown severities cannot enter strict condition detail")
+        assert_eq(entry['state'], 'HEALTHY',
+                  "unknown severity rows cannot invent operational state")
+
+
+def test_machine_health_fault_precedes_warning_condition():
+    with fresh_db():
+        status, _ = http(
+            'POST', '/api/machine/heartbeat', _heartbeat_body(lane=21))
+        assert_eq(status, 200, "fresh controller heartbeat accepted")
+        status, body = http('POST', '/api/machine/events', [
+            make_event(
+                lane=21, severity='warn', event_type='drift_alarm',
+                code='warning'),
+            make_event(
+                lane=21, severity='fault', event_type='fsm_fault',
+                code='motion_timeout:S'),
+        ])
+        assert_eq(status, 200, "warning and fault stored")
+        entry = machine_store.machine_health()['lanes']['21']
+        assert_eq(entry['current_condition_count'], 2,
+                  "warning and fault both remain visible")
+        assert_eq(
+            {condition['severity']
+             for condition in entry['current_conditions']},
+            {'warn', 'fault'}, "both condition severities are represented")
+        assert_eq(entry['fault'], True, "fault latch remains set")
+        assert_eq(entry['state'], 'FAULT',
+                  "fault takes precedence over warning degradation")
+        assert_eq(entry['event_id'], body['ids'][1],
+                  "legacy fault bridge points at the fault row")
 
 
 def test_api_health_gains_counts_only_machine_section():
@@ -936,13 +2099,102 @@ def test_retention_preserves_unresolved_fault_until_resolution():
         recovery_id = machine_store.insert_events([
             machine_store.validate_event(make_event(
                 severity='info', event_type='recovered',
-                code='still_active'))])[0]
+                code='fsm_fault', detail={
+                    'recovered_event_type': 'fsm_fault',
+                    'recovered_code': 'still_active',
+                }))])[0]
         machine_store.resolve_event(
             ids[0], 7, recovery_event_id=recovery_id)
         assert_eq(machine_store.prune_events(), 0,
                   "resolution evidence remains with its durable audit")
         assert_eq(machine_store.health_counts()['events_total'], 2,
                   "fault and recovery evidence remain auditable")
+
+
+def test_retention_preserves_warning_until_exact_recovery():
+    with fresh_db():
+        old_warn = machine_store.validate_event(make_event(
+            severity='warn', event_type='drift_alarm',
+            created_at=iso_days_ago(365), code='retention-warning'))
+        warn_id = machine_store.insert_events([old_warn])[0]
+        assert_eq(machine_store.prune_events(), 0,
+                  "unresolved warning survives retention")
+        entry = machine_store.machine_health()['lanes']['22']
+        assert_eq(entry['current_condition_count'], 1,
+                  "expired unresolved warning remains operationally visible")
+        assert_eq(entry['current_conditions'][0]['event_id'], warn_id,
+                  "expired warning retains exact condition identity")
+
+        machine_store.insert_events([
+            machine_store.validate_event(make_event(
+                severity='info', event_type='recovered',
+                code='drift_alarm', detail={
+                    'recovered_event_type': 'drift_alarm',
+                    'recovered_code': 'different-warning',
+                }))])
+        assert_eq(machine_store.prune_events(), 0,
+                  "wrong-family recovery cannot make warning prunable")
+
+        machine_store.insert_events([
+            machine_store.validate_event(make_event(
+                severity='info', event_type='recovered',
+                code='drift_alarm', detail={
+                    'recovery_of_event_id': warn_id,
+                    'recovered_event_type': 'drift_alarm',
+                    'recovered_code': 'retention-warning',
+                }))])
+        assert_eq(
+            machine_store.machine_health()['lanes']['22']
+            ['current_condition_count'],
+            0, "exact recovery removes warning from operational state")
+        assert_eq(machine_store.prune_events(), 1,
+                  "resolved expired warning becomes retention-eligible")
+
+
+def test_maintenance_clear_emits_exact_warning_recovery():
+    with fresh_db() as db_path:
+        with env_override(WSL_MACHINE_MAINTENANCE_MAX_S='1'):
+            machine_store.set_maintenance(
+                21, True, note='condition test', changed_by=17)
+            old = machine_store._normalize_utc_iso(
+                datetime.now(timezone.utc) - timedelta(seconds=10))
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "UPDATE machine_leases SET maintenance_changed_at=? "
+                    "WHERE lane_id=21", (old,))
+                conn.commit()
+            assert_eq(machine_store.sweep_maintenance_overdue(), 1,
+                      "overdue maintenance emits one warning")
+            entry = machine_store.machine_health()['lanes']['21']
+            assert_eq(entry['current_condition_count'], 1,
+                      "maintenance warning is current operational state")
+            assert_eq(
+                entry['current_conditions'][0]['event_type'],
+                'maintenance_overdue',
+                "maintenance warning family is visible")
+
+            machine_store.set_maintenance(21, False, changed_by=17)
+            entry = machine_store.machine_health()['lanes']['21']
+            assert_eq(entry['current_condition_count'], 0,
+                      "mechanic clear closes maintenance warning exactly")
+
+        with sqlite3.connect(db_path) as conn:
+            warning = conn.execute(
+                "SELECT id,resolved_at FROM machine_events "
+                "WHERE event_type='maintenance_overdue'").fetchone()
+            recovery = conn.execute(
+                "SELECT detail_json FROM machine_events "
+                "WHERE event_type='recovered' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        assert_true(warning[1] is not None,
+                    "maintenance warning resolution is durable")
+        detail = json.loads(recovery[0])
+        assert_eq(detail['recovery_of_event_id'], warning[0],
+                  "maintenance recovery targets the newest warning")
+        assert_eq(
+            (detail['recovered_event_type'], detail['recovered_code']),
+            ('maintenance_overdue', 'maintenance'),
+            "maintenance recovery records exact family")
 
 
 def test_retention_thread_prunes_at_startup_and_is_idempotent():
@@ -1285,6 +2537,28 @@ def test_contract_file_pins_server_vocab_and_shapes():
     assert_eq(ep['events_post']['request_wrapper_key'], 'events', "events wrapper")
     assert_eq(ep['events_post']['max_batch'], machine_store.MAX_EVENT_BATCH,
               "max batch")
+    health_contract = ep['machine_health_get']
+    assert_eq(
+        health_contract['current_conditions_max'],
+        machine_store.CURRENT_CONDITION_LIMIT,
+        "contract condition-list bound matches implementation")
+    assert_eq(
+        health_contract['current_condition_fields'],
+        ['event_type', 'code', 'severity', 'since', 'event_id'],
+        "contract pins the strict condition object")
+    for lane, entry in c['examples']['machine_health_response']['lanes'].items():
+        conditions = entry['current_conditions']
+        count = entry['current_condition_count']
+        assert_true(
+            type(count) is int and count >= len(conditions),
+            f"example lane {lane} has exact-count-compatible condition data")
+        assert_true(
+            len(conditions) <= health_contract['current_conditions_max'],
+            f"example lane {lane} respects the condition bound")
+        for condition in conditions:
+            assert_eq(
+                list(condition), health_contract['current_condition_fields'],
+                f"example lane {lane} condition fields match contract order")
     v = c['vocab']
     assert_eq(sorted(machine_store.EVENT_TYPES), sorted(v['event_types']),
               "event_types vocab in lockstep")
@@ -1332,6 +2606,16 @@ def test_machine_health_carries_bridge_contract_keys():
         for k in keys:
             assert_true(k in entry, f"bridge key {k!r} present in rollup entry")
         assert_eq(entry['fault'], True, "fault latched")
+        assert_eq(
+            set(entry['current_conditions'][0]),
+            set(c['endpoints']['machine_health_get']
+                ['current_condition_fields']),
+            "live condition object matches contract fields")
+        assert_eq(
+            len(entry['current_conditions'])
+            <= c['endpoints']['machine_health_get']
+            ['current_conditions_max'],
+            True, "live condition detail respects contract bound")
         # the contract's machine_health_response example (the WSL Systems
         # bridge-contract test loads it in place of its inline fake) must
         # carry EXACTLY the key set the real rollup produces for a faulted
@@ -1717,14 +3001,30 @@ TESTS = [
     test_insert_event_dispositions_are_returned_per_call,
     test_post_cycle_and_validation,
     test_ack_is_idempotent_and_resolve_closes_fault,
+    test_resolve_accepts_only_exact_recovered_fault_family,
+    test_fault_incidents_distinguish_null_and_empty_code,
+    test_fault_incident_timestamps_follow_producer_chronology,
+    test_legacy_mixed_code_incident_migration_remaps_audit_and_recovery,
+    test_closed_mixed_incident_upgrade_reopens_uncovered_exact_sibling,
+    test_closed_mixed_upgrade_rejects_cross_family_audit_binding,
+    test_closed_incident_upgrade_reopens_post_recovery_recurrence,
+    test_closed_incident_upgrade_reopens_ambiguous_or_wrong_type_evidence,
     test_ack_accepts_bridge_contract_body,
     test_machine_health_per_lane_rollup,
+    test_machine_health_warn_visibility_and_exact_recovery,
+    test_machine_health_condition_count_is_exact_when_detail_is_bounded,
+    test_legacy_fault_latch_uses_same_producer_chronology_as_conditions,
+    test_existing_exact_warn_recovery_is_backfilled_once,
+    test_machine_health_excludes_unknown_severities_from_conditions,
+    test_machine_health_fault_precedes_warning_condition,
     test_api_health_gains_counts_only_machine_section,
     test_business_date_rollover,
     test_event_ts_utc_is_honored_as_created_at,
     test_baseline_excludes_aborted_and_shadow_cycles,
     test_retention_prunes_only_expired_events,
     test_retention_preserves_unresolved_fault_until_resolution,
+    test_retention_preserves_warning_until_exact_recovery,
+    test_maintenance_clear_emits_exact_warning_recovery,
     test_retention_thread_prunes_at_startup_and_is_idempotent,
     test_kill_switch_blocks_ingest_not_ack_or_reads,
     test_machine_posts_share_the_lane_token_gate,

@@ -38,16 +38,17 @@ These are non-negotiable. They come straight from the design contract
 (`docs/phase8b_pcb_revB_spec.md` "Non-negotiable safety rule", §4.5) and the
 firmware safety model.
 
-1. **The controller board is never the only safety device.** The machine's
-   upstream **Stop switch + C.I.S. (cover interlock) → master circuit breaker**
-   chain, the **TB/SC collision interlock**, and the motors' **regenerative
+1. **The controller board is never the only safety device.** The pilot machine's
+   upstream **Stop switch → master circuit breaker** chain, the **TB/SC collision
+   interlock**, and the motors' **regenerative
    braking** all stay in hardware, independent of any software. Do not defeat,
-   jumper-out, or "temporarily bypass" any of them.
+   jumper-out, or "temporarily bypass" any of them. OEM documents also describe
+   C.I.S.; physical inspection found no such device or wiring on lanes 21/22.
 
 2. **Lockout/tagout before touching the machine mechanism or its wiring.** The
    relay-enable rail removes *coil drive*; it **cannot open a relay contact that
    has welded closed** (§10.6, spec §4.5). The only guaranteed kill is the
-   **rear-panel master circuit breaker** (cut by the Stop/C.I.S. chain). Cut and
+   **rear-panel master circuit breaker** (cut by the installed Stop chain). Cut and
    lock the master breaker before reaching into the pinsetter. Track-B bench and
    cutover work is explicitly **"on a LOCKED-OUT / off machine only"**
    (`firmware/rp2040/README.md` §"Bench bring-up"; spec §12.9).
@@ -260,7 +261,8 @@ Probe **`RELAY_ENABLE_RAIL` at TP16** (the rail test pad; §10.8):
 
 The PCB contract names six conditions, but lane 21/22's Candidate-C field
 implementation does **not** put TB/SC on J14. Pins 1–2 carry the controlled,
-labeled jumper; pins 3–4 carry Stop/CIS. The OEM parallel closed-when-safe TB/SC
+labeled jumper; pins 3–4 are reserved for an external control-power / optional
+pit-interlock dry-contact interface but are currently physically OPEN/unlanded. The OEM parallel closed-when-safe TB/SC
 contacts remain separately in the S/T coil ladder. Read the board permissions in
 this order, then run the separate G3 coil proof:
 
@@ -271,15 +273,16 @@ this order, then run the separate G3 coil proof:
 | 3 | **RP2040 OK** | `RP2040_OK` = **GP2**, at **J1 pin 13** | HIGH | RP2040 unpowered / in reset / BOOTSEL / firmware crash / cam-stop or motion-timeout fault. GP2 is Hi-Z when unpowered → R110 100 k holds Q16 off. |
 | 4 | **Enabled cam-stop OK** | *(not a separate transistor)* — folds into condition 3 | (see #3) | An enabled enforcement fault or the active motion timeout drives **GP2 LOW**. Stock v1.2.3 measured-cam flags are OFF. |
 | 5 | **J_SAFE1-2 board source position** | controlled Candidate-C jumper on **J14 pins 1↔2**; `SAFE_TBSC_RETURN` | keyed/labeled jumper present | Missing/loose controlled jumper. This is **not** a TB/SC field sensor and opening it proves only PCB/source continuity. |
-| 6 | **Stop/CIS/master chain** | measured external loop on **J14 pins 3↔4**; `SAFE_STOP_RETURN` (Q14 source) | loop closed | Stop/C.I.S. loop open, or J14 Stop/CIS wiring broken. |
+| 6 | **Reserved external control-power / optional pit-interlock source position** | **J14 pins 3↔4**; `SAFE_STOP_RETURN` (Q14 source) | current field state is OPEN/dead; future permit requires a reviewed isolated dry-contact interface | The current OPEN/unlanded harness is expected and deliberately prevents arm. Never install a machine-side jumper as a “fix,” and never route machine voltage or mains onto Rev-D. |
 
 **Structural facts** (so you know what to expect on a meter):
 
 - **J_SAFE1-2 and J_SAFE3-4 are in series with the FET source.** +5 V enters
   J14.1, traverses the Candidate-C jumper to J14.2, crosses the on-board
-  J14.2/J14.3 net, then traverses Stop/CIS to J14.4 and the pass-FET source.
-  Opening either connector position kills the rail, but only 3–4 is a machine
-  loop on lanes 21/22.
+  J14.2/J14.3 net, then stops at the current open/unlanded 3–4 position.
+  A future approved interface can return on J14.4 to the pass-FET source.
+  Opening either completed connector position proves board/source continuity
+  only; it does not prove the OEM TB/SC guard or Stop-to-breaker path.
 - **Conditions 1, 2, 3(=4) are a series transistor stack on the FET *gate***
   (`RAIL_GATE`, held up to the source by R106 100 k = off by default):
   **Q15 (ARM) · Q16 (RP2040_OK) · Q13 (watchdog) must all conduct** to pull the
@@ -291,6 +294,22 @@ this order, then run the separate G3 coil proof:
 > collision test is live/per-lane under the runbook's guarded procedure: command S,
 > then T, force both levers BACK/open, and require each machine coil to remain dead.
 > A failure means the board output bypassed the OEM ladder: abort and roll back.
+>
+> **Stop / pit-entry diagnostic boundary:** current J_SAFE3-4 OPEN is not a fault
+> to bypass; it is the intended no-arm hold. The leading interface is an externally
+> mounted, correctly rated energize-to-prove control-power relay whose isolated
+> N.O. dry contact alone reaches J14, optionally in series with an approved new
+> pit-entry-interlock contact. After it exists, a 3–4 continuity/drop test proves
+> only the board source path. On lanes 21/22, actuate Stop and require it to drop
+> OEM master/control power and TP16; record C.I.S. as **N/A — device absent**.
+> Inspect/ask the mechanic about any other automatic pit-entry interlock and
+> separately demand-test it if found or installed. If none exists, close the
+> new-interlock-versus-explicit-safety-decision gate before motion. A J14-only pit
+> switch is board permission gating, not an upstream final disconnect. A welded or
+> stuck-closed sensing-relay contact can look healthy, so the acceptance and
+> periodic proof must force control-power loss and verify both the contact opens
+> and TP16 drops. Only the monitor's isolated dry contact reaches J14; sensed
+> machine voltage and mains remain outside Rev-D.
 
 #### 22.4.3 Rail is live but a specific relay won't fire
 
@@ -311,12 +330,19 @@ If TP16 is ≈ +5 V but one output doesn't actuate, the **command** path or that
 spec §4.5). If a contact welds, dropping the rail removes coil drive but the welded
 contact — and the machine control circuit it feeds — stays made.
 
-- The **final physical stop is the rear-panel master breaker** (Stop/C.I.S. chain),
+- The **final physical stop is the rear-panel master breaker** (installed Stop chain
+  on lanes 21/22),
   not the rail. Cut it.
 - This is why **relay contact rating + arc suppression are safety-relevant.** Each
   motion output has **DNP** footprints for an RC snubber (`Rsnub_*` 100 R +
   `Csnub_*` 10 nF X2) and a **MOV** across the contact — populate per output after
   measuring the actual inductive AC control load (spec §2.3, §3.2, §11 item 1).
+
+If a CT/Hall sensor reports motor current while the controller command is OFF,
+classify it as **`uncommanded_motor_current`** and report the suspected cause as
+**external-feed-or-welded**. The current measurement cannot distinguish a welded
+contact from another external feed or bypass. Escalate and prove the circuit/contact
+state before assigning a `welded_contact` diagnosis.
 
 ---
 
@@ -484,10 +510,22 @@ light. Recommended checks:
 
 **Track B — controller (per-board; once cleared for live):**
 - **Re-run the bench safety drops periodically** on a locked-out machine: watchdog
-  drop, ARM drop, J_SAFE1-2 source-position drop, Stop/CIS drop, and motion-timeout
-  drop (§10.8). Opening 1–2 proves only board continuity. Under the current
+  drop, ARM drop, J_SAFE1-2 source-position drop, approved J_SAFE3-4
+  source-position drop, and motion-timeout drop (§10.8). Opening either J_SAFE
+  position proves only board continuity. Under the current
   runbook's guarded live procedure, also re-prove Candidate C per lane: command S
   and T separately; both levers BACK/open must leave each machine coil dead.
+- **Demand Stop** under the guarded procedure and verify it drops OEM
+  master/control power and TP16. Record C.I.S. as **N/A — device absent** on
+  lanes 21/22; never silently waive the missing test. Separately re-prove any
+  identified or newly installed pit-entry interlock, and force a control-power
+  loss to prove the energize-to-prove relay contact is not stuck closed. Do not
+  infer any result from healthy-state continuity; a bypass or weld is latent
+  until demanded.
+- **Mains-integrity check:** at commissioning and periodically, have a qualified
+  electrician use an appropriately listed external tester to record
+  protective-earth continuity/bonding and correct hot/neutral polarity. Never
+  route mains to Rev-D or J14.
 - **Inspect motion-relay contacts + suppression** on inductive outputs (S/T/SP/BE/M/M2)
   for arcing/pitting; verify the populated snubber/MOV per output (§22.4.4).
 - **Verify test-point readings** against §10.8 (TP16 rail, `RAIL_GATE`, `NE555_TRIG`/

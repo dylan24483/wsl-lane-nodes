@@ -346,7 +346,7 @@ energize 6 coils (bench_first_article pattern) and confirm the sag is visible in
 
 ---
 
-## E. Rail-drop edge-ordering taps — existing observable points ONLY
+## E. Rail-predicate edge-ordering taps — existing observable points ONLY
 
 > **⚠ 2026-07-21 — §E.2 AND §E.3 ARE SUPERSEDED by
 > `phase8_revD_remediation_spec_2026-07-21.md` §R1** (Codex NO-GO findings C1 + H1: the
@@ -363,8 +363,10 @@ energize 6 coils (bench_first_article pattern) and confirm the sag is visible in
 
 **Source:** catalog §2 item 5 (the scope doc's tap grant): 1 ms edge-ordered capture of
 **NE555_OUT, WDOG_KICK (TP8 net), ARM_PERMIT (TP13 net), RP2040_OK (TP14 net)** via spare RP2040
-GPIOs — turns undifferentiated "rail down" into ordered codes (wdt_reset vs pi_death vs
-arm_drop). **Explicitly OUT OF SCOPE: any new connection to SAFE_TBSC_RETURN /
+GPIOs — records ordered predicate transitions for advisory cause inference (wdt_reset
+vs pi_death vs arm_drop) only when independent evidence proves an actual rail drop. None
+directly observes `RELAY_ENABLE_RAIL`/TP16 or proves Q14/J14/rail stuck-on or
+stuck-open behavior. **Explicitly OUT OF SCOPE: any new connection to SAFE_TBSC_RETURN /
 SAFE_STOP_RETURN / any SAFE_* loop net** (catalog §2 item 6 — FMEA-gated separate decision;
 SAFE_TBSC_RETURN has no test pad today and gets no new copper in this spin). Also out of scope:
 anything touching RELAY_ENABLE_RAIL / RAIL_GATE.
@@ -718,8 +720,18 @@ stub trap). pcbnew steps run under KiCad 10's bundled python
    **TP4 ≤ ~6 V unloaded (item A)**; i2cdetect 0x20/0x21/0x22; 6-relay make/break; ordinary
    micro-B cable seats + UF2 flash with ribbon mated (item B); 8 × GPB input pokes (item C);
    GP26 ≈ VCC_5V/2 ±3 % and coil-load sag visible (item D); tap levels + fault-injection +
-   forced rail-drop edge ordering (item E); J16 bus check with a scrap module (item F).
+   forced rail-predicate edge ordering (item E; causal predicates only, not direct
+   `RELAY_ENABLE_RAIL`/TP16 observation); J16 bus check with a scrap module (item F).
    One channel of each NEW I/O type energized before trusting the board (process item 11).
+   The generated pack also carries two system-level gates that bare-board tests
+   cannot discharge: FA-13 keeps physically open J14.3–4 installation-NO-GO
+   until an approved Stop/control-power interface is landed, proves bounded
+   Stop→power-drop behavior, and closes the lane-21/22 pit-interlock disposition.
+   Those lanes have no C.I.S.; any installed/new pit interlock is tested
+   separately in its approved upstream safety-disconnect path, because J14-only
+   gating cannot replace a final disconnect. FA-14 requires
+   qualified-electrician/listed-tester protective-earth and hot/neutral
+   polarity proof. Neither mains nor PE-test current may enter Rev-D.
 
 ---
 

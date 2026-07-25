@@ -46,9 +46,12 @@ Key facts (all grounded in the live code):
 
 > **Safety reminder (carried from the controller sections):** none of the software
 > in this section is a safety device. The on-board rail gates watchdog + ARM +
-> RP2040_OK/cam-stop + Stop/CIS; Candidate C closes J_SAFE1-2 with the controlled
-> jumper and keeps the primary TB/SC guard in the OEM S/T coil ladder, proven per
-> lane at G3. The default-off SC∧TB software model is unvalidated. See
+> RP2040_OK/cam-stop + the J_SAFE source path. Candidate C closes J_SAFE1-2 with
+> the controlled jumper; J_SAFE3-4 is currently OPEN/unlanded, so the field rail
+> cannot arm until a validated external energize-to-prove control-power dry-contact
+> interface exists. Candidate C
+> keeps the primary TB/SC guard in the OEM S/T coil ladder, proven per lane at G3.
+> The default-off SC∧TB software model is unvalidated. See
 > `docs/phase8b_pcb_revB_spec.md` § 4.
 
 ---
@@ -310,7 +313,8 @@ and an isolated field-wetting DC/DC.
 
 > **Board status:** **PCB-fab-ready** under a conservative DRC contract. It is **not**
 > assembly/cutover-ready: relay-contact ratings, input population defaults
-> (dry-contact vs 24 VAC sense), the TB/SC/Stop-CIS connector form, status-LED
+> (dry-contact vs 24 VAC sense), the TB/SC insertion, external control-power
+> J_SAFE3-4 interface, pilot pit-entry-interlock disposition, status-LED
 > sizing, the M1 population decision, and on-hardware bench bring-up all still gate a
 > *populated, live-machine* controller. See `docs/phase8b_pcb_revB_spec.md` § 11.
 
@@ -630,7 +634,7 @@ the routed `.kicad_pro` had lost its netclass assignments, making the `.dru`
 | `RELAY_ENABLE_RAIL` reaches **7** relay coils (`K*`) **+** a pass-FET (`Q*`) | The safety rail enables every motion relay incl. M1 DNP |
 | **No `OUT_*` net touches the Pico** | Machine output can't reach the logic MCU |
 | `GND` and `FIELD_GND` both present **and distinct** | Field isolation barrier intact |
-| `SAFE_STOP_RETURN` + `SAFE_TBSC_RETURN` + `RAIL_GATE` present | Interlock loops are first-class rail conditions |
+| `SAFE_STOP_RETURN` + `SAFE_TBSC_RETURN` + `RAIL_GATE` present | Board-side J_SAFE source/gate nets exist in copper; this does not prove an external control-power or pit-interlock interface is landed |
 | Netted copper zones filled; ≥ 2 isolation keepout rule-areas present | Power planes poured + barrier keepouts exist |
 | ≥ 8 DNP footprints | The M1 optional channel is still DNP |
 

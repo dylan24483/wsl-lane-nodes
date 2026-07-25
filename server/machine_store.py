@@ -32,7 +32,8 @@ existing rows keeps working too.
 
 Retention: machine_events older than WSL_MACHINE_EVENT_RETENTION_DAYS
 (default 90) are pruned at startup + daily by a background daemon
-thread (start_retention_thread, called from lane_node_server.main).
+thread (start_retention_thread, called from lane_node_server.main), except
+unresolved warn/fault rows, which remain durable operational state.
 The loop never raises — failures bump an error counter surfaced via
 health_counts() -> /api/health "machine".
 """
@@ -70,6 +71,11 @@ _FALSEY = ("0", "false", "no", "off", "")
 
 RETENTION_ENV = "WSL_MACHINE_EVENT_RETENTION_DAYS"
 DEFAULT_RETENTION_DAYS = 90
+
+# GET /api/machine/health returns the newest unresolved diagnostic conditions
+# per lane.  The exact count remains unbounded/authoritative, but the detail
+# list and derived condition reason set must stay bounded for the desk poller.
+CURRENT_CONDITION_LIMIT = 100
 
 # Business-day envs — shared precedent with wsl-systems (wsl_fnb_ext).
 BUSINESS_TZ_ENV = "WSL_BUSINESS_DAY_TIMEZONE"
@@ -547,6 +553,12 @@ CREATE INDEX IF NOT EXISTS idx_me_lane_created
 CREATE INDEX IF NOT EXISTS idx_me_open_fault
   ON machine_events(lane_id, id)
   WHERE severity = 'fault' AND resolved_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_me_open_fault_chrono
+  ON machine_events(lane_id, created_at DESC, id DESC)
+  WHERE severity = 'fault' AND resolved_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_me_open_condition
+  ON machine_events(lane_id, created_at DESC, id DESC)
+  WHERE severity IN ('warn','fault') AND resolved_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS lane_incidents (
   id             INTEGER PRIMARY KEY,
@@ -563,7 +575,8 @@ CREATE TABLE IF NOT EXISTS lane_incidents (
   closed_by      INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_incident_one_open
-  ON lane_incidents(lane_id,event_type,COALESCE(code,''))
+  ON lane_incidents(
+    lane_id,event_type,(code IS NULL),COALESCE(code,''))
   WHERE state IN ('open','override_pending');
 
 CREATE TABLE IF NOT EXISTS machine_resolution_audit (
@@ -632,6 +645,11 @@ CREATE TABLE IF NOT EXISTS machine_maintenance_audit (
 );
 CREATE INDEX IF NOT EXISTS idx_maintenance_audit_lane
   ON machine_maintenance_audit(lane_id, changed_at, id);
+
+CREATE TABLE IF NOT EXISTS machine_schema_meta (
+  key           TEXT PRIMARY KEY,
+  value         TEXT NOT NULL
+);
 """
 
 
@@ -733,11 +751,494 @@ def _migrate_leases(conn):
             conn.execute(f"ALTER TABLE machine_leases ADD COLUMN {col} {ctype}")
 
 
+def _migrate_incident_code_identity(conn):
+    """Split legacy NULL/empty-code fault incidents and replace their index.
+
+    The original ``COALESCE(code,'')`` key treated SQL NULL and the valid empty
+    string as one family.  That let an exact recovery for one family close the
+    other.  Re-map any already-conflated active incident before installing the
+    null-safe expression index.
+    """
+    key = "incident-code-identity-v2"
+    done = conn.execute(
+        "SELECT value FROM machine_schema_meta WHERE key=?", (key,)
+    ).fetchone()
+    index_sql_row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='index' "
+        "AND name='idx_incident_one_open'").fetchone()
+    index_sql = (
+        index_sql_row["sql"] if index_sql_row is not None else "")
+    index_is_exact = "(code IS NULL)" in index_sql
+    if (
+            done is not None
+            and done["value"] == "complete"
+            and index_is_exact):
+        return
+
+    conn.execute("DROP INDEX IF EXISTS idx_incident_one_open")
+    incidents = conn.execute(
+        "SELECT id,lane_id,event_type,code,state FROM lane_incidents "
+        "WHERE state IN ('open','override_pending') ORDER BY id"
+    ).fetchall()
+    for incident in incidents:
+        groups = conn.execute(
+            "SELECT event_type,code,MIN(created_at) AS opened_at,"
+            "MAX(created_at) AS last_seen_at,COUNT(*) AS repeat_count "
+            "FROM machine_events WHERE incident_id=? AND severity='fault' "
+            "AND resolved_at IS NULL "
+            "GROUP BY event_type,(code IS NULL),code "
+            "ORDER BY MIN(id)",
+            (incident["id"],)).fetchall()
+        if len(groups) <= 1:
+            if groups:
+                group = groups[0]
+                conn.execute(
+                    "UPDATE lane_incidents SET event_type=?,code=?,"
+                    "opened_at=?,last_seen_at=?,repeat_count=? WHERE id=?",
+                    (
+                        group["event_type"], group["code"],
+                        group["opened_at"], group["last_seen_at"],
+                        group["repeat_count"], incident["id"],
+                    ))
+            continue
+
+        keep_index = next((
+            index for index, group in enumerate(groups)
+            if (
+                group["event_type"] == incident["event_type"]
+                and group["code"] == incident["code"])
+        ), 0)
+        for index, group in enumerate(groups):
+            override = conn.execute(
+                "SELECT 1 FROM machine_resolution_audit a "
+                "JOIN machine_events e ON e.id=a.event_id "
+                "WHERE e.incident_id=? AND e.event_type=? AND e.code IS ? "
+                "AND a.action='override_requested' LIMIT 1",
+                (
+                    incident["id"], group["event_type"], group["code"],
+                )).fetchone() is not None
+            state = "override_pending" if override else "open"
+            if index == keep_index:
+                family_incident_id = incident["id"]
+                conn.execute(
+                    "UPDATE lane_incidents SET event_type=?,code=?,"
+                    "opened_at=?,last_seen_at=?,repeat_count=?,state=?,"
+                    "recovery_event_id=NULL,closed_at=NULL,closed_by=NULL "
+                    "WHERE id=?",
+                    (
+                        group["event_type"], group["code"],
+                        group["opened_at"], group["last_seen_at"],
+                        group["repeat_count"], state, family_incident_id,
+                    ))
+                continue
+            cur = conn.execute(
+                "INSERT INTO lane_incidents "
+                "(lane_id,event_type,code,opened_at,last_seen_at,"
+                "repeat_count,state) VALUES (?,?,?,?,?,?,?)",
+                (
+                    incident["lane_id"], group["event_type"], group["code"],
+                    group["opened_at"], group["last_seen_at"],
+                    group["repeat_count"], state,
+                ))
+            family_incident_id = cur.lastrowid
+            conn.execute(
+                "UPDATE machine_resolution_audit SET incident_id=? "
+                "WHERE incident_id=? AND event_id IN ("
+                "SELECT id FROM machine_events WHERE incident_id=? "
+                "AND severity='fault' AND resolved_at IS NULL "
+                "AND event_type=? AND code IS ?)",
+                (
+                    family_incident_id, incident["id"], incident["id"],
+                    group["event_type"], group["code"],
+                ))
+            conn.execute(
+                "UPDATE machine_events SET incident_id=? "
+                "WHERE incident_id=? AND severity='fault' "
+                "AND resolved_at IS NULL AND event_type=? AND code IS ?",
+                (
+                    family_incident_id, incident["id"],
+                    group["event_type"], group["code"],
+                ))
+
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_incident_one_open "
+        "ON lane_incidents("
+        "lane_id,event_type,(code IS NULL),COALESCE(code,'')) "
+        "WHERE state IN ('open','override_pending')")
+    conn.execute(
+        "INSERT OR REPLACE INTO machine_schema_meta(key,value) "
+        "VALUES (?,'complete')", (key,))
+
+
+def _recovery_selectors(detail_json):
+    """Return strict recovery selectors or ``None``.
+
+    A recovery may identify one exact event id, one exact
+    ``(event_type, code)`` family, or both.  Partial, mistyped, or
+    contradictory selectors are never recovery evidence.
+    """
+    try:
+        detail = json.loads(detail_json or "{}")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(detail, dict):
+        return None
+    target_present = "recovery_of_event_id" in detail
+    target_id = detail.get("recovery_of_event_id")
+    if target_present and (
+            type(target_id) is not int
+            or not 0 < target_id <= SQLITE_INT64_MAX):
+        return None
+    type_present = "recovered_event_type" in detail
+    code_present = "recovered_code" in detail
+    if type_present is not code_present:
+        return None
+    family_present = type_present and code_present
+    event_type = detail.get("recovered_event_type")
+    code = detail.get("recovered_code")
+    if family_present and (
+            not isinstance(event_type, str)
+            or not event_type
+            or (code is not None and not isinstance(code, str))):
+        return None
+    if not target_present and not family_present:
+        return None
+    return {
+        "target_present": target_present,
+        "target_id": target_id,
+        "family_present": family_present,
+        "event_type": event_type,
+        "code": code,
+    }
+
+
+def _apply_warning_recovery(conn, recovery, *, historical=False):
+    """Resolve one warning family from strict later recovery evidence.
+
+    Faults retain their explicit, actor-audited resolution workflow.  Warnings
+    are operational conditions too, but a producer's exact ``recovered`` event
+    closes them automatically so a recovered warning cannot degrade the lane
+    forever.  Both producer time and insertion order must follow the newest
+    unresolved occurrence, matching the conservative fault-resolution rule.
+    """
+    if (
+            recovery["severity"] != "info"
+            or recovery["event_type"] != "recovered"):
+        return 0
+    selectors = _recovery_selectors(recovery["detail_json"])
+    if selectors is None:
+        return 0
+    try:
+        recovery_created = _normalize_utc_iso(recovery["created_at"])
+    except (TypeError, ValueError):
+        return 0
+    candidate_suffix = (
+        " AND id<? AND created_at<=?" if historical else "")
+    candidate_cutoff = (
+        (recovery["id"], recovery_created) if historical else ())
+
+    target = None
+    if selectors["target_present"]:
+        target = conn.execute(
+            "SELECT id,lane_id,event_type,code,created_at "
+            "FROM machine_events WHERE id=? AND lane_id=? "
+            "AND severity='warn' AND resolved_at IS NULL"
+            + candidate_suffix,
+            (
+                selectors["target_id"], recovery["lane_id"],
+                *candidate_cutoff,
+            )).fetchone()
+        if target is None:
+            return 0
+        event_type = target["event_type"]
+        code = target["code"]
+        if selectors["family_present"] and (
+                selectors["event_type"] != event_type
+                or selectors["code"] != code):
+            return 0
+    else:
+        event_type = selectors["event_type"]
+        code = selectors["code"]
+
+    newest = conn.execute(
+        "SELECT id,created_at,event_type,code FROM machine_events "
+        "WHERE lane_id=? AND severity='warn' AND resolved_at IS NULL "
+        "AND event_type=? AND code IS ?"
+        + candidate_suffix
+        + " "
+        "ORDER BY created_at DESC,id DESC LIMIT 1",
+        (
+            recovery["lane_id"], event_type, code,
+            *candidate_cutoff,
+        )).fetchone()
+    if newest is None:
+        return 0
+    if selectors["target_present"] and selectors["target_id"] != newest["id"]:
+        return 0
+    bounds = conn.execute(
+        "SELECT MAX(id) AS max_id,MAX(created_at) AS max_created_at "
+        "FROM machine_events WHERE lane_id=? AND severity='warn' "
+        "AND resolved_at IS NULL AND event_type=? AND code IS ?"
+        + candidate_suffix,
+        (
+            recovery["lane_id"], event_type, code,
+            *candidate_cutoff,
+        )).fetchone()
+    try:
+        newest_created = _normalize_utc_iso(bounds["max_created_at"])
+    except (TypeError, ValueError):
+        return 0
+    if (
+            recovery["id"] <= bounds["max_id"]
+            or recovery_created < newest_created):
+        return 0
+
+    cur = conn.execute(
+        "UPDATE machine_events SET resolved_at=?,resolved_by=NULL "
+        "WHERE lane_id=? AND severity='warn' AND resolved_at IS NULL "
+        "AND event_type=? AND code IS ? AND id<? AND created_at<=?",
+        (
+            recovery_created, recovery["lane_id"], event_type, code,
+            recovery["id"], recovery_created,
+        ))
+    return cur.rowcount
+
+
+def _migrate_warning_recoveries(conn):
+    """One-time backfill for exact warn recoveries written before this logic."""
+    key = "warn-recovery-backfill-v2"
+    done = conn.execute(
+        "SELECT value FROM machine_schema_meta WHERE key=?", (key,)
+    ).fetchone()
+    if done is not None and done["value"] == "complete":
+        return
+    recoveries = conn.execute(
+        "SELECT id,lane_id,created_at,severity,event_type,detail_json "
+        "FROM machine_events WHERE severity='info' "
+        "AND event_type='recovered' ORDER BY id"
+    ).fetchall()
+    for recovery in recoveries:
+        _apply_warning_recovery(conn, recovery, historical=True)
+    conn.execute(
+        "INSERT OR REPLACE INTO machine_schema_meta(key,value) "
+        "VALUES (?,'complete')", (key,))
+
+
+def _closed_incident_covered_fault_ids(conn, incident, faults):
+    """Return fault ids legitimately covered by a legacy incident recovery.
+
+    Older resolvers could close a whole incident from broad or stale evidence.
+    Reconstruct only the subset the current exact-evidence rules would have
+    allowed at the instant the recovery row was inserted.  Anything ambiguous
+    is intentionally uncovered and will be reopened by the migration below.
+    """
+    recovery_id = incident["recovery_event_id"]
+    if type(recovery_id) is not int or recovery_id <= 0:
+        return set()
+    recovery = conn.execute(
+        "SELECT id,lane_id,created_at,severity,event_type,detail_json "
+        "FROM machine_events WHERE id=?", (recovery_id,)).fetchone()
+    if (
+            recovery is None
+            or recovery["lane_id"] != incident["lane_id"]
+            or recovery["severity"] != "info"
+            or recovery["event_type"] != "recovered"):
+        return set()
+    # A closed fault must have the durable actor audit written by
+    # resolve_event, not merely a suggestive info row.
+    audits = conn.execute(
+        "SELECT event_id FROM machine_resolution_audit "
+        "WHERE incident_id=? AND action='recovery' "
+        "AND recovery_event_id=?",
+        (incident["id"], recovery_id)).fetchall()
+    selectors = _recovery_selectors(recovery["detail_json"])
+    if selectors is None:
+        return set()
+    by_id = {row["id"]: row for row in faults}
+    if selectors["target_present"]:
+        target = by_id.get(selectors["target_id"])
+        if target is None:
+            return set()
+        event_type = target["event_type"]
+        code = target["code"]
+        if selectors["family_present"] and (
+                selectors["event_type"] != event_type
+                or selectors["code"] != code):
+            return set()
+    else:
+        event_type = selectors["event_type"]
+        code = selectors["code"]
+    # Bind actor authorization to the same exact family as the recovery
+    # selectors.  Legacy mixed incidents sometimes recorded an API target
+    # from a different family; current resolve_event rejects that pairing.
+    if not any(
+            (
+                by_id.get(audit["event_id"]) is not None
+                and by_id[audit["event_id"]]["event_type"] == event_type
+                and by_id[audit["event_id"]]["code"] == code)
+            for audit in audits):
+        return set()
+
+    try:
+        recovery_created = _normalize_utc_iso(recovery["created_at"])
+    except (TypeError, ValueError):
+        return set()
+    family = [
+        row for row in faults
+        if (
+            row["lane_id"] == incident["lane_id"]
+            and row["event_type"] == event_type
+            and row["code"] == code)
+    ]
+    if not family:
+        return set()
+
+    prior = []
+    for row in family:
+        try:
+            created_at = _normalize_utc_iso(row["created_at"])
+        except (TypeError, ValueError):
+            return set()
+        if row["id"] < recovery_id:
+            # A future-producer occurrence already present when the recovery
+            # arrived makes the evidence invalid under the current dual-clock
+            # rule; do not partially bless older occurrences.
+            if created_at > recovery_created:
+                return set()
+            prior.append((created_at, row["id"], row))
+    if not prior:
+        return set()
+    newest = max(prior, key=lambda item: (item[0], item[1]))[2]
+    if (
+            selectors["target_present"]
+            and selectors["target_id"] != newest["id"]):
+        return set()
+    return {item[2]["id"] for item in prior}
+
+
+def _reopen_fault_rows(conn, incident, rows):
+    """Move uncovered closed-incident rows into exact active incidents."""
+    grouped = {}
+    for row in rows:
+        grouped.setdefault((row["event_type"], row["code"]), []).append(row)
+    for (event_type, code), group in grouped.items():
+        active = conn.execute(
+            "SELECT id,state FROM lane_incidents WHERE lane_id=? "
+            "AND event_type=? AND code IS ? "
+            "AND state IN ('open','override_pending')",
+            (incident["lane_id"], event_type, code)).fetchone()
+        if active is None:
+            opened_at = min(row["created_at"] for row in group)
+            last_seen_at = max(row["created_at"] for row in group)
+            cur = conn.execute(
+                "INSERT INTO lane_incidents "
+                "(lane_id,event_type,code,opened_at,last_seen_at,"
+                "repeat_count,state) VALUES (?,?,?,?,?,?,'open')",
+                (
+                    incident["lane_id"], event_type, code,
+                    opened_at, last_seen_at, len(group),
+                ))
+            active_id = cur.lastrowid
+        else:
+            active_id = active["id"]
+        for row in group:
+            conn.execute(
+                "UPDATE machine_events SET incident_id=?,resolved_at=NULL,"
+                "resolved_by=NULL WHERE id=?",
+                (active_id, row["id"]))
+            # An override belongs with the still-active fault.  Recovery
+            # audits remain attached to the historical closed attempt.
+            conn.execute(
+                "UPDATE machine_resolution_audit SET incident_id=? "
+                "WHERE event_id=? AND action='override_requested'",
+                (active_id, row["id"]))
+        aggregate = conn.execute(
+            "SELECT MIN(created_at) AS opened_at,"
+            "MAX(created_at) AS last_seen_at,COUNT(*) AS repeat_count "
+            "FROM machine_events WHERE incident_id=? "
+            "AND severity='fault' AND resolved_at IS NULL",
+            (active_id,)).fetchone()
+        override = conn.execute(
+            "SELECT 1 FROM machine_resolution_audit a "
+            "JOIN machine_events e ON e.id=a.event_id "
+            "WHERE e.incident_id=? AND e.resolved_at IS NULL "
+            "AND a.action='override_requested' LIMIT 1",
+            (active_id,)).fetchone() is not None
+        conn.execute(
+            "UPDATE lane_incidents SET opened_at=?,last_seen_at=?,"
+            "repeat_count=?,state=?,recovery_event_id=NULL,"
+            "closed_at=NULL,closed_by=NULL WHERE id=?",
+            (
+                aggregate["opened_at"], aggregate["last_seen_at"],
+                aggregate["repeat_count"],
+                "override_pending" if override else "open", active_id,
+            ))
+
+
+def _migrate_closed_incident_recoveries(conn):
+    """Revalidate old closed incidents against the current exact rules.
+
+    This is a conservative one-time false-green repair.  A resolved fault
+    remains closed only when actor-audited ``info/recovered`` evidence exactly
+    names its family (and newest target, when supplied) and follows it in both
+    producer time and insertion order.  Other families, post-recovery
+    recurrences, and all ambiguous evidence are reopened.
+    """
+    key = "closed-incident-revalidation-v1"
+    done = conn.execute(
+        "SELECT value FROM machine_schema_meta WHERE key=?", (key,)
+    ).fetchone()
+    if done is not None and done["value"] == "complete":
+        return
+    incidents = conn.execute(
+        "SELECT * FROM lane_incidents WHERE state='closed' ORDER BY id"
+    ).fetchall()
+    for incident in incidents:
+        faults = conn.execute(
+            "SELECT id,lane_id,event_type,code,created_at,resolved_at "
+            "FROM machine_events WHERE incident_id=? AND severity='fault' "
+            "ORDER BY id", (incident["id"],)).fetchall()
+        if not faults:
+            continue
+        covered_ids = _closed_incident_covered_fault_ids(
+            conn, incident, faults)
+        uncovered = [
+            row for row in faults
+            if row["id"] not in covered_ids or row["resolved_at"] is None
+        ]
+        if not uncovered:
+            continue
+        covered = [
+            row for row in faults
+            if row["id"] in covered_ids and row["resolved_at"] is not None
+        ]
+        _reopen_fault_rows(conn, incident, uncovered)
+        if covered:
+            # Exact evidence can cover only one family.  Keep the historical
+            # closed incident bound to that recovered subset.
+            conn.execute(
+                "UPDATE lane_incidents SET event_type=?,code=?,opened_at=?,"
+                "last_seen_at=?,repeat_count=? WHERE id=?",
+                (
+                    covered[0]["event_type"], covered[0]["code"],
+                    min(row["created_at"] for row in covered),
+                    max(row["created_at"] for row in covered),
+                    len(covered), incident["id"],
+                ))
+    conn.execute(
+        "INSERT OR REPLACE INTO machine_schema_meta(key,value) "
+        "VALUES (?,'complete')", (key,))
+
+
 def _ensure_schema(conn):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
     _migrate_identity(conn)
     _migrate_leases(conn)
+    _migrate_incident_code_identity(conn)
+    _migrate_closed_incident_recoveries(conn)
+    _migrate_warning_recoveries(conn)
+    conn.commit()
 
 
 def _connect(deadline=None):
@@ -759,11 +1260,24 @@ def _lane_id(value):
     return value
 
 
+SQLITE_INT64_MIN = -(1 << 63)
+SQLITE_INT64_MAX = (1 << 63) - 1
+
+
 def _opt_int(value, name):
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValueError(f"{name} must be an integer")
+    if not SQLITE_INT64_MIN <= value <= SQLITE_INT64_MAX:
+        raise ValueError(f"{name} is outside the signed 64-bit range")
+    return value
+
+
+def _positive_db_id(value, name):
+    value = _opt_int(value, name)
+    if value is None or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
     return value
 
 
@@ -1100,7 +1614,7 @@ def touch_scoring_lanes(
             raise ValueError("scoring metadata must be an object")
         boot_id = metadata.get('scoring_boot_id')
         session_id = metadata.get('scoring_session_id')
-        seq = metadata.get('heartbeat_seq')
+        seq = _opt_int(metadata.get('heartbeat_seq'), 'heartbeat_seq')
         mode = metadata.get('scoring_mode')
         calibrated = metadata.get('camera_calibrated')
         camera_ok = metadata.get('camera_ok')
@@ -1113,7 +1627,7 @@ def touch_scoring_lanes(
         if (not isinstance(session_id, str) or not session_id.strip()
                 or len(session_id) > 128):
             raise ValueError("scoring_session_id must be 1..128 chars")
-        if (not isinstance(seq, int) or isinstance(seq, bool) or seq < 0):
+        if seq < 0:
             raise ValueError("heartbeat_seq must be a nonnegative integer")
         if mode not in ('camera', 'manual', 'disabled'):
             raise ValueError("scoring_mode is invalid")
@@ -1175,11 +1689,18 @@ def touch_scoring_lanes(
                 'scoring_event_queue_capacity', 'scoring_capture_jobs',
                 'scoring_event_drops',
                 'scoring_event_expired'):
-            value = outbox.get(field)
-            if (not isinstance(value, int) or isinstance(value, bool)
-                    or value < 0):
+            try:
+                value = _opt_int(
+                    outbox.get(field), f"scoring outbox {field}")
+            except ValueError:
                 raise ValueError(
-                    f"scoring outbox {field} must be a nonnegative integer")
+                    f"scoring outbox {field} must be a nonnegative "
+                    "signed 64-bit integer") from None
+            if value < 0:
+                raise ValueError(
+                    f"scoring outbox {field} must be a nonnegative "
+                    "signed 64-bit integer")
+            outbox[field] = value
         if outbox['scoring_event_queue_capacity'] < 1:
             raise ValueError(
                 "scoring event queue capacity must be positive")
@@ -1306,8 +1827,8 @@ def touch_scoring_lanes(
 
 
 def _staff_actor_id(value, field):
-    if (not isinstance(value, int) or isinstance(value, bool)
-            or value <= 0):
+    value = _opt_int(value, field)
+    if value is None or value <= 0:
         raise ValueError(f"{field} must be a positive staff id")
     return value
 
@@ -1343,6 +1864,39 @@ def set_maintenance(lane_id, on, note=None, changed_by=None):
                 "(lane_id, maintenance, note, changed_at, changed_by) "
                 "VALUES (?,?,?,?,?)",
                 (lane_id, int(on), note, now, changed_by))
+            if not on:
+                overdue = conn.execute(
+                    "SELECT id FROM machine_events WHERE lane_id=? "
+                    "AND severity='warn' AND event_type='maintenance_overdue' "
+                    "AND code IS 'maintenance' AND resolved_at IS NULL "
+                    "ORDER BY created_at DESC,id DESC LIMIT 1",
+                    (lane_id,)).fetchone()
+                if overdue is not None:
+                    recovery_row = validate_event({
+                        'lane_id': lane_id,
+                        'severity': 'info',
+                        'event_type': 'recovered',
+                        'code': 'maintenance_overdue',
+                        'created_at': now,
+                        'detail': {
+                            'recovery_of_event_id': overdue['id'],
+                            'recovered_event_type': 'maintenance_overdue',
+                            'recovered_code': 'maintenance',
+                            'maintenance_changed_by': changed_by,
+                        },
+                    })
+                    recovery_cur = conn.execute(
+                        f"INSERT INTO machine_events "
+                        f"({', '.join(_EVENT_COLS)}) VALUES "
+                        f"({', '.join('?' * len(_EVENT_COLS))})",
+                        tuple(
+                            recovery_row[column]
+                            for column in _EVENT_COLS))
+                    recovery = conn.execute(
+                        "SELECT id,lane_id,created_at,severity,event_type,"
+                        "detail_json FROM machine_events WHERE id=?",
+                        (recovery_cur.lastrowid,)).fetchone()
+                    _apply_warning_recovery(conn, recovery)
             conn.commit()
             row = conn.execute("SELECT * FROM machine_leases WHERE lane_id = ?",
                                (lane_id,)).fetchone()
@@ -1393,7 +1947,8 @@ _HEARTBEAT_STR_FIELDS = (
 
 
 def _heartbeat_nonnegative_int(value, field):
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+    value = _opt_int(value, field)
+    if value is None or value < 0:
         raise ValueError(f"{field} must be a non-negative integer")
     return value
 
@@ -2017,7 +2572,7 @@ def insert_events_with_disposition(rows, *, timeout_s=None):
                         incident = conn.execute(
                             "SELECT id FROM lane_incidents "
                             "WHERE lane_id=? AND event_type=? "
-                            "AND COALESCE(code,'')=COALESCE(?, '') "
+                            "AND code IS ? "
                             "AND state IN ('open','override_pending')",
                             (row["lane_id"], row["event_type"],
                              row.get("code"))).fetchone()
@@ -2035,13 +2590,26 @@ def insert_events_with_disposition(rows, *, timeout_s=None):
                             incident_id = incident["id"]
                             conn.execute(
                                 "UPDATE lane_incidents SET "
-                                "last_seen_at=?,repeat_count=repeat_count+1 "
+                                "opened_at=MIN(opened_at,?),"
+                                "last_seen_at=MAX(last_seen_at,?),"
+                                "repeat_count=repeat_count+1 "
                                 "WHERE id=?",
-                                (row["created_at"], incident_id))
+                                (
+                                    row["created_at"], row["created_at"],
+                                    incident_id,
+                                ))
                         conn.execute(
                             "UPDATE machine_events SET incident_id=? "
                             "WHERE id=?",
                             (incident_id, event_id))
+                    elif (
+                            row["severity"] == "info"
+                            and row["event_type"] == "recovered"):
+                        recovery = conn.execute(
+                            "SELECT id,lane_id,created_at,severity,event_type,"
+                            "detail_json FROM machine_events WHERE id=?",
+                            (event_id,)).fetchone()
+                        _apply_warning_recovery(conn, recovery)
             activity_at = _utc_now_iso()
             for lane_id in sorted({
                     row['lane_id'] for row in rows
@@ -2110,6 +2678,7 @@ def ack_event(event_id, by):
     already_acknowledged=True. Returns None when the id doesn't exist.
     `by` is the wsl.db staff id — an OPAQUE int across the domain
     boundary (never joined against here)."""
+    event_id = _positive_db_id(event_id, 'event_id')
     by = _staff_actor_id(by, 'acknowledged_by')
     now = _utc_now_iso()
     with _db_lock:
@@ -2133,6 +2702,7 @@ def _resolve_event_legacy(event_id, by):
     """Mark an event resolved. Idempotent (first resolve wins).
     Returns None when the id doesn't exist. Independent of ack — a
     fault can be resolved un-acked and vice versa."""
+    event_id = _positive_db_id(event_id, 'event_id')
     by = _staff_actor_id(by, 'resolved_by')
     now = _utc_now_iso()
     with _db_lock:
@@ -2153,13 +2723,14 @@ def _resolve_event_legacy(event_id, by):
 
 
 def resolve_event(event_id, by, *, recovery_event_id=None,
-                  override_reason=None):
+                   override_reason=None):
     """Resolve only from later recovery evidence.
 
     A privileged override is durable and visible but intentionally leaves the
     fault open (incident state ``override_pending``); it cannot make a lane
     falsely green.
     """
+    event_id = _positive_db_id(event_id, 'event_id')
     by = _staff_actor_id(by, 'resolved_by')
     if (recovery_event_id is None) == (override_reason is None):
         raise ValueError(
@@ -2188,18 +2759,20 @@ def resolve_event(event_id, by, *, recovery_event_id=None,
                 if override_reason is not None:
                     raise ValueError(
                         "fault is already resolved; override is unavailable")
-                if incident_id is not None:
+                prior = conn.execute(
+                    "SELECT recovery_event_id "
+                    "FROM machine_resolution_audit "
+                    "WHERE event_id=? AND action='recovery' "
+                    "ORDER BY id DESC LIMIT 1",
+                    (event_id,)).fetchone()
+                # Older incident-wide recoveries wrote a single audit row for
+                # the selected occurrence.  Preserve replay compatibility for
+                # its siblings, while preferring exact per-event evidence.
+                if prior is None and incident_id is not None:
                     prior = conn.execute(
                         "SELECT recovery_event_id FROM lane_incidents "
                         "WHERE id=? AND state='closed'",
                         (incident_id,)).fetchone()
-                else:
-                    prior = conn.execute(
-                        "SELECT recovery_event_id "
-                        "FROM machine_resolution_audit "
-                        "WHERE event_id=? AND action='recovery' "
-                        "ORDER BY id DESC LIMIT 1",
-                        (event_id,)).fetchone()
                 prior_recovery_id = (
                     prior["recovery_event_id"]
                     if prior is not None else None)
@@ -2250,21 +2823,83 @@ def resolve_event(event_id, by, *, recovery_event_id=None,
                 raise ValueError("recovery_event_id not found")
             try:
                 detail = json.loads(recovery["detail_json"] or "{}")
-                explicit_target = detail.get("recovery_of_event_id")
+                if not isinstance(detail, dict):
+                    detail = {}
             except (TypeError, ValueError):
-                explicit_target = None
-            code_match = (
-                target["code"] is not None
-                and recovery["code"] == target["code"])
+                detail = {}
+            evidence_target = target
+            newest_unresolved_id = target["id"]
+            newest_unresolved_created_at = target["created_at"]
+            if incident_id is not None:
+                newest = conn.execute(
+                    "SELECT * FROM machine_events "
+                    "WHERE incident_id=? AND severity='fault' "
+                    "AND resolved_at IS NULL AND event_type=? AND code IS ? "
+                    "ORDER BY created_at DESC,id DESC LIMIT 1",
+                    (
+                        incident_id, target["event_type"], target["code"],
+                    )).fetchone()
+                if newest is None:
+                    raise ValueError(
+                        "incident has no unresolved exact fault family "
+                        "to recover")
+                evidence_target = newest
+                bounds = conn.execute(
+                    "SELECT MAX(id) AS max_id,"
+                    "MAX(created_at) AS max_created_at "
+                    "FROM machine_events WHERE incident_id=? "
+                    "AND severity='fault' AND resolved_at IS NULL "
+                    "AND event_type=? AND code IS ?",
+                    (
+                        incident_id, target["event_type"], target["code"],
+                    )).fetchone()
+                newest_unresolved_id = bounds["max_id"]
+                newest_unresolved_created_at = bounds["max_created_at"]
+
+            target_id_present = "recovery_of_event_id" in detail
+            explicit_target = detail.get("recovery_of_event_id")
+            explicit_target_valid = (
+                type(explicit_target) is int
+                and explicit_target == evidence_target["id"])
+            family_type_present = "recovered_event_type" in detail
+            family_code_present = "recovered_code" in detail
+            family_metadata_present = (
+                family_type_present or family_code_present)
+            family_match = (
+                family_type_present
+                and family_code_present
+                and detail["recovered_event_type"]
+                == evidence_target["event_type"]
+                and detail["recovered_code"] == evidence_target["code"])
+            is_recovery_event = recovery["event_type"] == "recovered"
+            selectors_consistent = (
+                (not target_id_present or explicit_target_valid)
+                and (not family_metadata_present or family_match)
+                and (
+                    target_id_present
+                    or family_metadata_present))
+            try:
+                recovery_created = _normalize_utc_iso(
+                    recovery["created_at"])
+                target_created = _normalize_utc_iso(
+                    newest_unresolved_created_at)
+                producer_time_ok = recovery_created >= target_created
+            except (TypeError, ValueError):
+                producer_time_ok = False
             valid_recovery = (
-                recovery["lane_id"] == target["lane_id"]
+                recovery["lane_id"] == evidence_target["lane_id"]
                 and recovery["severity"] == "info"
-                and recovery["id"] > target["id"]
-                and (explicit_target == event_id or code_match))
+                and recovery["id"] > newest_unresolved_id
+                and producer_time_ok
+                and is_recovery_event
+                and selectors_consistent)
             if not valid_recovery:
                 raise ValueError(
-                    "recovery event must be a later same-lane info event "
-                    "with matching code or explicit recovery_of_event_id")
+                    "recovery event must follow the newest unresolved "
+                    "same-lane fault in both producer time and insertion "
+                    "order, use info/recovered, and identify that fault with "
+                    "an exact integer recovery_of_event_id, exact "
+                    "recovered_event_type + recovered_code fault family")
             if incident_id is None:
                 cur = conn.execute(
                     "UPDATE machine_events SET resolved_at=?,resolved_by=? "
@@ -2275,14 +2910,52 @@ def resolve_event(event_id, by, *, recovery_event_id=None,
                 cur = conn.execute(
                     "UPDATE machine_events SET resolved_at=?,resolved_by=? "
                     "WHERE incident_id=? AND severity='fault' "
-                    "AND resolved_at IS NULL",
-                    (now, by, incident_id))
+                    "AND resolved_at IS NULL AND event_type=? AND code IS ?",
+                    (
+                        now, by, incident_id,
+                        target["event_type"], target["code"],
+                    ))
                 changed = cur.rowcount
-                conn.execute(
-                    "UPDATE lane_incidents SET state='closed',"
-                    "recovery_event_id=?,closed_at=?,closed_by=? "
-                    "WHERE id=?",
-                    (recovery_event_id, now, by, incident_id))
+                remaining = conn.execute(
+                    "SELECT event_type,code,MIN(created_at) AS opened_at,"
+                    "MAX(created_at) AS last_seen_at,COUNT(*) AS repeat_count "
+                    "FROM machine_events WHERE incident_id=? "
+                    "AND severity='fault' AND resolved_at IS NULL "
+                    "GROUP BY event_type,(code IS NULL),code "
+                    "ORDER BY MAX(created_at) DESC,MAX(id) DESC LIMIT 1",
+                    (incident_id,)).fetchone()
+                if remaining is None:
+                    conn.execute(
+                        "UPDATE lane_incidents SET state='closed',"
+                        "recovery_event_id=?,closed_at=?,closed_by=? "
+                        "WHERE id=?",
+                        (recovery_event_id, now, by, incident_id))
+                else:
+                    # Defensive repair for a legacy, pre-migration mixed
+                    # incident: resolving one exact family must never hide the
+                    # other.  Normal schema open/migration keeps one family per
+                    # incident, so this branch is only a safety backstop.
+                    pending_override = conn.execute(
+                        "SELECT 1 FROM machine_resolution_audit a "
+                        "JOIN machine_events e ON e.id=a.event_id "
+                        "WHERE e.incident_id=? AND e.resolved_at IS NULL "
+                        "AND a.action='override_requested' LIMIT 1",
+                        (incident_id,)).fetchone() is not None
+                    conn.execute(
+                        "UPDATE lane_incidents SET event_type=?,code=?,"
+                        "opened_at=?,last_seen_at=?,repeat_count=?,state=?,"
+                        "recovery_event_id=NULL,closed_at=NULL,closed_by=NULL "
+                        "WHERE id=?",
+                        (
+                            remaining["event_type"], remaining["code"],
+                            remaining["opened_at"], remaining["last_seen_at"],
+                            remaining["repeat_count"],
+                            (
+                                "override_pending"
+                                if pending_override else "open"
+                            ),
+                            incident_id,
+                        ))
             conn.execute(
                 "INSERT INTO machine_resolution_audit "
                 "(event_id,incident_id,action,actor_id,"
@@ -2309,6 +2982,7 @@ def lane_diagnostics(lane_id, events_limit=50):
     unresolved faults, last N events, the latest cycle (with its six
     intervals), and a baseline summary over the last
     BASELINE_SAMPLE_CYCLES clean (non-aborted, non-shadow) cycles."""
+    lane_id = _lane_id(lane_id)
     events_limit = max(1, min(int(events_limit), 500))
     with _db_lock:
         with closing(_connect()) as conn:
@@ -2376,6 +3050,8 @@ def _empty_lane_rollup():
         'code': None,
         'since': None,
         'acked': False,
+        'current_conditions': [],
+        'current_condition_count': 0,
         'last_event_at': None,
         'last_event_type': None,
         'last_event_code': None,
@@ -2446,8 +3122,9 @@ def machine_health():
 
     ⚠️ CROSS-REPO CONTRACT (2026-07-19 review): each lane entry carries the
     keys wsl_phase8_bridge._parse_machine_health whitelists —
-    {fault, code, since, acked, event_id, severity} — pinned by
-    WSL Systems tests/test_phase8_bridge_contract.py and
+    {fault, code, since, acked, event_id, severity, current_conditions,
+    current_condition_count} — pinned by WSL Systems
+    tests/test_phase8_bridge_contract.py and
     tests/test_pytest_machine_health.py, and consumed by
     wsl_machine_alerts.observe_health (desk badge + mechanic SMS). Change
     them in lockstep only. 'code'/'since'/'acked'/'event_id' come from the
@@ -2457,8 +3134,14 @@ def machine_health():
     throttle. The last_event_*/last_cycle_* keys are informational extras
     ('last' = newest event/cycle time, id-tiebroken).
 
+    ``current_condition_count`` is the exact number of unresolved warn/fault
+    rows. ``current_conditions`` is the newest
+    :data:`CURRENT_CONDITION_LIMIT` rows per lane, ordered by producer
+    timestamp then event id descending, so the response stays bounded without
+    making the operational count approximate.
+
     Query shape: bounded per-lane point lookups (lanes 1-32, indexed) plus
-    the tiny partial open-fault index — never a full table scan under
+    the partial open-condition indexes — never a full event-table scan under
     _db_lock (the :8766 HTTP thread also serves the desk scoring proxy)."""
     lanes = {}
     with _db_lock:
@@ -2472,14 +3155,22 @@ def machine_health():
                 lanes.setdefault(str(r['lane_id']),
                                  _empty_lane_rollup())['open_faults'] = r['n']
             for r in conn.execute(
-                    "SELECT e.lane_id AS lane_id, e.id AS id, "
-                    "e.created_at AS created_at, e.code AS code, "
-                    "e.severity AS severity, "
-                    "e.acknowledged_at AS acknowledged_at "
-                    "FROM machine_events e JOIN (SELECT lane_id, MAX(id) AS m "
-                    "FROM machine_events WHERE severity = 'fault' "
-                    "AND resolved_at IS NULL GROUP BY lane_id) open "
-                    "ON e.id = open.m"):
+                    "SELECT lane_id, COUNT(*) AS n FROM machine_events "
+                    "WHERE severity IN ('warn','fault') "
+                    "AND resolved_at IS NULL GROUP BY lane_id"):
+                lanes.setdefault(
+                    str(r['lane_id']),
+                    _empty_lane_rollup())['current_condition_count'] = r['n']
+            for r in conn.execute(
+                    "SELECT lane_id,id,created_at,code,severity,"
+                    "acknowledged_at FROM ("
+                    "SELECT lane_id,id,created_at,code,severity,"
+                    "acknowledged_at,ROW_NUMBER() OVER ("
+                    "PARTITION BY lane_id "
+                    "ORDER BY created_at DESC,id DESC) AS newest_rank "
+                    "FROM machine_events WHERE severity='fault' "
+                    "AND resolved_at IS NULL"
+                    ") WHERE newest_rank=1"):
                 d = lanes.setdefault(str(r['lane_id']), _empty_lane_rollup())
                 d['fault'] = True
                 d['code'] = r['code']
@@ -2488,6 +3179,22 @@ def machine_health():
                 d['event_id'] = r['id']
                 d['severity'] = r['severity']
             for lane_id in range(1, 33):
+                condition_rows = conn.execute(
+                    "SELECT id,event_type,code,severity,created_at "
+                    "FROM machine_events WHERE lane_id=? "
+                    "AND severity IN ('warn','fault') "
+                    "AND resolved_at IS NULL "
+                    "ORDER BY created_at DESC,id DESC LIMIT ?",
+                    (lane_id, CURRENT_CONDITION_LIMIT)).fetchall()
+                if condition_rows:
+                    d = lanes.setdefault(str(lane_id), _empty_lane_rollup())
+                    d['current_conditions'] = [{
+                        'event_type': row['event_type'],
+                        'code': row['code'],
+                        'severity': row['severity'],
+                        'since': row['created_at'],
+                        'event_id': row['id'],
+                    } for row in condition_rows]
                 r = conn.execute(
                     "SELECT created_at, event_type, code FROM machine_events "
                     "WHERE lane_id = ? ORDER BY created_at DESC, id DESC "
@@ -2584,6 +3291,15 @@ def machine_health():
                 reasons.append('diagnostic_record_drops')
             reasons.extend(
                 _controller_posture_degraded_reasons(lease, safety_taps))
+        reasons.extend(
+            "condition:" + json.dumps(
+                [condition['event_type'], condition['code']],
+                ensure_ascii=True, separators=(',', ':'))
+            for condition in entry['current_conditions'])
+        if (
+                entry['current_condition_count']
+                > len(entry['current_conditions'])):
+            reasons.append('condition_list_truncated')
         reasons = sorted(set(reasons))
         if lease.get('maintenance'):
             state = 'MAINTENANCE'
@@ -2593,7 +3309,7 @@ def machine_health():
             state = 'OFFLINE'
         elif entry['fault']:
             state = 'FAULT'
-        elif reasons:
+        elif entry['current_condition_count'] > 0 or reasons:
             state = 'DEGRADED'
         else:
             state = 'HEALTHY'
@@ -2749,12 +3465,12 @@ def health_counts():
 # ------------------------------------------------------------------
 
 def prune_events(now=None):
-    """Delete expired history while preserving every unresolved fault.
+    """Delete expired history while preserving every unresolved condition.
 
-    An unresolved fault is active operational state, not merely historical
-    telemetry. It remains visible regardless of age and becomes eligible for
-    normal retention only after ``resolved_at`` is set. Returns the deleted
-    count and is a no-op when the kill-switch is off.
+    An unresolved warning or fault is active operational state, not merely
+    historical telemetry. It remains visible regardless of age and becomes
+    eligible for normal retention only after ``resolved_at`` is set. Returns
+    the deleted count and is a no-op when the kill-switch is off.
     """
     if not enabled():
         return 0
@@ -2766,7 +3482,8 @@ def prune_events(now=None):
         with closing(_connect()) as conn:
             cur = conn.execute(
                 "DELETE FROM machine_events WHERE created_at < ? "
-                "AND NOT (severity = 'fault' AND resolved_at IS NULL) "
+                "AND NOT (severity IN ('warn','fault') "
+                "AND resolved_at IS NULL) "
                 "AND id NOT IN (SELECT event_id "
                 "FROM machine_resolution_audit) "
                 "AND id NOT IN (SELECT recovery_event_id "

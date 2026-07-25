@@ -1,5 +1,13 @@
 # Phase 8 — Session Close / Handoff (2026-06-03)
 
+> ⛔ **FROZEN HISTORICAL HANDOFF — NOT CURRENT CUTOVER OR SAFETY AUTHORITY.**
+> Later physical evidence supersedes its B1/B3 assumptions. Lanes 21/22 use the
+> Candidate-C J_SAFE1-2 jumper plus OEM-ladder G3 S/T proof, have no C.I.S.
+> device or wiring, and remain Stop-only with another pit-entry interlock
+> unresolved. J14.3–4 is OPEN/no-arm pending an approved Stop/control-power
+> interface and bounded demand proof. Use the current manual, lane harness build
+> sheet, diagnostics scope, and Track-B runbook.
+
 > **READ THIS FIRST next session.** Live state + next action per thread, as of end-of-2026-06-03. The exhaustive detail is in the linked docs; this is the map + the state that only existed in the conversation. Supersedes `phase8_session_close_2026-06-01.md` for current state.
 
 ## 0. Cold-start orientation

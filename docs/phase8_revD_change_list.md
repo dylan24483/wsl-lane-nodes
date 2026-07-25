@@ -15,6 +15,14 @@
 > diagnostics-software campaign. Not pushed (branch has no remote — 160 MB-PDF push blocker).
 > Reminder: **every rev-C artifact carries a revB filename** — `generate_kicad_netlist_revB.py`
 > IS the rev-C generator and `kicad/fab_revB_routed_manual/` IS the rev-C-as-ordered package.
+>
+> **2026-07-24 immutable-snapshot repair:** a later safety-banner insertion in
+> `phase8b_pcb_revB_spec.md` violated the rule above and made the standing gate
+> 188/189. The banner was removed and the file restored byte-for-byte to its
+> recorded SHA-256; the superseding Candidate-C/wiring warning remains in the
+> current Rev-D change list, diagnostics scope, harness documents, and service
+> manual. The repair commit touches the frozen file only to restore the exact
+> immutable baseline; `scripts/verify_revC_snapshot.py` is again 189/189.
 
 ---
 
@@ -182,11 +190,18 @@ owner decisions, physical/powered sessions, or export steps — no open design w
    data); the purchase itself still ships WITH the boards; profiles fitted before first
    article (install per the corrected H7 rule — profile in the PLUG, sacrificial pair
    first).
-6. **First-article gate** — checklist §2: per-board test docs for rev-D refdes are
+6. **First-article and machine-safety gates** — checklist §2: per-board test docs for rev-D refdes are
    GENERATED (M6: `docs/phase8_revD_first_article_pack.md`; re-run the generator if the
    design moves), then rails/GPB/ADC/tap tests incl. the **at-temperature (≥70 °C)
    rail-tap repeat (OG-4 — cold-only does not discharge it)**, the physical cross-mate
-   refusal tests, and the FA-8 sacrificial-pair coding proof.
+   refusal tests, and the FA-8 sacrificial-pair coding proof. The resulting board
+   remains installation-NO-GO until FA-13 closes the physically open J14.3–4
+   Stop/control-power architecture, proves bounded Stop→power-drop behavior,
+   and closes the lane-21/22 pit-interlock disposition. Those lanes have no
+   C.I.S.; any installed/new pit interlock must be proved separately in its
+   approved upstream safety-disconnect path, not merely at J14. FA-14 requires qualified-electrician,
+   listed-instrument proof of protective-earth continuity/bonding and hot/neutral
+   polarity. Neither mains nor PE-test current may enter Rev-D.
 7. **Characterization session** for analog population (DC1–DC3) — CT current channels + temp
    ride the external-module path (J16 / USB-ADC); nothing analog populates on-board, ever.
 8. **G14 — Dylan's overall review** of this change list + spec + checklist + run log
@@ -255,12 +270,49 @@ owner decisions, physical/powered sessions, or export steps — no open design w
   `board_rev` selection (`IN_B_MAPS`, unknown rev = hard error), dual-generator
   drift guards (rev-B/C AND rev-D, `tests/test_pin_map_drift.py` + both
   `__main__` guards), `read_inputs_b` two-port read, AUX4-11 in the
-  `WSL_DIAG_AUX_ROLES` surface (dormant-unless-mapped, stuck-exempt), and
+  per-board `WSL_DIAG_AUX_ROLES_L<lane>` surface (the unscoped compatibility
+  map is one-board-only; dormant-unless-mapped, stuck-exempt), and
   stable-time debounce on all diagnostics slow inputs
   (`WSL_SLOW_DEBOUNCE_N`, default 3 samples ≈60 ms @ 50 Hz; FSM safety path
   stays raw unless `WSL_SLOW_DEBOUNCE_FSM_N` is deliberately raised — flagged).
   Originally scoped to ship in the
   separate 2026-07-19 diagnostics software campaign — NOT this board task.
+- **2026-07-24 diagnostic-integrity amendment:** pair startup resolves every
+  board's AUX map before opening hardware, refuses partial pair maps and more
+  than one `exit_beam` source. IN-B/FIELD_WET blindness invalidates rather than
+  shifts pending return, BE-current, distributor-gap, stale-channel, and held
+  field-input evidence; external sensor-supply blindness invalidates its
+  dependent exit/index evidence only. Recovery is a raw/debounced level
+  baseline, completion alarms wait for the current sample, runtime gate-off
+  intervals invalidate evidence, and pair returns receive a one-timeout drain
+  quarantine before tracking resumes. AUX10 remains existing
+  Rev-D capacity—this amendment does not add copper or require another spin.
+  Queue rejection and runtime gate-off also no longer consume observed
+  incidents: lane and platform one-shots keep immutable occurrence stamps,
+  bounded retry is severity-first, current states are canceled/re-proven,
+  service-start obligations clear only after local durable persistence, and
+  shutdown interleaves offer/drain passes down to a one-record queue. Foreign
+  health relays use an atomically fsync'd write-ahead ledger: planner state and
+  every concrete lane obligation fit before any offer; alert/recovery rows have
+  restart-stable identities; ambiguous failures replay the exact row; and an
+  alert completes before its exact-family recovery. If a fault recurs while an
+  ambiguous recovery is pending, the ledger serializes that recovery followed
+  by a distinct re-alert rather than clearing a current fault. Quarantine
+  notifications cannot recurse on their own server rejection. These are
+  software/operations changes, not Rev-D copper requirements.
+- **2026-07-24 P0 allocation correction:** J14.3–4 is physically OPEN in the
+  authoritative harness and the field rail cannot arm. Physical inspection
+  found no C.I.S. device or wiring on lanes 21/22; whether another pit-entry
+  interlock exists remains open. Rev-D's GPB capacity is therefore prioritized
+  ahead of generic door/manual options: provisional AUX4=`stop_request`,
+  AUX5=`pit_interlock_request` only if an installed/new device is approved,
+  AUX6=`control_power_ok`/breaker auxiliary, AUX7/AUX8=S/T digital current
+  switches if selected, AUX9=one measured optional dry contact,
+  AUX10=`sensor_24v_ok`, AUX11=`field_wet_ok`. Do not configure a fictitious
+  `cis_request` on lanes 21/22. AUX4–AUX9 are reservations only:
+  no role is mapped until signal form, landing, isolation, exact software
+  semantics, open-wire behavior, and FA-13 proof are approved. Only isolated
+  volt-free contacts may enter J15.
 
 ### D. VCC_5V board-self-health ADC divider (GP26/ADC0)
 - Catalog §2 item 4, platform tier: 5 V sag under the ~460 mA 6-coil load, brownout trending.
@@ -273,12 +325,15 @@ owner decisions, physical/powered sessions, or export steps — no open design w
 - 3 parts, 1 new net (+1 Logic_Signal, exact-name classifier entry).
 - First article: GP26 reads VCC_5V/2 within ±3 % of the TP1 DMM value; 6-coil sag visible.
 
-### E. Rail-drop edge-ordering taps — NE555_OUT / WDOG_KICK / ARM_PERMIT / RP2040_OK
+### E. Rail-predicate edge-ordering taps — NE555_OUT / WDOG_KICK / ARM_PERMIT / RP2040_OK
 **REDESIGNED 2026-07-21 (remediation spec R1 — closes Codex C1 + H1; supersedes the
 resistive-tap text that stood here through 2026-07-20):**
-- Catalog §2 item 5: 1 ms edge-ordered capture on GP16–GP19 turns undifferentiated "rail
-  down" into ordered fault codes (wdt_reset vs pi_death vs arm_drop). Taps land ONLY on
-  existing observable points (TP8/TP13/TP14 nets + NE555_OUT).
+- Catalog §2 item 5: 1 ms edge-ordered capture on GP16–GP19 records causal predicate
+  transitions and supports advisory cause inference (wdt_reset vs pi_death vs
+  arm_drop) when independent evidence says the rail dropped. Taps land ONLY on
+  existing observable points (TP8/TP13/TP14 nets + NE555_OUT); none directly
+  observes `RELAY_ENABLE_RAIL`/TP16 or proves Q14/J14/rail stuck-on or stuck-open
+  behavior.
 - Per tap, a **2N7002 common-source inverter** (SOT-23 — the existing `Qled_*` class):
   observed net → **R_TAPIN 1M** → gate (+ **R_TAPG 10M** to GND on the three 3.3 V taps;
   the 555's push-pull output is never high-Z — asymmetry deliberate); VCC_3V3 →
@@ -345,6 +400,12 @@ resistive-tap text that stood here through 2026-07-20):**
 Catalog §2 item 6: any tap on SAFE_TBSC_RETURN / SAFE_STOP_RETURN / any SAFE_ net is a
 separate FMEA-gated decision. **No new copper on any SAFE_ net in this spin** — the rev-D
 audit enforces frozen SAFE_ pad membership (no pads beyond rev-C's) and fails closed.
+J14.3–4 is only an existing board source position and remains physically open in the
+released harness. Its future Stop/control-power interface is an external,
+measured, fail-safe design decision; never bridge it to make the rail arm.
+Placing a new pit switch only at J14 would drop board permission but would not
+open a welded downstream contact, so it cannot replace an approved upstream
+pit-entry safety disconnect.
 
 ### X2. Isolated machine-analog front-end — EXTERNAL, PERMANENTLY
 Catalog "Do NOT put on the board": it would introduce a third isolation-barrier component
@@ -394,7 +455,11 @@ NO 3, NC 4 unused — unchanged).
 
 ### P2. First-article bench test of one of each NEW I/O type
 Extended for rev-D: GPB bank poke, ADC divider read, rail-tap ordering (cold AND at
-temperature), J16 bus check, cross-mate refusal. Full plan in the readiness checklist §2.
+temperature), J16 bus check, cross-mate refusal. The generated pack now also
+contains FA-13/FA-14 system-level gates for Stop/control-power demand-to-drop,
+the lane-21/22 pit-interlock disposition, and external PE/polarity
+commissioning; those do not become bare-board claims.
+Full plan in the readiness checklist §2.
 
 ### P3. Export every spin to a NEW dated directory — export script refuses an existing dir
 The rmtree incident (rev-C-as-ordered overwrote rev-B-as-ordered in place) must be

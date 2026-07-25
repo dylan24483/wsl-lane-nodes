@@ -10,7 +10,12 @@
 > proved OEM **parallel closed-when-safe** contacts and that both levers BACK/open
 > kill both S and T coils. Candidate C is decided: controlled, labeled jumper on
 > J_SAFE1-2; OEM ladder remains primary; per-lane G3 S-and-T coil-drop proof is
-> mandatory. Do not use the superseded B1 blanks below to derive a harness.
+> mandatory. Its original B3 conclusion is also superseded for the pilot:
+> physical inspection found no C.I.S. device or wiring on lanes 21/22. Treat
+> those lanes as Stop-only, determine whether another pit-entry interlock
+> exists, and keep J14.3–4 OPEN/no-arm pending an approved Stop/control-power
+> interface and demand proof. Do not use the superseded B1/B3 blanks below to
+> derive a harness or claim a safety pass.
 
 > ⚠️ **THIS IS NOT THE BENCH.** The earlier field work was the *disconnected spare cabinet* (cold, safe). This session needs the **live machine** to read real voltages/currents and to actuate cams/grippers. **A powered pinsetter moves and bites.** Read §0 before touching anything.
 
@@ -23,7 +28,7 @@ Everything the rev-B board design needs is in hand. Remaining items are cutover-
 | **A1** working voltage | **24 VAC** (all relays; SP presumed) | creepage can relax 250V→24V → smaller board |
 | **A3** lamp supply | **15 VDC** → replaced by board-driven LEDs | lamp output simplified (no PhotoMOS) |
 | **A4** sampled cam input form | dry-contact behavior was observed for sampled motion cams; **no blanket NC/polarity conclusion for every cam** | populate only measured, landed channels |
-| **B3** Stop/CIS chain | **parallel, cut master breaker** (OEM svc p11) | preserve upstream safety chain |
+| **B3** Stop/CIS chain | **OEM history only; pilot finding supersedes it:** no C.I.S. device/wiring on lanes 21/22, installed chain is Stop-only, other pit interlock unresolved | demand-prove Stop; J14.3–4 stays OPEN/no-arm pending approved control-power interface |
 | **B1** TB/SC interlock | **superseded by 2026-06-27 cold + 2026-07-07 powered evidence:** embedded OEM parallel-safe ladder; no dry/independent TB pair | J_SAFE1-2 = controlled Candidate-C jumper; G3 proves S/T insertion |
 | **B2** cam-stop logic/HW | leans LOGIC; → cutover cam-flip | not a design gate |
 | **Grippers** | **chassis-return; gripped = CLOSED to ground** (corrects OEM TAC-common model) | gripper input = chassis-referenced dry contact, FIELD-side |
@@ -107,7 +112,12 @@ Each row has a **why** (what design number it locks). Priority order.
 
 ## PART B — SAFETY-ARCHITECTURE CONFIRMATIONS (design-critical, not voltage)
 > ✅ **STATUS 2026-06-02 — mostly resolved without the hard live trace:**
-> - **B3 = DONE from OEM service-manual p11** (Stop + C.I.S. in parallel, both cut the rear-panel master breaker). No probing needed. Skip the steps below.
+> - **B3 = SUPERSEDED for lanes 21/22 by 2026-07-24 physical inspection.**
+>   OEM service-manual p11 describes Stop + C.I.S., but neither pilot lane has
+>   a C.I.S. device or wiring. Do not skip field proof: demand-test the installed
+>   Stop for master/control-power removal, determine whether another pit-entry
+>   interlock exists, and keep J14.3–4 OPEN/no-arm until the approved
+>   Stop/control-power interface and proof are complete.
 > - **B1 = CLOSED by later evidence, not by the original inference below.** The
 >   powered OEM ladder is parallel closed-when-safe; no dry/independent TB pair
 >   exists for J_SAFE1-2. Candidate C uses the controlled jumper and per-lane G3
@@ -129,9 +139,16 @@ J_SAFETY circuit.
 **Why:** closes the open question from the bench (S-side was inaccessible). Determines if an existing hardwired cam-stop is preserved as a bonus backstop.
 **What:** **LOCKED OUT**, hand-rotate the sweep so the **SA cam** trips; watch whether the **S relay coil drops** purely from the cam (hardwired) or only via the board (logic). Repeat table/TA. Record: SA→S-coil drops by cam alone? Y/N ___ ; TA→T-coil? Y/N ___ . (Expected: logic.)
 
-### B3 — Stop/CIS chain in series with motor power
-**Why:** confirms the existing safety chain we must preserve upstream of the board.
-**What:** **LOCKED OUT** continuity: stop switch in RUN vs STOP → does the motor-relay coil rail go dead on STOP? Y/N ___ . (Should be Y = hardware-in-series.)
+### B3 — Installed Stop / pit-interlock chain and actual power removal
+**Why:** confirms the safety chain physically present on this chassis; the generic
+OEM Stop/C.I.S. drawing is not proof of installed pilot hardware.
+**What:** With the machine locked out, inventory the installed devices and record
+C.I.S. as **N/A — device absent** on lanes 21/22. Determine whether another
+pit-entry interlock exists. In the separately approved guarded powered procedure,
+demand Stop and prove master/control power and TP16 drop within recorded limits;
+test any installed/new pit interlock independently. J14 continuity alone is not
+power-removal proof, and J14.3–4 remains OPEN/no-arm until the reviewed isolated
+control-power interface is installed and proved.
 
 ---
 
@@ -185,8 +202,9 @@ reading into a J_SAFE1-2 landing.
 - A1 → **24 VAC confirmed; current conservative routed board is fab-exported.** Optional future work is 24 V creepage relaxation for a smaller/spin-2 board; current next step is vendor Gerber/drill upload preview.
 - A2/A3 → BOM fab-lock (relay contact rating, lamp switch part, snubber populate y/n).
 - A4 → input front-end default population per channel.
-- B1/B2/B3 → B1 is now Candidate C + G3 evidence; B3 preserves Stop/CIS; B2/cam
-  enforcement remains separately measured and release-gated.
+- B1/B2/B3 → B1 is now Candidate C + G3 evidence; B3 is a Stop-only pilot
+  finding plus unresolved pit-interlock/control-power proof, not an OEM C.I.S.
+  pass; B2/cam enforcement remains separately measured and release-gated.
 - C → the per-chassis adapter harness (the thing that maps the function-named board to THIS lane's C1/C2A).
 
 > **Reminder:** this is per-CHASSIS-TYPE. Lanes 21/22 are SS+Omega-Tek; 11/12 are Active-98 MP. The A1/A4/C readings here apply to the 21/22 pair; the MP pair needs its own quick pass before its harness. The BOARD is common; the harness + populations are per-chassis.

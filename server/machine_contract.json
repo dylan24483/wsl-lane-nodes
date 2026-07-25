@@ -174,10 +174,15 @@
       "method": "GET",
       "path": "/api/machine/health",
       "response_top_fields": ["ok", "site_id", "site_identity_ok", "generated_at", "lanes", "clock_authority", "scoring_node_topology", "diagnostic_delivery"],
-      "lane_entry_bridge_keys": ["fault", "code", "since", "acked", "event_id", "severity", "state", "last_seen", "age_s", "degraded_reasons", "scoring_state", "scoring_reasons"],
+      "lane_entry_bridge_keys": ["fault", "code", "since", "acked", "event_id", "severity", "current_conditions", "current_condition_count", "state", "last_seen", "age_s", "degraded_reasons", "scoring_state", "scoring_reasons"],
       "lane_entry_forward_keys": ["activity_seen_at", "scoring_seen_at", "scoring_age_s", "scoring_state", "scoring_reason", "scoring_reasons", "scoring_mode", "scoring_camera_calibrated", "scoring_camera_ok", "scoring_camera_code", "scoring_outbox", "scoring_boot_id", "scoring_session_id", "scoring_heartbeat_seq", "scoring_node_lockout_s", "heartbeat_at", "controller_boot_id", "heartbeat_seq", "control_loop_seq", "control_loop_progress_at", "control_loop_age_s", "controller_mode", "live_outputs_acknowledged", "arm_state", "fsm_state", "manual_rearm_required", "legacy_identity_mode", "identity_assurance", "arm_prerequisite_reason", "safety_taps", "board_rev", "observed_pcb", "observed_rid", "observed_uid", "fw_build", "fw_cfg", "fw_version", "contract_sha256", "contract_loaded", "contract_match", "identity_ok", "identity_reason", "ro_fs", "outbox", "platform", "serial_parse_errors", "diag_record_drops", "maintenance_overdue", "degraded", "degraded_reasons"],
-      "lane_entry_bridge_keys_note": "the keys wsl_phase8_bridge._parse_machine_health whitelists and wsl_machine_alerts.observe_health consumes; fault-latch fields come from the NEWEST OPEN fault event, never last_event_*",
-      "lane_entry_state_note": "Every configured machine lane always appears. last_seen and age_s derive only from the strict controller heartbeat. Track-A WebSocket HELLO/HEARTBEAT renew the independent scoring_seen_at/scoring_age_s/scoring_state lease; event/cycle replay updates activity_seen_at only. Neither path can renew the controller lease. Controller-state precedence: MAINTENANCE > no controller lease UNKNOWN > expired controller lease OFFLINE > open machine fault FAULT > controller mode/live-ack mismatch, legacy/unverified/invalid identity assurance, manual rearm, inconsistent ARM/FSM/safety taps, unqualified board-build-config tuple, invalid identity/contract/storage/outbox, or stalled control-loop DEGRADED > HEALTHY. MAINTENANCE preserves all degraded evidence while retaining its state precedence."
+      "lane_entry_bridge_keys_note": "the keys wsl_phase8_bridge._parse_machine_health whitelists and wsl_machine_alerts.observe_health consumes; fault-latch fields come from the NEWEST OPEN fault event by producer since DESC then event_id DESC, matching current_conditions ordering and never last_event_*. current_conditions/current_condition_count expose all operational warn/fault state without overloading the single legacy fault latch.",
+      "current_conditions_max": 100,
+      "current_condition_fields": ["event_type", "code", "severity", "since", "event_id"],
+      "current_condition_order": "newest first by since DESC, then event_id DESC; the list is capped at current_conditions_max while current_condition_count remains the exact unresolved warn/fault row count",
+      "current_condition_semantics": "Only unresolved rows whose severity is exactly warn or fault are conditions. event_type is a nonempty contract vocabulary token, code is a bounded string or null, severity is warn or fault, since is the normalized UTC created_at, and event_id is a positive SQLite row id. Exact later info/recovered evidence may automatically close warning rows; faults retain explicit actor-audited resolution. A warning recovery must identify the newest unresolved occurrence by exact recovery_of_event_id and/or exact recovered_event_type plus recovered_code, follow it in producer time and insertion order, and never uses broad top-level code matching.",
+      "condition_reason_encoding": "Every condition present in the bounded list contributes one degraded_reasons token equal to the literal prefix condition: followed by canonical compact JSON [event_type,code], preserving null and arbitrary code text without ambiguity. condition_list_truncated is also present when current_condition_count exceeds the list length.",
+      "lane_entry_state_note": "Every configured machine lane always appears. last_seen and age_s derive only from the strict controller heartbeat. Track-A WebSocket HELLO/HEARTBEAT renew the independent scoring_seen_at/scoring_age_s/scoring_state lease; event/cycle replay updates activity_seen_at only. Neither path can renew the controller lease. Controller-state precedence: MAINTENANCE > no controller lease UNKNOWN > expired controller lease OFFLINE > open machine fault FAULT > unresolved machine warning or controller mode/live-ack mismatch, legacy/unverified/invalid identity assurance, manual rearm, inconsistent ARM/FSM/safety taps, unqualified board-build-config tuple, invalid identity/contract/storage/outbox, or stalled control-loop DEGRADED > HEALTHY. Within an online lane, any unresolved fault remains FAULT; warning conditions cannot demote it to DEGRADED. MAINTENANCE preserves all degraded evidence while retaining its state precedence."
     },
     "maintenance_post": {
       "method": "POST",
@@ -382,6 +387,8 @@
           "acked": false,
           "event_id": 101,
           "severity": "fault",
+          "current_conditions": [{"event_type": "fsm_fault", "code": "motion_timeout:S", "severity": "fault", "since": "2026-07-21T17:55:00.000+00:00", "event_id": 101}],
+          "current_condition_count": 1,
           "last_event_at": "2026-07-21T17:55:00.000+00:00",
           "last_event_type": "fsm_fault",
           "last_event_code": "motion_timeout:S",
@@ -438,8 +445,8 @@
           "serial_parse_errors": 0,
           "diag_record_drops": 0,
           "maintenance_overdue": false,
-          "degraded": false,
-          "degraded_reasons": []
+          "degraded": true,
+          "degraded_reasons": ["condition:[\"fsm_fault\",\"motion_timeout:S\"]"]
         },
         "22": {
           "open_faults": 0,
@@ -447,6 +454,8 @@
           "code": null,
           "since": null,
           "acked": false,
+          "current_conditions": [],
+          "current_condition_count": 0,
           "last_event_at": "2026-07-21T17:40:00.000+00:00",
           "last_event_type": "service_restart",
           "last_event_code": "daemon_start",

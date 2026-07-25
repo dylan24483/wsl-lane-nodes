@@ -2,6 +2,14 @@
 
 **Status: ✅ DECIDED 2026-07-07 — Candidate C.** J_SAFE1-2 receives the documented, labeled engineered jumper and the OEM SC/TB relay ladder remains the primary collision interlock. The powered test in §4 proved that the ladder alone blocks both S and T coils when both cam levers are BACK. This decision remains conditional on the **per-lane Stage-6b/G3 insertion-point proof** at every cutover; a failure is an abort/rollback, not a waiver. The firmware echo is only an unvalidated, default-off secondary diagnostic and is not the primary guard.
 
+> **Scope correction 2026-07-24:** this decision closes **J_SAFE1–2 / TBSC
+> only**. Physical inspection found no C.I.S. device or wiring on lanes 21/22.
+> References below to the J_SAFE3–4 “Stop/CIS loop” are the PCB's legacy source
+> label/OEM-generic history, not proof of an installed C.I.S. J_SAFE3–4 remains
+> OPEN/P0 pending the approved Stop/control-power interface and pit-entry
+> disposition described by the current harness spec, FA-13, and cutover
+> runbook. A J14-only pit switch cannot replace an upstream final disconnect.
+
 **Reads-with:** `phase8_metering_guide_harness_unknowns.md` (the measured record) · `phase8_trackB_controller_cutover_runbook.md` §3.4 + G3 · `phase8_lane21_harness_build_sheet.md` §2 · `scripts/generate_kicad_netlist_revD.py` `block_rail()` (the current board-side contract).
 
 ---

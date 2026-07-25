@@ -68,7 +68,7 @@ each connector with both its J-number and its function name.
 | **J11** | `J_MOTION_M2` | Phoenix MKDS 1,5/2-5.08, horizontal screw | 2 | Machine output (dry contact) | direct screw |
 | **J12** | `J_MOTION_M1` **(DNP)** | Phoenix MKDS 1,5/2-5.08, horizontal screw | 2 | Machine output (dry contact) | **NOT POPULATED** — footprint only |
 | **J13** | `J_LAMP_LED` | Phoenix MCV 1,5/6-G-3,5 vertical | 6 | Logic (LED drive) | Phoenix MC 1,5/6-ST-3,5 (PN 1840405) |
-| **J14** | `J_SAFETY` | Phoenix MCV 1,5/4-G-3,5 vertical | 4 | Safety rail source positions (**Candidate-C jumper 1–2; Stop/CIS 3–4**) | Phoenix MC 1,5/4-ST-3,5 (PN 1840382) |
+| **J14** | `J_SAFETY` | Phoenix MCV 1,5/4-G-3,5 vertical | 4 | Safety rail source positions (**Candidate-C jumper 1–2; reserved external control-power / optional pit-interlock interface 3–4 currently OPEN/unlanded**) | Phoenix MC 1,5/4-ST-3,5 (PN 1840382) |
 
 > **J12 is the only DNP connector.** The M1 (ball-return) channel — connector J12, relay
 > K7, driver Q7, R85/R86/R87, D13/D14, snubber C10 — is **Do Not Populate**. The FSM does
@@ -97,7 +97,8 @@ These conventions hold across every table below. They come from `opto_input()`,
 - **Domain** is one of: **LOGIC** (3.3 V / 5 V referenced to logic GND), **FIELD**
   (machine-side, referenced to `FIELD_GND`, isolated from logic by the opto), **MACHINE
   OUTPUT** (a floating relay dry contact), or **SAFETY** (the relay-enable source
-  positions; on lanes 21/22, Candidate-C jumper 1–2 plus Stop/CIS 3–4).
+  positions; on lanes 21/22, Candidate-C jumper 1–2 plus a reserved external
+  3–4 position that is currently OPEN/unlanded).
 - **All field inputs are dry-contact wetting by default.** Each input opto LED is fed from
   the isolated `FIELD_WET_V` rail (the TMA-0505S, U37, ~5 V isolated) through a 2.2 kΩ
   series resistor (`Rin`), and the field contact, when **closed**, returns that pin to
@@ -373,8 +374,9 @@ inductive AC control load is characterized (`phase8b_pcb_revB_spec.md` §2.3, §
 > control coils through these isolated contacts; they must **not** become the motor
 > contactor or the de-energized braking path. Motor current never crosses the PCB
 > (`phase8b_pcb_revB_spec.md` §3.1). The rail dropping de-energizes the *coil*; it cannot
-> open a **welded** contact — the upstream master breaker / Stop / CIS chain is the final
-> physical stop (§4.5).
+> open a **welded** contact — the upstream master breaker / installed Stop chain is
+> the pilot's final physical stop (§4.5). No C.I.S. device or wiring exists on
+> lanes 21/22.
 
 > **(VERIFY: relay contact rating headroom.)** Whether the G5LE-14 contact rating is
 > sufficient for the measured S/T/SP/BE/M/M2 control loads is an open assembly-blocking
@@ -425,23 +427,24 @@ on, sinks the LED return to GND, and lights the lamp. The bit assignments
 The PCB wires two connector positions **in series** between `VCC_5V` and the
 relay-enable pass-FET source. That is the board design, not the lane-21/22 field
 topology. Candidate C uses the controlled, labeled jumper on pins 1–2 because the
-machine has no dry TB/SC pair; pins 3–4 carry the separately measured Stop/CIS
-loop. Primary TB/SC protection remains in the OEM S/T coil ladder and is validated
+machine has no dry TB/SC pair. Pins 3–4 are reserved for a future validated
+external control-power / optional pit-interlock dry interface, but the current
+lane-21/22 harness leaves them physically OPEN/CUT+LABEL-ONLY. Primary TB/SC protection remains in the OEM S/T coil ladder and is validated
 by the per-lane G3 coil-drop test.
 
 | Pin | Signal | Net | Dir | Domain | Notes |
 |---|---|---|---|---|---|
 | 1 | +5 V loop source | `VCC_5V` | OUT | SAFETY | Start of the series interlock string. |
 | 2 | first position return → next loop | `SAFE_TBSC_RETURN` | IN/OUT | SAFETY | Candidate C return from the controlled pin-1↔2 jumper; same on-board net as pin 3. |
-| 3 | Stop/CIS loop source | `SAFE_TBSC_RETURN` | IN/OUT | SAFETY | Same net as pin 2 — start of the **Stop/CIS/master** NC loop. |
-| 4 | Stop/CIS loop return → pass-FET source | `SAFE_STOP_RETURN` | IN | SAFETY | Far end of the second loop; lands on the AO3401A (Q14) source + gate pull-up. |
+| 3 | Reserved external interface source | `SAFE_TBSC_RETURN` | IN/OUT | SAFETY | Same net as pin 2; current harness lead is CUT+LABEL-ONLY. |
+| 4 | Reserved external interface return → pass-FET source | `SAFE_STOP_RETURN` | IN | SAFETY | Lands on the AO3401A (Q14) source + gate pull-up; current harness lead is CUT+LABEL-ONLY. |
 
 **Operating theory.** `block_rail()` wires two source positions in series:
 `VCC_5V` (pin 1) → Candidate-C controlled jumper → pin 2; pins 2 and 3 are the **same board net**
-(`SAFE_TBSC_RETURN`), so the string continues out pin 3 → external Stop/CIS/master contacts
-→ pin 4 (`SAFE_STOP_RETURN`). Pin 4 feeds the **source of P-channel pass-FET Q14
+(`SAFE_TBSC_RETURN`), so a future approved interface can continue out pin 3 and
+return on pin 4 (`SAFE_STOP_RETURN`). Pin 4 feeds the **source of P-channel pass-FET Q14
 (AO3401A)** and a 100 kΩ gate pull-up. The pass-FET drain is `RELAY_ENABLE_RAIL`. Q14 only
-conducts (rail up) when pin 4 is at ~5 V — i.e. the Candidate-C jumper and Stop/CIS position are closed —
+conducts (rail up) when pin 4 is at ~5 V — i.e. the Candidate-C jumper and an approved 3–4 interface are closed —
 **and** the gate is pulled low by the downstream AND chain of two MMBT3904 NPNs gated by
 `ARM_PERMIT`, `RP2040_OK`, and the NE555 watchdog-OK pull-down. Any one false condition
 (open interlock loop, de-asserted arm, RP2040 unhealthy, or missing watchdog kick) leaves
@@ -449,16 +452,25 @@ the rail dead and the motion relays open. This is the electrical realization of 
 "non-bypassable hardware safety rail" in the one-sentence contract (§13).
 
 > **Candidate-C connector rule.** Pins 1↔2 receive only the keyed/labeled engineered
-> jumper from `phase8_lane21_harness_build_sheet.md`; pins 3↔4 receive the Stop/CIS
-> loop. Never bridge 1→4 or jumper 3↔4 at the machine. Opening 1↔2 proves the PCB
+> jumper from `phase8_lane21_harness_build_sheet.md`; pins 3↔4 remain physically
+> OPEN until a reviewed external energize-to-prove control-power relay dry-contact
+> interface is approved, optionally in series with an approved new
+> pit-entry-interlock contact. Only isolated volt-free contacts may reach J14;
+> sensed machine voltage and mains remain outside Rev-D. Never bridge
+> 1→4 or jumper 3↔4 at the machine. Opening 1↔2 proves the PCB
 > source position drops the rail, but it does **not** prove TB/SC protection; G3's
 > board-commanded S-and-T coil-drop test is the authoritative proof.
 
 > **Field resolution:** TB/SC is no longer an open J14 derivation. Cold 2026-06-27
 > proved no dry/independent pair and ~21 Ω sneak paths; powered 2026-07-07 proved
 > parallel closed-when-safe contacts, both levers BACK/open kills S/T. Candidate C
-> delegates the primary guard to that OEM ladder. Only the separate Stop/CIS
-> pins-3/4 landing remains to be resolved by its measured harness procedure.
+> delegates the primary guard to that OEM ladder. The separate pins-3/4 landing
+> remains OPEN and must be resolved by its measured harness procedure. A 3–4
+> source-continuity test is not proof that Stop actually trips the OEM breaker.
+> On lanes 21/22, demand-test Stop, record C.I.S. as **N/A — device absent**, and
+> inspect/ask the mechanic whether another automatic pit-entry interlock exists.
+> Test any identified or newly installed device separately. If none exists, the
+> install-versus-explicit-safety-decision gate must close before motion.
 
 ---
 

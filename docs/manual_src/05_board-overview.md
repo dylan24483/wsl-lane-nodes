@@ -84,7 +84,7 @@ Rev-B is divided into **three electrical domains**. The domain split is the cent
 | **FIELD** (machine-sense, **isolated**) | the *field* (LED) side of every input optocoupler — cams, grippers, DIELL ball detectors, foul, pushbuttons — and the isolated wetting rail | **FIELD_GND** (isolated; **not** tied to GND) | 5 V wetting; 24 VAC on AC-sense channels |
 | **MACHINE OUTPUT** | the relay *contacts* that open/close existing machine control circuits, plus their snubber/MOV footprints | floating / machine-referenced | 24 VAC measured (see note) |
 
-A fourth grouping — the **SAFETY RAIL / CONTROL** nets (`RELAY_ENABLE_RAIL`, `RAIL_GATE`, the relay coil low-sides `COIL_LO_*`, the AND-chain bases `BASE_AND_*`, and the interlock-loop nets `SAFE_*`) — is **electrically part of the LOGIC domain** (it sits on logic-side coil supply), but it is given its own net class for current-carrying and integrity reasons. Do not mistake it for a machine-output domain: the `SAFE_STOP_RETURN` / `SAFE_TBSC_RETURN` interlock returns are **low-voltage** sense/loop nets, not 250 VAC machine contacts. (This was a real classification bug caught during routing — see §5.6.) The safety rail is covered in detail in **Section 10 (Safety Rail & Watchdog)**.
+A fourth grouping — the **SAFETY RAIL / CONTROL** nets (`RELAY_ENABLE_RAIL`, `RAIL_GATE`, the relay coil low-sides `COIL_LO_*`, the AND-chain bases `BASE_AND_*`, and the J_SAFE source-position nets `SAFE_*`) — is **electrically part of the LOGIC domain** (it sits on logic-side coil supply), but it is given its own net class for current-carrying and integrity reasons. Do not mistake it for a machine-output domain: `SAFE_STOP_RETURN` / `SAFE_TBSC_RETURN` are **low-voltage board source-position** nets, not 250 VAC machine contacts and not evidence that an external control-power or pit-interlock interface has been landed. (This was a real classification bug caught during routing — see §5.6.) The safety rail is covered in detail in **Section 10 (Safety Rail & Watchdog)**.
 
 #### 5.4.1 LOGIC domain
 
@@ -187,15 +187,20 @@ The actual machine-output working voltage was **measured at 24 VAC**, which woul
 
 Rev-B adds *layers* of protection; it does not replace the machine's existing safety chain. When working on, bench-bringing-up, or servicing this board, treat the following as permanent, hardware-level facts:
 
-1. **The upstream machine safety chain stays live and primary.** The **Stop switch** and **C.I.S.** both cut the master breaker. Separately, the powered-proven OEM TB/SC ladder blocks both S/T coils when both levers are BACK/open. Candidate C leaves TB/SC in those coil circuits, uses only the controlled J_SAFE1-2 jumper, and requires per-lane G3 insertion proof. The board must defeat neither path. `(VERIFY remains for the separate J_SAFE3-4 Stop/CIS landing; TB/SC J_SAFE landing is resolved as no machine landing.)`
+1. **The upstream machine safety chain stays live and primary.** OEM documentation says the **Stop switch** and **C.I.S.** both cut the master breaker. Physical inspection instead found no C.I.S. device or wiring on lanes 21/22; demand-test their installed Stop for actual master/control-power removal and record C.I.S. as **N/A — device absent**. Inspect/ask the mechanic whether another automatic pit-entry interlock exists. If none exists, installation of a new interlock versus an explicit owner and qualified machine-safety decision is a pre-motion design gate. Separately, the powered-proven OEM TB/SC ladder blocks both S/T coils when both levers are BACK/open. Candidate C leaves TB/SC in those coil circuits, uses only the controlled J_SAFE1-2 jumper, and requires per-lane G3 insertion proof. The board must defeat neither path. **J_SAFE3-4 remains physically open/unlanded; never jumper it at the machine.**
 
 2. **Live motor current never touches the board.** Motor power stays on the machine's S/T contactors. The board commands those contactors' control coils through isolated contacts only.
 
-3. **The on-board rail fails open** on loss of logic power, watchdog kick, `RP2040_OK`/enabled cam-stop, ARM, or the implemented Stop/CIS loop. Candidate C closes the J_SAFE1-2 design position with the controlled jumper; primary TB/SC blocking remains separately in the OEM S/T coil ladder and is proven by G3. **The Pi cannot bypass either correctly installed hardware path** (see Section 10).
+3. **The on-board rail fails open** on loss of logic power, watchdog kick, `RP2040_OK`/enabled cam-stop, ARM, or an open J_SAFE source position. Candidate C closes J_SAFE1-2 with the controlled jumper; J_SAFE3-4 is currently open/unlanded, deliberately preventing the field rail from arming until an externally mounted, correctly rated energize-to-prove control-power relay supplies an isolated N.O. dry contact. That contact may be in series with an approved new pit-entry-interlock contact. The sensed voltage and all mains stay off Rev-D. Primary TB/SC blocking remains separately in the OEM S/T coil ladder and is proven by G3 (see Section 10).
 
-4. **The safety rail de-energizes coils; it cannot un-weld a stuck contact.** The rail drops the relay *coils*, but a relay contact that has welded closed will stay closed — which is exactly why relay contact rating, arc suppression (snubber/MOV), and validation are safety-relevant, and why the master breaker / Stop / C.I.S. chain remains the ultimate stop. `(VERIFY: final relay contact current/voltage rating for S/T/SP/BE/M/M2 — confirm G5LE-14 margin is sufficient — pending the at-machine coil/control current measurement.)`
+4. **The safety rail de-energizes coils; it cannot un-weld a stuck contact.** The rail drops the relay *coils*, but a relay contact that has welded closed will stay closed — which is exactly why relay contact rating, arc suppression (snubber/MOV), and validation are safety-relevant, and why the master breaker / installed Stop chain remains the pilot's ultimate stop. A C.I.S. or other pit-entry interlock receives credit only where it physically exists and passes its own demand test. `(VERIFY: final relay contact current/voltage rating for S/T/SP/BE/M/M2 — confirm G5LE-14 margin is sufficient — pending the at-machine coil/control current measurement.)`
 
-5. **Never power this board against a live machine until the on-board gates are bench-proven and Candidate C passes the per-lane live G3 S/T coil-drop proof.** The software (`lane_node/controller_io.py`) is only the soft half; its SC∧TB echo is default-off, lacks an independent TB input on this chassis, and is not validated protection.
+5. **Mains integrity is commissioned outside the board.** A qualified electrician
+   verifies protective-earth continuity/bonding and hot/neutral polarity with an
+   appropriately listed external tester at commissioning and periodically. No
+   mains conductor is routed onto Rev-D, J14, or any board harness.
+
+6. **Never power this board against a live machine until the on-board gates are bench-proven and Candidate C passes the per-lane live G3 S/T coil-drop proof.** The software (`lane_node/controller_io.py`) is only the soft half; its SC∧TB echo is default-off, lacks an independent TB input on this chassis, and is not validated protection.
 
 Carry this rule into every later section: when Section 9 describes a relay closing, or Section 7 describes the RP2040 raising `RP2040_OK`, the closing/permitting is always *in addition to* — never *instead of* — the machine's own breaker, interlock, and braking.
 
@@ -230,7 +235,7 @@ For bench bring-up and probing, the as-built reference designators map to functi
 | J6–J11 | **J_MOTION_BE / _M / _M2 / _S / _SP / _T** (in this annotation order) | six 2-pin isolated contact terminals, one per populated motion output |
 | J12 | **J_MOTION_M1** | M1 ball-return output terminal — **DNP** |
 | J13 | **J_LAMP_LED** | 6-pos — VCC_5V, GND, and the four status-LED returns |
-| J14 | **J_SAFETY** | 4-pos board-side series provision — **pins 1–2 = controlled Candidate-C jumper (no TB/SC machine landing); pins 3–4 = Stop/CIS chain sense** |
+| J14 | **J_SAFETY** | 4-pos board-side series provision — **pins 1–2 = controlled Candidate-C jumper (no TB/SC machine landing); pins 3–4 = reserved external control-power / optional pit-interlock source position, currently OPEN/unlanded and never machine-jumpered** |
 | MK1–MK4 | — | M3 mounting holes |
 | TP1–TP16 | — | test pads (rails, I²C, watchdog nodes, ARM_PERMIT, RP2040_OK, SAFE_STOP_RETURN, RELAY_ENABLE_RAIL) |
 
@@ -248,6 +253,7 @@ For bench bring-up and probing, the as-built reference designators map to functi
 - **Section 9 — Outputs & Relays:** the G5LE relay channels, the MMBT3904 coil drivers, the function-named motion terminals, the S/T contactor-command contract, and the status-LED drivers.
 - **Section 10 — Safety Rail & Watchdog:** the relay-enable rail, the AO3401A
   pass-FET, the ARM/RP2040_OK AND chain, the NE555 watchdog, the Candidate-C
-  J_SAFE1-2 source jumper, and Stop/CIS J_SAFE3-4 — plus the separate OEM-ladder
+  J_SAFE1-2 source jumper, and the currently open/unlanded external-source J_SAFE3-4
+  source position — plus the separate OEM-ladder
   G3 proof behind §5.7.
 - **Section 7 — RP2040 Co-Processor & Firmware:** the Pico's role, the fail-safe `RP2040_OK` line, the UART event/command protocol, and the cam-stop / max-run backstop.

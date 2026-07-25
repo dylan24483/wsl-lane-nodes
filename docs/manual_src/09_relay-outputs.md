@@ -26,7 +26,7 @@ Concretely, the machine's pinsetter relays and contactors were measured on the s
 
 Why this matters for service:
 
-- A welded relay contact on this board **cannot be opened by the safety rail** — the rail only de-energizes coils. The machine's master breaker / Stop / CIS chain remains the final physical stop (§9.7 and **Section 10, §10.5 Welded Contact Limitation**).
+- A welded relay contact on this board **cannot be opened by the safety rail** — the rail only de-energizes coils. The machine's master breaker / installed Stop chain remains the pilot's final physical stop; an OEM C.I.S. or another pit-entry interlock receives credit only where physically present and demand-proven (§9.7 and **Section 10, §10.5 Welded Contact Limitation**).
 - The contacts will see whatever the harness lands on them — measured to be **24 VAC** on this chassis, but the contract allows 24 VAC, 12 VDC, or other machine control voltages (`phase8b_pcb_revB_spec.md` §2.3). They are inductive (relay/contactor coils), hence the snubber + MOV footprints (§9.5).
 
 ---
@@ -104,7 +104,7 @@ This is the standard freewheel orientation: in normal operation the diode is rev
 
 #### Stage 4 — RELAY_ENABLE_RAIL gates the coil supply
 
-All seven relay coils' high sides connect to `RELAY_ENABLE_RAIL` (including DNP M1). The pass-FET conducts only when the implemented on-board gates are satisfied — Watchdog OK, Arm OK, RP2040 OK/cam-stop, and Stop/CIS; Candidate C closes the PCB's J_SAFE1-2 design position with the controlled jumper. Primary TB/SC protection does **not** come from that rail position on lanes 21/22: the OEM parallel-safe contacts remain in the S/T coil circuits and every board insertion must pass G3. Any failed on-board gate collapses every board relay coil; both levers BACK/open independently block S and T when insertion is correct.
+All seven relay coils' high sides connect to `RELAY_ENABLE_RAIL` (including DNP M1). The pass-FET conducts only when Watchdog OK, Arm OK, RP2040 OK/cam-stop, and both J_SAFE source positions have continuity. Candidate C closes J_SAFE1-2 with the controlled jumper. J_SAFE3-4 is **currently OPEN/unlanded** on the lane-21/22 harness, so the field rail cannot arm; never jumper 3–4 at the machine. The leading external interface is an energize-to-prove control-power relay whose isolated N.O. dry contact alone reaches J14, optionally in series with an approved new pit-entry-interlock contact. No sensed machine voltage or mains enters Rev-D. Primary TB/SC protection does **not** come from that rail position: the OEM parallel-safe contacts remain in the S/T coil circuits and every board insertion must pass G3.
 
 The board verification in the spec confirms `RELAY_ENABLE_RAIL` reaches all 7 relay coils, all flybacks, the pass-FET, and test point TP16, and that it is a 16-node net (`phase8b_pcb_revB_spec.md` lines 13, 21). **This is the central safety property of the output stage** — full detail is in **Section 10, Safety Rail Contract**, and the watchdog that feeds it is in **Section 10, NE555 Hardware Watchdog** `(VERIFY: final section numbers for Safety Rail / NE555 / Status-Lamp once the manual TOC is fixed; cross-refs here assume Safety Rail = §4, Status Lamps = §10, NE555 = §11)`.
 
@@ -196,14 +196,14 @@ Everything else about M1 is identical to the other six channels: same G5LE-14 5 
 Restating the boundary from §9.1 because it is the one thing a service tech must internalize:
 
 - The safety rail **de-energizes coils**. It removes drive. It **cannot pull open a contact that has welded shut.** If a G5LE NO contact welds, the machine control circuit it feeds stays closed even with the rail dropped (`phase8b_pcb_revB_spec.md` §4.5).
-- Therefore the existing **master breaker / Stop / CIS chain on the machine remains the final physical stop** and must stay upstream and live (`phase8b_pcb_revB_spec.md` §0 non-negotiable rule, §4.5).
+- Therefore the existing **master breaker / installed Stop chain remains the final physical stop on pilot lanes 21/22** and must stay upstream and live. No C.I.S. device or wiring exists on those pilots; another pit-entry interlock receives credit only after it is physically identified and demand-proven (`phase8b_pcb_revB_spec.md` §0 non-negotiable rule, §4.5).
 - This is *why* contact rating, suppression population (§9.5), and bench validation of every relay contact under a dummy load are treated as safety-relevant tasks, not optional polish (`phase8b_pcb_revB_spec.md` §11 item 1, §12 bench step "each relay contact with dummy load").
 
 Open items that gate a populated, cutover-ready output stage (not bare-PCB fab), from `phase8b_pcb_revB_spec.md` §11:
 
 1. **Output relay rating** — confirm contact current/voltage for S/T/SP/BE/M/M2 against the real coil-circuit loads and decide whether the G5LE-14 contact margin is sufficient.
 2. **Coil rail budget** — confirm 5 V supply current margin with worst-case relay count (§9.6).
-3. **Safety connector form** — TB/SC is resolved as Candidate C (controlled J_SAFE1-2 jumper + OEM ladder + per-lane G3); confirm the separate Stop/CIS J_SAFE3-4 landing (see **Section 10**).
+3. **Safety connector form** — TB/SC is resolved as Candidate C (controlled J_SAFE1-2 jumper + OEM ladder + per-lane G3). For lanes 21/22, demand-test Stop, record C.I.S. as **N/A — device absent**, determine whether another pit-entry interlock exists, and close the install-versus-explicit-safety-decision gate if none does. Engineer and validate the separate energize-to-prove control-power J_SAFE3-4 interface, which remains OPEN/unlanded (see **Section 10**).
 6. **M1 status** — confirm ball-return-as-separate-command before populating M1 (§9.7).
 
 ---
@@ -234,8 +234,8 @@ Footprint reference (from `generate_kicad_netlist_revB.py` lines 48–69): relay
 
 From the spec's bench sequence (`phase8b_pcb_revB_spec.md` §12), do this **only on a locked-out / off-live machine**, and in this order:
 
-1. Power rails up; confirm `VCC_5V` and that `RELAY_ENABLE_RAIL` is **dead** until the implemented on-board conditions are satisfied (watchdog kicked, arm asserted, RP2040 OK, controlled J_SAFE1-2 jumper installed, Stop/CIS loop closed).
-2. Verify the on-board fail cases first: drop watchdog, ARM, RP2040_OK, and Stop/CIS one at a time. Opening J_SAFE1-2 at the bench proves only the PCB's unused loop position, **not** Candidate-C machine protection. Prove TB/SC separately at the live per-lane G3 gate: board commands S then T; both levers BACK/open must leave each contactor coil dead.
+1. Power rails up; confirm `VCC_5V` and that `RELAY_ENABLE_RAIL` is **dead** until the on-board conditions are satisfied. Off-machine only, a controlled bench jumper may close J_SAFE3-4 for dummy-load testing; remove it before any machine connection.
+2. Verify the board drop paths first: drop watchdog, ARM, RP2040_OK, and open each J_SAFE source position one at a time. These checks prove board/source-position continuity only. They do **not** prove Candidate-C machine protection or upstream power removal. Prove TB/SC separately at the live per-lane G3 gate. On lanes 21/22, actuate Stop and require both OEM master/control-power drop and board-rail drop after the engineered 3–4 interface exists; record C.I.S. as **N/A — device absent**. Separately test any other pit-entry interlock that inspection identifies or the approved design adds.
 3. With the rail enabled, command each relay output **one at a time** from the controller and confirm continuity COM↔NO closes at the matching `J_MOTION_<name>` terminal **into a dummy load**, not the live machine.
 4. Confirm the per-channel fail-off: with the rail up, drive OUT-A low (or pull the expander) and confirm the contact opens (100 k base pull-down holds the MMBT3904 off).
 5. Characterize the real coil-circuit load per output at the machine, **then** decide and populate the snubber/MOV per channel (§9.5).

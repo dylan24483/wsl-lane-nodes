@@ -10,7 +10,7 @@ field that routes to the right physical GPIO.
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 import hmac
 import json
 import logging
@@ -613,15 +613,22 @@ async def _latch_camera_stalled(operation, timeout_s, lane_id=None):
     }
     if first:
         _cam_health_warned = True
-        _diag_emit_lanes(
-            "warn", "camera_health", code="capture_stalled",
-            detail={
-                "operation": operation,
-                "lane_id": lane_id,
-                "timeout_s": timeout_s,
-                "manual_fallback_latched": True,
-                "recovery": "restart_or_explicit_camera_reinit",
-            })
+        try:
+            diagnostic = asyncio.create_task(asyncio.to_thread(
+                _diag_emit_lanes,
+                "warn", "camera_health", code="capture_stalled",
+                detail={
+                    "operation": operation,
+                    "lane_id": lane_id,
+                    "timeout_s": timeout_s,
+                    "manual_fallback_latched": True,
+                    "recovery": "restart_or_explicit_camera_reinit",
+                },
+                condition=("track_a_camera_health",)))
+            diagnostic.add_done_callback(_consume_camera_worker)
+        except Exception:
+            log.debug("camera stall diagnostic scheduling swallowed",
+                      exc_info=True)
     # A diagnostics filesystem fault must never delay the manual BALL_EVENT
     # fallback. The in-memory latch above is authoritative for this process;
     # best-effort durable cross-service publication runs independently.
@@ -1080,9 +1087,11 @@ async def heartbeat_loop(ws, ack_state):
             }
             if not _scoring_ack_stalled:
                 _scoring_ack_stalled = True
-                _diag_emit_lanes(
+                await asyncio.to_thread(
+                    _diag_emit_lanes,
                     "fault", "scoring_server_ack_stalled",
-                    code="scoring_server_ack_stalled", detail=detail)
+                    code="scoring_server_ack_stalled", detail=detail,
+                    condition=("track_a_scoring_ack_stalled",))
             log.error(
                 "scoring heartbeat ACK stalled "
                 "(session=%s sent_seq=%s acked_seq=%s lag=%s); "
@@ -1580,8 +1589,12 @@ async def command_handler(ws, ack_state):
                 "committed_at": committed_at,
             }
             global _scoring_ack_stalled
-            if _scoring_ack_stalled:
-                _diag_emit_lanes(
+            if (_scoring_ack_stalled
+                    or ("track_a_scoring_ack_stalled",)
+                    in _known_diag_condition_bases(
+                        "track_a_scoring_ack_stalled")):
+                await asyncio.to_thread(
+                    _diag_emit_lanes,
                     "info", "recovered",
                     code="scoring_server_ack_stalled",
                     detail={
@@ -1590,7 +1603,13 @@ async def command_handler(ws, ack_state):
                         "acked_seq": ack_seq,
                         "committed_at": committed_at,
                         "recovery": "durably_committed_heartbeat_ack",
-                    })
+                        "recovered_event_type":
+                            "scoring_server_ack_stalled",
+                        "recovered_code":
+                            "scoring_server_ack_stalled",
+                    },
+                    condition=("track_a_scoring_ack_stalled",),
+                    clear_condition=True)
                 _scoring_ack_stalled = False
             continue
 
@@ -2028,7 +2047,11 @@ async def _run_connection(ws, session_id):
 # (asyncio.to_thread, skipped while a scoring capture is in flight),
 # alert-only, bounded, env-killable, never raises.
 # ---------------------------------------------------------------------------
-from diag_events import DiagWriter as _DiagWriter, make_event as _make_event
+from diag_events import (
+    DiagWriter as _DiagWriter,
+    make_event as _make_event,
+    stamp_delivery as _stamp_diag_delivery,
+)
 
 CAM_HEALTH_ENV = "WSL_CAM_HEALTH"                # default ON in camera mode
 CAM_HEALTH_POLL_ENV = "WSL_CAM_HEALTH_POLL_S"    # poll cadence (default 300 s)
@@ -2039,6 +2062,48 @@ _FALSEY_ENV = ("0", "false", "no", "off", "")
 _DIAG_WRITER = None          # started in main() for every Track-A mode
 _cam_selfcheck_last = 0.0    # monotonic time of the last empty-ref self-check
 _cam_health_warned = False
+_TRACK_A_DIAG_PENDING_MAX = 128
+_TRACK_A_DIAG_LEDGER_MAX_BYTES = 3 * 1024 * 1024
+_TRACK_A_DIAG_FUTURE_TOLERANCE_S = 300.0
+_SQLITE_INT64_MAX = (1 << 63) - 1
+_diag_pending = {}
+_diag_pending_lock = threading.Lock()
+_diag_condition_lock = threading.RLock()
+_diag_pending_sequence = 0
+_diag_pending_drops = 0
+_diag_pending_drops_reported = {}
+_diag_delivered_conditions = set()
+_diag_delivered_condition_families = {}
+_diag_condition_pending_alerts = {}
+_diag_condition_pending_clears = {}
+_diag_condition_clear_intents = {}
+_diag_condition_realert_intents = {}
+_diag_condition_ledger_loaded = False
+_diag_condition_ledger_error = False
+_diag_start_ack_pending = set()
+
+
+class _StableDiagEvent:
+    """Attribute-compatible diagnostic row with a restart-stable identity."""
+
+    __slots__ = ("_row",)
+
+    def __init__(self, row):
+        self._row = dict(row)
+
+    def __getattr__(self, name):
+        try:
+            return self._row[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def to_dict(self):
+        return dict(self._row)
+
+    def __repr__(self):
+        return (
+            f"_StableDiagEvent(L{self.lane_id} {self.severity} "
+            f"{self.event_type} {self.code or ''} @ {self.ts_utc})")
 
 
 def _cam_env_on(name, default="1"):
@@ -2052,61 +2117,1170 @@ def _cam_env_float(name, default):
         return float(default)
 
 
-def _diag_emit(severity, event_type, code=None, detail=None, *, lane=None):
-    """Enqueue one diag event (never raises, no-op without a writer)."""
-    w = _DIAG_WRITER
-    if w is None:
-        return
+def _diag_priority(event, *, clearing=False):
+    """Severity-first bounded-retention order for Track-A diagnostics."""
+    if clearing:
+        # Once an alert reached the desk, its recovery is a delivery
+        # obligation rather than disposable informational telemetry.
+        return 5
+    return {"info": 0, "warn": 2, "fault": 4}.get(
+        getattr(event, "severity", None), 0)
+
+
+def _diag_condition_ledger_path():
+    return os.path.join(
+        os.path.dirname(_health_drop_path()),
+        "track_a_condition_delivery.json")
+
+
+def _diag_condition_key_valid(group):
+    return (
+        isinstance(group, (list, tuple))
+        and 2 <= len(group) <= 8
+        and isinstance(group[-1], int)
+        and not isinstance(group[-1], bool)
+        and group[-1] in LANES
+        and all(
+            value is None
+            or (isinstance(value, str) and 0 < len(value) <= 160)
+            or (isinstance(value, int) and not isinstance(value, bool))
+            for value in group[:-1])
+    )
+
+
+def _diag_event_row_valid(row, *, group=None):
+    """Strictly validate one restart-replayable diagnostic row."""
+    if not isinstance(row, dict):
+        return False
+    if set(row) != {
+            "ts_utc", "ts_mono", "lane_id", "severity", "event_type",
+            "code", "detail", "source_id", "boot_id", "seq"}:
+        return False
     try:
-        target = min(LANES) if lane is None else int(lane)
-        w.emit(_make_event(target, severity, event_type, code=code,
-                           detail=detail))
+        stamp = str(row["ts_utc"])
+        parsed = datetime.fromisoformat(
+            stamp[:-1] + "+00:00" if stamp.endswith(("Z", "z")) else stamp)
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return False
+        if ((parsed.astimezone(timezone.utc) - datetime.now(timezone.utc))
+                .total_seconds() > _TRACK_A_DIAG_FUTURE_TOLERANCE_S):
+            return False
+        mono = float(row["ts_mono"])
+        lane = row["lane_id"]
+        seq = row["seq"]
+        if not math.isfinite(mono) or mono < 0:
+            return False
+        if (not isinstance(lane, int) or isinstance(lane, bool)
+                or lane not in LANES):
+            return False
+        if (not isinstance(seq, int) or isinstance(seq, bool)
+                or not 0 < seq <= _SQLITE_INT64_MAX):
+            return False
+        if not isinstance(row["source_id"], str) \
+                or not 0 < len(row["source_id"]) <= 120:
+            return False
+        if not isinstance(row["boot_id"], str) \
+                or not 0 < len(row["boot_id"]) <= 80:
+            return False
+        if row["code"] is not None and (
+                not isinstance(row["code"], str)
+                or len(row["code"]) > 120):
+            return False
+        if not isinstance(row["detail"], dict):
+            return False
+        # Construction re-applies the contract vocabulary and type gates.
+        validated = _make_event(
+            lane, row["severity"], row["event_type"],
+            code=row["code"], detail=row["detail"],
+            now=lambda: mono, ts_utc=stamp)
+        if validated.to_dict() != {
+                key: row[key] for key in (
+                    "ts_utc", "ts_mono", "lane_id", "severity",
+                    "event_type", "code", "detail")}:
+            return False
+        if group is not None and int(group[-1]) != lane:
+            return False
+        # Keep the atomically rewritten ledger bounded even for hostile input.
+        return len(json.dumps(
+            row, ensure_ascii=True, separators=(",", ":"))) <= 16384
+    except Exception:
+        return False
+
+
+def _diag_condition_family_valid(event_type, code, lane):
+    if (not isinstance(event_type, str)
+            or not 0 < len(event_type) <= 80
+            or event_type == "recovered"
+            or (
+                code is not None
+                and (
+                    not isinstance(code, str)
+                    or len(code) > 120))):
+        return False
+    try:
+        _make_event(
+            int(lane), "warn", event_type, code=code, detail={},
+            now=lambda: 0.0,
+            ts_utc="2000-01-01T00:00:00.000+00:00")
+        return True
+    except Exception:
+        return False
+
+
+def _stable_diag_event(severity, event_type, code, detail, *, lane,
+                       ts_utc=None, ts_mono=None):
+    now = None if ts_mono is None else (lambda: float(ts_mono))
+    event = _make_event(
+        int(lane), severity, event_type, code=code, detail=detail,
+        now=now, ts_utc=ts_utc)
+    row = event.to_dict()
+    _stamp_diag_delivery(row)
+    if not _diag_event_row_valid(row):
+        raise ValueError("failed to build restart-stable diagnostic row")
+    return _StableDiagEvent(row)
+
+
+def _diag_local_row_receipt_status(row):
+    """Classify one exact stable identity in the bounded retained JSONL."""
+    if not _diag_event_row_valid(row):
+        return "ambiguous"
+    try:
+        import health_drop
+        return health_drop.delivery_receipt_status(
+            os.path.dirname(_diag_condition_ledger_path()), row)
+    except Exception:
+        return "ambiguous"
+
+
+def _diag_local_row_durable(row):
+    """Return whether the complete exact row reached retained JSONL."""
+    return _diag_local_row_receipt_status(row) == "exact"
+
+
+def _persist_diag_condition_ledger():
+    """Atomically preserve condition phases and stable replay rows."""
+    global _diag_condition_ledger_error
+    if not _diag_condition_ledger_loaded:
+        return True
+    active = sorted(
+        (
+            {
+                "group": list(group),
+                "event_type":
+                    _diag_delivered_condition_families.get(group, (None,))[0],
+                "code":
+                    _diag_delivered_condition_families.get(
+                        group, (None, None))[1],
+            }
+            for group in _diag_delivered_conditions
+        ),
+        key=lambda item: repr(item["group"]))
+    pending_alerts = sorted(
+        (
+            {"group": list(group), "event": dict(row)}
+            for group, row in _diag_condition_pending_alerts.items()
+        ),
+        key=lambda item: repr(item["group"]))
+    pending_clears = sorted(
+        (
+            {"group": list(group), "event": dict(row)}
+            for group, row in _diag_condition_pending_clears.items()
+        ),
+        key=lambda item: repr(item["group"]))
+    groups = (
+        set(_diag_delivered_conditions)
+        | set(_diag_condition_pending_alerts)
+        | set(_diag_condition_pending_clears))
+    valid_entries = all(
+        _diag_condition_key_valid(entry["group"])
+        and _diag_event_row_valid(
+            entry["event"], group=entry["group"])
+        for entry in pending_alerts + pending_clears)
+    if (len(groups) > _TRACK_A_DIAG_PENDING_MAX
+            or any(
+                not _diag_condition_key_valid(entry["group"])
+                or not _diag_condition_family_valid(
+                    entry["event_type"], entry["code"],
+                    entry["group"][-1])
+                for entry in active)
+            or not valid_entries):
+        _diag_condition_ledger_error = True
+        return False
+    try:
+        import health_drop
+        ok = health_drop.write_delivery_ledger(
+            _diag_condition_ledger_path(), {
+                "version": 3,
+                "active": active,
+                "pending_alerts": pending_alerts,
+                "pending_clears": pending_clears,
+            })
+    except Exception:
+        ok = False
+    _diag_condition_ledger_error = not bool(ok)
+    return bool(ok)
+
+
+def _load_diag_condition_ledger():
+    """Load and reconcile the Track-A condition write-ahead ledger."""
+    global _diag_condition_ledger_loaded, _diag_condition_ledger_error
+    with _diag_condition_lock:
+        try:
+            with open(_diag_condition_ledger_path(), "rb") as source:
+                raw = source.read(_TRACK_A_DIAG_LEDGER_MAX_BYTES + 1)
+            payload = strict_json_loads(
+                raw,
+                max_bytes=_TRACK_A_DIAG_LEDGER_MAX_BYTES,
+                max_depth=20,
+                max_nodes=100000)
+            if not isinstance(payload, dict) or payload.get("version") != 3:
+                payload = None
+        except FileNotFoundError:
+            payload = {}
+        except Exception:
+            payload = None
+        if payload == {}:
+            active = []
+            pending_alerts = []
+            pending_clears = []
+        elif isinstance(payload, dict):
+            active = payload.get("active")
+            pending_alerts = payload.get("pending_alerts")
+            pending_clears = payload.get("pending_clears")
+            if (not isinstance(active, list)
+                    or not isinstance(pending_alerts, list)
+                    or not isinstance(pending_clears, list)):
+                payload = None
+        if payload is None:
+            with _diag_pending_lock:
+                _diag_delivered_conditions.clear()
+                _diag_delivered_condition_families.clear()
+                _diag_condition_pending_alerts.clear()
+                _diag_condition_pending_clears.clear()
+            _diag_condition_ledger_loaded = True
+            _diag_condition_ledger_error = True
+            return False
+        active_families = {}
+        alert_rows = {}
+        clear_rows = {}
+        valid = True
+        for entry in active:
+            if (not isinstance(entry, dict)
+                    or set(entry) != {"group", "event_type", "code"}):
+                valid = False
+                break
+            raw_group = entry["group"]
+            event_type = entry["event_type"]
+            code = entry["code"]
+            if (not _diag_condition_key_valid(raw_group)
+                    or not _diag_condition_family_valid(
+                        event_type, code, raw_group[-1])):
+                valid = False
+                break
+            group = tuple(raw_group)
+            if group in active_families:
+                valid = False
+                break
+            active_families[group] = (event_type, code)
+        for entries, destination in (
+                (pending_alerts, alert_rows),
+                (pending_clears, clear_rows)):
+            for entry in entries:
+                if not isinstance(entry, dict) \
+                        or set(entry) != {"group", "event"}:
+                    valid = False
+                    break
+                group = entry["group"]
+                row = entry["event"]
+                if (not _diag_condition_key_valid(group)
+                        or not _diag_event_row_valid(row, group=group)
+                        or tuple(group) in destination):
+                    valid = False
+                    break
+                destination[tuple(group)] = dict(row)
+            if not valid:
+                break
+        all_groups = set(active_families) | set(alert_rows) | set(clear_rows)
+        if (len(all_groups) > _TRACK_A_DIAG_PENDING_MAX
+                or set(active_families) & set(alert_rows)
+                or not set(clear_rows).issubset(set(active_families))):
+            valid = False
+        if not valid:
+            with _diag_pending_lock:
+                _diag_delivered_conditions.clear()
+                _diag_delivered_condition_families.clear()
+                _diag_condition_pending_alerts.clear()
+                _diag_condition_pending_clears.clear()
+            _diag_condition_ledger_loaded = True
+            _diag_condition_ledger_error = True
+            return False
+        active_set = set(active_families)
+        receipt_statuses = {
+            ("alert", group): _diag_local_row_receipt_status(row)
+            for group, row in alert_rows.items()
+        }
+        receipt_statuses.update({
+            ("clear", group): _diag_local_row_receipt_status(row)
+            for group, row in clear_rows.items()
+        })
+        if any(
+                status not in {"exact", "absent"}
+                for status in receipt_statuses.values()):
+            with _diag_pending_lock:
+                _diag_delivered_conditions.clear()
+                _diag_delivered_condition_families.clear()
+                _diag_condition_pending_alerts.clear()
+                _diag_condition_pending_clears.clear()
+            _diag_condition_ledger_loaded = True
+            _diag_condition_ledger_error = True
+            return False
+        # A pending alert is only an intent until its stable identity appears in
+        # a locally durable JSONL. This distinguishes a rejected pre-offer from
+        # the crash window after fsync but before the active-phase rewrite.
+        for group, row in alert_rows.items():
+            if receipt_statuses[("alert", group)] == "exact":
+                active_set.add(group)
+                active_families[group] = (
+                    row["event_type"], row.get("code"))
+        # A durable pending recovery already closed the fault. Otherwise retain
+        # and retry the exact same identity after restart.
+        retry_clears = {}
+        for group, row in clear_rows.items():
+            if receipt_statuses[("clear", group)] == "exact":
+                active_set.discard(group)
+                active_families.pop(group, None)
+            else:
+                retry_clears[group] = row
+        with _diag_pending_lock:
+            for key in list(_diag_pending):
+                if key and str(key[0]).startswith("condition_"):
+                    _diag_pending.pop(key, None)
+            _diag_delivered_conditions.clear()
+            _diag_delivered_conditions.update(active_set)
+            _diag_delivered_condition_families.clear()
+            _diag_delivered_condition_families.update({
+                group: active_families[group] for group in active_set
+            })
+            _diag_condition_pending_alerts.clear()
+            _diag_condition_pending_clears.clear()
+            _diag_condition_pending_clears.update(retry_clears)
+        _diag_condition_ledger_loaded = True
+        _diag_condition_ledger_error = False
+        for group, row in retry_clears.items():
+            event = _StableDiagEvent(row)
+            _diag_retain(
+                ("condition_clear",) + group,
+                event, priority=5,
+                action=("condition_clear", group))
+        return _persist_diag_condition_ledger()
+
+
+def _known_diag_condition_bases(prefix):
+    with _diag_condition_lock:
+        with _diag_pending_lock:
+            groups = (
+                set(_diag_delivered_conditions)
+                | set(_diag_condition_pending_alerts)
+                | set(_diag_condition_pending_clears))
+    return {
+        group[:-1] for group in groups
+        if group and group[0] == prefix
+    }
+
+
+def _diag_apply_accept(action):
+    """Commit delivery-side state after one concrete lane offer succeeds."""
+    if not action:
+        return
+    ack = None
+    followup = None
+    relert = None
+    kind = action[0]
+    if kind in ("condition_alert", "condition_clear"):
+        with _diag_condition_lock:
+            with _diag_pending_lock:
+                group = action[1]
+                if kind == "condition_alert":
+                    alert_row = _diag_condition_pending_alerts.pop(
+                        group, None)
+                    _diag_delivered_conditions.add(group)
+                    if alert_row is not None:
+                        _diag_delivered_condition_families[group] = (
+                            alert_row["event_type"], alert_row.get("code"))
+                    followup = _diag_condition_clear_intents.pop(
+                        group, None)
+                else:
+                    _diag_condition_pending_clears.pop(group, None)
+                    _diag_delivered_conditions.discard(group)
+                    _diag_delivered_condition_families.pop(group, None)
+                    _diag_condition_clear_intents.pop(group, None)
+                    relert = _diag_condition_realert_intents.pop(
+                        group, None)
+            _persist_diag_condition_ledger()
+    elif kind == "service_start":
+        with _diag_pending_lock:
+            (
+                _, path, count, event_type, lane,
+                source_id, boot_id, seq,
+            ) = action
+            ack = (
+                path, count, event_type, lane,
+                source_id, boot_id, seq,
+            )
+            _diag_start_ack_pending.add(ack)
+    if followup is not None:
+        event_type, code, detail, lane, condition = followup
+        _diag_condition_clear(
+            event_type, code, detail, lane=lane, condition=condition)
+    if relert is not None:
+        severity, event_type, code, detail, lane, condition = relert
+        _diag_condition_alert(
+            severity, event_type, code, detail,
+            lane=lane, condition=condition)
+    if ack is not None:
+        _diag_retry_start_ack(ack)
+
+
+def _diag_retry_start_ack(group):
+    """Clear exactly one lane's durable startup row after acceptance."""
+    path, count, event_type, lane, source_id, boot_id, seq = group
+    try:
+        import health_drop
+        accepted = health_drop.acknowledge_service_start_lane(
+            path, count, event_type, lane, source_id, boot_id, seq)
+    except Exception:
+        accepted = False
+    if accepted:
+        with _diag_pending_lock:
+            _diag_start_ack_pending.discard(group)
+    return bool(accepted)
+
+
+def _diag_retry_start_acks():
+    with _diag_pending_lock:
+        pending = list(_diag_start_ack_pending)
+    for group in pending:
+        _diag_retry_start_ack(group)
+
+
+def _diag_retain(pending_key, event, *, priority, action=None,
+                 replace_pending=False):
+    """Retain one rejected immutable event without growing without bound."""
+    global _diag_pending_sequence, _diag_pending_drops
+    if pending_key is None:
+        return False
+    with _diag_pending_lock:
+        existing = _diag_pending.get(pending_key)
+        if existing is not None and not replace_pending:
+            return True
+        if existing is None and len(_diag_pending) >= \
+                _TRACK_A_DIAG_PENDING_MAX:
+            minimum = min(
+                item["priority"] for item in _diag_pending.values())
+            if priority <= minimum:
+                _diag_pending_drops += 1
+                log.error(
+                    "Track-A diagnostic pending overflow dropped %s",
+                    pending_key)
+                return False
+            victim = next(
+                key for key, item in _diag_pending.items()
+                if item["priority"] == minimum)
+            _diag_pending.pop(victim, None)
+            _diag_pending_drops += 1
+            log.error(
+                "Track-A diagnostic pending overflow evicted %s", victim)
+        _diag_pending_sequence += 1
+        _diag_pending[pending_key] = {
+            "event": event,
+            "priority": int(priority),
+            "action": action,
+            "sequence": _diag_pending_sequence,
+        }
+    return True
+
+
+def _diag_writer_accept(writer, event, *, durable=False):
+    if writer is None:
+        return False
+    if durable:
+        offer = getattr(writer, "emit_durable", None)
+        if callable(offer):
+            thread = getattr(writer, "_thread", None)
+            timeout = 2.0 if thread is not None and thread.is_alive() else 0.0
+            return bool(offer(event, timeout=timeout))
+        return False
+    offer = getattr(writer, "emit", None)
+    return bool(callable(offer) and offer(event))
+
+
+def _diag_writer_has_inflight(writer, event):
+    """Best-effort proof that a timed-out durable receipt still owns `event`."""
+    lock = getattr(writer, "_durable_lock", None)
+    inflight = getattr(writer, "_durable_inflight", None)
+    if lock is None or not isinstance(inflight, dict):
+        return False
+    try:
+        with lock:
+            return id(event) in inflight
+    except Exception:
+        # Unknown must be treated as in-flight: replacing a row whose prior
+        # receipt later fsyncs would make restart reconciliation ambiguous.
+        return True
+
+
+def _diag_offer_prebuilt(event, *, pending_key=None, retain=False,
+                         priority=None, action=None,
+                         replace_pending=False):
+    """Offer one already-stamped event and retain it when explicitly asked."""
+    existing = None
+    if pending_key is not None and not replace_pending:
+        with _diag_pending_lock:
+            existing = _diag_pending.get(pending_key)
+        if existing is not None:
+            event = existing["event"]
+            action = existing.get("action")
+            priority = existing["priority"]
+    accepted = False
+    try:
+        w = _DIAG_WRITER
+        durable = bool(retain)
+        accepted = _diag_writer_accept(w, event, durable=durable)
     except Exception:
         log.debug("camera diag emit swallowed", exc_info=True)
+    if accepted:
+        if pending_key is not None:
+            with _diag_pending_lock:
+                current = _diag_pending.get(pending_key)
+                if (current is None or current.get("event") is event
+                        or replace_pending):
+                    _diag_pending.pop(pending_key, None)
+        _diag_apply_accept(action)
+        return True
+    if retain:
+        _diag_retain(
+            pending_key, event,
+            priority=(
+                _diag_priority(event) if priority is None else priority),
+            action=action, replace_pending=replace_pending)
+    return False
+
+
+def _diag_pump_pending(*, include_conditions=True):
+    """Retry retained events in safety/causal order; never blocks on capacity."""
+    with _diag_pending_lock:
+        pending = sorted(
+            (
+                item for item in _diag_pending.items()
+                if include_conditions
+                or not str(item[0][0]).startswith("condition_")
+            ),
+            key=lambda pair: (
+                -pair[1]["priority"], pair[1]["sequence"]))
+    accepted = 0
+    for key, item in pending:
+        action = item.get("action")
+        condition_action = bool(
+            action and action[0] in (
+                "condition_alert", "condition_clear"))
+        lock = _diag_condition_lock if condition_action else None
+        if lock is not None:
+            lock.acquire()
+        try:
+            with _diag_pending_lock:
+                if _diag_pending.get(key) is not item:
+                    continue
+            if condition_action and action[0] == "condition_alert":
+                # Never expose an alert unless its stable identity/intent is
+                # already crash-recoverable in the local write-ahead ledger.
+                if not _persist_diag_condition_ledger():
+                    continue
+            elif condition_action and action[0] == "condition_clear":
+                # The active marker and exact recovery row must likewise
+                # survive the fsync-before-ledger-rewrite crash window.
+                if not _persist_diag_condition_ledger():
+                    continue
+            try:
+                ok = _diag_writer_accept(
+                    _DIAG_WRITER, item["event"], durable=True)
+            except Exception:
+                ok = False
+            if not ok:
+                continue
+            with _diag_pending_lock:
+                current = _diag_pending.get(key)
+                if current is not item:
+                    continue
+                _diag_pending.pop(key, None)
+            _diag_apply_accept(action)
+            accepted += 1
+        finally:
+            if lock is not None:
+                lock.release()
+    _diag_retry_start_acks()
+    return accepted
+
+
+def _diag_report_pending_drops():
+    """Promote bounded-store loss without recursively retaining the report."""
+    global _diag_pending_drops_reported
+    with _diag_pending_lock:
+        total = _diag_pending_drops
+        reported = dict(_diag_pending_drops_reported)
+        pending_count = len(_diag_pending)
+    if total <= 0:
+        return
+    for lane in sorted(set(LANES)):
+        prior = int(reported.get(lane, 0))
+        if total <= prior:
+            continue
+        if _diag_emit(
+                "warn", "diag_drops", code="track_a_pending_overflow",
+                detail={
+                    "new": total - prior,
+                    "total": total,
+                    "pending": pending_count,
+                    "capacity": _TRACK_A_DIAG_PENDING_MAX,
+                },
+                lane=lane):
+            with _diag_pending_lock:
+                _diag_pending_drops_reported[lane] = total
+
+
+def _diag_emit(severity, event_type, code=None, detail=None, *, lane=None,
+               retain=False, pending_key=None, priority=None,
+               accept_action=None, replace_pending=False,
+               ts_utc=None, ts_mono=None):
+    """Enqueue one diagnostic and return concrete queue acceptance.
+
+    Retention is opt-in: high-rate breadcrumbs keep their old cheap behavior,
+    while one-shot incidents and state transitions can preserve their original
+    timestamps until the writer accepts them.
+    """
+    try:
+        target = min(LANES) if lane is None else int(lane)
+        now = None if ts_mono is None else (lambda: float(ts_mono))
+        event = _make_event(
+            target, severity, event_type, code=code, detail=detail,
+            now=now, ts_utc=ts_utc)
+        return _diag_offer_prebuilt(
+            event, pending_key=pending_key, retain=retain,
+            priority=priority, action=accept_action,
+            replace_pending=replace_pending)
+    except Exception:
+        log.debug("camera diag emit swallowed", exc_info=True)
+        return False
+
+
+def _diag_condition_alert(severity, event_type, code, detail, *,
+                          lane, condition):
+    with _diag_condition_lock:
+        group = tuple(condition) + (int(lane),)
+        alert_key = ("condition_alert",) + group
+        clear_key = ("condition_clear",) + group
+        pending_clear = None
+        with _diag_pending_lock:
+            pending_clear = _diag_pending.get(clear_key)
+            already_delivered = group in _diag_delivered_conditions
+        if pending_clear is not None:
+            # A recovery receipt can still complete after timeout. Serialize a
+            # recurrence behind it instead of cancelling an in-flight clear
+            # and risking a false-green desk state.
+            if _diag_offer_prebuilt(
+                    pending_clear["event"], pending_key=clear_key,
+                    retain=True, priority=5,
+                    action=("condition_clear", group)):
+                with _diag_pending_lock:
+                    already_delivered = group in _diag_delivered_conditions
+            else:
+                _diag_condition_realert_intents[group] = (
+                    severity, event_type, code, detail, int(lane),
+                    tuple(condition))
+                return False
+        if already_delivered:
+            return True
+        with _diag_pending_lock:
+            row = _diag_condition_pending_alerts.get(group)
+            pending_item = _diag_pending.get(alert_key)
+        if row is not None:
+            event = (
+                pending_item["event"] if pending_item is not None
+                else _StableDiagEvent(row))
+            candidate_fields = {
+                "severity": severity,
+                "event_type": event_type,
+                "code": code,
+                "detail": detail or {},
+            }
+            prior_fields = {
+                key: row.get(key) for key in candidate_fields
+            }
+            if (candidate_fields != prior_fields
+                    and not _diag_writer_has_inflight(_DIAG_WRITER, event)):
+                # The first offer was definitively rejected. Preserve the most
+                # recent truth (for example stale -> missing) before retrying.
+                event = _stable_diag_event(
+                    severity, event_type, code, detail, lane=lane)
+                row = event.to_dict()
+                with _diag_pending_lock:
+                    _diag_condition_pending_alerts[group] = row
+                _diag_retain(
+                    alert_key, event, priority=_diag_priority(event),
+                    action=("condition_alert", group),
+                    replace_pending=True)
+        else:
+            event = _stable_diag_event(
+                severity, event_type, code, detail, lane=lane)
+            row = event.to_dict()
+            with _diag_pending_lock:
+                _diag_condition_pending_alerts[group] = row
+        _diag_retain(
+            alert_key, event, priority=_diag_priority(event),
+            action=("condition_alert", group))
+        if not _persist_diag_condition_ledger():
+            log.error(
+                "Track-A condition ledger write failed before alert %r",
+                group)
+            return False
+        return _diag_offer_prebuilt(
+            event, pending_key=alert_key, retain=True,
+            priority=_diag_priority(event),
+            action=("condition_alert", group))
+
+
+def _diag_condition_clear(event_type, code, detail, *, lane, condition):
+    with _diag_condition_lock:
+        group = tuple(condition) + (int(lane),)
+        alert_key = ("condition_alert",) + group
+        clear_key = ("condition_clear",) + group
+        pending_item = None
+        with _diag_pending_lock:
+            pending_item = _diag_pending.get(alert_key)
+            pending_alert_row = _diag_condition_pending_alerts.get(group)
+        if pending_item is None and pending_alert_row is not None:
+            pending_item = {
+                "event": _StableDiagEvent(pending_alert_row),
+                "priority": 4,
+                "action": ("condition_alert", group),
+            }
+            _diag_retain(
+                alert_key, pending_item["event"],
+                priority=_diag_priority(pending_item["event"]),
+                action=pending_item["action"])
+        if pending_item is not None:
+            # An emit_durable timeout may still be in flight. Resolve that
+            # receipt before deciding whether recovery evidence is required.
+            if not _persist_diag_condition_ledger() \
+                    or not _diag_offer_prebuilt(
+                        pending_item["event"], pending_key=alert_key,
+                        retain=True, priority=pending_item["priority"],
+                        action=("condition_alert", group)):
+                with _diag_pending_lock:
+                    still_pending = group in _diag_condition_pending_alerts
+                if still_pending:
+                    _diag_condition_clear_intents[group] = (
+                        event_type, code, detail, int(lane),
+                        tuple(condition))
+                    return False
+        with _diag_pending_lock:
+            was_delivered = group in _diag_delivered_conditions
+            delivered_family = _diag_delivered_condition_families.get(group)
+            clear_row = _diag_condition_pending_clears.get(group)
+            pending_clear = _diag_pending.get(clear_key)
+        if not was_delivered:
+            return True
+        if delivered_family is None:
+            global _diag_condition_ledger_error
+            _diag_condition_ledger_error = True
+            log.error(
+                "Track-A active condition lacks exact fault family: %r",
+                group)
+            return False
+        recovery_detail = dict(detail or {})
+        recovery_detail["recovered_event_type"] = delivered_family[0]
+        recovery_detail["recovered_code"] = delivered_family[1]
+        if clear_row is not None:
+            recovery = (
+                pending_clear["event"] if pending_clear is not None
+                else _StableDiagEvent(clear_row))
+        else:
+            recovery = _stable_diag_event(
+                "info", event_type, code, recovery_detail, lane=lane)
+            clear_row = recovery.to_dict()
+            with _diag_pending_lock:
+                _diag_condition_pending_clears[group] = clear_row
+        _diag_retain(
+            clear_key, recovery, priority=5,
+            action=("condition_clear", group))
+        if not _persist_diag_condition_ledger():
+            log.error(
+                "Track-A condition ledger write failed before recovery %r",
+                group)
+            return False
+        return _diag_offer_prebuilt(
+            recovery, pending_key=clear_key, retain=True, priority=5,
+            action=("condition_clear", group))
 
 
 def _diag_emit_lanes(severity, event_type, code=None, detail=None, *,
-                     lanes=None):
-    """Emit a pair-wide fact once for every affected machine lane."""
+                     lanes=None, retain=False, pending_key=None,
+                     priority=None, condition=None, clear_condition=False,
+                     accept_action=None, replace_pending=False,
+                     ts_utc=None, ts_mono=None):
+    """Emit a pair-wide fact and return acceptance for each concrete lane."""
+    results = {}
     for lane in sorted(set(lanes or LANES)):
-        _diag_emit(severity, event_type, code=code, detail=detail, lane=lane)
+        if condition is not None:
+            if clear_condition:
+                results[lane] = _diag_condition_clear(
+                    event_type, code, detail, lane=lane,
+                    condition=condition)
+            else:
+                results[lane] = _diag_condition_alert(
+                    severity, event_type, code, detail, lane=lane,
+                    condition=condition)
+            continue
+        lane_key = None if pending_key is None \
+            else tuple(pending_key) + (int(lane),)
+        lane_action = None if accept_action is None \
+            else tuple(accept_action) + (int(lane),)
+        results[lane] = _diag_emit(
+            severity, event_type, code=code, detail=detail, lane=lane,
+            retain=retain, pending_key=lane_key, priority=priority,
+            accept_action=lane_action,
+            replace_pending=replace_pending,
+            ts_utc=ts_utc, ts_mono=ts_mono)
+    return results
+
+
+async def _record_track_a_service_start():
+    """Persist and deliver Track-A startup facts before fallible subsystems.
+
+    ``health_drop`` keeps exact pre-stamped per-lane rows across process death.
+    Each accepted lane is acknowledged independently, so a crash cannot
+    rebuild an already accepted lane under a new delivery identity.
+    """
+    import health_drop
+    starts_path = os.path.join(
+        os.path.dirname(_health_drop_path()),
+        "lane_node_service_starts.json")
+    facts = await asyncio.to_thread(
+        health_drop.record_service_start, starts_path,
+        track_delivery=True)
+    pending = list(facts.get("pending_events") or ())
+    # Loop faults first: a tiny recovered queue must preserve the condition
+    # that can precede systemd StartLimit lockout ahead of info provenance.
+    obligations = []
+    for item in pending:
+        if item.get("service_restart_loop_pending"):
+            obligations.append(("service_restart_loop", item))
+    for item in pending:
+        if item.get("service_restart_pending"):
+            obligations.append(("service_restart", item))
+    # No event derived from this update may be offered unless the counter and
+    # all prior obligations were read and atomically committed.
+    if facts.get("persisted"):
+        for event_type, item in obligations:
+            count = int(item["count"])
+            started_epoch = float(item["started_at_epoch"])
+            started_mono = float(item["started_at_monotonic"])
+            ts_utc = datetime.fromtimestamp(
+                started_epoch, timezone.utc).isoformat(
+                    timespec="milliseconds")
+            detail = {
+                "count": count,
+                "started_at_epoch": started_epoch,
+                "starts_in_window": int(item["starts_in_window"]),
+                "window_s": float(item["window_s"]),
+                "threshold": int(item["threshold"]),
+                "restart_loop": bool(item["restart_loop"]),
+                "replayed_start_evidence": count != facts.get("count"),
+            }
+            if event_type == "service_restart_loop":
+                severity = "fault"
+                code = "lane_node"
+                priority = 4
+            else:
+                severity = "info"
+                code = "lane_node_start"
+                priority = 0
+            delivery_field = f"{event_type}_deliveries"
+            rows = item.get(delivery_field)
+            if rows is None:
+                prepared = [
+                    _stable_diag_event(
+                        severity, event_type, code, detail, lane=lane,
+                        ts_utc=ts_utc, ts_mono=started_mono).to_dict()
+                    for lane in sorted(set(LANES))
+                ]
+                rows = await asyncio.to_thread(
+                    health_drop.prepare_service_start_deliveries,
+                    starts_path, count, event_type, prepared)
+            if rows is not None and (
+                    any(row.get("code") != code for row in rows)):
+                # A cross-service WAL must never be reinterpreted as Track-A
+                # evidence. Exact destinations/acked-lane conservation is
+                # validated inside health_drop before rows reach this point.
+                rows = None
+            if rows is None:
+                await asyncio.to_thread(
+                    _diag_emit_lanes,
+                    "warn", "diag_storage_error",
+                    code="service_start_delivery_prepare",
+                    detail={
+                        "count": count,
+                        "event_type": event_type,
+                        "requires_manual_reconciliation": True,
+                    },
+                    retain=True,
+                    pending_key=(
+                        "incident", "service_start_delivery_prepare",
+                        count, event_type))
+                continue
+            for row in rows:
+                if not _diag_event_row_valid(row):
+                    log.error(
+                        "Track-A rejected invalid durable service-start row "
+                        "count=%s type=%s", count, event_type)
+                    continue
+                event = _StableDiagEvent(row)
+                lane = int(row["lane_id"])
+                action = (
+                    "service_start", starts_path, count, event_type, lane,
+                    row["source_id"], row["boot_id"], row["seq"],
+                )
+                # emit_durable() fsyncs the exact row before returning.  If
+                # power failed in the following state-file acknowledgement
+                # window, reconcile that durable receipt instead of offering
+                # even an idempotent duplicate on restart.
+                receipt_status = _diag_local_row_receipt_status(row)
+                if receipt_status == "exact":
+                    await asyncio.to_thread(_diag_apply_accept, action)
+                    continue
+                if receipt_status != "absent":
+                    await asyncio.to_thread(
+                        _diag_emit_lanes,
+                        "warn", "diag_storage_error",
+                        code="service_start_receipt_" + receipt_status,
+                        detail={
+                            "count": count,
+                            "event_type": event_type,
+                            "lane": lane,
+                            "requires_manual_reconciliation": True,
+                        },
+                        lanes=[lane], retain=True,
+                        pending_key=(
+                            "incident", "service_start_receipt",
+                            count, event_type, lane))
+                    continue
+                await asyncio.to_thread(
+                    _diag_offer_prebuilt, event,
+                    pending_key=(
+                        "service_start", starts_path, count,
+                        event_type, lane),
+                    retain=True, priority=priority, action=action)
+        await asyncio.to_thread(_diag_retry_start_acks)
+    if facts.get("pending_delivery_overflow"):
+        await asyncio.to_thread(
+            _diag_emit_lanes,
+            "fault", "diag_drops", code="service_start_pending_overflow",
+            detail={
+                "dropped": int(facts["pending_delivery_overflow"]),
+                "capacity": 128,
+                "requires_manual_reconciliation": True,
+            },
+            retain=True,
+            pending_key=(
+                "incident", "service_start_pending_overflow",
+                int(facts.get("count", 0))))
+    if not facts.get("persisted"):
+        await asyncio.to_thread(
+            _diag_emit_lanes,
+            "warn", "diag_storage_error",
+            code="service_start_counter", detail=facts,
+            retain=True,
+            pending_key=(
+                "incident", "service_start_counter",
+                int(facts.get("count", 0))))
+    return facts
+
+
+def _drain_track_a_diagnostics(writer):
+    """Stop replay, then persist every bounded Track-A retry locally."""
+    _diag_retry_start_acks()
+    if writer is None:
+        with _diag_pending_lock:
+            return len(_diag_pending) + len(_diag_start_ack_pending)
+    try:
+        if not writer.stop():
+            with _diag_pending_lock:
+                return len(_diag_pending) + len(_diag_start_ack_pending)
+    except Exception:
+        with _diag_pending_lock:
+            return len(_diag_pending) + len(_diag_start_ack_pending)
+    # Interleave offers and local drains. The configured writer queue may be
+    # much smaller than the bounded pending store.
+    for _ in range(_TRACK_A_DIAG_PENDING_MAX + 2):
+        _diag_pump_pending()
+        try:
+            if not writer.drain_local():
+                break
+            queue_empty = writer.queue.empty()
+        except Exception:
+            break
+        with _diag_pending_lock:
+            pending = len(_diag_pending) + len(_diag_start_ack_pending)
+        if pending == 0 and queue_empty:
+            return 0
+    with _diag_pending_lock:
+        return len(_diag_pending) + len(_diag_start_ack_pending)
+
+
+def _foreign_relay_condition(event):
+    """Return the delivery-state key paired with one foreign relay event."""
+    detail = event.get("detail") or {}
+    service = detail.get("from_service") or "unknown"
+    event_type = event.get("event_type")
+    code = event.get("code")
+    if event_type == "recovered":
+        recovered_type = detail.get("recovered_event_type")
+        if recovered_type:
+            if recovered_type == "health_drop_stale":
+                return ("foreign", service, "health_drop_stale")
+            return (
+                "foreign", service, recovered_type,
+                detail.get("recovered_code"))
+        if code == "health_drop_stale":
+            return ("foreign", service, "health_drop_stale")
+    if event_type == "health_drop_stale":
+        # stale -> missing is one unavailable-health-drop condition. If its
+        # first alert is still pending, replace it with the latest truth.
+        return ("foreign", service, "health_drop_stale")
+    return ("foreign", service, event_type, code)
 
 
 def _diag_emit_relay(event):
-    """Emit a planned relay through literal, contract-auditable call sites."""
+    """Emit a planned relay with per-lane causal delivery state."""
     severity = event["severity"]
     event_type = event["event_type"]
     code = event.get("code")
     detail = event.get("detail")
     lanes = event.get("lanes") or LANES
+    condition = _foreign_relay_condition(event)
     if event_type == "fw_identity":
-        _diag_emit_lanes(
-            severity, "fw_identity", code=code, detail=detail, lanes=lanes)
+        return _diag_emit_lanes(
+            severity, "fw_identity", code=code, detail=detail, lanes=lanes,
+            condition=condition)
     elif event_type == "pi_fs_readonly":
-        _diag_emit_lanes(
-            severity, "pi_fs_readonly", code=code, detail=detail, lanes=lanes)
+        return _diag_emit_lanes(
+            severity, "pi_fs_readonly", code=code, detail=detail, lanes=lanes,
+            condition=condition)
     elif event_type == "pi_disk_low":
-        _diag_emit_lanes(
-            severity, "pi_disk_low", code=code, detail=detail, lanes=lanes)
+        return _diag_emit_lanes(
+            severity, "pi_disk_low", code=code, detail=detail, lanes=lanes,
+            condition=condition)
     elif event_type == "pi_thermal":
-        _diag_emit_lanes(
-            severity, "pi_thermal", code=code, detail=detail, lanes=lanes)
+        return _diag_emit_lanes(
+            severity, "pi_thermal", code=code, detail=detail, lanes=lanes,
+            condition=condition)
     elif event_type == "pi_undervoltage":
-        _diag_emit_lanes(
-            severity, "pi_undervoltage", code=code, detail=detail, lanes=lanes)
+        return _diag_emit_lanes(
+            severity, "pi_undervoltage", code=code, detail=detail, lanes=lanes,
+            condition=condition)
+    elif event_type == "diag_storage_error":
+        return _diag_emit_lanes(
+            severity, "diag_storage_error", code=code, detail=detail,
+            lanes=lanes, condition=condition)
     elif event_type == "health_drop_unhealthy":
-        _diag_emit_lanes(
+        return _diag_emit_lanes(
             severity, "health_drop_unhealthy", code=code, detail=detail,
-            lanes=lanes)
+            lanes=lanes, condition=condition)
     elif event_type == "health_drop_stale":
-        _diag_emit_lanes(
+        return _diag_emit_lanes(
             severity, "health_drop_stale", code=code, detail=detail,
-            lanes=lanes)
+            lanes=lanes, condition=condition)
     elif event_type == "recovered":
-        _diag_emit_lanes(
-            severity, "recovered", code=code, detail=detail, lanes=lanes)
+        return _diag_emit_lanes(
+            severity, "recovered", code=code, detail=detail, lanes=lanes,
+            condition=condition, clear_condition=True)
     else:
         log.warning("ignored unsupported foreign health event %r", event_type)
+        return {}
+
+
+def _reconcile_foreign_delivery(status):
+    """Clear restart-persisted foreign faults only from a fresh snapshot."""
+    try:
+        import health_drop
+        if not isinstance(status, dict):
+            return
+        service = status.get("service")
+        freshness = status.get("status")
+        if service not in (
+                health_drop.SERVICE_CAMERA,
+                health_drop.SERVICE_CONTROLLER):
+            return
+        if freshness != "fresh":
+            # Missing/stale is absence of proof, never evidence that an
+            # earlier explicit foreign fault recovered.
+            return
+        payload = status.get("payload")
+        current = set()
+        for event in health_drop.snapshot_fault_events(service, payload):
+            for lane in event.get("lanes") or LANES:
+                if lane in LANES:
+                    current.add((
+                        "foreign", service, event["event_type"],
+                        event.get("code"), int(lane)))
+        with _diag_condition_lock:
+            with _diag_pending_lock:
+                known = {
+                    group for group in (
+                        set(_diag_delivered_conditions)
+                        | set(_diag_condition_pending_alerts)
+                        | set(_diag_condition_pending_clears))
+                    if len(group) >= 4
+                    and group[0] == "foreign"
+                    and group[1] == service
+                }
+                known_families = {}
+                for group in known:
+                    family = _diag_delivered_condition_families.get(group)
+                    if family is None:
+                        row = _diag_condition_pending_alerts.get(group)
+                        if row is not None:
+                            family = (
+                                row["event_type"], row.get("code"))
+                    if family is not None:
+                        known_families[group] = family
+        for group in sorted(known - current, key=repr):
+            family = known_families.get(group)
+            if family is None:
+                log.error(
+                    "Track-A foreign condition lacks exact family: %r",
+                    group)
+                continue
+            recovered_type, recovered_code = family
+            lane = group[-1]
+            detail = {
+                "from_service": service,
+                "status": freshness,
+                "snapshot_id": status.get("snapshot_id"),
+                "snapshot": payload,
+                "relay_only": True,
+                "restart_reconciled": True,
+            }
+            detail["recovered_event_type"] = recovered_type
+            detail["recovered_code"] = recovered_code
+            _diag_emit_relay({
+                "severity": "info",
+                "event_type": "recovered",
+                "code": recovered_type,
+                "lanes": [lane],
+                "detail": detail,
+            })
+    except Exception:
+        log.debug("foreign delivery reconciliation swallowed", exc_info=True)
 
 
 def _health_drop_path():
@@ -2120,6 +3294,7 @@ _health_drop_write_failed = False
 _platform_health_reasons = set()
 _health_drop_lock = threading.Lock()
 _track_a_clock_monitor = None
+_track_a_clock_fault_active = False
 _last_camera_health = {
     # Camera mode must not start false-green before initialization/probe.
     "ok": SCORING_MODE != "camera",
@@ -2139,14 +3314,62 @@ def _health_drop_hop_unlocked(last_health=None):
     try:
         import health_drop
         global _health_drop_write_failed, _platform_health_reasons
-        global _track_a_clock_monitor
+        global _track_a_clock_monitor, _track_a_clock_fault_active
+        # Capacity may have returned since the prior sample. Retry immutable
+        # incidents before consuming any new episode transitions.
+        _diag_pump_pending(include_conditions=False)
         path = _health_drop_path()
         platform = health_drop.collect_platform_health(
             os.path.dirname(path), require_pi_probes=True)
+        ledger_repaired = False
+        if _diag_condition_ledger_error:
+            # A corrupt/transiently unwritable ledger cannot safely own a
+            # condition transition. First attempt an atomic clean rewrite; if
+            # it succeeds, publish the observed storage fault and its recovery
+            # through the now-causal condition path.
+            ledger_repaired = _persist_diag_condition_ledger()
+        if _diag_condition_ledger_error:
+            platform["ok"] = False
+            platform["reasons"] = sorted(set(
+                (platform.get("reasons") or [])
+                + ["diagnostic_delivery_ledger"]))
+            log.error(
+                "Track-A diagnostic condition ledger remains unwritable: %s",
+                _diag_condition_ledger_path())
+        elif ledger_repaired:
+            detail = {
+                "path": _diag_condition_ledger_path(),
+                "restart_reconciliation_degraded": True,
+                "auto_repaired": True,
+            }
+            _diag_emit_lanes(
+                "fault", "diag_storage_error",
+                code="condition_delivery_ledger", detail=detail,
+                condition=("track_a_condition_ledger",))
+            _diag_emit_lanes(
+                "info", "recovered", code="diag_storage_error",
+                detail={
+                    **detail,
+                    "restart_reconciliation_degraded": False,
+                    "recovered_event_type": "diag_storage_error",
+                    "recovered_code": "condition_delivery_ledger",
+                },
+                condition=("track_a_condition_ledger",),
+                clear_condition=True)
         if _track_a_clock_monitor is None:
             _track_a_clock_monitor = health_drop.WallMonotonicDriftMonitor()
         drift = _track_a_clock_monitor.sample()
-        if drift.get("drifted") or not drift.get("ok"):
+        if drift.get("drifted"):
+            # A wall step is a historical occurrence, not an active condition.
+            # The monitor re-baselines immediately, so retain this exact stamp
+            # until every concrete lane queue accepts it.
+            occurrence = time.monotonic_ns()
+            _diag_emit_lanes(
+                "warn", "pi_clock_drift", code="wall_step",
+                detail={"source": "track_a_platform_probe", **drift},
+                retain=True,
+                pending_key=("incident", "track_a_clock", occurrence))
+        if not drift.get("ok"):
             platform["ok"] = False
             platform["reasons"] = sorted(set(
                 (platform.get("reasons") or [])
@@ -2154,19 +3377,43 @@ def _health_drop_hop_unlocked(last_health=None):
             _diag_emit_lanes(
                 "warn", "pi_clock_drift",
                 code=drift.get("code") or "clock_probe_invalid",
-                detail={"source": "track_a_platform_probe", **drift})
+                detail={"source": "track_a_platform_probe", **drift},
+                condition=("track_a_clock_probe",))
+            _track_a_clock_fault_active = True
+        elif (_track_a_clock_fault_active
+              or ("track_a_clock_probe",)
+              in _known_diag_condition_bases("track_a_clock_probe")):
+            _diag_emit_lanes(
+                "info", "recovered", code="pi_clock_drift",
+                detail={
+                    "source": "track_a_platform_probe",
+                    "reason": "clock_probe_invalid",
+                    "platform": platform,
+                    "recovered_event_type": "pi_clock_drift",
+                    "recovered_code": "clock_probe_invalid",
+                },
+                condition=("track_a_clock_probe",),
+                clear_condition=True)
+            _track_a_clock_fault_active = False
         current_reasons = set(platform.get("reasons") or ())
         for reason, severity, event_type, code in (
                 health_drop.platform_fault_events(platform)):
-            if reason not in _platform_health_reasons:
-                _diag_emit_lanes(
-                    severity, event_type, code=code,
-                    detail={
-                        "source": "track_a_platform_probe",
-                        "reason": reason,
-                        "platform": platform,
-                    })
-        for reason in sorted(_platform_health_reasons - current_reasons):
+            _diag_emit_lanes(
+                severity, event_type, code=code,
+                detail={
+                    "source": "track_a_platform_probe",
+                    "reason": reason,
+                    "platform": platform,
+                },
+                condition=("track_a_platform", reason))
+        known_platform_reasons = {
+            base[1] for base in _known_diag_condition_bases(
+                "track_a_platform")
+            if len(base) == 2
+        }
+        for reason in sorted(
+                (_platform_health_reasons | known_platform_reasons)
+                - current_reasons):
             mapped = health_drop.PLATFORM_EVENT_MAP.get(reason)
             _diag_emit_lanes(
                 "info", "recovered",
@@ -2175,8 +3422,24 @@ def _health_drop_hop_unlocked(last_health=None):
                     "source": "track_a_platform_probe",
                     "reason": reason,
                     "platform": platform,
-                })
+                    "recovered_event_type": (
+                        mapped[1] if mapped is not None else reason),
+                    "recovered_code": (
+                        mapped[2] if mapped is not None else reason),
+                },
+                condition=("track_a_platform", reason),
+                clear_condition=True)
         _platform_health_reasons = current_reasons
+        with _diag_pending_lock:
+            pending_drops = _diag_pending_drops
+            pending_count = len(_diag_pending)
+        if pending_drops:
+            platform["ok"] = False
+            platform["reasons"] = sorted(set(
+                (platform.get("reasons") or [])
+                + ["diagnostic_event_loss"]))
+        platform["track_a_diag_pending"] = pending_count
+        platform["track_a_diag_pending_drops"] = pending_drops
         camera = last_health or {"lanes": list(LANES)}
         payload = {
             "ok": bool(camera.get("ok", True)) and platform["ok"],
@@ -2185,15 +3448,26 @@ def _health_drop_hop_unlocked(last_health=None):
         }
         wrote = health_drop.write_drop(
             path, health_drop.SERVICE_CAMERA, payload)
-        if not wrote and not _health_drop_write_failed:
+        if not wrote:
             _health_drop_write_failed = True
             _diag_emit_lanes(
                 "warn", "diag_storage_error", code="health_drop_write",
-                detail=health_drop.stats())
-        elif wrote and _health_drop_write_failed:
+                detail=health_drop.stats(),
+                condition=("track_a_health_drop_write",))
+        elif (wrote and (
+                _health_drop_write_failed
+                or ("track_a_health_drop_write",)
+                in _known_diag_condition_bases(
+                    "track_a_health_drop_write"))):
             _health_drop_write_failed = False
             _diag_emit_lanes(
-                "info", "recovered", code="health_drop_write")
+                "info", "recovered", code="health_drop_write",
+                detail={
+                    "recovered_event_type": "diag_storage_error",
+                    "recovered_code": "health_drop_write",
+                },
+                condition=("track_a_health_drop_write",),
+                clear_condition=True)
         for status in health_drop.read_foreign_statuses(
                 path, health_drop.SERVICE_CAMERA):
             # The two Pi services are mutually exclusive. Missing/stale
@@ -2207,6 +3481,9 @@ def _health_drop_hop_unlocked(last_health=None):
             for event in health_drop.plan_foreign_relay(
                     status, _health_drop_seen):
                 _diag_emit_relay(event)
+            _reconcile_foreign_delivery(status)
+        _diag_pump_pending()
+        _diag_report_pending_drops()
     except Exception:
         log.debug("_health_drop_hop swallowed", exc_info=True)
 
@@ -2232,6 +3509,21 @@ def _classify_camera_health(h):
     return 'healthy' if h.get('ok') is True else 'unhealthy'
 
 
+def _clear_track_a_camera_conditions(detail=None):
+    """Close every exact camera fault family retained for this episode."""
+    results = {}
+    bases = sorted(
+        _known_diag_condition_bases("track_a_camera_health"), key=repr)
+    for base in bases:
+        if len(base) != 1:
+            continue
+        results["camera_health"] = _diag_emit_lanes(
+            "info", "recovered", code="camera_health",
+            detail=dict(detail or {}),
+            condition=base, clear_condition=True)
+    return results
+
+
 async def _camera_health_probe_once():
     """Perform one camera-health probe and publish its current truth."""
     global _cam_health_warned, _last_camera_health
@@ -2251,12 +3543,13 @@ async def _camera_health_probe_once():
         _last_camera_health = {
             "ok": False, "code": "dead", "lanes": list(LANES)}
         await asyncio.to_thread(_health_drop_hop, _last_camera_health)
-        if not _cam_health_warned:
-            _cam_health_warned = True
-            _diag_emit_lanes(
-                "warn", "camera_health", code="dead",
-                detail={"reason": "camera mode but no camera object "
-                                  "(init failed)"})
+        _cam_health_warned = True
+        await asyncio.to_thread(
+            _diag_emit_lanes,
+            "warn", "camera_health", code="dead",
+            detail={"reason": "camera mode but no camera object "
+                              "(init failed)"},
+            condition=("track_a_camera_health",))
         return
     if any(_capture_in_flight.values()):
         return                  # never race a scoring capture
@@ -2273,16 +3566,20 @@ async def _camera_health_probe_once():
         "ok": ok, "code": code, "lanes": list(LANES)}
     # File/subprocess health work stays off the asyncio event loop.
     await asyncio.to_thread(_health_drop_hop, _last_camera_health)
-    if not ok and not _cam_health_warned:
+    if not ok:
         _cam_health_warned = True
-        _diag_emit_lanes(
+        await asyncio.to_thread(
+            _diag_emit_lanes,
             "warn", "camera_health", code=code,
             detail={k: h.get(k) for k in
                     ("mean", "variance", "focus", "grabbed",
-                     "stale", "reasons")})
-    elif ok and _cam_health_warned:
+                     "stale", "reasons")},
+            condition=("track_a_camera_health",))
+    elif ok:
         _cam_health_warned = False
-        _diag_emit_lanes("info", "recovered", code="camera_health")
+        await asyncio.to_thread(
+            _clear_track_a_camera_conditions,
+            {"reason": "healthy_camera_probe"})
 
 
 async def camera_health_loop():
@@ -2291,7 +3588,23 @@ async def camera_health_loop():
     blocking capture in a worker thread and skips any poll that would race
     a scoring capture."""
     global _cam_health_warned, _last_camera_health
-    if SCORING_MODE != "camera" or not _cam_env_on(CAM_HEALTH_ENV):
+    if SCORING_MODE != "camera":
+        poll_s = max(10.0, _cam_env_float(CAM_HEALTH_POLL_ENV, 300.0))
+        log.info(
+            "Track-A platform health: polling every %.0fs in manual mode",
+            poll_s)
+        while True:
+            try:
+                await asyncio.to_thread(
+                    _health_drop_hop, dict(_last_camera_health))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.debug(
+                    "manual-mode platform health loop swallowed",
+                    exc_info=True)
+            await asyncio.sleep(poll_s)
+    if not _cam_env_on(CAM_HEALTH_ENV):
         return
     poll_s = max(10.0, _cam_env_float(CAM_HEALTH_POLL_ENV, 300.0))
     log.info(f"camera health: polling every {poll_s:.0f}s "
@@ -2346,19 +3659,27 @@ async def _maybe_camera_selfcheck(lane_id):
         v = await _run_camera_operation(
             "empty_self_check", cam.self_check_empty, lane_id=lane_id)
         if not v.get('grabbed') or v.get('stale'):
-            _diag_emit(
+            await asyncio.to_thread(
+                _diag_emit,
                 "warn", "camera_health",
                 code='dead' if not v.get('grabbed') else 'frozen',
                 detail={"during": "self_check_empty",
                         "reason": v.get('reason')},
-                lane=lane_id)
+                lane=lane_id, retain=True,
+                pending_key=(
+                    "incident", "camera_self_check", lane_id,
+                    time.monotonic_ns()))
         elif v.get('flagged'):
-            _diag_emit(
+            await asyncio.to_thread(
+                _diag_emit,
                 "warn", "camera_ref_drift", code="empty_ref",
                 detail={k: v.get(k) for k in
                         ("max_divergence", "max_spot_divergence",
                          "empty_confirmed", "recalibrated", "reason")},
-                lane=lane_id)
+                lane=lane_id, retain=True,
+                pending_key=(
+                    "incident", "camera_ref_drift", lane_id,
+                    time.monotonic_ns()))
     except asyncio.CancelledError:
         raise
     except Exception:
@@ -2419,6 +3740,36 @@ async def main():
     main_loop = asyncio.get_running_loop()
     event_queue = asyncio.Queue(maxsize=SCORING_EVENT_QUEUE_MAX)
     _scoring_event_wake = asyncio.Event()
+    # Start diagnostics and durably record this process entry before scoring
+    # storage or native camera construction can hang/fail. Restart-loop
+    # evidence is therefore available for the failures it is meant to expose.
+    try:
+        _DIAG_WRITER = _DiagWriter()
+        _DIAG_WRITER.start()
+    except Exception:
+        log.warning("lane diagnostics writer failed to start (health events "
+                    "will remain in the durable startup ledger)", exc_info=True)
+        _DIAG_WRITER = None
+    if not await asyncio.to_thread(_load_diag_condition_ledger):
+        log.error(
+            "Track-A condition-delivery ledger is invalid/unavailable; "
+            "diagnostic health will remain degraded")
+    if SCORING_MODE != "camera":
+        # A prior camera-mode fault is no longer applicable after an explicit
+        # switch to manual scoring. Close only the persisted camera condition;
+        # this does not claim that unmonitored camera hardware became healthy.
+        await asyncio.to_thread(
+            _clear_track_a_camera_conditions,
+            {
+                "reason": "camera_mode_disabled",
+                "scoring_mode": SCORING_MODE,
+                "restart_reconciled": True,
+            })
+    try:
+        await _record_track_a_service_start()
+    except Exception:
+        log.warning("Track-A service-start evidence failed", exc_info=True)
+
     _SCORING_EXECUTOR = ThreadPoolExecutor(
         max_workers=1, thread_name_prefix="scoring-transport")
     _scoring_transport_init_attempted = True
@@ -2446,59 +3797,38 @@ async def main():
             "durable scoring transport unavailable; scoring events will "
             "be visibly degraded and must not be released")
     _init_camera()
-    # Track-A diagnostic pipe: JSONL always, HTTP outbox when
-    # WSL_DIAG_SERVER_URL is provisioned. Platform/drop health remains useful
-    # in manual scoring mode and when camera initialization fails.
-    try:
-        _DIAG_WRITER = _DiagWriter()
-        _DIAG_WRITER.start()
-    except Exception:
-        log.warning("lane diagnostics writer failed to start (health events "
-                    "will be log-only)", exc_info=True)
-        _DIAG_WRITER = None
     if _SCORING_TRANSPORT is not None:
         try:
             clock_status = await main_loop.run_in_executor(
                 _SCORING_EXECUTOR,
                 _SCORING_TRANSPORT.wall_clock_status)
             if clock_status["anomaly_latched"]:
-                _diag_emit_lanes(
+                await asyncio.to_thread(
+                    _diag_emit_lanes,
                     "fault", "scoring_event_transport",
                     code="physical_command_clock_anomaly_latched",
                     detail={
                         **clock_status,
                         "requires_manual_reconciliation": True,
                         "actuating_commands_refused": True,
-                    })
+                    },
+                    retain=True,
+                    pending_key=(
+                        "incident", "scoring_event_transport",
+                        "physical_command_clock_anomaly_latched"))
         except Exception:
-            _diag_emit_lanes(
+            await asyncio.to_thread(
+                _diag_emit_lanes,
                 "fault", "scoring_event_transport",
                 code="physical_command_clock_guard_unavailable",
                 detail={
                     "requires_manual_reconciliation": True,
                     "actuating_commands_refused": True,
-                })
-    try:
-        import health_drop
-        starts_path = os.path.join(
-            os.path.dirname(_health_drop_path()),
-            "lane_node_service_starts.json")
-        start_facts = await asyncio.to_thread(
-            health_drop.record_service_start, starts_path)
-        _diag_emit_lanes(
-            "info", "service_restart", code="lane_node_start",
-            detail=start_facts)
-        if start_facts.get("restart_loop"):
-            _diag_emit_lanes(
-                "fault", "service_restart_loop", code="lane_node",
-                detail=start_facts)
-        if not start_facts.get("persisted"):
-            _diag_emit_lanes(
-                "warn", "diag_storage_error",
-                code="service_start_counter", detail=start_facts)
-    except Exception:
-        log.warning("Track-A service-start evidence failed", exc_info=True)
-
+                },
+                retain=True,
+                pending_key=(
+                    "incident", "scoring_event_transport",
+                    "physical_command_clock_guard_unavailable"))
     # SIGTERM is systemd's default stop signal. Without a handler, Python
     # exits without running atexit, and BCM2711 retains the GPIO output
     # state — relays stay stuck closed. Cancelling the main task lets
@@ -2525,13 +3855,18 @@ async def main():
         _enable_scoring_callbacks()
     else:
         _disable_scoring_callbacks()
-        _diag_emit_lanes(
+        await asyncio.to_thread(
+            _diag_emit_lanes,
             "fault", "scoring_event_transport",
             code="physical_inputs_masked_durable_transport_unavailable",
             detail={
                 "lanes": list(LANES),
                 "requires_manual_reconciliation": True,
-            })
+            },
+            retain=True,
+            pending_key=(
+                "incident", "scoring_event_transport",
+                "physical_inputs_masked_durable_transport_unavailable"))
 
     try:
         # The watchdog kick and the server connection run concurrently and
@@ -2548,7 +3883,11 @@ async def main():
         _cleanup_gpio()
         if _DIAG_WRITER is not None:
             try:
-                _DIAG_WRITER.stop()
+                remaining = _drain_track_a_diagnostics(_DIAG_WRITER)
+                if remaining:
+                    log.error(
+                        "Track-A shutdown left %d diagnostic obligation(s) "
+                        "unpersisted", remaining)
             except Exception:
                 pass
         if _SCORING_EXECUTOR is not None:

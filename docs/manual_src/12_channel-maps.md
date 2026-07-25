@@ -169,6 +169,23 @@ Source of truth: `IN_A_MAP` in `controller_io.py`, cross-checked against the `MC
 
 IN-B's entire B-bank (GPB0–7) is free → expansion headroom. (VERIFY: `controller_io.py` defines no `IN_B_MAP` constant — the IN-B channel→pin assignment lives only in the generator's `SLOW_INPUT_PINS` and this doc. There is no software bit map to drift against yet, so the self-test does not cover IN-B.)
 
+> **Rev-D/R5 diagnostic reservation (supersedes the Rev-B free-bank statement for
+> the new board):** GPB0–GPB7 become J15 AUX4–AUX11. These are capacity
+> reservations, not permission to land an unmeasured signal. For pilot lanes
+> 21/22, reserve AUX4 provisionally for an isolated `stop_request`, AUX5 for
+> `pit_interlock_request` **only if an existing device is found or a new one is
+> installed**, AUX6 for an independent downstream energize-to-prove
+> `control_power_ok`, AUX7/AUX8 for optional S/T current switches, AUX9 for one
+> measured optional dry contact, AUX10 for `sensor_24v_ok`, and AUX11 for
+> `field_wet_ok`. **Do not configure `cis_request` on lanes 21/22:** physical
+> inspection found no C.I.S. device or wiring. A different chassis with a real
+> C.I.S. may receive a chassis-specific mapping only after its contact form and
+> demand behavior are measured. AUX4–AUX9 remain unmapped until field landing,
+> isolation, open-wire behavior, exact event semantics, and first-article proof
+> are approved. Only isolated volt-free contacts from appropriately listed
+> external monitors may enter J15; never route mains, protective earth,
+> unclassified live ladder voltage, or a `SAFE_*` conductor onto Rev-D AUX.
+
 ---
 
 ### 12.5 Why the fast inputs live on the RP2040 (operating theory)
@@ -271,7 +288,7 @@ The generator's `block_connectors()` lays out function-named field terminals so 
 | **J_SLOW_IN_B** | Phoenix MCV 1×12 | IN-B field inputs | pins 1–11 = PBZ, PBC, FOUL, TENTH, MAN_T, MAN_S, MAN_SWS, MAN_SWSR, AUX1, AUX2, AUX3; pin 12 = FIELD_GND |
 | **J_MOTION_{S,T,SP,BE,M,M2,M1}** | seven Phoenix 2-pos (`MKDS-1,5-2-5.08`) | one relay contact pair each | pin 1 = `OUT_*_B` (NO), pin 2 = `OUT_*_A` (COM) — vertical order matches the G5LE pad order (B above A) |
 | **J_LAMP_LED** | Phoenix MCV 1×6 | 4 status lamps + power | 1=VCC_5V, 2=GND, 3–6 = L_FIRST, L_SECOND, L_STRIKE, L_FOUL returns |
-| **J_SAFETY** | Phoenix MCV 1×4 | two board-side source positions in series | **1→2 = controlled Candidate-C jumper (no TB/SC machine landing)**; 3→4 = Stop/CIS loop, feeding the rail PMOS source |
+| **J_SAFETY** | Phoenix MCV 1×4 | two board-side source positions in series | **1→2 = controlled Candidate-C jumper (no TB/SC machine landing)**; 3→4 = reserved external control-power / optional pit-interlock dry-contact interface, currently OPEN/unlanded, feeding the rail PMOS source only after an approved interface closes |
 
 > **Lane-21/22 fast-input caveat:** the PCB allocates J_FAST_IN/GP11 to TB, but the
 > measured harness has no standalone TB cavity. Leave TB NO-LEAD. SC/U is a
@@ -339,7 +356,7 @@ Everything in [§12.7](#127-mcp23017-out-a-bit-map-i²c-0x22--relays--status-lam
 1. **NE555 watchdog OK** — Pi kicks GPIO12 within the timeout, else the rail drops. ([§12.10](#1210-watchdog-timing-reference-ne555--firmware-timing-constants))
 2. **Pi "arm" GPIO** asserted (`ARM_PERMIT`, J_PI pin 8) — de-asserts on the power-down rule until an operator First-Ball-Zero.
 3. **RP2040_OK** (GP2) HIGH — firmware healthy + cam-stop permitting. ([§12.2.2](#1222-electrical-sense-of-the-fast-inputs-operating-theory))
-4. **J_SAFE source path complete** — controlled Candidate-C jumper on pins 1–2 and the implemented Stop/CIS loop on pins 3–4 feed the rail PMOS source.
+4. **J_SAFE source path complete** — controlled Candidate-C jumper on pins 1–2 plus a future approved external energize-to-prove control-power dry contact, optionally in series with an approved new pit-entry-interlock contact, on pins 3–4 feed the rail PMOS source. The current lane-21/22 3–4 harness is OPEN/unlanded, so the field rail cannot arm; never jumper it at the machine. Machine voltage and mains stay outside Rev-D.
 
 The primary TB/SC guard is separate from that on-board list: the powered-proven OEM contacts are parallel closed-when-safe in the S/T coil circuits. Correct board insertion is accepted only after G3 proves that both levers BACK/open leave the board-commanded S and T coils dead. The default-off SC∧TB firmware echo is secondary/unvalidated. Any failed on-board gate still drops every board relay coil; normal Pi software cannot bypass either correctly installed hardware path.
 

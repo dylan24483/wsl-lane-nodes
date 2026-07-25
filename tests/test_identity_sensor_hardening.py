@@ -38,6 +38,9 @@ class FakeWriter:
         self.events.append(event)
         return True
 
+    def emit_durable(self, event, timeout=2.0):
+        return self.emit(event)
+
     def of_type(self, event_type):
         return [e for e in self.events if e.event_type == event_type]
 
@@ -1216,6 +1219,23 @@ def test_main_refuses_output_mode_before_opening_hardware(monkeypatch):
     assert cd.main([]) == 1
 
 
+def test_main_refuses_unscoped_pair_aux_roles_before_opening_hardware(
+        monkeypatch):
+    monkeypatch.setenv(cd.LIVE_ENV, "0")
+    monkeypatch.setenv(cd.SHADOW_ENV, "1")
+    monkeypatch.setenv(cd.EXPECTED_MODE_ENV, "shadow")
+    monkeypatch.setenv(cd.BOARD_REVS_ENV, "revD")
+    monkeypatch.setenv(cd.AUX_ROLES_ENV, "aux3=dist_index")
+    monkeypatch.delenv(
+        f"{cd.AUX_ROLES_LANE_ENV_PREFIX}21", raising=False)
+    monkeypatch.delenv(
+        f"{cd.AUX_ROLES_LANE_ENV_PREFIX}22", raising=False)
+    monkeypatch.setattr(
+        cd, "_build_boards",
+        lambda *_args, **_kwargs: pytest.fail("hardware construction reached"))
+    assert cd.main([]) == 1
+
+
 def test_service_restart_starts_identity_retry_state_immediately():
     clock = {"t": 0.0}
     link = RP2040Link(now=lambda: clock["t"])
@@ -1243,7 +1263,7 @@ def test_nonce_change_invalidates_an_allowlisted_identity_before_arm():
     assert board.io.armed is False
 
 
-def test_bank_unknown_pauses_ball_return_timeout_until_recovery():
+def test_bank_unknown_invalidates_ball_return_timeout_until_fresh_ball():
     writer = FakeWriter()
     diag = LaneDiag(21, writer=writer, aux_roles={"AUX2": "exit_beam"})
     tracker = BallReturnTracker([21], timeout_s=10.0)
@@ -1254,29 +1274,36 @@ def test_bank_unknown_pauses_ball_return_timeout_until_recovery():
     diag.on_ball(0.0)
     diag.poll(1.0, ready=True, in_motion=False,
               slow_levels={}, inb_levels=None)
+    assert list(tracker._pending[21]) == []
     diag.poll(20.0, ready=True, in_motion=False,
               slow_levels={}, inb_levels=None)
     assert writer.of_type("ball_return_missing") == []
     assert tracker.missing_total[21] == 0
 
-    # Recovery is a baseline, and the 20 s UNKNOWN interval is excluded from
-    # the 10 s timeout budget.
+    # Recovery is only a baseline; the old pending timer is gone. A full
+    # timeout drains any ball that may return late from the blind interval.
     diag.poll(21.0, ready=True, in_motion=False,
               slow_levels={}, inb_levels={"AUX2": False})
-    diag.poll(30.0, ready=True, in_motion=False,
+    assert tracker._quarantine_until == 31.0
+    diag.on_ball(30.0)
+    assert list(tracker._pending[21]) == []
+    diag.poll(40.0, ready=True, in_motion=False,
               slow_levels={}, inb_levels={"AUX2": False})
     assert writer.of_type("ball_return_missing") == []
-    diag.poll(30.1, ready=True, in_motion=False,
+    diag.on_ball(40.0)
+    diag.poll(50.1, ready=True, in_motion=False,
               slow_levels={}, inb_levels={"AUX2": False})
     assert len(writer.of_type("ball_return_missing")) == 1
 
 
-def test_missing_role_is_not_coerced_false_and_timer_resumes(monkeypatch):
+def test_missing_role_is_not_coerced_false_and_old_absence_is_canceled(
+        monkeypatch):
     monkeypatch.setenv("WSL_DIAG_BE_WINDOW_S", "1")
     writer = FakeWriter()
     diag = LaneDiag(21, writer=writer, aux_roles={"AUX1": "be_current"})
     diag.poll(0.0, ready=True, in_motion=False,
               slow_levels={}, inb_levels={"AUX1": False})
+    diag.on_ball(0.0)
     diag.note_cycle_complete(0.0)
 
     diag.poll(0.5, ready=True, in_motion=False,
@@ -1289,9 +1316,21 @@ def test_missing_role_is_not_coerced_false_and_timer_resumes(monkeypatch):
     diag.poll(10.5, ready=True, in_motion=False,
               slow_levels={}, inb_levels={"AUX1": False})
     assert writer.of_type("be_no_current") == []
-    assert [e for e in writer.of_type("recovered")
-            if e.code == "configured_role_missing"]
+    recovered = [
+        e for e in writer.of_type("recovered")
+        if e.code == "configured_role_missing"]
+    assert recovered
+    assert recovered[0].detail["recovered_event_type"] == \
+        "configured_role_missing"
+    assert recovered[0].detail["recovered_code"] == "aux:AUX1"
     diag.poll(11.1, ready=True, in_motion=False,
+              slow_levels={}, inb_levels={"AUX1": False})
+    assert writer.of_type("be_no_current") == []
+
+    # Only a fully observed post-recovery cycle creates a new current window.
+    diag.on_ball(11.1)
+    diag.note_cycle_complete(11.1)
+    diag.poll(12.2, ready=True, in_motion=False,
               slow_levels={}, inb_levels={"AUX1": False})
     assert len(writer.of_type("be_no_current")) == 1
 

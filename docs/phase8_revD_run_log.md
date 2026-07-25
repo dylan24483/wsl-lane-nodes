@@ -474,7 +474,7 @@ The routed-section entry above silently reinterpreted G8. The record, straight:
   single choke point (input, Schmitt, pulls off) + `tap_assert_input_only()` OE/FUNCSEL
   register readback at init and every heartbeat tick, drift ⇒ fail-safe `tap_dir` latch
   (RP_OK refused); (2) inverted-tap decode (one `tap_read()` inversion point — raw 0 =
-  observed HIGH per the R1.2 2N7002 stage); (3) 1 ms-timestamped rail-drop edge ring
+  observed HIGH per the R1.2 2N7002 stage); (3) 1 ms-timestamped rail-predicate edge ring
   (128 × {t_ms,pin,level,epoch}) in `__uninitialized_ram`, magic-pair validity + epoch,
   adopted across reboot / zeroed on power loss, cleared ONLY by the new `TAPCLR`;
   `TAPDUMP` drips the ring + an ADVISORY cause code (`kick_starvation`/`arm_drop`/
@@ -532,10 +532,26 @@ The routed-section entry above silently reinterpreted G8. The record, straight:
   `WSL_SLOW_DEBOUNCE_FSM_N=1`; raising it is a deliberate bench-sign-off change and
   logs a warning banner at construction. DIELL levels stay firmware-sampled (30 s
   rule threshold; documented in `_diag_poll`).
-- AUX role surface: `aux1..aux11` accepted in `WSL_DIAG_AUX_ROLES` /
-  `BoardConfig.aux_roles`; AUX4-11 stuck-exempt; dormant-unless-mapped exactly like
-  AUX1-3 (a mapped aux4+ role on a rev-C board simply never sees a level).
-- `BoardConfig.board_rev` (default revC) plumbs the revision to the io layer per lane.
+- AUX role surface: `aux1..aux11` accepted in the scoped role maps /
+  `BoardConfig.aux_roles`; AUX4-11 are stuck-exempt and dormant unless mapped.
+  A role mapped to a channel absent from the declared board revision is rejected
+  before diagnostics threads or hardware open; it never degrades to a silent level.
+- `BoardConfig.board_rev` has no controller default. Each selected lane requires
+  explicit provisioning; unknown revisions, duplicate lane assignments, and
+  assignments for unselected lanes fail before hardware opens.
+
+**2026-07-24 R5 amendment (supersedes the unscoped provisioning sentence
+above):** a paired service now requires `WSL_DIAG_AUX_ROLES_L<lane>` for each
+physical board once either board is explicitly configured; an exact blank value
+declares an intentionally unmapped mate. The unscoped map is retained only for
+one-board bench mode. Startup rejects partial pair maps, duplicate
+channels/roles, and more than one pair `exit_beam` source before opening
+hardware. UNKNOWN and runtime-gate-disabled intervals discard active absence
+claims instead of shifting them across unreadable time; pair returns use one
+configured-timeout recovery drain. IN-B debounce state is recreated from the
+first recovered raw sample, and completion-derived BE/stale claims wait for the
+current diagnostic sample, preventing blind recovery edges and same-tick false
+alarms. The board copper is unchanged.
 
 ### H4 (lane-nodes half) — cycle POST contract fixed + single-source-of-truth contract file
 
@@ -1549,3 +1565,90 @@ fields:
   `d1d93de75474323135ac6f1eb41f0ebfa306a95640a91e01dafb758d42d18e25`
 - Gerber/drill zip SHA-256:
   `efe841d387e11886f1b7870a1d1f6802f04296d14fb404b5d88b27604e295f68`
+
+---
+
+## 2026-07-24 — ROUND-5 DIAGNOSTIC HONESTY / BLIND-INTERVAL REMEDIATION
+
+The post-round-4 adversarial pass treated every observation gap and delivery
+rejection as a possible evidence-loss boundary. The controller now invalidates
+absence evidence across IN-B, FIELD_WET, external sensor-supply, controller
+tick, and runtime-gate blind intervals; recovery establishes a new baseline and
+the pair return path drains one full timeout. AUX maps are board-scoped and
+pair topology is rejected before hardware opens when incomplete or ambiguous.
+
+Delivery is bounded and causal: immutable incidents keep their first occurrence
+stamp, current conditions clear before retry, severity outranks retention
+metadata, repeated keys retain first/latest evidence, failed boards keep a
+delivery pump, and shutdown interleaves pumps with local drains down to a
+one-record queue. Platform start/loop and clock-step incidents retry without
+restamping; start obligations are fsync'd with the counter and clear only after
+a local persistence receipt. Cross-service relays are held in an atomically
+fsync'd write-ahead ledger with concrete per-lane, restart-stable identities.
+An ambiguous failure replays the exact row, an alert precedes its exact-family
+recovery, and a recurrence while recovery is pending serializes
+recovery→distinct re-alert without same-family leapfrogging. Restore validation
+rejects any non-alternating or terminal false-green ledger. Quarantine
+notifiers do not notify about their own rejection, and a timed-out writer
+thread retains sole sink ownership.
+
+The physical review added two P0/P1 classes that the prior diagnostics scope
+omitted. First, J14.3–4 is physically OPEN in the authoritative harness and the
+rail cannot arm. A 2026-07-24 inspection established that pilot lanes 21/22 have
+no C.I.S. device or wiring; whether another pit-entry interlock exists remains
+unresolved. Rev-D GPB capacity is reserved provisionally for Stop demand, an
+optional approved pit-interlock demand, and independent downstream
+control-power/breaker proof, but these roles stay unmapped until electrical
+form, landing, isolation, software semantics, and FA-13 tests pass. A pit switch
+landed only at J14 is permission gating, not a final safety disconnect: any new
+final pit interlock must act in an approved upstream master/control-power safety
+architecture. Second, board/control power cannot prove protective-earth
+continuity or hot/neutral polarity; FA-14 assigns those to a qualified
+electrician and listed external instrument, with no mains copper on Rev-D.
+Motor current with command OFF is now classified as
+`uncommanded_motor_current` / `external-feed-or-welded`, including the OEM BE
+test cable; current alone must not claim a welded contact.
+
+This is a local software proof only. It does not close first-article, hot-edge,
+powered sensor/contact, FA-13 Stop/control-power landing and demand proof,
+the lane-21/22 pit-interlock disposition, FA-14 protective-earth/polarity proof,
+firmware flash/identity/cam-polarity, off-disk restore, tunnel-uniqueness, or
+production-deployment gates.
+
+### 2026-07-24 final round-5 integration closure
+
+- Track-A service-start evidence is now prepared as exact per-lane durable
+  obligations before offer. Each lane acknowledges independently, and a local
+  JSONL persistence receipt closes the fsync-before-state-ack crash window
+  without inventing a new delivery identity.
+- The first-article bench tool takes the controller-owner lease before any
+  GPIO/I2C/UART access, makes disarm/CLEAR release all motion latches, requires
+  an exact qualified firmware identity and max-run contract for normal ARM,
+  and never reports the explicit relay-only override as firmware
+  qualification.
+- `/api/machine/health` now returns the bounded newest-first
+  `current_conditions` list plus an exact count of every unresolved warning or
+  fault. Warning recovery is exact-family and two-clock ordered; legacy
+  NULL-code and empty-code incidents are migrated as distinct families.
+  Ambiguous or cross-family historical recovery is conservatively reopened
+  rather than allowed to false-green the lane.
+- The WSL bridge, alert, desk, and monitor layers validate and surface those
+  conditions. The backup/restore gate includes the four newly identified Pi
+  delivery/service-start ledgers and validates their grammar, terminal state,
+  and exact recovery semantics. A signed per-lane commissioning latch binds
+  board/harness identity to the FA-13/FA-14 record and accepts only a
+  controller-originated live identity no more than 90 seconds old. It also
+  requires the per-lane Candidate-C G3 proof for board-commanded S and T with
+  both levers BACK/open and each coil dead, and enforces a 365-day maximum
+  retest interval. Missing, overdue, stale-live, tampered, or mismatched
+  evidence blocks overall release health. Signing preserves accountability; it
+  does not create or substitute for the physical test. With the current
+  scoring-only unit policy, dormant Track-B controllers cannot keep that live
+  prerequisite green; controller release remains NO-GO until the reviewed live
+  controller policy is enabled.
+- The cross-repo machine contract is pinned at SHA-256
+  `5152278e5056fd7c8e3986443d4aab477152eb0651e0920c3d70bf2a38bf10a6`.
+  The remaining direct-sensor gap is unchanged: Rev-D's four taps observe
+  watchdog/ARM/RP2040 predicates, not the actual `RELAY_ENABLE_RAIL` / TP16
+  outcome. Direct Q14/J14/rail-state diagnosis therefore remains an external
+  isolated-monitor or future observe-only-board-FMEA item.

@@ -79,7 +79,7 @@ UART to the Pi is dead.
 What the RP2040 firmware is **not**:
 
 - It is **not** the only safety device. The TB/SC collision interlock (the
-  powered-proven OEM parallel-safe contacts in the S/T coil ladder), the Stop / CIS / master-breaker chain, the NE555
+  powered-proven OEM parallel-safe contacts in the S/T coil ladder), the installed Stop / master-breaker chain, the NE555
   watchdog (which watches the **Pi**, not the RP2040), and the machine's
   regenerative motor braking are **all in hardware, independent of this firmware.**
 - It does **not** switch any motor or coil current. It only drives a 3.3 V logic
@@ -132,8 +132,10 @@ that is one transistor in the relay-enable-rail series AND chain. A **100 kΩ ba
 pulldown** (`Rpd_AND_RP_OK`) means the rail fails **dead** whenever GP2 is Hi-Z —
 i.e. whenever the RP2040 is unpowered, in reset, or pre-`main()`. The other AND
 condition in the same chain is `ARM_PERMIT` (the Pi's arm GPIO, via `Q_AND_ARM`),
-and upstream of both are the NE555 watchdog OK and the implemented `J_SAFETY` source path
-(Candidate-C controlled jumper on pins 1–2 plus the Stop/CIS pins-3/4 loop).
+and upstream of both are the NE555 watchdog OK and the `J_SAFETY` source path
+(Candidate-C controlled jumper on pins 1–2 plus the reserved external-source pins-3/4
+position). The lane-21/22 production harness leaves 3–4 OPEN/unlanded, so the
+field rail cannot arm until a validated fail-safe dry interface is installed.
 This is the hardware that makes "GP2 LOW ⇒ no motion" true regardless of software.
 
 > **Do not apply one blanket "normally-closed" or trip polarity to every cam.**

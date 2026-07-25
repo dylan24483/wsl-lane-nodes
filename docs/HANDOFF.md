@@ -21,7 +21,7 @@
 > - **Root cause = rev-B relay footprint bug (NOT a fresh fault — do not chase it):** the netlist drove G5LE-**1** pad functions but the placed part is a G5LE-**14** (coil = pads **2/5**, ~65 Ω; COM=1, NO=3, NC=4) → the coil never sees voltage; **no rev-B relay can ever energize.** Generator remapped, netlist/DRC/Gerber re-verified → **rev-C ordered** with pre-order gates **G1–G5 all passed**. Source of truth: `phase8_revC_change_list.md` + `phase8_revC_readiness_checklist.md`. ⚠️ Caveats that did NOT make the rev-C spin: change-list **#3 USB clearance — layout unchanged** (A1/J1 never moved; **flash the Pico BEFORE soldering**, or use the shaved right-angle cable), **#5 FIELD_WET_V bleed — not implemented** (external bleed-R at a field connector is the interim option); **#2 SWD header — DROPPED** (Dylan 2026-06-25).
 > - **2026-06-27 at-machine COLD metering (lanes 21/22 Omega-Tek) — measured harness facts, not topology:** **SC** was located at **C2A cavity U** via its N.O. (pink) wire; **TB has NO standalone cavity** and neither TB lead isolates from the shared SC/U live-ladder region. That proves there is **no dry/independent TB pair to land on J_SAFETY**, but it does **not** prove series contact topology: ~21 Ω relay-coil sneak paths contaminate cold continuity. **C2A-N = motion-cam common bus** (all N-cavity cam predictions void), so **per-cam SA/SB/TA1/TA2 cavities remain DEFERRED to POWERED mapping at cutover** and their edge polarities remain unmeasured. Grippers **COMPLETE 10/10**: **GS1=C GS2=H GS3=M GS4=S GS5=W GS6=a GS7=e GS8=K (✓ 2026-07-07) GS9=r GS10=v**, with **J/F/U as common rails** (old GS8=48H / GS10=410U predictions PROVEN WRONG). **PBZ=EE** (shorts to common U pressed); **BS=CC**. **No physical TAC strip** — gripper return = machine chassis. Measured record: `phase8_metering_guide_harness_unknowns.md`.
 > - **Fable review 2026-06-27:** adversarial review of all post-06-10 work → **62 confirmed findings** (1 critical: the planned dry J_SAFETY TBSC loop is unbuildable from the measured harness) → **`docs/phase8_fable_review_2026-06-27.md`**. Its tentative cold-trace topology interpretation and OPEN-decision status are historical; the powered result and Candidate-C decision below supersede them.
-> - **NEXT ACTIONS:** ① first-article relay click test when the rev-C boards arrive (readiness checklist §4); ② powered cam-cavity mapping at cutover (cold trace invalid); ③ ~~re-read GS8~~ **✓ DONE 2026-07-07: GS8 = C2A-K (gripper map complete)**; ④ interlock: **§4.2 premise PROVEN TRUE at the machine 2026-07-07** — OEM contacts behave **parallel closed-when-safe**; both levers BACK/open kills both 24 VAC S/T coils → **✅ CANDIDATE C FORMALLY DECIDED 2026-07-07** (`phase8_interlock_redesign.md` §7); §4.3 window capture + **per-lane G3 proof with the board commanding S and then T** remain standing gates; ⑤ **build the lane-21 machine harness per `docs/phase8_lane21_harness_build_sheet.md`** (cut-and-crimp build sheet: Path-B taps, controlled J_SAFE1-2 engineered jumper, Stop/CIS landing OPEN).
+> - **NEXT ACTIONS:** ① first-article relay click test when the rev-C boards arrive (readiness checklist §4); ② powered cam-cavity mapping at cutover (cold trace invalid); ③ ~~re-read GS8~~ **✓ DONE 2026-07-07: GS8 = C2A-K (gripper map complete)**; ④ interlock: **§4.2 premise PROVEN TRUE at the machine 2026-07-07** — OEM contacts behave **parallel closed-when-safe**; both levers BACK/open kills both 24 VAC S/T coils → **✅ CANDIDATE C FORMALLY DECIDED 2026-07-07** (`phase8_interlock_redesign.md` §7); §4.3 window capture + **per-lane G3 proof with the board commanding S and then T** remain standing gates; ⑤ **build the lane-21 machine harness per `docs/phase8_lane21_harness_build_sheet.md`** (cut-and-crimp build sheet: Path-B taps, controlled J_SAFE1-2 engineered jumper, J14.3–4 Stop/control-power interface OPEN/P0; lanes 21/22 have no C.I.S.).
 
 > **⚡ ADDENDUM 2026-07-20 — REV-D BOARD CAMPAIGN: designed, ROUTED (DRC 0/0/0), NOT fab-ordered. *[Board figures + gate status in THIS block are SUPERSEDED by the 2026-07-21 remediation addendum below — the 07-21 numbers are the real ones.]***
 > - **Rev-D exists and is fully routed.** `kicad/revD/wsl-phase8b-revD.kicad_pcb` — ~~252 parts / 213 nets~~ / 250×240 mm, ~~netclasses 93/4/13/82/21~~, post-route DRC 0 violations / 0 unconnected / 0 footprint errors ~~(`kicad/revD/DRC-revD-routed-r3.rpt`)~~, routed-mode audit ALL PASS, five single-point power vias doubled (RD-VIA-1). Adds the AUX4–11 opto bank (40 rows), USB clearance fix, VCC_5V ADC divider, ~~safety-rail observe-only taps~~ *(replaced by 2N7002 stages in the 07-21 remediation)*, J15/J16, SS34 D_PROT.
@@ -33,7 +33,7 @@
 > **⚡ ADDENDUM 2026-07-21 — REV-D REMEDIATION CAMPAIGN COMPLETE (Codex NO-GO audit C1–C3/H1–H8/M1–M7 remediated). *[Board figures + fab-package path in THIS block are SUPERSEDED — 271/223 and `fab_revD_2026-07-21_r3/` (round-3) are the real ones.]***
 > - **Final board:** `kicad/revD/wsl-phase8b-revD.kicad_pcb` — **262 parts / 217 nets**, netclasses **97/4/13/82/21 = 217** (Safety_Rail EXACTLY 13, stop-ship guard PASS). The 07-20 "resistive observe-only taps" (680 k series direct to GPIO — Codex C1/H1) are GONE, replaced by **genuinely unidirectional 2N7002 common-source tap stages** (R_TAPIN 1 M / R_TAPPU 10 k / R_TAPG 10 M; FMEA + double-fault math in `phase8_revD_remediation_spec_2026-07-21.md` §R1). **Release DRC evidence = `kicad/revD/DRC-revD-remediation-r3.rpt`** (0/0/0) — `DRC-revD-routed-r3.rpt` is the superseded pre-remediation report; do not cite it.
 > - **Fab package EXISTS:** `scripts/export_fab_revD.py` (refuses-if-exists) was written and RUN → **`kicad/fab_revD_2026-07-21/`** (Gerbers + assembly/hand-solder/harness BOMs + CPL, BOM/CPL equality asserts, D_PROT locked to MDD SS34 LCSC C8678 SMA, SHA256-hashed as-ordered). **G11 `[x]` CLOSED** — do NOT rewrite the exporter.
-> - **Firmware v1.2.x** (`firmware/rp2040/`, NOT flashed): enforced input-only invariant on GP16-19/GP26 + inverted tap decode + noinit rail-drop edge ring + TAPDUMP/TAPCLR + VCC_5V ADC (closes C2). v1.2.1 corrected `TAP_KICK_STARVE_MS` 300→2000 ms (the 300 was sized against a nonexistent "~250 ms Pi kick"; real kick cadence is 1 Hz). Host suites 64/64 + 32/32 + 71/71.
+> - **Firmware v1.2.x** (`firmware/rp2040/`, NOT flashed): enforced input-only invariant on GP16-19/GP26 + inverted tap decode + noinit rail-predicate edge ring + TAPDUMP/TAPCLR + VCC_5V ADC (closes C2). The taps infer likely predicate cause only and do not directly observe `RELAY_ENABLE_RAIL`/TP16. v1.2.1 corrected `TAP_KICK_STARVE_MS` 300→2000 ms (the 300 was sized against a nonexistent "~250 ms Pi kick"; real kick cadence is 1 Hz). Host suites 64/64 + 32/32 + 71/71.
 > - **First-article/probe docs:** regenerate ONLY via `scripts/generate_first_article_docs_revD.py` + `docs/phase8_revD_first_article_pack.md` (M6: rev-C powered-test docs are WRONG for rev-D refdes). Tap topology in any doc you generate must be the 2N7002 stage, not the deleted resistive tap.
 > - **External mirror (current):** `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-21_phase8_revD_remediation\` (+ `.zip` + `.sha256`) — supersedes the two 07-20 mirrors as the as-ordered record.
 > - **Remaining before fab order:** G7 (powered-session items 6–7 or waiver) · **G8/OG-1 (Dylan's 240 mm sign-off — still OPEN and BLOCKING)** · G12 JLC upload inspection · G13/OG-3 harness + coding parts on hand (H7: CP-MSTB coding profiles install in the PLUG; MC 1,5 termination = 7 mm strip / 0.22–0.25 N·m / ≤0.5 mm² with insulated ferrule) · G14 (Dylan doc review) · first-article R1.9 fault-injection + tap level survey at temperature.
@@ -92,6 +92,30 @@
 >   equivalent; PPTC trip is time/temperature dependent, not a hard clamp.
 > - Definitive change/evidence record:
 >   `docs/phase8_revD_round4_board_report_2026-07-23.md`.
+>
+> **⚡ ADDENDUM 2026-07-24 — DIAGNOSTIC/SAFETY RE-AUDIT (supersedes the
+> FA-1…FA-12 and “welded-current” shorthand above):**
+> - The generated pack is now **FA-1…FA-14**. J14.3–4 is physically OPEN in the
+>   authoritative harness and the field rail cannot arm. Never jumper 3–4 at
+>   the machine. Physical inspection found no C.I.S. device or wiring on lanes
+>   21/22; C.I.S. is N/A, not passed. FA-13 requires an approved
+>   Stop/control-power interface, Stop→master/control-power plus TP16-drop proof,
+>   resolution of whether another pit-entry interlock exists, and a qualified
+>   install-versus-Stop+LOTO-only disposition. Any final pit interlock must act
+>   in the approved upstream safety-disconnect path; J14-only permission gating
+>   cannot stop a welded downstream contact.
+> - FA-14 assigns protective-earth continuity/bonding and hot/neutral polarity
+>   to a qualified electrician and listed external tester. Mains and PE test
+>   current never enter Rev-D.
+> - Rev-D GPB capacity is retained, but AUX4–AUX9 safety/current roles are
+>   provisional reservations only and remain unmapped until their electrical
+>   form, landing, isolation, software semantics, and FA proof are approved.
+> - CT/Hall current while command is OFF is
+>   `uncommanded_motor_current`, cause `external-feed-or-welded`; it includes an
+>   OEM test-cable/external-feed path and is not conclusive weld attribution.
+> - The software transport now preserves exact, restart-stable alert/recovery
+>   identities in bounded write-ahead ledgers. Local tests do not close any
+>   powered, first-article, deployment, or installation gate.
 
 ---
 
@@ -211,7 +235,11 @@ Both AMF manuals were **mined in full** → the entire controller is now a **doc
 - **I/O budget ≈ 45 channels** (~23 in + ~22 out) → MCP23017 + opto-in + relay/SSR-out.
 
 ### Safety model (PRESERVE in hardware — the Pi is never the sole guard)
-- **Stop switch + C.I.S.** (parallel) → cut the **rear-panel master circuit breaker** → all control dead.
+- **Stop switch + C.I.S. OEM history** describes parallel devices cutting the
+  rear-panel master breaker. **Pilot correction (2026-07-24):** lanes 21/22
+  have no C.I.S. device or wiring; their installed chain is Stop-only, another
+  pit-entry interlock is unresolved, and J14.3–4 remains OPEN/no-arm pending
+  the approved Stop/control-power interface and demand proof.
 - **Table-sweep INTERLOCK:** powered 2026-07-07 authority = **TB + SC are parallel closed-when-safe contacts** in the OEM 24 VAC relay ladder; either pressed lever permits the coil, while **both levers BACK/open kill both S and T coils**. The 2026-06-27 cold trace proved only that C2A-U/TSG-1 is a shared live-ladder region, TB has no standalone/dry landing, and ~21 Ω sneak paths make cold topology inference invalid. **Candidate C is decided:** the controlled J_SAFE1-2 jumper delegates the primary guard to the OEM ladder, with an insertion-point **G3 S-and-T coil-drop proof on every lane**; the default-off firmware SC∧TB echo is secondary and unvalidated.
 - **MP "Power-Down" rule:** after any 115 VAC loss in "Bowl", **NO machine motion on power restore** until a deliberate **"First Ball Zero"** (Manual Intervention). **The Pi MUST replicate this** (fail-safe-off + require operator zero). This is the controller-level sibling of the NE555 watchdog.
 - Cam-position stops are **controller LOGIC** (read cam → drop relay), not a hardwired motor latch → the Pi times them; TB/SC + braking are the hardware backstops.

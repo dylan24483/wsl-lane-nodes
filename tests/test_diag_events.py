@@ -21,14 +21,17 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 
 # Make lane_node modules importable when running from anywhere
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lane_node')))
 
 import diag_events as de
 from diag_events import (DiagEvent, DiagQueue, DiagWriter, HttpSink, JsonlSink,
-                         make_event, SEVERITIES, ENABLE_ENV, QUEUE_MAX_ENV,
-                         DIR_ENV, SERVER_URL_ENV, DEFAULT_QUEUE_MAX)
+                         OutboxReplayer, make_event, SEVERITIES, ENABLE_ENV,
+                         QUEUE_MAX_ENV, DIR_ENV, SERVER_URL_ENV,
+                         DEFAULT_QUEUE_MAX)
 
 
 def _raises(exc, fn, *a, **k):
@@ -83,6 +86,107 @@ class FakeSink:
 
     def flush(self):
         self.flushes += 1
+
+
+def test_stop_timeout_never_races_a_live_writer_sink():
+    class BlockingSink(FakeSink):
+        def __init__(self):
+            super().__init__()
+            self.entered = threading.Event()
+            self.release = threading.Event()
+            self.active = 0
+            self.max_active = 0
+            self.flush_while_active = False
+
+        def emit(self, row):
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            self.entered.set()
+            self.release.wait(2.0)
+            self.rows.append(row)
+            self.active -= 1
+
+        def flush(self):
+            if self.active:
+                self.flush_while_active = True
+            super().flush()
+
+    sink = BlockingSink()
+    writer = DiagWriter(sinks=[sink], enabled=True, poll_s=0.01)
+    writer.start()
+    assert writer.emit(make_event(21, "fault", "link_lost"))
+    assert sink.entered.wait(1.0)
+    assert writer.stop(timeout=0.01) is False
+    assert writer.drain_local() is False
+    assert sink.max_active == 1
+    assert sink.flush_while_active is False
+    sink.release.set()
+    assert writer.stop(timeout=2.0) is True
+    assert len(sink.rows) == 1
+
+
+def test_quarantined_notifier_cannot_generate_recursive_notifier():
+    notifications = []
+    directory = tempfile.mkdtemp(prefix="diag_quarantine_recursion_")
+    replayer = OutboxReplayer(
+        directory, "http://unused",
+        on_quarantine=lambda count, lane, errors: notifications.append(
+            (count, lane, errors)))
+    notifier = {
+        "source_id": "source", "boot_id": "boot", "seq": 1,
+        "lane_id": 21, "severity": "warn",
+        "event_type": "outbox_quarantine", "code": "server_reject",
+    }
+    assert replayer._quarantine(
+        [notifier], [{"index": 0, "error": "always reject"}])
+    assert notifications == []
+    assert replayer.quarantined == 1
+
+    ordinary = {
+        "source_id": "source", "boot_id": "boot", "seq": 2,
+        "lane_id": 22, "severity": "fault",
+        "event_type": "link_lost", "code": "hb_timeout",
+    }
+    second_notifier = dict(notifier, seq=3)
+    assert replayer._quarantine(
+        [ordinary, second_notifier], [
+            {"index": 0, "error": "reject ordinary"},
+            {"index": 1, "error": "reject notifier"},
+        ])
+    assert notifications == [(1, 22, ["reject ordinary"])]
+    assert replayer.quarantined == 3
+
+
+def test_emit_durable_waits_for_fsync_and_retries_flush_without_duplicate():
+    class FlakyJsonl(JsonlSink):
+        def __init__(self, directory):
+            super().__init__(
+                directory, flush_n=10, flush_s=60.0,
+                today=lambda: "20260724")
+            self.fail_once = True
+
+        def flush(self):
+            if self.fail_once and self._buf:
+                self.fail_once = False
+                self.write_errors += 1
+                return False
+            return super().flush()
+
+    directory = tempfile.mkdtemp(prefix="diag_durable_receipt_")
+    sink = FlakyJsonl(directory)
+    writer = DiagWriter(sinks=[sink], enabled=True, poll_s=0.01)
+    writer.start()
+    event = make_event(
+        21, "fault", "service_restart_loop", code="daemon_start")
+    assert writer.emit_durable(event, timeout=1.0) is False
+    assert writer.emit_durable(event, timeout=1.0) is True
+    assert writer.stop(timeout=2.0) is True
+    with open(
+            os.path.join(directory, "diag-20260724.jsonl"),
+            encoding="utf-8") as source:
+        rows = [json.loads(line) for line in source if line.strip()]
+    assert len(rows) == 1
+    assert rows[0]["event_type"] == "service_restart_loop"
 
 
 # ---------------------------------------------------------------------------

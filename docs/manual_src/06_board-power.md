@@ -246,8 +246,13 @@ power/load aspect.
 
 `RELAY_ENABLE_RAIL` is sourced from `VCC_5V` through a **P-channel pass FET (AO3401A, refdes Q14)**.
 The PCB provides two J_SAFETY series positions, but the released Candidate-C harness closes pins
-1–2 with the controlled jumper rather than landing TB/SC there. Q14 still requires watchdog OK,
-ARM, RP2040 OK/cam-stop, and the implemented Stop/CIS loop. Primary TB/SC protection is separate:
+1–2 with the controlled jumper rather than landing TB/SC there. Q14 also requires watchdog OK,
+ARM, RP2040 OK/cam-stop, and continuity through the J_SAFE3-4 source position. On the current
+lane-21/22 harness, 3–4 is physically OPEN/unlanded, so the field rail cannot arm; never jumper it
+at the machine. The leading field design uses an externally mounted, correctly rated,
+energize-to-prove control-power relay; only its isolated N.O. dry contact may reach J14, optionally
+in series with an approved new pit-entry-interlock contact. Machine voltage and mains never enter
+Rev-D. Primary TB/SC protection is separate:
 the OEM parallel-safe contacts remain in the S/T coil circuits and must pass the per-lane G3
 insertion proof. When any implemented on-board condition fails, Q14 turns off and the rail collapses.
 
@@ -351,8 +356,10 @@ not replace.
 
 > **Welded-contact limitation (carried from the safety contract):** the rail de-energizes relay
 > *coils*; it cannot open a contact that has welded closed. Relay contact rating, snubber/MOV
-> population, and validation are therefore safety-relevant, and the **machine's upstream Stop / CIS /
-> master-breaker chain remains the final physical stop**. See Section 10, *Safety Rail*.
+> population, and validation are therefore safety-relevant, and the **machine's upstream
+> Stop / master-breaker chain remains the final physical stop on pilot lanes 21/22**. OEM
+> C.I.S. history does not establish an installed device: none was found on either pilot.
+> See Section 10, *Safety Rail*.
 
 ---
 

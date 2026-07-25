@@ -2,6 +2,14 @@
 
 **Status: DRAFT / PHYSICAL RELEASE NO-GO (updated 2026-07-24).** The Rev-D R5 fabrication package exists as geometry evidence, but the board has not been ordered, assembled, first-article qualified, or bench-proven. The committed v1.2.3 production UF2 is Rev-D-only and still has every cam-stop enforcement flag OFF with trip polarities unconfirmed; it is **not a cutover image**. This runbook remains the run-of-show and field-capture procedure and must be refined after unit #1 passes the Rev-D first-article and bench gates.
 
+> **2026-07-24 field safety correction:** physical inspection found no C.I.S.
+> device or wiring on lanes 21/22; their cushion is mechanical and DIELL is the
+> ball/cycle trigger. Whether another pit-entry interlock exists is unresolved.
+> J_SAFE3–4 remains OPEN and the field rail cannot arm. Any new final pit-entry
+> interlock must act in an approved upstream master/control-power
+> safety-disconnect architecture; a J14-only contact is permission gating and
+> cannot stop a welded downstream contact.
+
 **What this does:** replaces the **OEM 82-70 controller brain** at lanes 21+22 — the Omega-Tek Omniboard + its S2003LS2 triac driver bank + the Siemens/ice-cube control relays — with the **Rev-D integrated Pi controller** (one board per lane, two boards on one Pi). After cutover, **cam timing, cam-stops, the cycle, masking, ball-state, and status indication come from the Pi/RP2040**, not the OEM controller. Scoring already comes from the camera (Track A) — *but note (2026-06-10): with current code the Track-A scoring node and this controller **cannot share a Pi**, so camera scoring goes dark at controller cutover until the unified scoring+control daemon exists — see the §2 prerequisite.*
 
 **Who runs it:** Dylan, at the lane + on the Pi node, with **one helper for every live step**. Claude can't reach the hardware.
@@ -28,7 +36,12 @@
 
 - **One board per lane**, two identical boards on one Pi (independent I²C bus + RP2040 each). Develop/validate one, clone.
 - **The board never sources machine power.** It only **opens/closes isolated dry contacts** in the existing machine control circuits. The S/T heavy-lug **contactors stay** and keep switching the 115 V motors and their OEM braking behavior; we only switch their **coil circuits** (all measured ~24 VAC).
-- **The board is never the only safety device.** The upstream **Stop / C.I.S. / master-breaker chain stays live and upstream** (OEM service manual p11: Stop + C.I.S. are in parallel and both cut the rear-panel master breaker). The master breaker remains the final physical stop, including for a welded contact (the rail can drop a coil; it cannot open a welded contact).
+- **The board is never the only safety device.** OEM service literature shows
+  Stop + C.I.S. in parallel, but installed lanes 21/22 have no C.I.S. Their
+  existing Stop/master-control-power path stays live and upstream. Before
+  cutover, identify any other pit-entry interlock and obtain the qualified
+  install-versus-Stop+LOTO-only disposition. The upstream disconnect—not the
+  board rail—must remain capable of stopping a welded downstream contact.
 - **The safety system** gates motion through five on-board rail conditions plus the OEM TB/SC coil-ladder condition. Any false → motion permission drops; none is bypassable by normal Pi software:
 
   | condition | source | fail-safe default |
@@ -38,7 +51,7 @@
   | RP2040 OK | RP2040 heartbeat/permission | false |
   | Cam-stop OK | RP2040 immediate cam-edge drop path | false on fault |
   | TB/SC interlock OK | **DELEGATED to the OEM ladder (Candidate C, decided 2026-07-07)** — J_SAFE1-2 carries the engineered jumper plug; protection = the SC/TB parallel-safe contacts in the S/T coil circuits, re-proven per lane at Stage-6b/G3. See §3.4 + `phase8_interlock_redesign.md` §7 + `phase8_lane21_harness_build_sheet.md` §2 | enforced in the machine's coil circuit, not on the rail |
-  | Stop/CIS/master OK | external machine safety chain | open/false |
+  | Stop/control-power OK | approved external energize-to-prove interface on J_SAFE3–4; actual Stop remains upstream | open/false |
 
 - **Cam-stops are now SOLELY the RP2040's job.** Bench work (JOB-2) found the OEM machine uses **logic stops** (triac board), not hardwired cam-in-series — so removing the Omega-Tek board removes the existing cam-stop. The RP2040 hardware cam-stop **replaces** it. This is why the RP2040 cam-stop must be bench-proven (spec §12.9) *before* this cutover, and why the §6 Stage-6b cam-stop drop test is a hard gate.
 
@@ -121,8 +134,22 @@ Confirm the **measured** output cavities against THIS in-place machine before la
 - **Standing conditions of the decision (hard):** ① the **per-lane Stage-6b/G3 machine-side coil-drop proof every cutover** — board commands S (then T), body clear, force both levers BACK → **coil must die even with the board contact closed**; a failure = the insertion bypassed the interlock = G3 FAIL → abort/rollback. ② **§4.3 window-angle capture** at the powered session. ③ The firmware SC∧TB echo is **default-off, secondary, and unvalidated** because this harness has no independent TB observation; the SC (J3-3) sense lead stays CUT+LABEL-ONLY unless a separately reviewed observe-only design is released after F.5 step 4 classes the node.
 - Still true: this is a **first-class rail condition** — under Candidate C it is enforced **in machine hardware (the OEM ladder)**, verified per lane at G3, not by firmware.
 
-### 3.5 Stop/CIS/master chain — confirm, preserve, do not replace
-- OEM service p11: Stop + C.I.S. parallel, both cut the master breaker. **Confirm continuity** (Stop in RUN vs STOP drops the motor-relay coil rail) and **leave the chain intact upstream.** J_SAFETY's Stop/CIS sense ties into this chain so the board's rail also requires it OK.
+### 3.5 Stop/control-power and pit-entry protection — OPEN/P0
+- Record the installed devices. Lanes 21/22 have **no C.I.S.**; C.I.S. is N/A,
+  not passed. Determine whether another pit-entry interlock exists. If none
+  exists, the owner and a qualified machine-safety reviewer must approve either
+  an upstream pit-entry safety disconnect or the existing Stop-plus-lockout-only
+  operating design before this cutover can be scheduled.
+- Confirm Stop in RUN versus STOP: STOP must remove master/control power within
+  the approved bound. Preserve that upstream path.
+- J_SAFE3–4 remains OPEN until an approved, measured, galvanically isolated
+  energize-to-prove interface is installed. The leading candidate is a
+  correctly rated control-power sensing relay with a N.O. volt-free contact on
+  J_SAFE3–4. Its drawing and proof must include de-energize/open-wire behavior
+  and a deliberate coil-off test that detects a welded/stuck sensing contact.
+- A new pit switch placed only at J14 is not a final safety disconnect. If an
+  installed/new pit interlock is credited for personnel protection, it acts
+  upstream and receives its own demand→power-drop proof.
 
 ### 3.6 M1 ball-return existence check
 - Confirm whether ball-return is a **separate command** on this chassis. If yes → it requires a future reviewed population change; **for this cutover M1 stays DNP and unharnessed** (FSM doesn't drive it).
@@ -151,7 +178,7 @@ The board exposes function-named connectors; this per-chassis harness lands them
 | | 10th / manual T/S/SWS/SWSR | spare (future) | — |
 | **J_LAMP_LED** | L_FIRST/SECOND/STRIKE/FOUL | **our LEDs in the mask housings** | 5 V logic via low-side FET; **machine 15 VDC mask supply abandoned** |
 | **J_SAFETY** | TB/SC loop (J_SAFE1-2) | **RESOLVED = Candidate C (2026-07-07): engineered labeled jumper plug — no machine landing; protection delegated to the OEM ladder, proven per lane at Stage-6b/G3 — see §3.4 + `phase8_lane21_harness_build_sheet.md` §2** | jumper closed; rail condition delegated to the machine's coil circuit |
-| | Stop/CIS/master sense | upstream chain — confirm §3.5 | preserve; rail condition |
+| | Stop/control-power source (J_SAFE3–4) | **OPEN/P0** pending approved interface and §3.5/FA-13 proof | never jumper at machine |
 | **J_PI** | I²C bus, UART(↔RP2040), WDOG-kick GPIO12, ARM, INT | Pi 40-pin | per-board bus (board-22 on i2c-gpio) |
 | **J_PWR** | 5 V logic, isolated field-wetting, 12 V DIELL | enclosure supplies | RPP + transient protection on input |
 
@@ -177,7 +204,11 @@ Verify 21+22 out of service. **Photograph the OEM brain as-found** (Omega-Tek bo
 Master breaker **OFF**, **tag it**, wait 30 s for discharge, **verify 0 V** across the coil circuits on C1/C2A (the 24 VAC coil rail can hold charge). You are now in mode A for everything through Stage 6.
 
 ### Stage 2 — Field capture §3 (45–60 min)
-Work §3.1–§3.7. Fill Appendix-B worksheets. This is most of the window and it's all cold/hand-actuated.
+Work §3.1–§3.7. Fill Appendix-B worksheets. Record the lane-21/22 no-C.I.S.
+finding, identify any other pit-entry interlock, and close the qualified
+disposition in §3.5; this is not a deferrable observation. This is most of the
+window and it is cold/hand-actuated except for the separately guarded demand
+proofs.
 
 ### Stage 3 — Install our mask LEDs (10 min)
 Fit the L_FIRST/SECOND/STRIKE/FOUL LEDs into the mask housings, run J_LAMP_LED (5 V, GND, 4 returns). **Leave the OEM 15 VDC mask-lamp wiring physically intact** (lift, don't cut) so rollback is clean.
@@ -186,7 +217,14 @@ Fit the L_FIRST/SECOND/STRIKE/FOUL LEDs into the mask housings, run J_LAMP_LED (
 **Unplug** the Omega-Tek board + triac driver bank + their connectors. **Do not cut anything.** Bag/label each OEM connector. Keep the OEM brain on a shelf at the cabinet — it is your rollback.
 
 ### Stage 5 — Land the adapter harness (30 min)
-One connector group at a time, **double-checking each against the §4 map**, lift-and-land, torque, tug-test, photograph: J_MOTION_OUT → C1/C2A coil circuits · J_FAST_IN → cams + DIELL · J_SLOW_IN_A/B → grippers/switches · J_SAFE1-2 → the exact Candidate-C keyed/labeled jumper only · J_SAFE3-4 → Stop/CIS · J_LAMP_LED → mask LEDs · J_PI → Pi · J_PWR → supplies. Final visual pass: every board terminal vs the map. Catch swaps **now**.
+One connector group at a time, **double-checking each against the §4 map**,
+lift-and-land, torque, tug-test, photograph: J_MOTION_OUT → C1/C2A coil
+circuits · J_FAST_IN → cams + DIELL · J_SLOW_IN_A/B → grippers/switches ·
+J_SAFE1-2 → the exact Candidate-C keyed/labeled jumper only · J_SAFE3-4 → the
+already approved and bench-proved Stop/control-power interface from §3.5 ·
+J_LAMP_LED → mask LEDs · J_PI → Pi · J_PWR → supplies. If the §3.5 interface
+or pit-interlock disposition is still open, **do not start Stage 5**. Final
+visual pass: every board terminal vs the map. Catch swaps **now**.
 
 ### Stage 6 — Logic-only bring-up (rail DISABLED, no motion possible) (20 min)
 **Master breaker still OFF; power LOGIC only (5 V).**
@@ -198,7 +236,10 @@ One connector group at a time, **double-checking each against the §4 map**, lif
    - reset/halt the RP2040 → rail drops
    - trigger each enabled cam-stop edge → rail drops. **The committed v1.2.3 release does not satisfy this gate:** its enforcement flags are OFF and polarities are unconfirmed. Capture §3.2 first, generate and verify a new Rev-D-only controlled release with only measured cams enabled, then prove each cam on the bench and again here. A valid hash/manifest without enabled, measured cam enforcement is still G3 FAIL.
    - TB/SC interlock → **coil-drop proof (Candidate C form — the landed design as of 2026-07-07, `phase8_interlock_redesign.md` §7).** J_SAFE1-2 carries the *documented, labeled* engineered jumper (build sheet §2), so a rail-drop test is meaningless for this condition — the proof moves to the MACHINE side: **force SC/TB into the danger state (both cam levers held BACK) while the board commands S → the S-contactor COIL must read dead even with the board contact closed; repeat for T.** A coil that energizes = the §3.3 insertion bypassed the ladder → G3 FAIL, lift the feed-side tap, re-select, re-prove (build sheet §3.2). ⛔ Any OTHER J_SAFE jumper remains FORBIDDEN — the §2 engineered part on 1-2 is the sole exception; never jumper 3-4, never bridge 1→4.
-   - open the Stop/CIS chain → rail drops
+   - demand Stop → master/control power and TP16 both drop within the approved
+     bounds; deliberately de-energize the sensing-relay coil/open its proof path
+     and require J_SAFE3–4/TP16 to open. On lanes 21/22 record C.I.S. absent/N/A.
+     Demand-test every actually installed/new upstream pit interlock separately.
    **Every one must drop motion permission. Any failure → ABORT + rollback (G3).** Do not proceed to live motion with a safety condition that doesn't drop the rail.
 
 ### Stage 7 — First commanded motion (mode B — DELIBERATE LIVE) (20 min)
@@ -224,9 +265,9 @@ Brief night staff: "21+22 are on the new Pi controller. The machine cycles autom
 
 | gate | when | pass condition | fail action |
 |---|---|---|---|
-| **G1** | before scheduling | Rev-D first article + spec §12.9 bench sequence passed · physical Rev-ID and exact release manifest/UF2 verified · measured cam enforcement enabled/proven · Track-A scoring soaked clean · spare on hand · OEM brain photographed | don't schedule |
-| **G2** | after Stage 2 | all §3 field items captured; harness map §4 complete; no surprises vs measured cavities | resolve or defer non-blocking; abort if a safety landing (TB/SC) is unclear |
-| **G3** | Stage 6b | watchdog, arm, RP2040, every enabled cam-stop, and Stop/CIS each independently drop the rail · TB/SC is proven at the MACHINE side by forcing both levers BACK while the board commands S and then T; both coils must be dead · J_SAFE1-2 contains only the controlled Candidate-C keyed/labeled jumper from the harness build sheet; any other bridge or an energized coil is FAIL | **ABORT → rollback** |
+| **G1** | before scheduling | Rev-D first article + spec §12.9 bench sequence + FA-13/FA-14 passed · physical Rev-ID and exact release manifest/UF2 verified · measured cam enforcement enabled/proven · signed per-lane Stop/pit-interlock/PE commissioning evidence accepted by the operations latch, bound to exact lane/Pico/board/harness identity, with a matching controller-originated live observation **≤90 s old** and proof age **≤365 days** · Track-A scoring soaked clean · spare on hand · OEM brain photographed | don't schedule |
+| **G2** | after Stage 2 | all §3 field items captured; harness map §4 complete; lane-21/22 no-C.I.S. and pit-entry disposition recorded; approved J_SAFE3–4 interface complete; no surprises vs measured cavities | resolve or defer only non-safety items; any safety/interface ambiguity aborts |
+| **G3** | Stage 6b | watchdog, arm, RP2040, every enabled cam-stop, and the approved Stop/control-power interface each independently drop the rail · Stop drops upstream master/control power and TP16 · every installed/new upstream pit interlock passes separately · TB/SC is proven at the MACHINE side by forcing both levers BACK while the board commands S and then T; both coils must be dead · J_SAFE1-2 contains only the controlled Candidate-C keyed/labeled jumper; any other bridge or an energized coil is FAIL | **ABORT → rollback** |
 | **G4** | Stage 7 | commanded S/T/SP each stop on cams; full reset completes + stops; no runaway | **breaker OFF → rollback** |
 | **G5** | Stage 8 | ball cycle correct + manual deck check across a few balls/leaves both lanes *(the auto-score half is **BLOCKED** until the unified scoring+control daemon — §2 prerequisite; until then G5 gates on cycle correctness only)* | flip scoring to manual (Track-A Step 7); controller stays if G3/G4 passed |
 
@@ -244,7 +285,9 @@ Brief night staff: "21+22 are on the new Pi controller. The machine cycles autom
 Trigger: any G3/G4 failure, or a Stage-7/8 fault that isn't a trivial single-wire fix.
 
 1. **Master breaker OFF, lockout, verify 0 V.**
-2. **Lift the adapter harness** from C1/C2A/TB/SC/Stop-CIS (use the tape labels; lift, don't cut).
+2. **Lift the adapter harness** from C1/C2A/TB/SC and the J_SAFE3–4
+   Stop/control-power interface (use the tape labels; lift, don't cut). Leave
+   every upstream Stop/pit safety device intact.
 3. **Re-plug the OEM Omega-Tek board + triac driver bank + connectors** (preserved from Stage 4).
 4. Mask LEDs (J_LAMP_LED) can stay unpowered (harmless); the OEM 15 VDC mask wiring was left intact, so OEM lamps work on re-plug.
 5. **Master breaker ON.** OEM controller runs the machine. **Bowl a frame on each lane** to confirm normal operation.
@@ -304,5 +347,27 @@ SA __/__/__°  SB __/__/__°  SC __/__/__°  TA1 __/__/__°  TA2 __/__/__°  TB 
 cam-stop drop confirmed (Stage 7)?  S:__  T:__
 ```
 **B.3 Outputs (§3.3 confirm)** — S(C1 C,D,N,T)__ · T(C1 A,K,H,E,L)__ · SP(C2A)__ · BE(straddle)__ · M(C2A)__ · M2(C2A)__ · M1 exists? Y/N __
-**B.4 Safety (§3.4/§3.5)** — interlock design landed (`phase8_interlock_redesign.md` candidate A/B/C): __ · machine-side SC/TB force drops motion permission Y/N __ · Stop drops coil rail Y/N __
+**B.4 Safety + signed commissioning evidence (§3.4/§3.5, FA-13/FA-14)** —
+one complete block per lane; attach procedure sheets, meter/tester output, and
+photos rather than reducing a failed or ambiguous result to a checked box:
+```
+Lane __  Pico UID __  board rev/serial __  harness rev/serial __
+Candidate-C J_SAFE1-2 keyed/labeled jumper verified __
+OEM S/T ladder still in series / not bypassed __
+G3 S: board commands S + both levers BACK/open -> S coil dead: result __ evidence __
+G3 T: board commands T + both levers BACK/open -> T coil dead: result __ evidence __
+C.I.S. installed? NO/N/A on lanes 21/22 __  other pit interlock found __
+Pit-interlock install-vs-Stop+LOTO disposition / approver __
+J14.3-4 isolated control-power interface drawing + relay ID __
+Stop request observed __  master/control-power drop __ ms (limit __ ms; PASS/FAIL __)
+Stop -> TP16 drop __ ms (limit __ ms; PASS/FAIL __)
+Monitor open-wire tests __  control-power proof-path coil-off test __
+Installed/new upstream pit-interlock demand result, if applicable __
+PE continuity/bonding: tester ID __ calibration due __ result __ limit __
+Hot/neutral polarity: tester ID __ calibration due __ result __
+FA-13/FA-14 tested UTC __  retest due UTC __ (must be <=365 days)
+Controller-originated live identity __  observed UTC __  age __ s (must be <=90)
+Exact live lane/Pico/board/harness match PASS/FAIL __
+Signed commissioning record ID __  signer/date __
+```
 **B.5 Switches** — PBZ __ · PBC __ · GP __ · OS __ · BS __ · Foul form __

@@ -32,7 +32,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 import controller_daemon as cd
 from controller_daemon import (  # noqa: E402
     BoardController, BoardConfig, LaneDiag, BallReturnTracker, PlatformHealth,
-    _parse_aux_roles, _wire_pair_diagnostics)
+    _aux_roles_for_lane, _parse_aux_roles, _provision_aux_roles,
+    _wire_pair_diagnostics, _drain_final_diagnostics)
 from cam_telemetry import CamTelemetry, CycleShipper
 from cycle_control_8270 import State, MAX_MOTION_S, TIME_DELAY_S
 from diag_events import DiagQueue, DiagWriter
@@ -50,6 +51,31 @@ class FakeWriter:
     def emit(self, ev):
         self.events.append(ev)
         return True
+
+    def emit_durable(self, ev, timeout=2.0):
+        return self.emit(ev)
+
+    def of_type(self, event_type):
+        return [e for e in self.events if e.event_type == event_type]
+
+
+class ToggleWriter:
+    """Writer stub that records attempts and can model a full/recovering queue."""
+
+    def __init__(self, accept=False):
+        self.accept = bool(accept)
+        self.attempts = []
+        self.events = []
+
+    def emit(self, event):
+        self.attempts.append(event)
+        if not self.accept:
+            return False
+        self.events.append(event)
+        return True
+
+    def emit_durable(self, event, timeout=2.0):
+        return self.emit(event)
 
     def of_type(self, event_type):
         return [e for e in self.events if e.event_type == event_type]
@@ -187,6 +213,233 @@ def test_emit_under_full_queue_returns_immediately():
 
 
 # ── manual override + suppression window ───────────────────────────────────────
+
+def test_rejected_current_alert_is_canceled_before_due_retry_on_clear():
+    with _EnvPatch(WSL_DIAG_BEAM_BLOCKED_S="1"):
+        w = ToggleWriter()
+        diag = LaneDiag(21, writer=w)
+        levels = {"DIELL_L": True}
+        diag.poll(
+            0.0, ready=True, in_motion=False,
+            slow_levels={}, inb_levels={}, diell_levels=levels)
+        diag.poll(
+            2.0, ready=True, in_motion=False,
+            slow_levels={}, inb_levels={}, diell_levels=levels)
+        assert ("beam_blocked", "diell:DIELL_L") in diag._pending_alerts
+
+        w.accept = True
+        diag.poll(
+            2.3, ready=True, in_motion=False,
+            slow_levels={}, inb_levels={},
+            diell_levels={"DIELL_L": False})
+        assert w.of_type("beam_blocked") == []
+        assert ("beam_blocked", "diell:DIELL_L") not in diag._pending_alerts
+
+
+def test_rejected_supply_fault_is_canceled_before_due_retry_on_restore():
+    w = ToggleWriter()
+    diag = LaneDiag(
+        21, writer=w, aux_roles={"AUX10": "sensor_24v_ok"})
+    diag.poll(
+        0.0, ready=True, in_motion=False,
+        slow_levels={}, inb_levels={"AUX10": True})
+    diag.poll(
+        1.0, ready=True, in_motion=False,
+        slow_levels={}, inb_levels={"AUX10": False})
+    assert ("sensor_supply_lost", "aux:AUX10") \
+        in diag._pending_alerts
+
+    w.accept = True
+    diag.poll(
+        1.3, ready=True, in_motion=False,
+        slow_levels={}, inb_levels={"AUX10": True})
+    assert w.of_type("sensor_supply_lost") == []
+    assert len(w.of_type("sensor_supply_restored")) == 1
+
+
+def test_incident_retry_survives_master_blind_but_current_alert_does_not():
+    with _EnvPatch(WSL_DIAG_DAEMON_EVENTS="1"):
+        w = ToggleWriter()
+        diag = LaneDiag(21, writer=w)
+        diag.emit_event(
+            "fault", "rail_drop", code="tick_error_budget", t=1.0,
+            persistent=True, retain_across_blind=True)
+        diag.emit_event(
+            "warn", "beam_blocked", code="diell:DIELL_L", t=1.0,
+            persistent=True)
+        assert len(diag._pending_alerts) == 2
+
+        os.environ["WSL_DIAG_DAEMON_EVENTS"] = "0"
+        diag.poll(
+            1.1, ready=True, in_motion=False,
+            slow_levels={}, inb_levels={},
+            diell_levels={"DIELL_L": False})
+        assert ("rail_drop", "tick_error_budget") in diag._pending_alerts
+        assert ("beam_blocked", "diell:DIELL_L") not in diag._pending_alerts
+
+        os.environ["WSL_DIAG_DAEMON_EVENTS"] = "1"
+        w.accept = True
+        diag.poll(
+            1.3, ready=True, in_motion=False,
+            slow_levels={}, inb_levels={},
+            diell_levels={"DIELL_L": False})
+        delivered = w.of_type("rail_drop")
+        assert len(delivered) == 1
+        assert delivered[0].detail["delivery_retry"] == 1
+
+
+def test_failed_board_delivery_pump_preserves_safety_occurrence_timestamp():
+    w = ToggleWriter()
+    bc = mk_board(writer=w)
+    bc._on_safety_trip("tick_error_budget")
+    pending = bc.diag._pending_alerts[
+        ("rail_drop", "tick_error_budget")]["event"]
+    original_stamp = (pending.ts_utc, pending.ts_mono)
+    w.accept = True
+    assert bc.diag.pump_pending_delivery(
+        bc.io.now() + 1.0, force=True) == 0
+    delivered = w.of_type("rail_drop")
+    assert len(delivered) == 1
+    assert delivered[0].code == "tick_error_budget"
+    assert delivered[0].detail["delivery_retry"] == 1
+    assert (delivered[0].ts_utc, delivered[0].ts_mono) == original_stamp
+
+
+def test_shutdown_interleaves_small_queue_drains_until_all_incidents_persist():
+    class CaptureSink:
+        def __init__(self):
+            self.rows = []
+
+        def emit(self, row):
+            self.rows.append(row)
+            return True
+
+        def maybe_flush(self):
+            return True
+
+        def flush(self):
+            return True
+
+    queue = DiagQueue(maxsize=1)
+    sink = CaptureSink()
+    writer = DiagWriter(
+        queue=queue, sinks=[sink], enabled=True)
+    diag = LaneDiag(21, writer=writer)
+    assert writer.emit(cd.make_event(
+        21, "info", "service_restart", code="prefill"))
+    diag.emit_event(
+        "fault", "link_lost", code="shutdown-a",
+        persistent=True, retain_across_blind=True)
+    diag.emit_event(
+        "fault", "fsm_fault", code="shutdown-b",
+        persistent=True, retain_across_blind=True)
+    assert diag.pending_alert_count() == 2
+    board = type("Board", (), {
+        "diag": diag,
+        "io": type("IO", (), {"now": staticmethod(lambda: 10.0)})(),
+    })()
+
+    assert _drain_final_diagnostics(writer, [board]) == 0
+    assert diag.pending_alert_count() == 0
+    assert [row["event_type"] for row in sink.rows] == [
+        "service_restart", "link_lost", "fsm_fault"]
+
+
+def test_low_priority_pending_flood_cannot_evict_safety_fault():
+    w = ToggleWriter()
+    diag = LaneDiag(21, writer=w)
+    diag.emit_event(
+        "fault", "rail_drop", code="controller_loop_gap",
+        persistent=True, retain_across_blind=True)
+    for index in range(diag._pending_alerts_max + 20):
+        diag.emit_event(
+            "info", "unexpected_edge", code=f"edge-{index}",
+            persistent=True, retain_across_blind=True)
+    assert len(diag._pending_alerts) == diag._pending_alerts_max
+    assert ("rail_drop", "controller_loop_gap") in diag._pending_alerts
+
+
+def test_retained_info_flood_cannot_evict_active_fault_or_warning():
+    for severity, event_type, code in (
+            ("fault", "field_wet_lost", "aux:AUX11"),
+            ("warn", "beam_blocked", "diell:DIELL_L")):
+        writer = ToggleWriter()
+        diag = LaneDiag(21, writer=writer)
+        diag.emit_event(
+            severity, event_type, code=code, persistent=True)
+        for index in range(diag._pending_alerts_max + 20):
+            diag.emit_event(
+                "info", "unexpected_edge", code=f"edge-{index}",
+                persistent=True, retain_across_blind=True)
+        assert (event_type, code) in diag._pending_alerts
+        assert diag._pending_alerts[(event_type, code)]["event"].severity \
+            == severity
+
+
+def test_gate_off_incident_is_delayed_not_discarded():
+    with _EnvPatch(WSL_DIAG_DAEMON_EVENTS="0"):
+        w = ToggleWriter(accept=True)
+        diag = LaneDiag(21, writer=w)
+        diag.emit_event(
+            "fault", "rail_drop", code="controller_loop_gap",
+            detail={"where": "blind"}, t=1.0,
+            persistent=True, retain_across_blind=True)
+        assert w.events == []
+        assert ("rail_drop", "controller_loop_gap") in diag._pending_alerts
+
+        os.environ["WSL_DIAG_DAEMON_EVENTS"] = "1"
+        diag.pump_pending_delivery(2.0, force=True)
+        delivered = w.of_type("rail_drop")
+        assert len(delivered) == 1
+        assert delivered[0].detail["where"] == "blind"
+
+
+def test_same_key_incidents_coalesce_without_losing_first_or_latest_evidence():
+    w = ToggleWriter()
+    diag = LaneDiag(21, writer=w)
+    diag.emit_event(
+        "info", "unexpected_edge", code="ball:ready",
+        detail={"count": 1}, persistent=True,
+        retain_across_blind=True)
+    first = diag._pending_alerts[
+        ("unexpected_edge", "ball:ready")]["event"]
+    diag.emit_event(
+        "info", "unexpected_edge", code="ball:ready",
+        detail={"count": 10}, persistent=True,
+        retain_across_blind=True)
+
+    w.accept = True
+    diag.pump_pending_delivery(5.0, force=True)
+    delivered = w.of_type("unexpected_edge")
+    assert len(delivered) == 1
+    assert delivered[0].detail["count"] == 10
+    assert delivered[0].detail["occurrence_count"] == 2
+    assert delivered[0].detail["first_occurrence_detail"] == {"count": 1}
+    assert delivered[0].ts_mono == first.ts_mono
+
+
+def test_ball_timeout_incident_survives_blindness_and_later_good_return():
+    w = ToggleWriter()
+    diag = LaneDiag(21, writer=w)
+    tracker = BallReturnTracker([21], timeout_s=1.0)
+    diag.set_ball_tracker(tracker)
+    tracker.set_ball_source_available(21, True, -2.0)
+    tracker.on_ball(21, 0.0)
+    tracker.poll(1.1)
+    assert ("ball_return_missing", "exit_beam") in diag._pending_alerts
+
+    diag._suspend_all_rules(1.2)
+    assert ("ball_return_missing", "exit_beam") in diag._pending_alerts
+    tracker.set_enabled(True, 2.0)
+    tracker.set_ball_source_available(21, True, 2.0)
+    tracker.on_ball(21, 4.0)
+    tracker.on_exit_pulse(4.5)
+    assert ("ball_return_missing", "exit_beam") in diag._pending_alerts
+
+    w.accept = True
+    diag.pump_pending_delivery(5.0, force=True)
+    assert len(w.of_type("ball_return_missing")) == 1
+
 
 def test_manual_override_event_and_suppression_gating():
     w = FakeWriter()
@@ -366,6 +619,41 @@ def test_beam_blocked_from_hb_in_mask():
     hb(bc, extra=',"in":0')
     bc.tick()
     assert "DIELL_L" not in bc.diag._beam_warned
+
+
+def test_beam_unknown_interval_rebaselines_held_time():
+    with _EnvPatch(WSL_DIAG_BEAM_BLOCKED_S="1"):
+        w = FakeWriter()
+        diag = LaneDiag(21, writer=w)
+        diag.poll(
+            0.0, ready=True, in_motion=False,
+            slow_levels={}, inb_levels={},
+            diell_levels={"DIELL_L": True})
+        diag.poll(
+            2.0, ready=False, in_motion=False,
+            slow_levels={}, inb_levels={},
+            diell_levels=None)
+        diag.poll(
+            3.0, ready=True, in_motion=False,
+            slow_levels={}, inb_levels={},
+            diell_levels={"DIELL_L": True})
+        assert w.of_type("beam_blocked") == []
+        diag.poll(
+            4.1, ready=True, in_motion=False,
+            slow_levels={}, inb_levels={},
+            diell_levels={"DIELL_L": True})
+        assert len(w.of_type("beam_blocked")) == 1
+
+
+def test_board_diag_poll_hides_cached_diell_when_link_is_unhealthy():
+    bc = mk_board()
+    seen = []
+    bc.link.health_ok = lambda: False
+    bc.link.input_levels = lambda: {"DIELL_L": True, "DIELL_R": False}
+    bc.diag.poll = lambda *_args, **kwargs: seen.append(
+        kwargs.get("diell_levels"))
+    bc._diag_poll({})
+    assert seen == [None]
 
 
 # ── AUX rules ───────────────────────────────────────────────────────────────────
@@ -575,6 +863,57 @@ def test_wire_pair_diagnostics_dormant_without_roles():
     bc = mk_board()
     assert _wire_pair_diagnostics([bc]) is None
     assert bc.diag.ball_tracker is None
+
+
+def test_wire_pair_diagnostics_rejects_multiple_exit_sources():
+    def board(lane, roles):
+        return type("Board", (), {
+            "cfg": type("Cfg", (), {"lane": lane})(),
+            "diag": LaneDiag(lane, aux_roles=roles),
+        })()
+
+    import pytest
+    with pytest.raises(ValueError, match="ambiguous pair-shared exit_beam"):
+        _wire_pair_diagnostics([
+            board(21, {"AUX2": "exit_beam"}),
+            board(22, {"AUX2": "exit_beam"}),
+        ])
+
+
+def test_only_designated_exit_source_can_consume_pair_pending_ball():
+    def board(lane, roles):
+        return type("Board", (), {
+            "cfg": type("Cfg", (), {"lane": lane})(),
+            "diag": LaneDiag(lane, aux_roles=roles),
+        })()
+
+    source = board(21, {"AUX2": "exit_beam"})
+    mate = board(22, {})
+    tracker = _wire_pair_diagnostics([source, mate])
+    tracker.set_ball_source_available(21, True, 0.0)
+    tracker.set_ball_source_available(22, True, 0.0)
+    source.diag.poll(
+        0.0, ready=True, in_motion=False,
+        slow_levels={}, inb_levels={"AUX2": False})
+    # Initial UNKNOWN->healthy is deliberately drained for one full return
+    # window; exercise attribution only after that startup quarantine.
+    settled = tracker.timeout_s + 1.0
+    tracker.on_ball(21, settled)
+    tracker.on_ball(22, settled + 1.0)
+
+    source.diag.poll(
+        settled + 2.0, ready=True, in_motion=False,
+        slow_levels={}, inb_levels={"AUX2": True})
+    assert sum(tracker.returned_total.values()) == 1
+    assert sum(len(queue) for queue in tracker._pending.values()) == 1
+
+    # The unwired mate may still see an unrelated AUX2 level in its bank map,
+    # but with no role it cannot consume another shared return.
+    mate.diag.poll(
+        settled + 2.0, ready=True, in_motion=False,
+        slow_levels={}, inb_levels={"AUX2": True})
+    assert sum(tracker.returned_total.values()) == 1
+    assert sum(len(queue) for queue in tracker._pending.values()) == 1
 
 
 # ── fw timestamp plumbing ───────────────────────────────────────────────────────
@@ -787,6 +1126,38 @@ def _feed_cycles(tel, n, base=0.0, guard=0.6):
     return t
 
 
+def test_cycle_started_with_master_off_never_folds_after_reenable():
+    with _EnvPatch(WSL_DIAG_DAEMON_EVENTS="0"):
+        bc = mk_board()
+        bc._handle_transition(State.READY, State.SWEEP_TO_GUARD, 0.0)
+        bc._handle_transition(
+            State.SWEEP_TO_GUARD, State.GUARD_DELAY, 1.0)
+        os.environ["WSL_DIAG_DAEMON_EVENTS"] = "1"
+        bc._handle_transition(State.GUARD_DELAY, State.READY, 2.0)
+        assert bc.telemetry.baselines()["ss_to_guard"]["n"] == 0
+
+        # A wholly enabled cycle still folds normally.
+        bc._handle_transition(State.READY, State.SWEEP_TO_GUARD, 3.0)
+        bc._handle_transition(
+            State.SWEEP_TO_GUARD, State.GUARD_DELAY, 4.0)
+        bc._handle_transition(State.GUARD_DELAY, State.READY, 5.0)
+        assert bc.telemetry.baselines()["ss_to_guard"]["n"] == 1
+
+
+def test_any_master_transition_midcycle_invalidates_baseline_sample():
+    with _EnvPatch(WSL_DIAG_DAEMON_EVENTS="1"):
+        bc = mk_board()
+        bc._handle_transition(State.READY, State.SWEEP_TO_GUARD, 0.0)
+        os.environ["WSL_DIAG_DAEMON_EVENTS"] = "0"
+        bc._sync_diag_gate_generation(0.5)
+        os.environ["WSL_DIAG_DAEMON_EVENTS"] = "1"
+        bc._sync_diag_gate_generation(0.75)
+        bc._handle_transition(
+            State.SWEEP_TO_GUARD, State.GUARD_DELAY, 1.0)
+        bc._handle_transition(State.GUARD_DELAY, State.READY, 2.0)
+        assert bc.telemetry.baselines()["ss_to_guard"]["n"] == 0
+
+
 def test_baseline_persistence_roundtrip():
     d = tempfile.mkdtemp(prefix="cam_persist_")
     tel = CamTelemetry(21, enabled=True, persist=True, persist_dir=d,
@@ -928,6 +1299,70 @@ def test_cycle_shipper_bounded_and_ships_on_thread():
     assert sh2.errors == 1
 
 
+def test_platform_current_health_is_truthful_when_event_queue_rejects(
+        monkeypatch):
+    import builtins
+    import io
+
+    monkeypatch.setenv("WSL_DIAG_TEMP_MAX_C", "75")
+    monkeypatch.setenv("WSL_DIAG_DAEMON_EVENTS", "1")
+    writer = ToggleWriter()
+    ph = PlatformHealth(
+        [], writer, dir_path=tempfile.mkdtemp(prefix="ph_truth_"))
+    ph._common_platform = {"ok": True, "reasons": []}
+    real_open = builtins.open
+
+    def fake_open(path, *args, **kwargs):
+        if str(path) == "/sys/class/thermal/thermal_zone0/temp":
+            return io.StringIO("77000")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    ph._poll_thermal()
+    assert ph._thermal_active is True
+    assert ph._thermal_warned is False, "delivery latch follows acceptance"
+
+    captured = {}
+
+    def capture(_path, _service, payload):
+        captured["payload"] = payload
+        return True
+
+    monkeypatch.setattr(cd.health_drop, "write_drop", capture)
+    ph._write_health_drop()
+    payload = captured["payload"]
+    assert payload["ok"] is False
+    assert payload["thermal_warned"] is True
+    assert "thermal" in payload["platform"]["reasons"]
+
+
+def test_platform_probe_samples_gate_off_and_emits_active_fault_on_enable(
+        monkeypatch):
+    import builtins
+    import io
+
+    monkeypatch.setenv("WSL_DIAG_TEMP_MAX_C", "75")
+    monkeypatch.setenv("WSL_DIAG_DAEMON_EVENTS", "0")
+    writer = ToggleWriter(accept=True)
+    ph = PlatformHealth(
+        [], writer, dir_path=tempfile.mkdtemp(prefix="ph_gate_truth_"))
+    real_open = builtins.open
+
+    def fake_open(path, *args, **kwargs):
+        if str(path) == "/sys/class/thermal/thermal_zone0/temp":
+            return io.StringIO("77000")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    ph._poll_thermal()
+    assert ph._thermal_active is True
+    assert writer.events == []
+
+    monkeypatch.setenv("WSL_DIAG_DAEMON_EVENTS", "1")
+    ph._poll_thermal()
+    assert len(writer.of_type("pi_thermal")) == 1
+
+
 def test_platform_health_service_start_counter():
     d = tempfile.mkdtemp(prefix="plat_")
     w = FakeWriter()
@@ -977,6 +1412,222 @@ def test_parse_aux_roles():
     # the valid part of a mixed spec is irrelevant — one bad entry refuses all
     with pytest.raises(ValueError):
         _parse_aux_roles("aux9=be_current,aux1=warp_drive")
+    with pytest.raises(ValueError, match="configured more than once"):
+        _parse_aux_roles("aux1=be_current,aux1=dist_index")
+    with pytest.raises(ValueError, match="singleton"):
+        _parse_aux_roles("aux1=be_current,aux2=be_current")
+
+
+def test_per_lane_aux_provisioning_is_explicit_for_a_pair():
+    configs = [
+        BoardConfig(21, 1, "sim21", 0, 0),
+        BoardConfig(22, 3, "sim22", 0, 0),
+    ]
+    env = {
+        "WSL_DIAG_AUX_ROLES_L21":
+            "aux2=exit_beam,aux3=dist_index,aux10=sensor_24v_ok",
+        "WSL_DIAG_AUX_ROLES_L22":
+            "aux3=dist_index,aux10=sensor_24v_ok",
+    }
+    provisioned = _provision_aux_roles(configs, env)
+    assert provisioned[0].aux_roles == {
+        "AUX2": "exit_beam",
+        "AUX3": "dist_index",
+        "AUX10": "sensor_24v_ok",
+    }
+    assert provisioned[1].aux_roles == {
+        "AUX3": "dist_index",
+        "AUX10": "sensor_24v_ok",
+    }
+    assert configs[0].aux_roles is None and configs[1].aux_roles is None
+
+
+def test_partial_pair_map_is_refused_but_explicit_blank_is_unmapped():
+    configs = [
+        BoardConfig(21, 1, "sim21", 0, 0),
+        BoardConfig(22, 3, "sim22", 0, 0),
+    ]
+    import pytest
+    with pytest.raises(ValueError, match="partial per-board"):
+        _provision_aux_roles(
+            configs, {"WSL_DIAG_AUX_ROLES_L21": "aux2=exit_beam"})
+    provisioned = _provision_aux_roles(
+        configs, {
+            "WSL_DIAG_AUX_ROLES_L21": "aux2=exit_beam",
+            "WSL_DIAG_AUX_ROLES_L22": "",
+        })
+    assert provisioned[0].aux_roles == {"AUX2": "exit_beam"}
+    assert provisioned[1].aux_roles == {}
+    with pytest.raises(ValueError, match="partial per-board"):
+        _provision_aux_roles([
+            BoardConfig(
+                21, 1, "sim21", 0, 0,
+                aux_roles={"AUX2": "exit_beam"}),
+            BoardConfig(22, 3, "sim22", 0, 0),
+        ], {})
+
+
+def test_unscoped_aux_roles_refused_for_multi_board_service():
+    configs = [
+        BoardConfig(21, 1, "sim21", 0, 0),
+        BoardConfig(22, 3, "sim22", 0, 0),
+    ]
+    import pytest
+    with pytest.raises(ValueError, match="one-board compatibility"):
+        _provision_aux_roles(
+            configs, {"WSL_DIAG_AUX_ROLES": "aux3=dist_index"})
+    # The backward-compatible one-board bench surface remains deterministic.
+    one = _provision_aux_roles(
+        configs[:1], {"WSL_DIAG_AUX_ROLES": "aux3=dist_index"})
+    assert one[0].aux_roles == {"AUX3": "dist_index"}
+
+
+def test_pair_provisioning_rejects_two_exit_beam_mappings():
+    configs = [
+        BoardConfig(21, 1, "sim21", 0, 0),
+        BoardConfig(22, 3, "sim22", 0, 0),
+    ]
+    import pytest
+    with pytest.raises(ValueError, match="one physical source"):
+        _provision_aux_roles(configs, {
+            "WSL_DIAG_AUX_ROLES_L21": "aux2=exit_beam",
+            "WSL_DIAG_AUX_ROLES_L22": "aux7=exit_beam",
+        })
+
+
+def test_programmatic_aux_map_rejects_duplicate_singleton_role():
+    import pytest
+    cfg = BoardConfig(
+        21, 1, "sim21", 0, 0,
+        aux_roles={"AUX1": "dist_index", "AUX2": "dist_index"})
+    with pytest.raises(ValueError, match="singleton role"):
+        _provision_aux_roles([cfg], {})
+
+
+def test_aux_provisioning_rejects_unknown_or_noncanonical_lane_variable():
+    import pytest
+    cfg = BoardConfig(21, 1, "sim21", 0, 0)
+    with pytest.raises(ValueError, match="unknown/noncanonical"):
+        _provision_aux_roles(
+            [cfg], {"WSL_DIAG_AUX_ROLES_L021": "aux2=exit_beam"})
+    with pytest.raises(ValueError, match="unknown/noncanonical"):
+        _provision_aux_roles(
+            [cfg], {"WSL_DIAG_AUX_ROLES_L23": "aux2=exit_beam"})
+
+
+def test_direct_lane_aux_resolver_prefers_present_blank_override():
+    assert _aux_roles_for_lane(21, {
+        "WSL_DIAG_AUX_ROLES": "aux3=dist_index",
+        "WSL_DIAG_AUX_ROLES_L21": "",
+    }) == {}
+    assert _aux_roles_for_lane(
+        22, {"WSL_DIAG_AUX_ROLES": "aux3=dist_index"}
+    ) == {"AUX3": "dist_index"}
+
+
+def test_gate_reconcile_dedupes_same_tick_schema_fault_transition():
+    w = FakeWriter()
+    bc = mk_board(writer=w)
+    schema = cd.HEARTBEAT_SCHEMA_FAULT
+    bc.link.fault = lambda: schema
+    bc.link.is_alive = lambda: False
+    bc.link.rp_ok = lambda: False
+    bc.link.maxrun_ok = lambda: True
+    bc.link.fw_identity = lambda: None
+    bc.link.identity_missing = lambda: False
+    bc.diag.start_event_generation()
+    bc._diag_master_reconcile_pending = True
+    bc._diag_identity_reconcile_pending = True
+
+    # Model the normal discontinuity producer that ran earlier in this same
+    # first enabled tick.
+    bc.diag.emit_event(
+        "fault", "link_lost", code=schema, persistent=True,
+        retain_across_blind=True)
+    bc.diag.emit_event(
+        "fault", "fw_fault", code=schema, persistent=True,
+        retain_across_blind=True)
+    bc._reconcile_current_diagnostic_faults(1.0, False)
+    assert len(w.of_type("link_lost")) == 1
+    assert len(w.of_type("fw_fault")) == 1
+
+
+def test_identity_reconcile_waits_for_conclusive_healthy_link():
+    w = FakeWriter()
+    bc = mk_board(writer=w, board_rev="revD")
+    identity = {
+        "fw": "test", "bn": 123, "pcb": "unknown", "rid": 255,
+        "uid": "TEST", "build": "test-build", "cfg": "test-cfg",
+        "fi1": False,
+    }
+    bc.link.fault = lambda: cd.HEARTBEAT_SCHEMA_FAULT
+    bc.link.is_alive = lambda: False
+    bc.link.rp_ok = lambda: False
+    bc.link.maxrun_ok = lambda: True
+    bc.link.fw_identity = lambda: identity
+    bc.link.identity_missing = lambda: False
+    bc._identity_arm_ok = lambda **_kwargs: (False, "pcb_rev_mismatch")
+    bc._diag_master_reconcile_pending = True
+    bc._diag_identity_reconcile_pending = True
+    bc.diag.start_event_generation()
+
+    bc._reconcile_current_diagnostic_faults(1.0, False)
+    assert w.of_type("fw_identity") == []
+    assert bc._diag_identity_reconcile_pending is True
+    bc._reconcile_current_diagnostic_faults(2.0, True)
+    identity_events = w.of_type("fw_identity")
+    assert len(identity_events) == 1
+    assert identity_events[0].code == "pcb_rev_mismatch"
+    assert bc._diag_identity_reconcile_pending is False
+
+
+def test_identity_reconcile_ignores_unrelated_provenance_attempt():
+    writer = FakeWriter()
+    bc = mk_board(writer=writer, board_rev="revD")
+    identity = {
+        "fw": "test", "bn": 123, "pcb": "revD", "rid": 1,
+        "uid": "TEST", "build": "test-build", "cfg": "test-cfg",
+        "fi1": False,
+    }
+    bc.link.fw_identity = lambda: identity
+    bc.link.identity_missing = lambda: False
+    bc.link.maxrun_ok = lambda: True
+    bc.link.fault = lambda: cd.HEARTBEAT_SCHEMA_FAULT
+    bc._identity_arm_ok = lambda **_kwargs: (
+        False, "rid_heartbeat_mismatch")
+    bc._diag_identity_reconcile_pending = True
+    bc.diag.start_event_generation()
+    bc.diag.emit_event(
+        "info", "fw_identity", code=None, detail={"pcb": "revD"},
+        persistent=True, retain_across_blind=True)
+
+    bc._reconcile_current_diagnostic_faults(1.0, False)
+    assert bc._diag_identity_reconcile_pending is True
+    bc.diag.start_event_generation()
+    bc._reconcile_current_diagnostic_faults(2.0, True)
+    faults = [
+        event for event in writer.of_type("fw_identity")
+        if event.severity == "fault"]
+    assert len(faults) == 1
+    assert faults[0].code == "rid_heartbeat_mismatch"
+    assert bc._diag_identity_reconcile_pending is False
+
+
+def test_healthy_identity_provenance_retry_is_not_canceled_as_stale_fault():
+    w = ToggleWriter()
+    bc = mk_board(writer=w, board_rev="revD")
+    bc.link.maxrun_ok = lambda: True
+    bc._identity_arm_ok = lambda **_kwargs: (True, None)
+    bc.diag.emit_event(
+        "info", "fw_identity", code=None,
+        detail={"pcb": "revD"}, persistent=True,
+        retain_across_blind=True)
+    assert ("fw_identity", "") in bc.diag._pending_alerts
+    bc._evaluate_arm_preconditions()
+    assert ("fw_identity", "") in bc.diag._pending_alerts
+    w.accept = True
+    bc.diag.pump_pending_delivery(1.0, force=True)
+    assert len(w.of_type("fw_identity")) == 1
 
 
 def test_master_killswitch_silences_everything():
@@ -1040,6 +1691,103 @@ def test_diag_debounce_filters_single_tick_glitch():
     evs = w.of_type("manual_override")
     assert len(evs) == 1 and evs[0].detail["input"] == "MAN_T", evs
     bc.io.slow["MAN_T"] = False
+
+
+def test_inb_debounce_rebaselines_after_bank_or_channel_unknown():
+    w = FakeWriter()
+    bc = mk_board(
+        roles={"AUX3": "dist_index"}, writer=w, slow_debounce_n=3)
+
+    baseline = bc._debounce_for_diag(
+        {"AUX3": False}, source="inb")
+    bc.diag.poll(
+        0.0, ready=False, in_motion=False,
+        slow_levels={}, inb_levels=baseline)
+
+    assert bc._debounce_for_diag(None, source="inb") is None
+    bc.diag.poll(
+        1.0, ready=False, in_motion=True,
+        slow_levels={}, inb_levels=None)
+
+    # The physical assertion happened while blind. First recovery raw=True is
+    # the new baseline; retained debounce state must not release it as an edge
+    # three samples later.
+    for t in (2.0, 2.1, 2.2, 2.3):
+        recovered = bc._debounce_for_diag(
+            {"AUX3": True}, source="inb")
+        bc.diag.poll(
+            t, ready=False, in_motion=True,
+            slow_levels={}, inb_levels=recovered)
+    assert bc.diag._dist_last_pulse is None
+
+    # Per-channel omission has the same semantics as a whole-bank failure.
+    bc._debounce_for_diag({}, source="inb")
+    assert "AUX3" not in bc._diag_inb_deb
+
+    # Fixed IN-B inputs need the same LaneDiag baseline reset, not only AUX.
+    manual = mk_board(writer=w, slow_debounce_n=3)
+    first = manual._debounce_for_diag(
+        {"MAN_T": False, "TENTH": True}, source="inb")
+    manual.diag.poll(
+        0.0, ready=True, in_motion=False,
+        slow_levels={}, inb_levels=first)
+    missing = manual._debounce_for_diag(None, source="inb")
+    manual.diag.poll(
+        1.0, ready=True, in_motion=False,
+        slow_levels={}, inb_levels=missing)
+    recovered = manual._debounce_for_diag(
+        {"MAN_T": True, "TENTH": True}, source="inb")
+    manual.diag.poll(
+        100.0, ready=True, in_motion=False,
+        slow_levels={}, inb_levels=recovered)
+    assert w.of_type("manual_override") == []
+    assert manual.diag._assert_since["TENTH"] == 100.0
+
+
+def test_missing_supply_health_rebaselines_dependent_and_field_debounce():
+    w = FakeWriter()
+    bc = mk_board(
+        roles={"AUX3": "dist_index", "AUX10": "sensor_24v_ok",
+               "AUX11": "field_wet_ok"},
+        writer=w, board_rev="revD", slow_debounce_n=3)
+    healthy = {"AUX3": False, "AUX10": True, "AUX11": True}
+
+    deb_inb = bc._debounce_for_diag(healthy, source="inb")
+    deb_slow = bc._debounce_for_diag({"TA2": False})
+    bc.diag.poll(
+        0.0, ready=False, in_motion=False,
+        slow_levels=deb_slow, inb_levels=deb_inb)
+
+    # Sensor-health omission: the dependent index changed while UNKNOWN.
+    missing_sensor = {"AUX3": True, "AUX11": True}
+    deb_inb = bc._debounce_for_diag(missing_sensor, source="inb")
+    deb_slow = bc._debounce_for_diag({"TA2": False})
+    bc.diag.poll(
+        1.0, ready=False, in_motion=True,
+        slow_levels=deb_slow, inb_levels=deb_inb)
+    for t in (2.0, 2.1, 2.2):
+        recovered = {"AUX3": True, "AUX10": True, "AUX11": True}
+        deb_inb = bc._debounce_for_diag(recovered, source="inb")
+        deb_slow = bc._debounce_for_diag({"TA2": False})
+        bc.diag.poll(
+            t, ready=False, in_motion=True,
+            slow_levels=deb_slow, inb_levels=deb_inb)
+    assert bc.diag._dist_last_pulse is None
+
+    # FIELD_WET-health omission also resets the separately-read slow bank.
+    missing_wet = {"AUX3": True, "AUX10": True}
+    deb_inb = bc._debounce_for_diag(missing_wet, source="inb")
+    deb_slow = bc._debounce_for_diag({"TA2": True})
+    bc.diag.poll(
+        3.0, ready=True, in_motion=False,
+        slow_levels=deb_slow, inb_levels=deb_inb)
+    recovered = {"AUX3": True, "AUX10": True, "AUX11": True}
+    deb_inb = bc._debounce_for_diag(recovered, source="inb")
+    deb_slow = bc._debounce_for_diag({"TA2": True})
+    bc.diag.poll(
+        4.0, ready=True, in_motion=False,
+        slow_levels=deb_slow, inb_levels=deb_inb)
+    assert bc.diag._assert_since["TA2"] == 4.0
 
 
 def test_debounce_defaults_and_env_knobs():

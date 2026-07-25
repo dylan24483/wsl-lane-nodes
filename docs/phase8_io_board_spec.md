@@ -11,7 +11,10 @@
 > closed-when-safe S/T coil ladder, with both levers BACK/open killing both coils.
 > Candidate C uses the controlled J_SAFE1-2 jumper and requires per-lane G3 S-and-T
 > insertion proof. Use the current manual sources, interlock redesign, harness build
-> sheet, and Track-B runbook.
+> sheet, and Track-B runbook. Physical inspection also found no C.I.S. on lanes
+> 21/22; their J_SAFE3-4 position remains OPEN/no-arm pending an approved
+> Stop/control-power interface and pit-entry disposition. A J14-only pit switch
+> is not a final disconnect.
 
 > **Scope honesty:** this spec fixes the *channel architecture* (counts, electrical domains, bus, safety, power) — which is what gates the PCB. Exact C1/C2A pin numbers are bench-verified separately (fieldsheet) and do **not** change the board design, only the harness. Anything not yet confirmed is marked `# CONFIRM`.
 
@@ -21,8 +24,10 @@
 1. **One board per lane-pair** drives/reads **both decks** (mirrors one-Pi-per-pair + one-camera-per-pair). Channel counts below are **per lane**; the board carries **2×** (one set per deck) — OR we run two stacked single-lane boards. See §9 decision.
 2. **Galvanic isolation** between the 82-70 machine (115 VAC / 24 VAC / dirty switch rails) and the Pi (3.3 V). Optos in, relays/SSR out. The Pi never shares a ground with the motor rails.
 3. **Fail-safe-off**: on Pi death, power loss, or watchdog timeout, **all motor relays drop**. Motion only resumes after a deliberate operator "First Ball Zero" (SYSTEM_REFERENCE §5 power-down rule).
-4. **Hardware safety stays in hardware** — the OEM TB+SC ladder, Stop/CIS →
-   master breaker, and regenerative braking are never bypassed. Candidate C puts no
+4. **Hardware safety stays in hardware** — the OEM TB+SC ladder, installed
+   Stop/master-control-power path, and regenerative braking are never bypassed.
+   Lanes 21/22 have no C.I.S.; that absence and the pit-entry decision remain
+   explicit gates. Candidate C puts no
    TB/SC field loop on J_SAFE1-2; correct S/T output insertion preserves the ladder
    and must pass G3 (§6).
 5. **Beginner-buildable + Codex-auditable** — through-hole-friendly where it matters, explicit part numbers, current budgets, and test points.
@@ -80,7 +85,7 @@
                                                            |
             HARDWARE SAFETY (NOT on Pi path):              |   NE555 WATCHDOG (on board):
             OEM TB+SC parallel-safe S/T coil ladder       |   Pi kicks GPIO12 < ~10 s →
-            Stop/CIS → master breaker                      |   else relay-enable rail dropped
+            Stop → master/control power (21/22)            |   else relay-enable rail dropped
             Regenerative braking on relay N.C. contacts    |   (drops M/S/T/SP/M1/M2)
 ```
 
@@ -150,12 +155,17 @@
    board's dry output contacts must be inserted without bypassing that ladder.
    J_SAFE1-2 is the controlled Candidate-C jumper, not a machine landing; G3 proves
    each lane's S/T insertion.
-3. **Stop switch + C.I.S. → master breaker (hardware):** cuts all control. Off-board.
+3. **Stop/master-control-power path (hardware):** Stop must cut all control
+   power. Lanes 21/22 have no C.I.S.; determine whether another pit-entry
+   interlock exists and close the qualified install-versus-Stop+LOTO-only
+   disposition. Any new final pit interlock acts upstream, not only at J14.
 4. **Regenerative braking** on relay N.C. contacts + caps — hardware, in the motor wiring. The board's relays must use the **same N.C.-brake contact arrangement** the machine expects `# CONFIRM` against p287/p290.
 5. **Power-down rule (firmware + this rail):** after any 115 VAC loss in "Bowl", the **arm GPIO stays de-asserted** on restore → no motion until operator presses **PBZ (First Ball Zero)**. Implemented in `cycle_control_8270.py` MANUAL_INTERVENTION/POWER_OFF states; the board enforces it because the arm GPIO + watchdog both gate the relay-enable rail.
 
 **Current lane-21/22 separation:** the **board relay rail** requires watchdog OK,
-Pi ARM, RP2040 OK, the controlled J_SAFE1-2 source jumper, and Stop/CIS J_SAFE3-4.
+Pi ARM, RP2040 OK, the controlled J_SAFE1-2 source jumper, and a future approved
+Stop/control-power interface at J_SAFE3-4. That position is currently OPEN, so
+the field rail cannot arm.
 The **separate OEM ladder** then decides whether the board-commanded S/T machine
 coils may energize. TP16 can be live while both S/T coils are correctly blocked;
 only the per-lane G3 coil test proves that primary collision path.

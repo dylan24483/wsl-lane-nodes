@@ -64,7 +64,7 @@ The harness mates to **function-named pluggable terminals** on the Rev-B board. 
 | **J_MOTION_M2** | J11 | Phoenix MKDS 1,5/2 | Sweep-reverse relay K6 dry contact |
 | **J_MOTION_M1** | J12 | Phoenix MKDS 1,5/2 — **DNP / not harnessed** | Ball-return; footprint present, **depopulated** (see §14.9) |
 | **J_LAMP_LED** | J13 | Phoenix MCV 1,5/6-G-3,5 → mate **MC 1,5/6-ST-3,5** (PN 1840405) | 5 V, GND, + 4 LED returns (1st/2nd/strike/foul) to our mask LEDs |
-| **J_SAFETY** | J14 | Phoenix MCV 1,5/4-G-3,5 → mate **MC 1,5/4-ST-3,5** (PN 1840382) | **pins 1–2 = controlled Candidate-C jumper, no machine landing**; pins 3–4 = Stop/CIS loop |
+| **J_SAFETY** | J14 | Phoenix MCV 1,5/4-G-3,5 → mate **MC 1,5/4-ST-3,5** (PN 1840382) | **pins 1–2 = controlled Candidate-C jumper, no machine landing**; pins 3–4 = reserved external control-power / optional pit-interlock interface, currently OPEN/CUT+LABEL-ONLY |
 
 Every motion output is an **isolated dry relay contact** (Omron **G5LE-14, 5 VDC coil**, LCSC **C116963** — see §14.8). The board never sources machine power; it only opens/closes a dry contact inside the existing machine control circuit.
 
@@ -98,7 +98,7 @@ The consolidated harness map (function → machine landing → front-end form) f
 | | 10th / MAN_T/S/SWS/SWSR / AUX | Spare (future) | — |
 | **J_LAMP_LED** | L_FIRST/SECOND/STRIKE/FOUL | **Our LEDs in the mask housings** | 5 V logic via low-side FET; the machine's 15 VDC mask supply is abandoned |
 | **J_SAFETY** | TB/SC board position | **controlled, keyed/labeled jumper on pins 1–2; no machine landing** | Candidate C delegates primary protection to the OEM parallel-safe S/T coil ladder; G3 proves both commanded coil drops per lane |
-| | Stop/CIS/master sense | Upstream machine safety chain | Preserve intact; rail condition |
+| | Reserved external control-power / optional pit-interlock source interface | Current harness has no machine landing | Preserve the installed Stop/master-breaker chain; use only a reviewed isolated dry-contact interface. Field rail cannot arm while 3–4 remains open. |
 | **J_PI** | I²C, UART, WDOG-kick, ARM, INT | Pi 40-pin | Per-board bus (the second board of a pair uses a software-bit-banged I²C bus) |
 | **J_PWR** | 5 V logic, isolated field-wetting, DIELL 12 V | Enclosure supplies | Reverse-polarity + transient protection on input |
 
@@ -198,7 +198,7 @@ Do not infer from the PCB positions that SC/TB are both field-observable.
 
 > **CONFIRM AT CUTOVER (cam → cavity binding).** Which A&MC/C2A cavity is which specific cam (SA vs TA1 vs …) **cannot be determined from the bench** — it requires rotating the mechanism by hand (locked out) and watching which fast input fires at which angle. The OEM A&MC pins associated to cams are `A&MC-11A, 12D, 13H, 14L, 21B, 22E, 31C`; the A&MC-pin↔cam binding is a cutover-prep task. Record each as `cam → C2A cavity → RP2040 GP#`.
 
-**The DIELL ball detector** replaces the OEM cushion start-switch (SS). It is an NPN open-collector sensor: **idle HIGH ~13–17 V, beam broken LOW ~0 V**, run from a 12 V supply with a 10 kΩ pull-up. This signal-chain (Taiss DIELL → opto → Pi GPIO) was independently validated end-to-end on Phase 8a. It is the **cycle trigger** (ball hits cushion → cycle) **and** a safety interlock element — preserve its safety role in hardware.
+**The DIELL ball detector** replaces the OEM cushion start-switch (SS). It is an NPN open-collector sensor: **idle HIGH ~13–17 V, beam broken LOW ~0 V**, run from a 12 V supply with a 10 kΩ pull-up. This signal-chain (Taiss DIELL → opto → Pi GPIO) was independently validated end-to-end on Phase 8a. It is the **cycle trigger** (ball enters the pit → cycle), not proof of a C.I.S. or another personnel/pit-entry safety interlock. Preserve the machine trigger circuit, but assign DIELL no personnel-protection credit.
 
 ---
 
@@ -247,7 +247,47 @@ These three machine-interface details are safety- or harness-critical and are ea
 > must remain dead. Any energized coil means the output tap bypassed the OEM ladder:
 > abort, reselect the insertion point, and re-prove.
 
-**Stop / CIS chain (→ J_SAFETY pins 3–4).** The machine's existing **Stop switch** (post-1979, left of the power plug) and **C.I.S.** (1981, under the plug-duct cover) are wired **in parallel and both cut the rear-panel MASTER circuit breaker** (OEM service manual p11). This upstream safety chain **stays live and intact** — the master breaker remains the final physical stop, including for a welded relay contact (the rail can drop a coil but cannot open a welded contact). J_SAFETY pins 3–4 carry the Stop/CIS sense as a second NC loop in series so the board's rail *also* requires this chain OK; the chain itself is not replaced. **CONFIRM AT CUTOVER:** continuity that Stop in RUN vs STOP drops the motor-relay coil rail.
+**OEM Stop / C.I.S. history, installed pilot chain, and reserved J_SAFETY pins
+3–4.** OEM documentation says the
+machine's **Stop switch** (post-1979, left of the power plug) and **C.I.S.** (1981,
+under the plug-duct cover) are wired in parallel and each cuts the rear-panel
+MASTER circuit breaker. That is OEM history, not proof of the installed pilots.
+Physical inspection found **no C.I.S. device or wiring on lanes 21/22**; the
+installed chain is Stop-only. Whether another device automatically removes power
+on pit entry remains unknown.
+
+Before motion on either pilot:
+
+1. Actuate Stop and confirm the rear master/control power actually drops. Repeat
+   this demand proof periodically; an undemanded bypass can look healthy.
+2. Record the C.I.S. test as **N/A — device absent**. Do not mark it passed and do
+   not silently waive the row.
+3. Inspect the lane and ask the mechanic, "Does anything automatically kill the
+   machine when someone enters the pit, or must the operator hit Stop first?"
+   Record the answer and separately demand-test any device found.
+4. If none exists, close the pre-motion design gate by either installing a new
+   reviewed pit-entry interlock or obtaining an explicit, documented owner and
+   qualified machine-safety decision for the resulting operating model. Lockout /
+   tagout remains mandatory for service in either case.
+
+J_SAFE3 and J_SAFE4 remain physically **OPEN/CUT+LABEL-ONLY**, and the field rail
+cannot arm. Never jumper 3–4 at the machine or at cutover. The leading interface
+is an externally mounted, correctly rated **energize-to-prove control-power
+relay**: control power present energizes the relay and closes an isolated N.O. dry
+contact across J14.3–4; Stop, breaker trip, tap loss, or relay-coil loss opens it.
+An approved new pit-entry-interlock dry contact may be placed in series. This
+interface still needs an end-to-end Stop→control-power/TP16 drop proof and its own
+periodic proof; deliberately remove control power and verify the relay contact
+opens rather than remaining welded/stuck closed. It is not the upstream
+disconnect. A J14-only pit switch gates board permission and cannot stop a welded
+board contact. The sensed machine voltage, hot, neutral, and protective earth
+never enter Rev-D, J14, or an AUX connector.
+
+Mains remains outside the Rev-D design. At commissioning and periodic maintenance,
+a qualified electrician must verify protective-earth continuity/bonding and
+correct hot/neutral polarity with an appropriately listed external tester and
+record the result. Never route hot, neutral, or protective earth to J14 or any
+Rev-D connector.
 
 > **Cam-stops are now solely the RP2040's job once measured enforcement is enabled and proven.** The OEM machine uses logic stops, not a hardwired cam-in-series stop latch. The TB/SC **OEM coil ladder** and regenerative braking remain separate hardware backstops. The default-off SC∧TB firmware echo is not a substitute for that ladder.
 
@@ -285,15 +325,18 @@ Mating plugs for the field/safety/lamp connectors are the Phoenix `MC 1,5/n-ST-3
 - All relay working voltages **24 VAC**; coil resistances as tabled; one 12 VDC P&B coil present.
 - Grippers: no physical TAC strip, **chassis return**, **gripped = closed to ground**, contiguous C2A 4-bank (≈41C…410U), TAC-n = GS-n 1:1.
 - Cam inputs: **dry contact, normally-closed**; fast inputs on RP2040 **GP6–GP13** (active-low).
-- DIELL ball detector: NPN open-collector, idle HIGH ~13–17 V / broken LOW ~0 V, 12 V + 10 kΩ pull-up; replaces SS; is the cycle trigger + an interlock.
-- Stop/CIS in parallel both cut the master breaker (OEM p11); TB/SC parallel in the 24 V control path (OEM p15); cam-stops are LOGIC (board-timed), so the RP2040 owns them post-cutover.
+- DIELL ball detector: NPN open-collector, idle HIGH ~13–17 V / broken LOW ~0 V, 12 V + 10 kΩ pull-up; replaces SS and is the cycle trigger, **not** a personnel/pit-entry interlock.
+- OEM p11 documents Stop/C.I.S. in parallel at the master breaker, but physical inspection found no C.I.S. device or wiring on lanes 21/22. Their required pilot proof is Stop→master/control-power removal, with C.I.S. recorded **N/A — device absent** and any other pit-entry interlock disposition separately resolved. TB/SC is powered-proven parallel in the 24 V control path; cam-stops are LOGIC (board-timed), so the RP2040 owns them post-cutover.
 - M1 ball-return DNP, not harnessed.
 
 **CONFIRM AT CUTOVER (none gate the PCB — function-named + harness-resolved):**
 - Exact C2A cavity for each cam (SA/SB/SC/TA1/TA2/TB) — rotate mechanism, watch the fast input.
 - Per-GS# → exact C2A cavity (lift one pin at a time, watch the live feed).
 - Exact cavities for M2/SP/M on C2A; re-confirm S/T/BE C1 cavities on the in-place machine.
-- Stop/CIS continuity and its J_SAFE3-4 landing. **TB/SC J_SAFE1-2 is resolved:**
+- Engineer the currently OPEN/unlanded external energize-to-prove control-power
+  J_SAFE3-4 dry interface; prove Stop drops OEM master/control power and the board
+  rail; record C.I.S. **N/A — device absent**; and close the pilot
+  pit-entry-interlock disposition. **TB/SC J_SAFE1-2 is resolved:**
   no machine landing; install only the controlled Candidate-C jumper and prove S/T
   insertion per lane at G3.
 - GP/OS/BS/Foul exact cavities + Foul electrical form.

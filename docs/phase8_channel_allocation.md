@@ -13,9 +13,11 @@
 > controlled, labeled jumper on J_SAFE1-2, leaves primary collision protection in
 > the OEM S/T coil ladder, and requires the per-lane G3 S-and-T coil-drop proof.
 > The firmware SC∧TB echo is default-off, secondary, and unvalidated; lanes 21/22
-> have no independent TB lead. Current wiring authority is
-> `phase8_interlock_redesign.md`, the lane harness build sheet, and the Track-B
-> cutover runbook.
+> have no C.I.S. device or wiring, J_SAFE3-4 remains OPEN/no-arm, and any future
+> Stop/control-power interface plus pit-entry safety decision is governed by
+> FA-13/current harness docs. A J14-only pit switch is not a final disconnect.
+> Current wiring authority is `phase8_interlock_redesign.md`, the lane harness
+> build sheet, and the Track-B cutover runbook.
 
 > **Status: DRAFT (2026-05-31 session 5).** Channel COUNTS + bank structure are firm. Exact MCP port-pin assignments are a clean first cut (rearrange freely for layout). The three architecture refinements in §6 are **DECIDED/ADOPTED (Dylan, 2026-05-31)** → self-contained identical single-lane boards. C1/C2A pin digits are 225-DPI best-effort → bench-verify.
 
@@ -181,7 +183,8 @@ ALL board motion-relay coils (S,T,SP,BE,M,M1,M2) are powered through a
 2. **Pi "arm" GPIO** asserted (de-asserts on power-down rule until operator First-Ball-Zero).
 3. **RP2040 health/permission** (and only those measured-cam enforcement paths
    enabled in a qualified future release).
-4. **Stop/CIS/master** source loop on J_SAFE3-4.
+4. **Stop/control-power** source position on J_SAFE3-4 — currently OPEN on
+   lanes 21/22; future approved energize-to-prove isolated interface only.
 5. **Controlled Candidate-C jumper** on J_SAFE1-2 (a board source position, not a
    TB/SC sensor).
 

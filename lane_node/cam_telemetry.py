@@ -306,28 +306,33 @@ class CamTelemetry:
         return None
 
     # ---- end of cycle: fold durations into baselines + emit --------------
-    def end_cycle(self):
+    def end_cycle(self, *, fold_baseline=True):
         """Finalize the current cycle: fold each measured interval into its rolling
         baseline (checking drift first against the PRE-update baseline), push a row to
         the sink / recorder, and reset for the next cycle. Returns the dict of
-        {name: seconds} measured this cycle (possibly empty). Never raises."""
+        {name: seconds} measured this cycle (possibly empty). ``fold_baseline``
+        may be disabled across a diagnostic master-gate blind interval; raw
+        cycle output continues, but unobservable samples cannot assimilate a
+        mechanical shift into the diagnostic baseline. Never raises."""
         if not self.enabled:
             return {}
         try:
             durations = dict(self._durations)
             self.cycle_index += 1
-            for name, dt in durations.items():
-                base = self._base.get(name)
-                if base is None:
-                    continue
-                # drift check uses the baseline BEFORE this sample is folded in.
-                self._check_drift(name, dt, base)
-                with self._state_lock:   # consistent vs save_baselines snapshot
-                    base.add(dt)
+            if fold_baseline:
+                for name, dt in durations.items():
+                    base = self._base.get(name)
+                    if base is None:
+                        continue
+                    # drift check uses the baseline BEFORE this sample is folded in.
+                    self._check_drift(name, dt, base)
+                    with self._state_lock:   # consistent vs save_baselines snapshot
+                        base.add(dt)
 
             if durations:
                 self._emit(self.cycle_index, durations)
-                self._samples_since_save += 1   # persistence dirt; NO file I/O here
+                if fold_baseline:
+                    self._samples_since_save += 1  # persistence dirt; no I/O
             self._reset_cycle()
             return durations
         except Exception:

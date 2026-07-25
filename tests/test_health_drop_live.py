@@ -1,6 +1,7 @@
 """R4 shared health hand-off: live platform probe and fail-honest status."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 import sys
@@ -425,8 +426,12 @@ def test_stale_episode_requires_fresh_snapshot_before_fault_recovery():
     plan = health_drop.plan_foreign_relay(good, state)
     assert [(e["event_type"], e["code"]) for e in plan] == [
         ("recovered", "health_drop_stale"),
+        ("recovered", "health_drop_stale"),
         ("recovered", "camera_health"),
     ]
+    assert [
+        event["detail"]["recovered_code"] for event in plan[:2]
+    ] == ["camera:missing", "camera:stale"]
 
 
 def test_wall_monotonic_drift_monitor_reports_once_then_rebaselines():
@@ -474,3 +479,160 @@ def test_durable_service_start_window_rejects_bad_prior_timestamps(tmp_path):
     assert second["restart_loop"] is True
     persisted = json.loads(path.read_text(encoding="utf-8"))
     assert persisted["recent"] == [995.0, 1000.0, 1001.0]
+
+
+def test_service_start_per_lane_wal_is_immutable_and_exactly_acked(tmp_path):
+    path = tmp_path / "service_starts.json"
+    facts = health_drop.record_service_start(
+        str(path), now=1000.0, monotonic_now=50.0,
+        track_delivery=True)
+    assert facts["persisted"] is True
+    item = facts["pending_events"][0]
+    stamp = datetime.fromtimestamp(
+        item["started_at_epoch"], timezone.utc).isoformat(
+            timespec="milliseconds")
+    detail = {
+        "count": item["count"],
+        "started_at_epoch": item["started_at_epoch"],
+        "starts_in_window": item["starts_in_window"],
+        "window_s": item["window_s"],
+        "threshold": item["threshold"],
+        "restart_loop": item["restart_loop"],
+        "replayed_start_evidence": False,
+    }
+    rows = [
+        {
+            "ts_utc": stamp,
+            "ts_mono": item["started_at_monotonic"],
+            "lane_id": lane,
+            "severity": "info",
+            "event_type": "service_restart",
+            "code": "lane_node_start",
+            "detail": dict(detail),
+            "source_id": "lane-node",
+            "boot_id": "boot-a",
+            "seq": seq,
+        }
+        for lane, seq in ((21, 101), (22, 102))
+    ]
+    prepared = health_drop.prepare_service_start_deliveries(
+        str(path), item["count"], "service_restart", rows)
+    assert prepared == rows
+
+    replacement = [
+        {**row, "boot_id": "must-not-replace"}
+        for row in rows
+    ]
+    assert health_drop.prepare_service_start_deliveries(
+        str(path), item["count"], "service_restart",
+        replacement) == rows
+    overflow = health_drop.record_service_start(
+        str(path), now=1001.0, monotonic_now=51.0,
+        track_delivery=True, max_pending=1)
+    assert overflow["persisted"] is True
+    assert overflow["pending_delivery_overflow"] == 1
+    assert overflow["pending_events"][0][
+        "service_restart_deliveries"] == rows
+    assert health_drop.acknowledge_service_start_event(
+        str(path), item["count"], "service_restart") is False
+
+    first = rows[0]
+    assert health_drop.acknowledge_service_start_lane(
+        str(path), item["count"], "service_restart", first["lane_id"],
+        first["source_id"], first["boot_id"], first["seq"]) is True
+    state = json.loads(path.read_text(encoding="utf-8"))
+    remaining = state["pending_events"][0][
+        "service_restart_deliveries"]
+    assert remaining == [rows[1]]
+    assert health_drop.acknowledge_service_start_lane(
+        str(path), item["count"], "service_restart", 22,
+        rows[1]["source_id"], "wrong-boot", rows[1]["seq"]) is False
+
+    second = rows[1]
+    assert health_drop.acknowledge_service_start_lane(
+        str(path), item["count"], "service_restart", second["lane_id"],
+        second["source_id"], second["boot_id"], second["seq"]) is True
+    state = json.loads(path.read_text(encoding="utf-8"))
+    assert "pending_events" not in state
+
+
+def test_service_start_corrupt_delivery_wal_is_not_repaired(tmp_path):
+    path = tmp_path / "service_starts.json"
+    facts = health_drop.record_service_start(
+        str(path), now=1000.0, monotonic_now=50.0,
+        track_delivery=True)
+    assert facts["persisted"] is True
+    state = json.loads(path.read_text(encoding="utf-8"))
+    state["pending_events"][0]["service_restart_deliveries"] = [{
+        "lane_id": 21,
+        "unexpected": "ambiguous accepted identity",
+    }]
+    path.write_text(json.dumps(state, sort_keys=True), encoding="utf-8")
+    before = path.read_bytes()
+
+    retry = health_drop.record_service_start(
+        str(path), now=1001.0, monotonic_now=51.0,
+        track_delivery=True)
+    assert retry["persisted"] is False
+    assert retry["error"] == "previous_delivery_state_invalid"
+    assert path.read_bytes() == before
+
+
+def test_service_start_overflow_loss_latch_survives_ack_and_restart(tmp_path):
+    path = tmp_path / "service_starts.json"
+    first = health_drop.record_service_start(
+        str(path), now=1000.0, monotonic_now=50.0,
+        track_delivery=True, max_pending=1)
+    second = health_drop.record_service_start(
+        str(path), now=1001.0, monotonic_now=51.0,
+        track_delivery=True, max_pending=1)
+    assert first["pending_delivery_overflow"] == 0
+    assert second["pending_delivery_overflow"] == 1
+    assert second["pending_delivery_overflow_new"] == 1
+    assert health_drop.acknowledge_service_start_event(
+        str(path), first["count"], "service_restart") is True
+
+    third = health_drop.record_service_start(
+        str(path), now=1002.0, monotonic_now=52.0,
+        track_delivery=True, max_pending=1)
+    assert third["persisted"] is True
+    assert third["pending_delivery_overflow"] == 1
+    assert third["pending_delivery_overflow_new"] == 0
+    state = json.loads(path.read_text(encoding="utf-8"))
+    assert state["delivery_overflow_count"] == 1
+
+
+def test_delivery_receipt_requires_complete_exact_row_and_is_bounded(
+        tmp_path, monkeypatch):
+    row = {
+        "ts_utc": "2026-07-24T12:00:00+00:00",
+        "ts_mono": 1.0,
+        "lane_id": 21,
+        "severity": "info",
+        "event_type": "service_restart",
+        "code": "daemon_start",
+        "detail": {"count": 1},
+        "source_id": "node-a",
+        "boot_id": "boot-a",
+        "seq": 1,
+    }
+    log = tmp_path / "diag-20260724.jsonl"
+    log.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    assert health_drop.delivery_receipt_status(
+        str(tmp_path), row) == health_drop.DELIVERY_RECEIPT_EXACT
+
+    mismatched = dict(row)
+    mismatched["code"] = "tampered"
+    log.write_text(json.dumps(mismatched) + "\n", encoding="utf-8")
+    assert health_drop.delivery_receipt_status(
+        str(tmp_path), row) == health_drop.DELIVERY_RECEIPT_MISMATCH
+
+    log.write_text("{not-json}\n", encoding="utf-8")
+    assert health_drop.delivery_receipt_status(
+        str(tmp_path), row) == health_drop.DELIVERY_RECEIPT_AMBIGUOUS
+
+    log.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    (tmp_path / "diag-20260723.jsonl").write_text("", encoding="utf-8")
+    monkeypatch.setattr(health_drop, "DELIVERY_RECEIPT_MAX_FILES", 1)
+    assert health_drop.delivery_receipt_status(
+        str(tmp_path), row) == health_drop.DELIVERY_RECEIPT_AMBIGUOUS

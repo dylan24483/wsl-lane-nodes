@@ -297,7 +297,8 @@ def main() -> int:
    injection.
 2. Bench PSU ≥ 1 A on J2 (6 × ~77 mA coils + logic). Never feed 5 V into J1 pin 1
    at the same time as J2.
-3. J14 bench jumper on 3-4 (Stop/CIS) is a **bench-only tool — remove before cutover.**
+3. J14 bench jumper on 3-4 (legacy Stop/CIS source position) is a
+   **bench-only tool — remove before cutover.**
 4. DNP refs ({len(dnp_refs)}, listed in the CSV) must be EMPTY: 7 × Rsnub (100R), 7 × Csnub
    (10nF X2), 7 × MOV, the 6-part M1 channel (K7, J12, D13, Q7, R101, R102),
    and **JP1 (default-open ARM bypass)**.
@@ -349,7 +350,7 @@ stage deliberately has none** (push-pull source, never high-Z); do not report it
 
 {md_table(hdr, rows_for(lambda r, p: r.startswith("J") or r == "A1"))}
 
-## 4. First-article procedures (FA-1 … FA-12)
+## 4. First-article procedures (FA-1 … FA-14)
 
 Run in order. Record every measurement in `phase8_revD_run_log.md` (new FA section,
 per board serial). One channel of each NEW I/O type must pass before trusting the board.
@@ -382,6 +383,57 @@ reachable; UF2 drag-drop flash of firmware `{fw_ver}` succeeds WITHOUT a shaved 
    crosstalk between adjacent rows (only the poked bit changes).
 3. Software path: `controller_io` with `board_rev="revD"` (`IN_B_MAP_REVD`) — a rev-C
    `board_rev` never reads port B; that is a config error, not a board fault.
+
+**Canonical field allocation after FA-5 and FA-9 both PASS:**
+
+- Reserve **AUX4** for provisional `stop_request`, **AUX5** for provisional
+  `pit_interlock_request` if an installed/new pit-entry interlock is approved,
+  and **AUX6** for provisional downstream `control_power_ok` /
+  breaker-aux proof. These are distinct observations so a bounded demand→power-drop
+  test can expose a bypass; a static healthy contact is insufficient. Pilot
+  lanes 21/22 have no C.I.S. device or wiring, so never configure a fictitious
+  `cis_request` there.
+- Reserve **AUX7/AUX8** for S/T digital current switches if threshold sensing is
+  selected. Command-off current is `uncommanded_motor_current`; its cause remains
+  `external-feed-or-welded` unless independent evidence separates it.
+- Reserve **AUX9** for one measured optional dry contact (manual S/T, a verified
+  Klixon auxiliary, or a door/service contact). Leave it spare if none is qualified.
+- Reserve **J15-7 / AUX10 / GPB6** for `sensor_24v_ok`, supervising the separate
+  isolated 24 VDC supply that powers the exit photoeye and distributor prox.
+- Reserve **AUX11** for `field_wet_ok`.
+- AUX4–AUX9 role names above are design reservations, not released mappings. Leave
+  them unmapped until electrical form, landing, isolation, event semantics,
+  open-wire behavior, and FA proof are approved.
+- Land only a galvanically isolated voltage-monitor relay's
+  **energize-to-prove, healthy-when-closed dry contact** between J15-7 and one
+  J15-9/10 FIELD_GND terminal. **Never apply 24 V to J15.**
+- Sense the monitored voltage downstream of the sensor branch fuse/common so
+  loss of branch power opens the contact. Record whether the device is
+  undervoltage-only or an under/over-voltage window relay: an undervoltage-only
+  contact cannot detect overvoltage, and no single contact can continuously
+  distinguish healthy voltage from a welded/shorted-healthy contact.
+- Map the role on every board carrying an `exit_beam` or `dist_index` sensor
+  powered by that supply. If one supply spans a lane pair, use one independently
+  isolated contact pole per board; never join or parallel the boards' field
+  domains.
+- Provision complete per-board maps (for example,
+  `WSL_DIAG_AUX_ROLES_L21=aux2=exit_beam,aux3=dist_index,aux10=sensor_24v_ok`
+  and `WSL_DIAG_AUX_ROLES_L22=aux3=dist_index,aux10=sensor_24v_ok`). The
+  unscoped map is one-board-bench-only; prove startup refuses two pair
+  `exit_beam` sources.
+- Before enabling `aux10=sensor_24v_ok`, prove and record: healthy supply =
+  stable asserted input; removing sensor power/fuse or either contact lead =
+  exactly one `sensor_supply_lost` and no `ball_return_missing`,
+  `dist_index_stall`, or `stale_channel` cascade; restoration = exactly one
+  `sensor_supply_restored`, no revived pre-outage absence claim, no immediate
+  dependent fault, and one configured return-timeout drain interval before new
+  pair-return claims. Exercise the relay's test/proof control (or physically
+  open the healthy contact) to expose a welded/shorted bypass; if a window relay
+  is selected, prove both under- and over-voltage dropouts. Repeat pickup and
+  dropout at the FA-9 hot condition. Leave AUX10 unmapped until this passes.
+- Only volt-free contacts from listed galvanically isolated monitors may enter
+  J15. Never land mains, unclassified live ladder voltage, protective earth, or
+  a SAFE_* conductor on an AUX input.
 
 ### FA-6 — VCC_5V ADC (item D)
 1. GP26/ADC0 reads VCC_5V/2 via R129/R130; the `{fw_ver}` heartbeat carries
@@ -599,6 +651,87 @@ relays exercising the FA-3 pattern.
    and confirm ≤ 45 mA. (rev-D.1 upgrade path — eFuse with an open-drain FAULT flag to a
    spare RP2040 GPIO — is recorded in run-log FR-15; needs copper, not this spin.)
 
+### FA-13 — Stop / pit-interlock demand-to-power-drop proof (**system-level P0 gate**)
+
+This is an at-machine commissioning test, not a bare-board substitute. J14.3–4
+is physically OPEN in the released lane-21/22 harness and the field rail cannot
+arm. Keep it open—and never jumper it at the machine—until an approved drawing,
+measured electrical form, and fail-safe isolated interface are recorded.
+
+1. With the machine locked out, identify and meter the proposed Stop/master
+   control-power landing. The leading candidate is a correctly rated,
+   galvanically isolated, energize-to-prove control-power sensing relay: its
+   coil bridges the selected downstream control rail and its N.O. volt-free
+   contact closes J14.3–4 only while that rail is energized. Require an approved
+   drawing, coil/overcurrent protection, enclosure, conductor routing, voltage
+   class, and acceptance limits. Power/coil/open-wire failures de-energize the
+   contact, but a welded sensing contact remains a credible fault and must be
+   exposed by the proof test below. No mains, unclassified live ladder, or
+   protective-earth conductor may enter J14 or J15.
+2. Record the installed chassis devices. On pilot lanes 21/22, physical
+   inspection found **no C.I.S. device or wiring**; a C.I.S. test is N/A, not a
+   pass. Determine whether another pit-entry interlock exists. If none exists,
+   the owner and a qualified machine-safety reviewer must decide whether to
+   install one or accept a Stop-plus-lockout-only operating design before
+   controller cutover.
+3. If a new/other pit interlock is used as a final disconnect, it must act in
+   the approved upstream master/control-power safety chain (or an equivalently
+   qualified safety-disconnect architecture). A contact placed only in J14 can
+   drop board permission but cannot stop a welded downstream contact and is not
+   a replacement for an upstream C.I.S.
+4. If continuous diagnostics are fitted, land separate isolated
+   `stop_request`, optional `pit_interlock_request`, and downstream
+   energize-to-prove `control_power_ok`/breaker-aux contacts. Pass FA-5 and FA-9
+   on those exact populated channels before enabling their still-provisional
+   role mappings.
+5. Before the powered test, record the maximum permitted demand→master/control
+   power drop time and demand→TP16 drop time. The limits come from the approved
+   safety design and measured machine behavior; this pack does not invent them.
+6. In the guarded powered session, demand **Stop**. Require the Stop request to
+   be observed, the master/control power and TP16 to drop within the recorded
+   bounds, every commanded output to be de-energized, and no automatic motion on
+   restoration. Reset only through the deliberate operator recovery sequence.
+7. On a chassis that actually has a C.I.S. or another approved pit-entry
+   interlock, repeat step 6 independently for that device. On lanes 21/22,
+   record C.I.S. absent and execute the approved disposition from step 2; do
+   not invent or silently waive a C.I.S. result.
+8. Open each monitor lead in turn. Every open wire must fail visible. Exercise
+   the control-power relay's proof path by de-energizing its coil and requiring
+   J14.3–4 and TP16 to open/drop. Exercise every monitor's proof/test control so
+   a welded/shorted-healthy or bypassed observation cannot pass merely because
+   it remains asserted.
+9. Execute the Candidate-C **TB/SC G3 insertion proof** per lane. With both
+   levers BACK/open, command S and then T independently from the board and prove
+   each respective machine coil dead. Record both results and verify the OEM
+   closed-when-safe ladder remains in the series coil path and has not been
+   bypassed. Incorporate this exact evidence into the signed commissioning
+   latch; neither a generic ladder observation nor a one-coil sample passes.
+10. Record this proof per lane at cutover and in the periodic safety-proof
+   schedule. The manifest-controlled retest interval is **365 days maximum**,
+   and repeat testing is required sooner after relevant safety/control
+   electrical service. Expired evidence blocks healthy monitor status. A
+   healthy static sample never replaces the demand test.
+11. Complete the signed commissioning record. Bind it to fleet policy, lane,
+    Pico UID, board revision/serial, and harness revision/serial. The verifier
+    must obtain a matching controller-originated live identity through its
+    hard-deadline path no more than **90 seconds** before acceptance; record the
+    observation timestamp and age. A stale, absent, mismatched, or manually
+    substituted identity fails closed. Signing authenticates the evidence; it
+    does not create or replace any physical test above.
+
+### FA-14 — Protective-earth and supply-polarity proof (**external mains gate**)
+
+1. A qualified electrician uses an appropriately listed, in-calibration tester
+   and the machine manufacturer's procedure to verify protective-earth
+   continuity/bonding and hot/neutral polarity at commissioning.
+2. Record instrument ID/calibration status, measured results, acceptance limits,
+   lane/machine identity, initials, and date. Repeat at the manifest-controlled
+   interval of **365 days maximum**, and sooner after relevant electrical
+   service. Expired evidence blocks healthy monitor status.
+3. Board 5 V, 24 VAC, and `control_power_ok` do not prove either condition.
+   Mains and PE test current stay completely outside Rev-D and every Pi/RP2040/
+   MCP/J14/J15 circuit.
+
 ## 5. Sign-off
 
 | Item | Result | Initials / date |
@@ -619,6 +752,15 @@ relays exercising the FA-3 pattern.
 | FA-10 MCV insertion/solder fill | | |
 | FA-11 verified manifest + UF2 SHA + exact `id.build`/`id.cfg`/`fi1=0` posture | | |
 | FA-12 J16 SDA/SCL short recovery (U46, R2-4) | | |
+| FA-13 installed safety devices recorded; lane-21/22 C.I.S.-absent disposition approved | | |
+| FA-13 Stop demand → master/control power + TP16 drop, per lane | | |
+| FA-13 installed/new pit interlock demand → upstream power + TP16 drop, if applicable | | |
+| FA-13 Candidate-C TB/SC G3 — board-command **S**, both levers BACK/open, S coil dead, OEM ladder not bypassed (`tb_sc_insertion_proof`, S result/evidence) | | |
+| FA-13 Candidate-C TB/SC G3 — board-command **T**, both levers BACK/open, T coil dead, OEM ladder not bypassed (`tb_sc_insertion_proof`, T result/evidence) | | |
+| FA-13 monitor open-wire/proof-control tests + periodic-test owner | | |
+| FA-14 protective-earth continuity/bonding — tester ID, calibration due, result, limit (`protective_earth_continuity`) | | |
+| FA-14 hot/neutral polarity — tester ID, calibration due, result (`hot_neutral_polarity`) | | |
+| Signed commissioning binding — lane, Pico UID, board/harness rev+serial, record ID, signer, tested/due UTC (≤365 d), exact controller-originated live identity observed UTC/age (≤90 s) | | |
 """
 
     OUT_MD.write_text(doc, encoding="utf-8")

@@ -411,6 +411,16 @@ class DiagQueue:
             return 0
 
 
+class _DurableReceipt:
+    """One off-tick event plus its local-persistence completion signal."""
+
+    def __init__(self, event):
+        self.event = event
+        self.done = threading.Event()
+        self.persisted = False
+        self.local_dispatched = False
+
+
 # ---- sinks ---------------------------------------------------------------------
 class JsonlSink:
     """Append-only local JSONL sink. Daily-rotated files (diag-YYYYMMDD.jsonl,
@@ -1404,7 +1414,11 @@ class OutboxReplayer:
                 return False
             self._rotate_quarantine_if_big()
             try:
-                if self._on_quarantine is not None:
+                if (self._on_quarantine is not None
+                        and not (
+                            isinstance(row, dict)
+                            and row.get("event_type")
+                            == "outbox_quarantine")):
                     lane = row.get("lane_id") if isinstance(row, dict) else None
                     self._on_quarantine(1, lane, [str(reason)])
             except Exception:
@@ -1427,6 +1441,7 @@ class OutboxReplayer:
         segment; the file itself is capped + rotated after each write."""
         sample_lane = None
         written = 0
+        notifiable_written = 0
         errors = []
         success = True
         try:
@@ -1440,18 +1455,21 @@ class OutboxReplayer:
                 key = self._quar_key(row)
                 if key is not None and key in self._quar_seen_set:
                     continue    # already quarantined on a prior replay
-                if sample_lane is None and isinstance(row, dict):
+                notifiable = not (
+                    isinstance(row, dict)
+                    and row.get("event_type") == "outbox_quarantine")
+                if notifiable and sample_lane is None and isinstance(row, dict):
                     lid = row.get("lane_id")
                     if isinstance(lid, int):
                         sample_lane = lid
                 recs.append((key, {
                     "loss_seq": self._next_loss_seq(),
                     "error": r.get("error"), "row": row},
-                             r.get("error")))
+                             r.get("error"), notifiable))
             if recs:
                 os.makedirs(self.dir, exist_ok=True)
                 with open(self.quarantine_path, "a", encoding="utf-8") as f:
-                    for key, rec, rec_error in recs:
+                    for key, rec, rec_error, notifiable in recs:
                         f.write(json.dumps(_json_safe(rec), separators=(",", ":"),
                                            allow_nan=False) + "\n")
                     # The cursor may advance only after the quarantine evidence
@@ -1460,7 +1478,7 @@ class OutboxReplayer:
                     f.flush()
                     os.fsync(f.fileno())
                 _fsync_parent(self.quarantine_path)
-                for key, rec, rec_error in recs:
+                for key, rec, rec_error, notifiable in recs:
                     if key is not None:
                         self._remember_quarantined(key)
                     self.quarantined += 1
@@ -1468,7 +1486,9 @@ class OutboxReplayer:
                     if isinstance(row, dict) and row.get("_kind") == "cycle":
                         self.cycles_quarantined += 1
                     written += 1
-                    errors.append(rec_error)
+                    if notifiable:
+                        notifiable_written += 1
+                        errors.append(rec_error)
                 if not self._persist_quarantine_state():
                     success = False
                 self._rotate_quarantine_if_big()
@@ -1485,8 +1505,9 @@ class OutboxReplayer:
         # but only for rows NEWLY quarantined this pass (a re-replayed segment
         # whose rows were all already quarantined emits nothing).
         try:
-            if self._on_quarantine is not None and written:
-                self._on_quarantine(written, sample_lane, errors)
+            if self._on_quarantine is not None and notifiable_written:
+                self._on_quarantine(
+                    notifiable_written, sample_lane, errors)
         except Exception:
             self.errors += 1
         return success
@@ -1776,10 +1797,14 @@ class DiagWriter:
         self.sinks = list(sinks)
         self.poll_s = float(poll_s)
         self.sink_errors = 0
+        self.shutdown_incomplete = 0
         if self.outbox_active():
             self.outbox._writer = self
         self._stop = threading.Event()
         self._thread = None
+        self._outbox_finalized = False
+        self._durable_lock = threading.Lock()
+        self._durable_inflight = {}
         if self.enabled:
             log.info("DiagWriter: enabled (queue_max=%d, sinks=%s, outbox=%s)",
                      self.queue.maxsize,
@@ -1792,6 +1817,42 @@ class DiagWriter:
         if not self.enabled:
             return False
         return self.queue.emit(event)
+
+    def emit_durable(self, event, timeout=2.0):
+        """Offer an off-tick event and wait for local JSONL fsync.
+
+        This is intentionally separate from ``emit``: control/tick producers
+        remain strictly nonblocking. Platform startup evidence uses it before
+        clearing its durable retry obligation. Repeated calls for the same
+        event object share one in-flight receipt, avoiding duplicate dispatch
+        when an earlier wait timed out.
+        """
+        if not self.enabled:
+            return False
+        key = id(event)
+        try:
+            with self._durable_lock:
+                receipt = self._durable_inflight.get(key)
+                if receipt is None:
+                    receipt = _DurableReceipt(event)
+                    if not self.queue.emit(receipt):
+                        return False
+                    self._durable_inflight[key] = receipt
+                elif receipt.done.is_set() and not receipt.persisted:
+                    receipt.done.clear()
+                    if not self.queue.emit(receipt):
+                        receipt.done.set()
+                        return False
+            receipt.done.wait(max(0.0, float(timeout)))
+            if not receipt.done.is_set():
+                return False
+            if receipt.persisted:
+                with self._durable_lock:
+                    self._durable_inflight.pop(key, None)
+                return True
+            return False
+        except Exception:
+            return False
 
     def outbox_active(self):
         """True when the JSONL-as-outbox HTTP leg owns delivery (R3-3 durable
@@ -1825,6 +1886,7 @@ class DiagWriter:
         if self._thread is not None and self._thread.is_alive():
             return True
         self._stop.clear()
+        self._outbox_finalized = False
         self._thread = threading.Thread(target=self._run, name="diag-writer",
                                         daemon=True)
         self._thread.start()
@@ -1837,23 +1899,76 @@ class DiagWriter:
         never started (or already dead), drain + flush synchronously so queued
         events are never silently lost. Never raises."""
         if not self.enabled:
-            return
+            return True
         try:
             self._stop.set()
             t = self._thread
             if t is not None and t.is_alive():
                 t.join(timeout)
-            if t is None or not t.is_alive():
-                # thread finished (its finally flushed) OR never ran: make sure
-                # anything still queued reaches the sinks.
-                self._drain_and_flush()
-            if self.outbox is not None:
+            if t is not None and t.is_alive():
+                # Preserve single-writer sink ownership. A timed-out writer may
+                # still be inside a blocking sink; synchronous dispatch/flush
+                # here would race that same sink and corrupt ordering/state.
+                self.shutdown_incomplete += 1
+                log.warning(
+                    "DiagWriter.stop timed out with writer thread still alive; "
+                    "local drain and outbox finalization deferred")
+                return False
+            # thread finished (its finally flushed) OR never ran: make sure
+            # anything still queued reaches the sinks.
+            self._drain_and_flush()
+            if self.outbox is not None and not self._outbox_finalized:
                 self.outbox.stop(timeout)   # ship the flushed tail (cursor-ack)
+                self._outbox_finalized = True
+            # replay_once() may invoke an outbox-quarantine notifier, which
+            # queues a new event after the first local drain. Land that tail in
+            # JSONL without replaying it recursively during shutdown.
+            self._drain_and_flush()
+            return True
         except Exception:
             log.debug("DiagWriter.stop swallowed", exc_info=True)
+            self.shutdown_incomplete += 1
+            return False
+
+    def drain_local(self):
+        """Synchronously drain/flush sinks without running outbox replay.
+
+        Used after final in-memory incident pumps during shutdown.  It is
+        bounded by the queue capacity, never performs network I/O through the
+        outbox replayer, and never raises.
+        """
+        if not self.enabled:
+            return True
+        try:
+            if self._thread is not None and self._thread.is_alive():
+                self.shutdown_incomplete += 1
+                return False
+            self._drain_and_flush()
+            return True
+        except Exception:
+            log.debug("DiagWriter.drain_local swallowed", exc_info=True)
+            self.shutdown_incomplete += 1
+            return False
 
     # -- internals -------------------------------------------------------------
     def _dispatch(self, event):
+        receipt = event if isinstance(event, _DurableReceipt) else None
+        if receipt is not None:
+            event = receipt.event
+        local_durable = False
+        if receipt is not None and receipt.local_dispatched:
+            for sink in self.sinks:
+                if not isinstance(sink, JsonlSink):
+                    continue
+                try:
+                    flushed = sink.flush()
+                    local_durable = (
+                        flushed is not False and sink.pending_writes == 0)
+                except Exception:
+                    self.sink_errors += 1
+            receipt.persisted = local_durable
+            receipt.done.set()
+            return
         try:
             row = event.to_dict() if hasattr(event, "to_dict") else dict(event)
             # R2-12 delivery identity: every record that reaches ANY sink (the
@@ -1863,14 +1978,25 @@ class DiagWriter:
             row = _json_safe(row)
         except Exception:
             self.sink_errors += 1
+            if receipt is not None:
+                receipt.done.set()
             return
         for s in self.sinks:
             try:
-                s.emit(row)
+                accepted = s.emit(row)
+                if receipt is not None and isinstance(s, JsonlSink) \
+                        and accepted is not False:
+                    receipt.local_dispatched = True
+                    flushed = s.flush()
+                    local_durable = (
+                        flushed is not False and s.pending_writes == 0)
             except Exception:
                 self.sink_errors += 1
                 log.debug("DiagWriter: sink %s emit swallowed",
                           type(s).__name__, exc_info=True)
+        if receipt is not None:
+            receipt.persisted = local_durable
+            receipt.done.set()
 
     def _maybe_flush_all(self):
         for s in self.sinks:
@@ -1914,6 +2040,7 @@ class DiagWriter:
             "queue_drops": self.queue.drops,
             "queue_size": self.queue.qsize(),
             "sink_errors": self.sink_errors,
+            "shutdown_incomplete": self.shutdown_incomplete,
             "sinks": {},
         }
         if not self.enabled:

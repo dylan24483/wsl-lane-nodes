@@ -5,6 +5,15 @@ Scope = ONE LANE = ONE BOARD. Spare cabinet = lanes 21/22, SS chassis + Omega-Te
 Synthesized 2026-06-27 from the reverse-engineering docs (provenance at bottom).
 **REVISED same day with the 2026-06-27 at-machine metering results** (see `phase8_metering_guide_harness_unknowns.md` ✅ block). Rows marked **✓ measured 2026-06-27** are at-machine ground truth on the 21/22 chassis; struck-through values are pre-metering predictions now proven wrong.
 
+> **⚠ 2026-07-24 FIELD SUPERSESSION — lanes 21/22 have no C.I.S.:**
+> Physical inspection found a mechanical cushion with no switch or wiring.
+> DIELL is the replacement ball/cycle trigger, not a proved pit-entry
+> interlock. J14.3–4 remains OPEN and installation-NO-GO. Determine whether
+> another pit-entry interlock exists; if none does, a qualified safety decision
+> must install an upstream safety disconnect or explicitly accept the existing
+> Stop-plus-lockout-only design. A switch placed only at J14 gates board
+> permission and cannot replace an upstream final disconnect.
+
 ---
 
 ## F.0 — How to read this spec
@@ -88,8 +97,8 @@ Status lamps L-1st/L-2nd/L-foul/L-strike (OUT-A.A7–B2) and the optional OUT-B 
 
 | Board pin(s) | Loop | Landing | Confidence |
 |---|---|---|---|
-| J14-1 ↔ J14-2 | TBSC loop | **Documented, labeled JUMPER PLUG — an engineered harness part, NOT a field improvisation.** Candidate C **DECIDED by Dylan 2026-07-07** (`phase8_interlock_redesign.md` §7): no isolatable dry NC pair exists on this chassis (measured 2026-06-27), and the OEM ladder alone kills both S/T coils in the danger state (both cam levers BACK — proven at machine 2026-07-07, §4-RESULTS). The rail's TB/SC condition is formally **delegated to the OEM SC/TB parallel closed-when-SAFE contacts inside the coil circuits the board switches** — valid only with the §3.3-correct series insertion, re-proven per lane by the **Stage-6b/G3 coil-drop gate** every cutover. Construction + verbatim label text: **`phase8_lane21_harness_build_sheet.md` §2**. | ✅ decided (premise ✓ measured 2026-07-07) |
-| J14-3 ↔ J14-4 | Stop/CIS loop | **OPEN — no measured dry tap.** The chain itself stays hardware, in-series, untouched (Bundle 2 rule below; runbook §3.5). Landing closes at the next powered characterization session / cutover Stage 2 §3.5; until it lands the rail cannot arm (deliberate). Bench jumper (readiness checklist §3) is bench-only — remove before cutover. **Never jumper 3-4 at the machine.** | TBD |
+| J14-1 ↔ J14-2 | TBSC loop | **Documented, labeled JUMPER PLUG — an engineered harness part, NOT a field improvisation.** Candidate C **DECIDED by Dylan 2026-07-07** (`phase8_interlock_redesign.md` §7): no isolatable dry NC pair exists on this chassis (measured 2026-06-27), and the OEM ladder alone kills both S/T coils in the danger state (both cam levers BACK — proven at machine 2026-07-07, §4-RESULTS). The rail's TB/SC condition is formally **delegated to the OEM SC/TB parallel closed-when-SAFE contacts inside the coil circuits the board switches** — valid only with the §3.3-correct series insertion, re-proven per lane by the **Stage-6b/G3 coil-drop gate** every cutover: board-command S and T separately, both levers BACK/open, prove each coil dead, verify the OEM ladder is not bypassed, and capture the exact result in the signed commissioning latch. Construction + verbatim label text: **`phase8_lane21_harness_build_sheet.md` §2**. | ✅ decided (premise ✓ measured 2026-07-07) |
+| J14-3 ↔ J14-4 | Legacy Stop/CIS source position; future Stop/control-power interface | **OPEN — no approved field interface.** Lanes 21/22 have no C.I.S. The leading candidate is a correctly rated, galvanically isolated, energize-to-prove control-power sensing relay whose N.O. volt-free contact closes 3–4 only while the selected downstream control rail is healthy. Exact rail, relay, protection, enclosure, wiring, and limits require an approved drawing and guarded powered test, including coil-deenergize proof that detects a welded/stuck contact. The manifest-controlled proof interval is **365 days maximum**, and expired evidence blocks healthy monitor status. Until then the rail cannot arm. Bench jumper is bench-only; **never jumper 3–4 at the machine.** A J14-only pit switch is not a final safety disconnect. | **OPEN / P0** |
 
 > **Net design rule (load this before wiring outputs):** the machine's own T2/T3/T4 transformers power every coil. Each J6–J11 dry contact goes **in series with an existing coil circuit** — you are *switching* the coil, not *supplying* it. The board's RELAY_ENABLE_RAIL + Omron G5LE contact is the only thing you insert. **Never feed board 5 V/24 V into these cavities.**
 
@@ -106,8 +115,15 @@ Three physically separated cable bundles. **Do not co-bundle them** — field-se
 - **Recommended cable:** shielded multicore — **Belden 1063A (12×22 AWG, foil+drain)** or Alpha 5160C. **Terminate shield drain to logic GND at the ENCLOSURE end only** (single-point; never ground shield at the machine — isolated domain).
 - **DIELL (J3-7/8) exception:** 3-wire active sensor on its own factory harness. Tap **signal + GND only** into J3; do not pull supply through the board cable. Twisted pair, 22 AWG.
 
-### Bundle 2 — SAFETY-LOOP (interlock + E-stop continuity)
-- **NOT a board cable.** It is the machine's existing 24 V control safety chain (Stop/CIS, DIELL interlock, and the OEM TB/SC **parallel closed-when-safe contacts embedded in the S/T coil ladder** — powered-proven 2026-07-07; see `docs/phase8_interlock_redesign.md`). It stays hardware and untouched by the Pi. Candidate C does not route that live ladder onto J_SAFE; J_SAFE1-2 receives only the controlled jumper.
+### Bundle 2 — MACHINE SAFETY/CONTROL-POWER CIRCUITS
+- **NOT a board cable.** The installed lane-21/22 protection consists of the
+  Stop/master-control-power path plus the OEM TB/SC **parallel
+  closed-when-safe contacts embedded in the S/T coil ladder**
+  (powered-proven 2026-07-07; see `docs/phase8_interlock_redesign.md`). Physical
+  inspection found no C.I.S., and DIELL is the ball/cycle trigger rather than
+  proved pit protection. Existing safety/control-power circuits stay hardware
+  and untouched by the Pi. Candidate C does not route the live TB/SC ladder
+  onto J_SAFE; J_SAFE1-2 receives only the controlled jumper.
 - Where the harness passes *through* the coil circuits the relays switch, use **18 AWG** stranded, **600 V** (24 VAC coil current ~0.3–1 A, safety-critical loop — over-spec deliberately).
 - **Physically separate raceway** from Bundle 1.
 
@@ -142,7 +158,10 @@ Three physically separated cable bundles. **Do not co-bundle them** — field-se
 ### Path B (fallback, fine for a 2-lane pilot) — documented splice / piggyback
 - **In-line tap each cavity** at the existing machine wire with **3M Scotchlok IDC taps** or (cleaner) **cut-and-Wago 221** with the original wire restored on the far side — preserves the machine's own circuit (critical for coil/safety loops) while bringing a parallel lead to the enclosure.
 - **Document every tap** on a wire-map card taped inside the enclosure door.
-- **NEVER cut into the safety loop** (Stop/CIS, DIELL interlock, TB/SC) for a tap — bridge across an existing contact, never interrupt the loop.
+- **NEVER cut into the Stop/control-power path or TB/SC coil ladder** for a
+  diagnostic tap — bridge across an approved existing contact, never interrupt
+  the circuit. DIELL remains a separate sensor-side signal/GND tap and is not
+  credited as pit protection.
 
 ### Board side — already specified, no action
 Phoenix MC 1,5/x-ST-3,5 (J3/J4/J5) + MKDS 1,5/2-5,08 (J6–J11) plugs are on the rev-B parts list. **22 AWG ferrules** on the sense plugs, **18 AWG ferrules** on the output plugs.
@@ -182,10 +201,21 @@ Do these at the spare cabinet, in order. Steps 0–8 bench/idle; 10–12 at-mach
 - **Step 6 — Foul tap.** Meter the foul **lamp wire** voltage; decide dry vs 24 VAC front-end for J5-3. *(§6)*
 - **Step 7 — Coil voltage labels.** Photograph Siemens 3TH4022 "__V __Hz" face to confirm 24 VAC; read heavy-lug table-contactor coil Ω + V. *(§1–2)*
 - **Step 8 — T-coil <1 Ω suspect + cap safety.** ~~Armature-press the suspect <1 Ω table-coil read~~ **✓ partially closed 2026-07-07: both S and T motor-contactor coils measured 24 VAC at the machine** (interlock §4-RESULTS bonus). Confirm CP2/CP3 ≈ 0 V before handling. *(§3, §8)*
-- **Step 9 — J_SAFETY landing. ✅ RESOLVED 2026-07-07 = CANDIDATE C** (`phase8_interlock_redesign.md` §7, formal): J_SAFE1-2 (TBSC) = the **documented labeled jumper plug** (engineered part — build per `phase8_lane21_harness_build_sheet.md` §2); TB/SC protection delegated to the OEM ladder (§4-RESULTS premise ✓ proven). Residual obligations: **per-lane Stage-6b/G3 coil-drop proof every cutover** (hard gate) + §4.3 window-angle capture at the powered session. **J_SAFE3-4 (Stop/CIS) landing still OPEN** — closes at the powered session / cutover Stage 2 §3.5 (see the J14 table above).
-- **Step 10 (at-machine) — Safety chain actuation.** Stop RUN → coil rail live; STOP → dead. Break-on-STOP = hardware-in-series (preserve). No break = **FLAG, add hardware interlock before any Pi-driven motor.** *(§A)*
+- **Step 9 — J_SAFETY landing. PARTIAL:** J_SAFE1-2 (TBSC) is
+  **RESOLVED 2026-07-07 = CANDIDATE C** (`phase8_interlock_redesign.md` §7):
+  use the documented labeled jumper plug, delegate TB/SC protection to the OEM
+  ladder, and repeat the per-lane Stage-6b/G3 coil-drop proof. **J_SAFE3-4
+  remains OPEN/P0** pending the approved Stop/control-power interface,
+  Stop-demand proof, and pit-entry-interlock disposition. Never jumper it at
+  the machine.
+- **Step 10 (at-machine) — Stop/control-power actuation.** Stop RUN → selected
+  control rail live; STOP → master/control power and TP16 dead within approved
+  bounds. No break is **FAIL: abort before any Pi-driven motor.** If another
+  installed/new upstream pit interlock exists, demand-test it separately.
 - **Step 11 (at-machine) — Cam-stop actuation proof.** Hand-rotate sweep/table to trip SA/TA; coil drops from cam alone (hardwired) or only after the board reacts (logic)? *(§B)*
-- **Step 12 (at-machine) — Preserve DIELL interlock + E-stop + confirm chassis variant** at the tap before energizing. *(§12)*
+- **Step 12 (at-machine) — Preserve DIELL ball-trigger operation, Stop, every
+  installed pit interlock, and the chassis variant** at the approved tap before
+  energizing. Do not credit DIELL as pit protection. *(§12)*
 
 ---
 
@@ -197,7 +227,15 @@ Do these at the spare cabinet, in order. Steps 0–8 bench/idle; 10–12 at-mach
 4. **M1 connector never measured; M re-confirm.** Both ⊕ future (not cutover-blocking); don't populate J12 on assumption.
 5. **Cam front-end (dry vs 24 VAC) conditional.** If cams present a live AC node, six J3 channels need the rectified front-end — only F.5 step 4 resolves it.
 6. **Foul tap marginal** (~5 V, 0.3 V swing); cleaner lamp-wire tap unmetered/possibly AC. J5-3 genuinely open.
-7. **Safety chain — TB/SC half RESOLVED 2026-07-07; Stop/CIS half still open.** The SC/TB ladder premise is **proven** (both-levers-BACK kills S+T coils on a brain-independent command — interlock §4-RESULTS) and **Candidate C is DECIDED**: J_SAFE1-2 = engineered jumper plug, protection delegated to the OEM ladder, **re-proven per lane at Stage-6b/G3** (insertion-point caveat: the board's S/T taps must not bypass the ladder — build sheet §3.2). Still open: the **Stop/CIS (J_SAFE3-4) dry-tap landing** (may face the same no-dry-pair problem — powered session / §3.5), and steps 10/11 still precede first motor energize; "no-break-on-STOP" remains a hard FLAG.
+7. **Safety architecture — TB/SC RESOLVED; J14.3–4 and pit-entry protection
+   OPEN/P0.** The SC/TB ladder premise is **proven** and Candidate C is
+   decided: J_SAFE1-2 is the engineered jumper, with protection delegated to
+   the OEM ladder and re-proven per lane at Stage-6b/G3. Physical inspection
+   found no C.I.S. on lanes 21/22. Still open: approved J14
+   Stop/control-power interface, Stop→master/control-power→TP16 demand proof,
+   determination whether any other pit-entry interlock exists, and the
+   qualified install-versus-Stop+LOTO-only disposition. Any new final
+   pit-entry interlock must act upstream; J14-only gating is not equivalent.
 8. **Chassis generalization:** all landings are from the **SS + Omega-Tek spare (21/22)**. Lanes 11/12 = **MP/Ultra-98** — machine side common, but re-verify cavity codes before reusing on MP.
 9. **RP2040 cam-stop is firmware v1.1 (deferred), not shipped.** Shipped = RP2040_OK + 8 s max-run backstop only. Harness carries the fast-input wires today, but per-cam-edge relay-drop is not live — don't spec as if hardware cam-stop enforcement exists yet.
 10. **Snubber/MOV on outputs DNP** until inductive coil current is characterized (F.5 step 7). The 5 Ω Siemens S contactor has real inrush — populate arc-suppression before sustained switching or the G5LE contacts pit.

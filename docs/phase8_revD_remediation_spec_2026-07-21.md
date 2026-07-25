@@ -436,7 +436,7 @@ exactly one place (a `tap_read()` accessor).
   fault-injection build (R1.9) is a separate target that is **excluded** from the
   release artifact and refuses to run without its physical jumper/flag.
 
-### R3.3 Rail-drop edge ring with reboot persistence
+### R3.3 Rail-predicate edge ring with reboot persistence
 
 - **Capture:** GPIO IRQs (both edges) on GP16–19 timestamped from a 1 kHz timebase
   (1 ms resolution contract; the tap analog path contributes ≤ 45 µs, R1.5) into a
@@ -449,10 +449,12 @@ exactly one place (a `tap_read()` accessor).
 - **Retrieval:** heartbeat gains {tap logical levels, ring depth, epoch, adc_vcc5};
   a query command returns the full ring (entries tagged with epoch). Ring is cleared
   only by explicit command, never by reboot.
-- **Reason codes:** firmware classifies the last rail-drop from edge order (e.g.
-  KICK stops → NE555_OUT drops → rail events ⇒ `kick_starvation`; ARM_PERMIT falls
-  first ⇒ `arm_drop`; RP2040_OK falls first ⇒ `self_health`) and reports the code +
-  the raw ring — the Pi gets both, the classification is advisory.
+- **Reason codes:** firmware infers a likely predicate cause from edge order (e.g.
+  KICK stops → NE555_OUT drops ⇒ `kick_starvation`; ARM_PERMIT falls first ⇒
+  `arm_drop`; RP2040_OK falls first ⇒ `self_health`) and reports the code + the raw
+  ring — the Pi gets both, and the classification is advisory. These four taps do
+  **not** directly observe `RELAY_ENABLE_RAIL`/TP16, so they cannot establish that
+  the rail actually dropped or detect Q14/J14/rail stuck-on or stuck-open behavior.
 
 ### R3.4 ADC cadence
 

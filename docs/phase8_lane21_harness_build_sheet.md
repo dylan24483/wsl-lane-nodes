@@ -20,8 +20,18 @@
 > - Machine-readable copy of the corrected data: `docs/phase8_revD_harness_bom.csv`
 >   (H6/H7 release artifact). Original text below is retained with strikethrough-style
 >   inline corrections — not silently edited.
+>
+> **⚠ FIELD CORRECTION 2026-07-24 — LANES 21/22 HAVE NO C.I.S.:**
+> Physical inspection found a purely mechanical cushion (shock plus coil-over
+> spring), with no cushion-interlock switch or wiring. The replacement DIELL is
+> the ball/cycle trigger, not a proved pit-entry safety device. J14.3–4 remains
+> OPEN and the field rail cannot arm. The leading J14 candidate is an
+> energize-to-prove control-power sensing relay, but that contact only gates board
+> permission. If a new pit-entry interlock is required as the final protection,
+> it must act in an approved upstream master/control-power safety-disconnect
+> architecture; landing it only at J14 cannot stop a welded downstream contact.
 
-**Status: BUILDABLE — interlock decision FORMAL (Candidate C, Dylan, 2026-07-07 — `phase8_interlock_redesign.md` §7).**
+**Status: NON-J14 HARNESS BUILDABLE; INSTALLATION NO-GO — Candidate C for J14.1–2 is formal, but J14.3–4 and the lane-21/22 pit-entry-interlock disposition remain OPEN.**
 Written 2026-07-07. One lane = one board = one harness. This sheet is for the **pilot lane 21** (SS chassis + Omega-Tek, C1 34-pin + C2A 50-pin AMP edge connectors). Lane 22 is a clone — see the ×2 column in §4 — but **re-verify every machine-side landing on 22's own connectors before crimping** (same chassis type, still per-lane proof).
 
 **Reads-with (do not build without them open):**
@@ -39,7 +49,10 @@ Written 2026-07-07. One lane = one board = one harness. This sheet is for the **
 
 **Non-negotiables (from Section F + the runbook):**
 1. **Never land a sense lead on a common rail** — C2A **J / F / U** (gripper/control common, chassis return) and **N** (motion-cam common) ring to everything.
-2. **Never cut or interrupt the safety loop** (Stop/CIS, DIELL interlock, SC/TB ladder) for a tap — bridge/tap in parallel only (Section F F.3 Path-B rule).
+2. **Never cut or interrupt the existing Stop/control-power path or the SC/TB
+   coil ladder for a tap** — bridge/tap in parallel only (Section F F.3 Path-B
+   rule). DIELL is a ball/cycle trigger; use only its approved sensor-side
+   signal/GND tap and never claim it as pit-entry protection.
 3. **The board never sources machine power.** Outputs are dry contacts in series with existing 24 VAC coil circuits. Never feed board 5 V into a C1/C2A cavity.
 4. **Bundle separation** (Section F F.2): field-sense (22 AWG) ≥50 mm from safety/output runs (18 AWG); cross at 90°; separate jackets/looms from enclosure to machine.
 5. All machine-side work **LOCKED OUT** (runbook §1 mode A) except the explicitly powered mapping/proof steps.
@@ -155,13 +168,16 @@ Pin order per the rev netlist (`lamp_order`): pin1 = VCC_5V, pin2 = GND, pins 3�
 
 ### J14 — J_SAFETY (Phoenix MC 1,5/4-ST-3,5 plug, PN **1840382**) — 18 AWG (Bundle 2 class)
 
-Loop topology on-board: VCC5 → **pins 1–2 (TBSC loop)** → **pins 3–4 (Stop/CIS loop)** → PMOS → RELAY_ENABLE_RAIL. Both loops must be closed for the rail to arm.
+Loop topology on-board: VCC5 → **pins 1–2 (TBSC source position)** →
+**pins 3–4 (legacy Stop/CIS source position; future approved
+Stop/control-power interface)** → PMOS → RELAY_ENABLE_RAIL. Both source
+positions must be closed for the rail to arm.
 
 | Pin(s) | Signal | AWG | Color | Label text | Termination | Disposition |
 |---|---|---|---|---|---|---|
 | J14-1 ↔ J14-2 | TBSC loop | 18 | yellow | see §2 — verbatim label | **the Candidate-C engineered jumper — bridge inside the plug, no machine side.** Full construction in **§2**. | **BUILD (as the §2 jumper)** |
-| J14-3 | Stop/CIS loop (out) | 18 | yellow | `J14-3 STOP/CIS - OPEN - DO NOT LAND OR JUMPER` | none — landing **OPEN**, see §2.3 | **CUT+LABEL-ONLY** (1.2 m) |
-| J14-4 | Stop/CIS loop (return) | 18 | yellow | `J14-4 STOP/CIS - OPEN - DO NOT LAND OR JUMPER` | none — landing **OPEN**, see §2.3 | **CUT+LABEL-ONLY** (1.2 m) |
+| J14-3 | Stop/control-power source (out) | 18 | yellow | `J14-3 STOP/CTRL-PWR - OPEN - DO NOT LAND OR JUMPER` | none — landing **OPEN**, see §2.3 | **CUT+LABEL-ONLY** (1.2 m) |
+| J14-4 | Stop/control-power source (return) | 18 | yellow | `J14-4 STOP/CTRL-PWR - OPEN - DO NOT LAND OR JUMPER` | none — landing **OPEN**, see §2.3 | **CUT+LABEL-ONLY** (1.2 m) |
 
 ---
 
@@ -169,7 +185,7 @@ Loop topology on-board: VCC5 → **pins 1–2 (TBSC loop)** → **pins 3–4 (St
 
 ### 2.1 Construction
 
-1. Take **one Phoenix MC 1,5/4-ST-3,5 plug (PN 1840382)** — this IS the lane's J14 harness plug (positions 3–4 carry the Stop/CIS cut+label leads from the table above; the jumper lives on positions 1–2 of the same plug).
+1. Take **one Phoenix MC 1,5/4-ST-3,5 plug (PN 1840382)** — this IS the lane's J14 harness plug (positions 3–4 carry the Stop/control-power cut+label leads from the table above; the jumper lives on positions 1–2 of the same plug).
 2. Cut **~120 mm of 18 AWG stranded, yellow** (600 V insulation — Bundle 2 spec). Form a U.
 3. Strip both ends ~~8 mm~~ **7 mm (corrected 2026-07-21, H7)**; ~~fit 0.75/1.0 mm²
    ferrules~~ **leave bare stranded or fit UNinsulated ferrules — insulated ferrules
@@ -182,20 +198,46 @@ Loop topology on-board: VCC5 → **pins 1–2 (TBSC loop)** → **pins 3–4 (St
    > **`TBSC JUMPER - ENGINEERED PART (Candidate C, DECIDED 2026-07-07). TB/SC collision protection is DELEGATED to the OEM 24VAC ladder (SC+TB parallel closed-when-SAFE contacts in the S/T coil circuits - proven at machine 2026-07-07). NOT a bypass: the per-lane Stage-6b/G3 coil-drop proof is REQUIRED before live motion, every cutover. See docs/phase8_interlock_redesign.md §7.`**
 
    If the printer can't fit it, the flag carries the first sentence + `see phase8_interlock_redesign.md §7`, and the full text goes on the wire-map card taped inside the enclosure door (mandatory either way).
-6. Label the plug body: **`J14 J_SAFETY · 1-2 = TBSC jumper (engineered) · 3-4 = Stop/CIS (OPEN - never jumper)`**.
+6. Label the plug body: **`J14 J_SAFETY · 1-2 = TBSC jumper (engineered) · 3-4 = STOP/CTRL-PWR (OPEN - never jumper)`**.
 
 ### 2.2 What this jumper is — and is not
 
 - It closes the board's TBSC rail condition **permanently**, because as measured (2026-06-27) **no isolatable dry NC pair exists on this chassis** — SC is reachable only on its N.O. wire at a live-ladder/common node, TB never isolates. The rail's TB/SC condition is **formally delegated to the OEM ladder**: SC+TB are a **parallel closed-when-SAFE pair**; danger = **both cam levers BACK (buttons released)** = coil circuit dies even on a manual command — proven for both S and T at the machine 2026-07-07 (`phase8_interlock_redesign.md` §4-RESULTS).
 - The delegation is only real **if the board's S/T contacts land in series with those same coil circuits** (§3-C insertion-point caveat). That is why the **Stage-6b/G3 coil-drop proof is a hard gate on every lane, every cutover**: with the board commanding S (then T), body clear, force both levers BACK → **the coil must die even with the board contact closed**. A jumpered J14-1/2 with a failed or skipped coil-drop proof = **G3 automatic FAIL → abort + rollback**.
-- **Any other J_SAFE jumper remains FORBIDDEN** (runbook Stage 6b): this documented part on 1-2 is the sole exception. Never bridge 1→4 (skips the Stop/CIS condition); never jumper 3-4 at the machine.
+- **Any other J_SAFE jumper remains FORBIDDEN** (runbook Stage 6b): this documented part on 1-2 is the sole exception. Never bridge 1→4 (skips the future Stop/control-power condition); never jumper 3-4 at the machine.
 
-### 2.3 J_SAFE3-4 (Stop/CIS loop) — status per Section F: **OPEN**
+### 2.3 J_SAFE3-4 (legacy Stop/CIS source position) — status per Section F: **OPEN**
 
-Section F carries **no J14/Stop-CIS landing row** — its Bundle-2 rule is only that the Stop/CIS chain "must stay hardware, in-series, untouched by the Pi," and runbook §3.5 says the board's sense *ties into* that chain without naming a tap point. No dry pair for the sense loop has been measured. So the landing is **OPEN**, and this sheet builds only the two cut+label leads.
+Physical inspection on 2026-07-24 found **no C.I.S. device or wiring on lanes
+21/22**. The cushion is mechanical, and DIELL replaced the old cushion-start
+ball trigger. Whether another pit-entry interlock exists remains unresolved.
+There is no approved J14 dry interface, so the landing is **OPEN** and this
+sheet builds only the two cut+label leads.
 
-- **What closes it:** the next at-machine **powered characterization session** (the same visit as the §4.3 window-angle capture / F.5 step 4 front-end classing) or cutover **Stage 2 (§3.5 confirm)** — identify a dry, closed-when-safe tap (e.g., an auxiliary/spare contact in the Stop/CIS→master-breaker path) that can feed J14-3/4 without interrupting the chain. Be alert that it may present the **same no-dry-pair problem as TBSC** — if so, it needs its own mini-decision before cutover; record in `phase8_interlock_redesign.md`-style form.
-- **Hard consequence:** the rail **cannot arm** until J14-3/4 closes — that is deliberate. The bench jumper on 3-4 (readiness checklist §3) is a **bench-only tool: remove before cutover.** G3 also requires the Stop/CIS-open → rail-drop test, which needs the real landing.
+- **Leading J14 interface:** an approved, galvanically isolated,
+  energize-to-prove control-power sensing relay: a correctly rated 24 VAC coil
+  across the selected downstream control rail, with its N.O. volt-free contact
+  on J14-3/4. Control-power loss, Stop demand, breaker opening, relay-coil failure,
+  tap open-wire, or plug removal then opens the board source position for the
+  de-energize-to-open failure modes. A welded sensing contact remains credible;
+  the proof procedure must deliberately de-energize the coil and verify
+  J14.3–4/TP16 open. Exact rail, relay, enclosure, protection, wiring,
+  and acceptance limits require a qualified drawing and guarded powered test.
+  The manifest-controlled proof interval is **365 days maximum**, with an
+  earlier repeat after relevant safety/control electrical service; expired
+  evidence blocks healthy monitor status.
+- **Pit-entry decision:** determine whether another installed pit-entry
+  interlock exists. If none exists, the owner and a qualified machine-safety
+  reviewer must either install an approved upstream pit-entry safety disconnect
+  or formally accept the existing Stop-plus-lockout-only operating design before
+  cutover. A new switch placed only at J14 is diagnostic/permission gating and
+  **cannot** serve as the final disconnect for a welded downstream contact.
+- **Hard consequence:** the rail **cannot arm** until J14-3/4 closes through the
+  approved interface — that is deliberate. The bench jumper on 3-4 (readiness
+  checklist §3) is a **bench-only tool: remove before cutover.** FA-13/G3 must
+  prove Stop→master/control-power→TP16 drop, every interface open-wire/failure,
+  and any installed/new upstream pit interlock separately. C.I.S. is recorded
+  absent/N/A on lanes 21/22, never silently passed.
 
 ---
 
@@ -250,7 +292,7 @@ Plugs per `phase8_revC_readiness_checklist.md` §3 (the BOM-gap list — these s
 | *(alternative to the six rows above)* Bundle-1 multicore | **Belden 1063A** (12×22 AWG, foil+drain) or Alpha 5160C — Section F preferred; J4's 12 build-now leads (GS1–10 + BS + FGND) fit one run exactly | 1 × ~1.5 m run (+ discrete for J3/J5/J13) | 2 runs |
 | Wire 18 AWG, red (output NO leads) | stranded, 600 V | ~8 m | ~16 m |
 | Wire 18 AWG, black (output COM leads) | same | ~8 m | ~16 m |
-| Wire 18 AWG, yellow (J14 jumper + Stop/CIS + rollback bridges) | same | ~5 m | ~10 m |
+| Wire 18 AWG, yellow (J14 jumper + Stop/control-power + rollback bridges) | same | ~5 m | ~10 m |
 | *(alternative)* Bundle-3 multipair | **Belden 1419A** (6-pair 18 AWG) per F.2 | 1 × 1.2 m run | 2 |
 | Ferrules 0.34 mm² (22 AWG) | insulated, for MC 1,5 plugs (≤ 0.5 mm² insulated limit ✓) | ~45 (buy 100-pk) | ~90 (1 pk) |
 | Ferrules 0.75–1.0 mm² (18 AWG) | ~~insulated, for MKDS + J14~~ **CORRECTED 2026-07-21 (H7): insulated 0.75–1.0 mm² for MKDS blocks ONLY (J2, J6–J11 — verify vs Phoenix 1715734/1715721 data at build). The J14 MC 1,5 positions take UNinsulated 0.75–1.0 mm² ferrules or bare stranded — insulated ferrules above 0.5 mm² do not meet the MC 1,5 spec** | **~31** (J2 ×3 + J6–J11 board ends ×12 + rollback bridges 6×2 insulated; J14 ×4 UNinsulated) — buy 100-pk of each | ~62 (1 pk each) |
@@ -290,7 +332,7 @@ Order: **chassis lugs → J4 sense taps → J5 → DIELL taps → outputs → J1
 3. Per sense tap: identify the cavity's cable-side wire (count at the wire-entry face, **verify by beep to the cavity contact face** — brain side unplugged/isolated), tap ~50–80 mm behind the connector shell, beep tap↔cavity face, tug-test.
 4. DIELL: identify signal vs supply on the DIELL harness **by voltage class from prior measurement (~16 V rest on signal) before tapping — never tap the 24 V supply wire.**
 5. Outputs per §3 (Stage 5, after the §3.3 Stage-2 confirm).
-6. J14: seat the plug (jumper already in it); Stop/CIS leads stay capped (OPEN — §2.3).
+6. J14: seat the plug (jumper already in it); Stop/control-power leads stay capped (OPEN — §2.3).
 
 ### 5.3 Per-lead continuity checklist (board plug pin → machine point) — run complete after landing
 
@@ -320,7 +362,7 @@ Order: **chassis lugs → J4 sense taps → J5 → DIELL taps → outputs → J1
 | ☐ | M NO/COM | J10-1 / J10-2 | confirmed C2A wires | <1 Ω each; OPEN across |
 | ☐ | M2 NO/COM | J11-1 / J11-2 | confirmed C2A wires | <1 Ω each; OPEN across |
 | ☐ | TBSC jumper | J14-1 | J14-2 | <1 Ω (the §2 part, labeled) |
-| ☐ | Stop/CIS | J14-3 ↔ J14-4 | — | OPEN (nothing landed, no jumper) |
+| ☐ | Stop/control-power | J14-3 ↔ J14-4 | — | OPEN (nothing landed, no jumper) |
 | ☐ | Mask LED rail + 4 returns | J13-1,3,4,5,6 | mask LED pigtails (Stage 3) | <1 Ω each |
 | ☐ | DIELL-L return | J3-9 | DIELL harness GND tap | <1 Ω |
 | ☐ | DIELL-R return | J3-10 | DIELL harness GND tap | <1 Ω |
@@ -343,11 +385,20 @@ Order: **chassis lugs → J4 sense taps → J5 → DIELL taps → outputs → J1
 
 1. Run **`phase8_revB_board1_prepower_test_checklist.md`** on the board + spec §12.9 bench sequence before the harness ever meets a powered machine.
 2. Cutover follows the runbook run-of-show: Stage 6 logic-only (rail disabled) input verification — lift one pin per gripper and watch the GS channel flip (**G2-GS8 / G2-GSMAP**), PBZ press, DIELL beam break.
-3. **Stage 6b/G3 including the Candidate-C coil-drop proof (§3.2 of this sheet) — hard gate, both S and T, before any commanded motion.** Every rail condition must independently drop motion permission; Stop/CIS requires the §2.3 landing to have closed.
+3. **Stage 6b/G3 including the Candidate-C coil-drop proof (§3.2 of this
+   sheet) — hard gate, both S and T, before any commanded motion.** Every
+   implemented rail condition must independently drop motion permission. The
+   §2.3 interface must be complete, Stop must drop master/control power and
+   TP16, the pit-interlock disposition must be approved, and every actually
+   installed/new upstream pit interlock must pass its own demand test.
 4. Powered mapping session items that then close the CUT+LABEL-ONLY leads: cam cavities SA/SB/TA1/TA2 + SC front-end class (F.5 step 4) + §4.3 window-angle capture + foul lamp wire (F.5 step 6) + GP/PBC cold confirms.
 
 ---
 
 **Change log:** 2026-07-07 — created (Candidate-C decision formal, `phase8_interlock_redesign.md` §7). Measured values only from the 2026-06-01 bench + 2026-06-27 + 2026-07-07 at-machine sessions; everything unmeasured is CUT+LABEL-ONLY / NO-LEAD / OPEN with its closing session named.
 2026-07-21 — **H7 correction (Codex NO-GO audit):** MC 1,5 termination data corrected throughout (strip 7 mm not 8; torque 0.22–0.25 N·m not 0.5; insulated ferrules capped at 0.5 mm² — J14 18 AWG leads go bare/uninsulated). Header banner + inline strikethroughs; machine-readable data in `docs/phase8_revD_harness_bom.csv`. A rev-D lane build additionally carries J15/J16 plugs + CP-MSTB coding (profile in the PLUG, never a standard header; sacrificial-pair proof FA-8) — see `docs/phase8_revD_first_article_pack.md`.
+2026-07-24 — **field correction:** lanes 21/22 have no C.I.S. device or wiring;
+DIELL is the ball/cycle trigger. J14.3–4 remains open pending the approved
+Stop/control-power interface and pit-entry-interlock disposition. A J14-only
+switch is not accepted as the final pit safety disconnect.
 2026-07-21 (later) — **H7 scope gap closed (post-remediation review):** the §4 Tools row still specified a "small flat-blade (~0.5 Nm)" driver — a tool characterized at 2× the corrected torque limit, missed because the banner's scope list skipped the Tools row. Tools row now calls for a torque-limiting driver set to 0.22–0.25 N·m (fallback: plain blade, snug + 1/8 turn + tug-test); banner scope list updated.

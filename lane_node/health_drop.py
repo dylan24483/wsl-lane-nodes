@@ -36,6 +36,8 @@ surface an explicit missing/stale foreign-service state.
 """
 from __future__ import annotations
 
+import copy
+from datetime import datetime, timezone
 import json
 import hashlib
 import math
@@ -48,6 +50,26 @@ import threading
 import time
 
 HEALTH_DROP_FILENAME = "health_drop.json"
+DELIVERY_LEDGER_MAX_BYTES = 2 * 1024 * 1024
+DELIVERY_LEDGER_MAX_DEPTH = 12
+DELIVERY_LEDGER_MAX_STRING = 4096
+DELIVERY_LEDGER_MAX_NODES = 50000
+SERVICE_START_STATE_MAX_BYTES = 3 * 1024 * 1024
+SERVICE_START_EVENT_MAX_BYTES = 16 * 1024
+SERVICE_START_MAX_LANES = 32
+SERVICE_START_MAX_RECENT = 4096
+SERVICE_START_MAX_PENDING = 128
+DELIVERY_RECEIPT_MAX_FILES = 256
+DELIVERY_RECEIPT_MAX_BYTES = 64 * 1024 * 1024
+DELIVERY_RECEIPT_MAX_LINES = 1_000_000
+DELIVERY_RECEIPT_MAX_LINE_BYTES = 65536
+DELIVERY_RECEIPT_EXACT = "exact"
+DELIVERY_RECEIPT_ABSENT = "absent"
+DELIVERY_RECEIPT_MISMATCH = "mismatch"
+DELIVERY_RECEIPT_AMBIGUOUS = "ambiguous"
+SERVICE_START_FUTURE_TOLERANCE_S = 300.0
+SQLITE_INT64_MAX = (1 << 63) - 1
+_service_start_lock = threading.RLock()
 
 # Service keys (stable strings — the drop file is keyed by them).
 SERVICE_CONTROLLER = "controller"   # Track-B: Pi/controller platform health
@@ -635,15 +657,331 @@ class WallMonotonicDriftMonitor:
         }
 
 
+_SERVICE_START_DELIVERY_FIELDS = {
+    "service_restart": "service_restart_deliveries",
+    "service_restart_loop": "service_restart_loop_deliveries",
+}
+_SERVICE_START_DESTINATION_FIELDS = {
+    event_type: f"{event_type}_destinations"
+    for event_type in _SERVICE_START_DELIVERY_FIELDS
+}
+_SERVICE_START_ACKED_FIELDS = {
+    event_type: f"{event_type}_acked_lanes"
+    for event_type in _SERVICE_START_DELIVERY_FIELDS
+}
+_SERVICE_START_PENDING_REQUIRED = {
+    "count", "started_at_epoch", "started_at_monotonic",
+    "starts_in_window", "window_s", "threshold", "restart_loop",
+    "service_restart_pending", "service_restart_loop_pending",
+}
+_SERVICE_START_PENDING_ALLOWED = (
+    _SERVICE_START_PENDING_REQUIRED
+    | set(_SERVICE_START_DELIVERY_FIELDS.values())
+    | set(_SERVICE_START_DESTINATION_FIELDS.values())
+    | set(_SERVICE_START_ACKED_FIELDS.values())
+)
+_SERVICE_START_EVENT_FIELDS = {
+    "ts_utc", "ts_mono", "lane_id", "severity", "event_type",
+    "code", "detail", "source_id", "boot_id", "seq",
+}
+
+
+def _service_start_event_row_valid(row, event_type=None, item=None):
+    if not isinstance(row, dict) or set(row) != _SERVICE_START_EVENT_FIELDS:
+        return False
+    lane = row.get("lane_id")
+    seq = row.get("seq")
+    expected_severity = {
+        "service_restart": "info",
+        "service_restart_loop": "fault",
+    }.get(event_type)
+    # Track-A and Track-B share this exact service-start WAL.  Their event
+    # families are identical, while ``code`` preserves the producing service:
+    # Track-A uses lane_node_start/lane_node and Track-B uses daemon_start.
+    # Keep the accepted set explicit so a corrupt or cross-purpose row cannot
+    # be "repaired" into a new delivery identity after a restart.
+    expected_codes = {
+        "service_restart": {"lane_node_start", "daemon_start"},
+        "service_restart_loop": {"lane_node", "daemon_start"},
+    }.get(event_type, set())
+    if (not isinstance(lane, int) or isinstance(lane, bool)
+            or not 1 <= lane <= SERVICE_START_MAX_LANES
+            or not isinstance(seq, int) or isinstance(seq, bool)
+            or not 0 < seq <= SQLITE_INT64_MAX
+            or not isinstance(row.get("ts_utc"), str)
+            or not 0 < len(row["ts_utc"]) <= 64
+            or not _finite_number(row.get("ts_mono"))
+            or float(row["ts_mono"]) < 0
+            or not isinstance(row.get("source_id"), str)
+            or not 0 < len(row["source_id"]) <= 120
+            or not isinstance(row.get("boot_id"), str)
+            or not 0 < len(row["boot_id"]) <= 80
+            or row.get("event_type") != event_type
+            or row.get("severity") != expected_severity
+            or row.get("code") not in expected_codes
+            or not isinstance(row.get("detail"), dict)):
+        return False
+    try:
+        stamp = row["ts_utc"]
+        parsed = datetime.fromisoformat(
+            stamp[:-1] + "+00:00" if stamp.endswith(("Z", "z")) else stamp)
+        if (parsed.tzinfo is None or parsed.utcoffset() is None
+                or parsed.astimezone(timezone.utc).timestamp()
+                > time.time() + SERVICE_START_FUTURE_TOLERANCE_S):
+            return False
+        if item is not None:
+            detail = row["detail"]
+            if set(detail) != {
+                    "count", "started_at_epoch", "starts_in_window",
+                    "window_s", "threshold", "restart_loop",
+                    "replayed_start_evidence"}:
+                return False
+            if (not isinstance(detail["count"], int)
+                    or isinstance(detail["count"], bool)
+                    or not _finite_number(detail["started_at_epoch"])
+                    or not isinstance(detail["starts_in_window"], int)
+                    or isinstance(detail["starts_in_window"], bool)
+                    or not _finite_number(detail["window_s"])
+                    or not isinstance(detail["threshold"], int)
+                    or isinstance(detail["threshold"], bool)
+                    or not isinstance(detail["restart_loop"], bool)
+                    or not isinstance(
+                        detail["replayed_start_evidence"], bool)
+                    or detail["count"] != item["count"]
+                    or detail["started_at_epoch"]
+                    != item["started_at_epoch"]
+                    or detail["starts_in_window"]
+                    != item["starts_in_window"]
+                    or detail["window_s"] != item["window_s"]
+                    or detail["threshold"] != item["threshold"]
+                    or detail["restart_loop"] != item["restart_loop"]
+                    or row["ts_mono"] != item["started_at_monotonic"]
+                    or abs(
+                        parsed.astimezone(timezone.utc).timestamp()
+                        - float(item["started_at_epoch"])) > 0.0011):
+                return False
+        encoded = json.dumps(
+            row, allow_nan=False, sort_keys=True, separators=(",", ":"))
+        return len(encoded.encode("utf-8")) <= SERVICE_START_EVENT_MAX_BYTES
+    except (OSError, OverflowError, TypeError, ValueError):
+        return False
+
+
+def _service_start_delivery_rows_valid(rows, event_type, item=None):
+    if (not isinstance(rows, list)
+            or not 0 < len(rows) <= SERVICE_START_MAX_LANES):
+        return False
+    lanes = set()
+    identities = set()
+    for row in rows:
+        if not _service_start_event_row_valid(row, event_type, item):
+            return False
+        lane = row["lane_id"]
+        identity = (row["source_id"], row["boot_id"], row["seq"])
+        if lane in lanes or identity in identities:
+            return False
+        lanes.add(lane)
+        identities.add(identity)
+    return True
+
+
+def _service_start_pending_item_valid(item):
+    if (not isinstance(item, dict)
+            or not _SERVICE_START_PENDING_REQUIRED <= set(item)
+            or set(item) - _SERVICE_START_PENDING_ALLOWED):
+        return False
+    if (not isinstance(item["count"], int)
+            or isinstance(item["count"], bool)
+            or not 0 < item["count"] <= SQLITE_INT64_MAX
+            or not _finite_number(item["started_at_epoch"])
+            or float(item["started_at_epoch"]) < 0
+            or not _finite_number(item["started_at_monotonic"])
+            or float(item["started_at_monotonic"]) < 0
+            or not isinstance(item["starts_in_window"], int)
+            or isinstance(item["starts_in_window"], bool)
+            or not 0 <= item["starts_in_window"] <= SQLITE_INT64_MAX
+            or not _finite_number(item["window_s"])
+            or float(item["window_s"]) < 0
+            or not isinstance(item["threshold"], int)
+            or isinstance(item["threshold"], bool)
+            or not 1 <= item["threshold"] <= SQLITE_INT64_MAX
+            or not isinstance(item["restart_loop"], bool)
+            or not isinstance(item["service_restart_pending"], bool)
+            or not isinstance(
+                item["service_restart_loop_pending"], bool)):
+        return False
+    try:
+        started_at = datetime.fromtimestamp(
+            float(item["started_at_epoch"]), timezone.utc)
+        if started_at.timestamp() \
+                > time.time() + SERVICE_START_FUTURE_TOLERANCE_S:
+            return False
+    except (OverflowError, OSError, ValueError):
+        return False
+    if (item["restart_loop"]
+            != (item["starts_in_window"] >= item["threshold"])
+            or item["service_restart_loop_pending"]
+            and not item["restart_loop"]
+            or not (
+                item["service_restart_pending"]
+                or item["service_restart_loop_pending"])):
+        return False
+    for event_type, field in _SERVICE_START_DELIVERY_FIELDS.items():
+        rows = item.get(field)
+        destinations = item.get(
+            _SERVICE_START_DESTINATION_FIELDS[event_type])
+        acked_lanes = item.get(_SERVICE_START_ACKED_FIELDS[event_type])
+        pending_field = f"{event_type}_pending"
+        metadata_present = (
+            destinations is not None or acked_lanes is not None)
+        if rows is None:
+            if metadata_present:
+                return False
+            continue
+        if (
+                not item[pending_field]
+                or not _service_start_delivery_rows_valid(
+                    rows, event_type, item)
+                or not isinstance(destinations, list)
+                or not 0 < len(destinations) <= SERVICE_START_MAX_LANES
+                or not isinstance(acked_lanes, list)
+                or len(acked_lanes) > SERVICE_START_MAX_LANES):
+            return False
+        destination_set = set()
+        for lane in destinations:
+            if (
+                    not isinstance(lane, int) or isinstance(lane, bool)
+                    or not 1 <= lane <= SERVICE_START_MAX_LANES
+                    or lane in destination_set):
+                return False
+            destination_set.add(lane)
+        acked_set = set()
+        for lane in acked_lanes:
+            if (
+                    not isinstance(lane, int) or isinstance(lane, bool)
+                    or lane not in destination_set or lane in acked_set):
+                return False
+            acked_set.add(lane)
+        row_lanes = {row["lane_id"] for row in rows}
+        if (
+                row_lanes & acked_set
+                or row_lanes | acked_set != destination_set):
+            return False
+    return True
+
+
+def _read_service_start_state(path, *, reject_nonfinite=True):
+    if os.path.getsize(path) > SERVICE_START_STATE_MAX_BYTES:
+        raise ValueError("service-start state is oversized")
+    with open(path, encoding="utf-8") as source:
+        encoded = source.read(SERVICE_START_STATE_MAX_BYTES + 1)
+    if len(encoded.encode("utf-8")) > SERVICE_START_STATE_MAX_BYTES:
+        raise ValueError("service-start state is oversized")
+    kwargs = {}
+    if reject_nonfinite:
+        kwargs["parse_constant"] = lambda value: (_ for _ in ()).throw(
+            ValueError(f"invalid JSON constant {value}"))
+    state = json.loads(encoded, **kwargs)
+    if not isinstance(state, dict):
+        raise ValueError("service-start state is not an object")
+    return state
+
+
+def _validated_service_start_pending(state):
+    """Return a strictly bounded pending list or raise on any ambiguity."""
+    if set(state) - {
+            "count", "last_start_epoch", "recent", "pending_events",
+            "delivery_overflow_count"}:
+        raise ValueError("unknown service-start state field")
+    count = state.get("count")
+    recent = state.get("recent")
+    if (not isinstance(count, int) or isinstance(count, bool)
+            or not 0 <= count <= SQLITE_INT64_MAX
+            or not isinstance(recent, list)
+            or len(recent) > SERVICE_START_MAX_RECENT
+            or any(not _finite_number(value) for value in recent)):
+        raise ValueError("invalid service-start state")
+    if "last_start_epoch" in state \
+            and not _finite_number(state["last_start_epoch"]):
+        raise ValueError("invalid service-start last-start time")
+    overflow_count = state.get("delivery_overflow_count", 0)
+    if (
+            not isinstance(overflow_count, int)
+            or isinstance(overflow_count, bool)
+            or not 0 <= overflow_count <= SQLITE_INT64_MAX):
+        raise ValueError("invalid service-start delivery-overflow count")
+    pending = state.get("pending_events", [])
+    if (not isinstance(pending, list)
+            or len(pending) > SERVICE_START_MAX_PENDING):
+        raise ValueError("invalid service-start pending list")
+    counts = set()
+    identities = set()
+    for item in pending:
+        if (not _service_start_pending_item_valid(item)
+                or item["count"] > count
+                or item["count"] in counts):
+            raise ValueError("invalid service-start pending item")
+        counts.add(item["count"])
+        for delivery_field in _SERVICE_START_DELIVERY_FIELDS.values():
+            for row in item.get(delivery_field, []):
+                identity = (
+                    row["source_id"], row["boot_id"], row["seq"])
+                if identity in identities:
+                    raise ValueError(
+                        "duplicate service-start delivery identity")
+                identities.add(identity)
+    return pending
+
+
+def _write_service_start_state(path, state, prefix):
+    tmp = None
+    try:
+        encoded = json.dumps(
+            state, allow_nan=False, sort_keys=True, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > SERVICE_START_STATE_MAX_BYTES:
+            return False
+        directory = os.path.dirname(path) or "."
+        os.makedirs(directory, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=prefix, dir=directory)
+        with os.fdopen(fd, "w", encoding="utf-8") as target:
+            target.write(encoded)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(tmp, path)
+        tmp = None
+        _fsync_parent_dir(path)
+        return True
+    except Exception:
+        return False
+    finally:
+        if tmp is not None:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
 def record_service_start(path, *, now=None, window_s=300.0, threshold=3,
-                         max_recent=20):
+                         max_recent=20, track_delivery=False,
+                         monotonic_now=None, max_pending=128):
+    with _service_start_lock:
+        return _record_service_start_unlocked(
+            path, now=now, window_s=window_s, threshold=threshold,
+            max_recent=max_recent, track_delivery=track_delivery,
+            monotonic_now=monotonic_now, max_pending=max_pending)
+
+
+def _record_service_start_unlocked(
+        path, *, now=None, window_s=300.0, threshold=3,
+        max_recent=20, track_delivery=False,
+        monotonic_now=None, max_pending=128):
     """Durably record one service start and classify a restart-loop window.
 
     The state file uses the controller's existing ``count``/``recent`` shape,
     but writes via fsync + replace + parent-directory fsync.  Corrupt,
-    non-finite, and future prior timestamps are discarded and counted in the
-    returned forensic facts rather than extending/suppressing the window.
-    Never raises; ``persisted`` tells the caller whether durable evidence was
+    non-finite, and future prior timestamps are discarded and counted.
+    Ambiguous delivery obligations are never repaired or overwritten.  Never
+    raises; ``persisted`` tells the caller whether durable evidence was
     actually committed.
     """
     now = time.time() if now is None else now
@@ -655,42 +993,98 @@ def record_service_start(path, *, now=None, window_s=300.0, threshold=3,
         "threshold": threshold,
         "restart_loop": False,
         "discarded_timestamps": 0,
+        "pending_delivery_overflow": 0,
+        "pending_delivery_overflow_new": 0,
         "error": None,
     }
     if not _finite_number(now):
+        result["error"] = "invalid_now"
+        return result
+    if float(now) < 0:
         result["error"] = "invalid_now"
         return result
     if not _finite_number(window_s) or float(window_s) < 0:
         result["error"] = "invalid_window_s"
         return result
     if not isinstance(threshold, int) or isinstance(threshold, bool) \
-            or threshold < 1:
+            or not 1 <= threshold <= SQLITE_INT64_MAX:
         result["error"] = "invalid_threshold"
         return result
     if not isinstance(max_recent, int) or isinstance(max_recent, bool) \
-            or max_recent < 1:
+            or not 1 <= max_recent <= SERVICE_START_MAX_RECENT:
         result["error"] = "invalid_max_recent"
+        return result
+    if not isinstance(max_pending, int) or isinstance(max_pending, bool) \
+            or not 1 <= max_pending <= SERVICE_START_MAX_PENDING:
+        result["error"] = "invalid_max_pending"
+        return result
+    if not isinstance(track_delivery, bool):
+        result["error"] = "invalid_track_delivery"
         return result
 
     count = 0
     raw_recent = []
+    pending_events = []
+    delivery_overflow_count = 0
     try:
-        with open(path, encoding="utf-8") as f:
-            previous = json.load(f)
-        if isinstance(previous, dict):
-            raw_count = previous.get("count", 0)
-            if isinstance(raw_count, int) and not isinstance(raw_count, bool) \
-                    and raw_count >= 0:
-                count = raw_count
-            candidate = previous.get("recent", [])
-            if isinstance(candidate, list):
-                raw_recent = candidate
+        previous = _read_service_start_state(
+            path, reject_nonfinite=False)
+        if set(previous) - {
+                "count", "last_start_epoch", "recent", "pending_events",
+                "delivery_overflow_count"}:
+            result["error"] = "previous_state_invalid"
+            return result
+        raw_count = previous.get("count", 0)
+        if (not isinstance(raw_count, int)
+                or isinstance(raw_count, bool)
+                or not 0 <= raw_count <= SQLITE_INT64_MAX):
+            result["error"] = "previous_state_invalid"
+            return result
+        count = raw_count
+        raw_overflow_count = previous.get("delivery_overflow_count", 0)
+        if (
+                not isinstance(raw_overflow_count, int)
+                or isinstance(raw_overflow_count, bool)
+                or not 0 <= raw_overflow_count <= SQLITE_INT64_MAX):
+            result["error"] = "previous_state_invalid"
+            return result
+        delivery_overflow_count = raw_overflow_count
+        candidate = previous.get("recent", [])
+        if isinstance(candidate, list):
+            raw_recent = candidate
+        else:
+            result["error"] = "previous_state_invalid"
+        if "last_start_epoch" in previous \
+                and not _finite_number(previous["last_start_epoch"]):
+            result["error"] = "previous_state_invalid"
+        if "pending_events" in previous:
+            candidate_pending = previous["pending_events"]
+            try:
+                probe = {
+                    "count": count,
+                    "recent": [],
+                    "pending_events": candidate_pending,
+                }
+                pending_events = copy.deepcopy(
+                    _validated_service_start_pending(probe))
+            except Exception:
+                # Delivery rows are an exact-once write-ahead record.  Never
+                # discard or rewrite malformed rows because doing so could
+                # create a second identity for an already accepted event.
+                result["error"] = "previous_delivery_state_invalid"
+                return result
     except FileNotFoundError:
         pass
     except Exception:
-        # The replacement below repairs a corrupt counter file.  Callers still
-        # receive the error fact and can emit a storage diagnostic if desired.
+        # A corrupt document may contain an accepted-but-unacknowledged
+        # delivery identity.  Preserve it for forensic/manual recovery.
         result["error"] = "previous_state_invalid"
+        return result
+
+    if count >= SQLITE_INT64_MAX:
+        result["count"] = count
+        result["error"] = "count_overflow"
+        return result
 
     valid_recent = []
     for value in raw_recent:
@@ -711,33 +1105,419 @@ def record_service_start(path, *, now=None, window_s=300.0, threshold=3,
         "starts_in_window": len(in_window),
         "restart_loop": len(in_window) >= threshold,
     })
+    pending_overflow = 0
+    if track_delivery:
+        mono = time.monotonic() if monotonic_now is None else monotonic_now
+        if not _finite_number(mono) or float(mono) < 0:
+            result["error"] = "invalid_monotonic_now"
+            return result
+        new_obligation = {
+            "count": count,
+            "started_at_epoch": float(now),
+            "started_at_monotonic": float(mono),
+            "starts_in_window": len(in_window),
+            "window_s": float(window_s),
+            "threshold": threshold,
+            "restart_loop": bool(result["restart_loop"]),
+            "service_restart_pending": True,
+            "service_restart_loop_pending": bool(result["restart_loop"]),
+        }
+        if len(pending_events) < max_pending:
+            pending_events.append(new_obligation)
+        else:
+            # Never evict an existing obligation: it may already carry exact
+            # rows accepted by one lane.  The new unrepresented start is
+            # surfaced as explicit bounded-store loss instead.
+            pending_overflow = 1
+            if delivery_overflow_count >= SQLITE_INT64_MAX:
+                result["error"] = "delivery_overflow_counter_saturated"
+                return result
+            delivery_overflow_count += 1
+    result["pending_delivery_overflow"] = delivery_overflow_count
+    result["pending_delivery_overflow_new"] = pending_overflow
+    if track_delivery:
+        result["pending_events"] = copy.deepcopy(pending_events)
 
-    directory = os.path.dirname(path) or "."
+    state = {
+        "count": count,
+        "last_start_epoch": float(now),
+        "recent": valid_recent,
+    }
+    if pending_events:
+        state["pending_events"] = pending_events
+    if delivery_overflow_count:
+        # This is a monotonic manual-reconciliation latch.  Clearing pending
+        # rows cannot erase proof that an earlier startup occurrence could not
+        # be represented in the bounded WAL.
+        state["delivery_overflow_count"] = delivery_overflow_count
+    if _write_service_start_state(
+            path, state, ".service_starts_"):
+        result["persisted"] = True
+    else:
+        result["error"] = "write_failed"
+    return result
+
+
+def prepare_service_start_deliveries(path, count, event_type, rows):
+    """Persist exact Track-A per-lane rows before any transport offer.
+
+    If a prior preparation already exists, its immutable rows win.  Returning
+    ``None`` means no row may be offered because durable preparation was not
+    proven.
+    """
+    pending_field = {
+        "service_restart": "service_restart_pending",
+        "service_restart_loop": "service_restart_loop_pending",
+    }.get(event_type)
+    delivery_field = _SERVICE_START_DELIVERY_FIELDS.get(event_type)
+    if (pending_field is None
+            or not isinstance(count, int) or isinstance(count, bool)
+            or not 0 < count <= SQLITE_INT64_MAX
+            or not isinstance(rows, list)):
+        return None
+    with _service_start_lock:
+        try:
+            state = _read_service_start_state(path)
+            pending = _validated_service_start_pending(state)
+            for item in pending:
+                if item["count"] != count:
+                    continue
+                if not item[pending_field]:
+                    return None
+                existing = item.get(delivery_field)
+                if existing is not None:
+                    return copy.deepcopy(existing)
+                if not _service_start_delivery_rows_valid(
+                        rows, event_type, item):
+                    return None
+                item[delivery_field] = copy.deepcopy(rows)
+                item[_SERVICE_START_DESTINATION_FIELDS[event_type]] = sorted(
+                    row["lane_id"] for row in rows)
+                item[_SERVICE_START_ACKED_FIELDS[event_type]] = []
+                if not _service_start_pending_item_valid(item):
+                    return None
+                if not _write_service_start_state(
+                        path, state, ".service_starts_prepare_"):
+                    return None
+                return copy.deepcopy(item[delivery_field])
+        except Exception:
+            return None
+    return None
+
+
+def read_service_start_pending(path):
+    """Return a validated copy of startup obligations, or ``None`` on defect."""
+    with _service_start_lock:
+        try:
+            state = _read_service_start_state(path)
+            return copy.deepcopy(_validated_service_start_pending(state))
+        except Exception:
+            return None
+
+
+def delivery_receipt_status(directory, row):
+    """Classify an exact prepared row in bounded local ``diag-*.jsonl``.
+
+    Identity-only matching is insufficient: if a corrupted/tampered row carries
+    the same delivery identity with a different payload, the server will dedupe
+    the intended row behind it.  Such a mismatch, any unreadable/corrupt line,
+    or a scan that exceeds the explicit bounds is therefore ``ambiguous`` or
+    ``mismatch`` and must block automatic acknowledgement.
+    """
+    if not isinstance(directory, str) or not isinstance(row, dict):
+        return DELIVERY_RECEIPT_AMBIGUOUS
+    try:
+        wanted = (row["source_id"], row["boot_id"], row["seq"])
+        if (
+                not isinstance(wanted[0], str) or not wanted[0]
+                or not isinstance(wanted[1], str) or not wanted[1]
+                or not isinstance(wanted[2], int)
+                or isinstance(wanted[2], bool)
+                or not 0 < wanted[2] <= SQLITE_INT64_MAX):
+            return DELIVERY_RECEIPT_AMBIGUOUS
+        entries = sorted(
+            (
+                entry for entry in os.scandir(directory)
+                if entry.is_file()
+                and entry.name.startswith("diag-")
+                and entry.name.endswith(".jsonl")
+            ),
+            key=lambda entry: entry.name,
+            reverse=True)
+    except FileNotFoundError:
+        return DELIVERY_RECEIPT_ABSENT
+    except Exception:
+        return DELIVERY_RECEIPT_AMBIGUOUS
+    if len(entries) > DELIVERY_RECEIPT_MAX_FILES:
+        return DELIVERY_RECEIPT_AMBIGUOUS
+
+    total_bytes = 0
+    total_lines = 0
+    found = False
+    for entry in entries:
+        try:
+            size = entry.stat().st_size
+            if size < 0:
+                return DELIVERY_RECEIPT_AMBIGUOUS
+            total_bytes += size
+            if total_bytes > DELIVERY_RECEIPT_MAX_BYTES:
+                return DELIVERY_RECEIPT_AMBIGUOUS
+            with open(entry.path, "rb") as handle:
+                while True:
+                    raw = handle.readline(DELIVERY_RECEIPT_MAX_LINE_BYTES + 2)
+                    if not raw:
+                        break
+                    total_lines += 1
+                    if (
+                            total_lines > DELIVERY_RECEIPT_MAX_LINES
+                            or len(raw) > DELIVERY_RECEIPT_MAX_LINE_BYTES
+                            or not raw.endswith(b"\n")):
+                        return DELIVERY_RECEIPT_AMBIGUOUS
+                    try:
+                        candidate = json.loads(
+                            raw.decode("utf-8"),
+                            parse_constant=lambda value: (
+                                _ for _ in ()).throw(ValueError(value)))
+                    except Exception:
+                        return DELIVERY_RECEIPT_AMBIGUOUS
+                    if not isinstance(candidate, dict):
+                        return DELIVERY_RECEIPT_AMBIGUOUS
+                    identity = (
+                        candidate.get("source_id"),
+                        candidate.get("boot_id"),
+                        candidate.get("seq"),
+                    )
+                    if identity != wanted:
+                        continue
+                    if candidate != row:
+                        return DELIVERY_RECEIPT_MISMATCH
+                    found = True
+        except Exception:
+            return DELIVERY_RECEIPT_AMBIGUOUS
+    return DELIVERY_RECEIPT_EXACT if found else DELIVERY_RECEIPT_ABSENT
+
+
+def acknowledge_service_start_lane(
+        path, count, event_type, lane, source_id, boot_id, seq):
+    """Durably acknowledge one exact Track-A lane row.
+
+    Other lanes and the other event family remain untouched.  The identity
+    comparison prevents a delayed receipt from clearing a newly prepared row.
+    """
+    pending_field = {
+        "service_restart": "service_restart_pending",
+        "service_restart_loop": "service_restart_loop_pending",
+    }.get(event_type)
+    delivery_field = _SERVICE_START_DELIVERY_FIELDS.get(event_type)
+    destination_field = _SERVICE_START_DESTINATION_FIELDS.get(event_type)
+    acked_field = _SERVICE_START_ACKED_FIELDS.get(event_type)
+    if (pending_field is None
+            or not isinstance(count, int) or isinstance(count, bool)
+            or not 0 < count <= SQLITE_INT64_MAX
+            or not isinstance(lane, int) or isinstance(lane, bool)
+            or not 1 <= lane <= SERVICE_START_MAX_LANES
+            or not isinstance(source_id, str)
+            or not 0 < len(source_id) <= 120
+            or not isinstance(boot_id, str)
+            or not 0 < len(boot_id) <= 80
+            or not isinstance(seq, int) or isinstance(seq, bool)
+            or not 0 < seq <= SQLITE_INT64_MAX):
+        return False
+    identity = (source_id, boot_id, seq)
+    with _service_start_lock:
+        try:
+            state = _read_service_start_state(path)
+            pending = _validated_service_start_pending(state)
+            found_count = False
+            changed = False
+            kept = []
+            for item in pending:
+                current = copy.deepcopy(item)
+                if current["count"] == count:
+                    found_count = True
+                    if not current[pending_field]:
+                        kept.append(current)
+                        continue
+                    deliveries = current.get(delivery_field)
+                    if deliveries is None:
+                        # A boolean obligation without a prepared WAL cannot
+                        # prove which concrete event was accepted.
+                        return False
+                    matching_lane = [
+                        row for row in deliveries
+                        if row["lane_id"] == lane]
+                    if not matching_lane:
+                        # The exact lane was already durably removed.
+                        kept.append(current)
+                        continue
+                    row = matching_lane[0]
+                    if (row["source_id"], row["boot_id"], row["seq"]) \
+                            != identity:
+                        return False
+                    remaining = [
+                        row for row in deliveries
+                        if row["lane_id"] != lane]
+                    if remaining:
+                        current[delivery_field] = remaining
+                        current[acked_field] = sorted(
+                            set(current.get(acked_field, [])) | {lane})
+                    else:
+                        current.pop(delivery_field, None)
+                        current.pop(destination_field, None)
+                        current.pop(acked_field, None)
+                        current[pending_field] = False
+                    changed = True
+                if (current["service_restart_pending"]
+                        or current["service_restart_loop_pending"]):
+                    kept.append(current)
+            if not found_count:
+                # The whole occurrence was already durably acknowledged.
+                return True
+            if not changed:
+                # Idempotent repeat after this lane's row was removed.
+                return True
+            for item in kept:
+                if not _service_start_pending_item_valid(item):
+                    return False
+            if kept:
+                state["pending_events"] = kept
+            else:
+                state.pop("pending_events", None)
+            return _write_service_start_state(
+                path, state, ".service_starts_lane_ack_")
+        except Exception:
+            return False
+
+
+def acknowledge_service_start_event(path, count, event_type):
+    """Durably clear one accepted startup-event obligation.
+
+    The start counter and its delivery obligations share one atomic state file,
+    so a restart cannot forget a rejected ``service_restart`` or
+    ``service_restart_loop`` occurrence.  Never raises; False leaves the
+    obligation intact for retry.
+    """
+    pending_field = {
+        "service_restart": "service_restart_pending",
+        "service_restart_loop": "service_restart_loop_pending",
+    }.get(event_type)
+    delivery_field = _SERVICE_START_DELIVERY_FIELDS.get(event_type)
+    if (pending_field is None
+            or not isinstance(count, int) or isinstance(count, bool)
+            or not 0 < count <= SQLITE_INT64_MAX):
+        return False
+    with _service_start_lock:
+        try:
+            state = _read_service_start_state(path)
+            pending = _validated_service_start_pending(state)
+            found = False
+            kept = []
+            for item in pending:
+                current = copy.deepcopy(item)
+                if current["count"] == count:
+                    found = True
+                    # Track-B owns one lane and uses the legacy whole-event
+                    # acknowledgement.  A Track-A per-lane WAL may never be
+                    # bypassed by this compatibility API.
+                    if current.get(delivery_field):
+                        return False
+                    current[pending_field] = False
+                if (current["service_restart_pending"]
+                        or current["service_restart_loop_pending"]):
+                    kept.append(current)
+            if not found:
+                # Idempotent acknowledgement: an already-cleared record is
+                # success.
+                return True
+            if kept:
+                state["pending_events"] = kept
+            else:
+                state.pop("pending_events", None)
+            return _write_service_start_state(
+                path, state, ".service_starts_ack_")
+        except Exception:
+            return False
+
+
+def write_delivery_ledger(path, payload):
+    """Atomically fsync a bounded diagnostics-delivery state document."""
+    if not isinstance(payload, dict):
+        return False
     tmp = None
     try:
+        encoded = json.dumps(
+            payload, allow_nan=False, sort_keys=True, separators=(",", ":"))
+        if (len(encoded.encode("utf-8")) > DELIVERY_LEDGER_MAX_BYTES
+                or not _delivery_ledger_shape_ok(payload)):
+            return False
+        directory = os.path.dirname(path) or "."
         os.makedirs(directory, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(prefix=".service_starts_", dir=directory)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({
-                "count": count,
-                "last_start_epoch": float(now),
-                "recent": valid_recent,
-            }, f, allow_nan=False, sort_keys=True)
-            f.flush()
-            os.fsync(f.fileno())
+        fd, tmp = tempfile.mkstemp(prefix=".diag_delivery_", dir=directory)
+        with os.fdopen(fd, "w", encoding="utf-8") as target:
+            target.write(encoded)
+            target.flush()
+            os.fsync(target.fileno())
         os.replace(tmp, path)
         tmp = None
         _fsync_parent_dir(path)
-        result["persisted"] = True
-    except Exception as exc:
-        result["error"] = f"write_failed:{type(exc).__name__}"
+        return True
+    except Exception:
+        return False
     finally:
         if tmp is not None:
             try:
                 os.remove(tmp)
             except OSError:
                 pass
-    return result
+
+
+def _delivery_ledger_shape_ok(payload):
+    """Reject pathological nesting/strings before a relay ledger is trusted."""
+    remaining = [DELIVERY_LEDGER_MAX_NODES]
+
+    def visit(value, depth):
+        remaining[0] -= 1
+        if remaining[0] < 0 or depth > DELIVERY_LEDGER_MAX_DEPTH:
+            return False
+        if isinstance(value, str):
+            return len(value) <= DELIVERY_LEDGER_MAX_STRING
+        if value is None or isinstance(value, (bool, int, float)):
+            return not isinstance(value, float) or math.isfinite(value)
+        if isinstance(value, list):
+            return all(visit(item, depth + 1) for item in value)
+        if isinstance(value, dict):
+            return all(
+                isinstance(key, str)
+                and len(key) <= DELIVERY_LEDGER_MAX_STRING
+                and visit(item, depth + 1)
+                for key, item in value.items())
+        return False
+
+    return visit(payload, 0)
+
+
+def read_delivery_ledger(path, *, version=1):
+    """Read one exact-version delivery ledger; return None on any defect."""
+    try:
+        if os.path.getsize(path) > DELIVERY_LEDGER_MAX_BYTES:
+            return None
+        with open(path, encoding="utf-8") as source:
+            encoded = source.read(DELIVERY_LEDGER_MAX_BYTES + 1)
+        if len(encoded.encode("utf-8")) > DELIVERY_LEDGER_MAX_BYTES:
+            return None
+        payload = json.loads(
+            encoded,
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError(f"invalid JSON constant {value}")))
+        if (not isinstance(payload, dict)
+                or payload.get("version") != version
+                or not _delivery_ledger_shape_ok(payload)):
+            return None
+        return payload
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return None
 
 
 def _snapshot_lanes(service, payload):
@@ -1031,13 +1811,21 @@ def plan_foreign_relay(item, state):
         return planned
 
     if previous_status in ("stale", "missing"):
-        planned.append({
-            "severity": "info",
-            "event_type": "recovered",
-            "code": "health_drop_stale",
-            "lanes": lanes,
-            "detail": base_detail,
-        })
+        # A process may have observed both missing and stale episodes before a
+        # fresh hand-off returns.  Offer exact-family clears for both possible
+        # codes; the delivery ledger stages only those with a causal alert.
+        for unavailable_status in ("missing", "stale"):
+            detail = dict(base_detail)
+            detail["recovered_event_type"] = "health_drop_stale"
+            detail["recovered_code"] = (
+                f"{service}:{unavailable_status}")
+            planned.append({
+                "severity": "info",
+                "event_type": "recovered",
+                "code": "health_drop_stale",
+                "lanes": lanes,
+                "detail": detail,
+            })
 
     current = {}
     for event in snapshot_fault_events(service, payload):

@@ -49,6 +49,7 @@ One-board bench rig (D3):         python controller_daemon.py --lanes 21   # or 
 """
 from __future__ import annotations
 import argparse
+import copy
 import hashlib
 import json
 import logging
@@ -63,20 +64,20 @@ import time
 import uuid
 from collections import deque
 from datetime import datetime, timezone
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cycle_control_8270 import CycleController, State, MOTION_STATES
 from controller_io import (
     FreshnessGuardIO, LinkFreshnessError, MachineIO, RecordingIO, ShadowIO,
-    require_positive_actuation_freshness)
+    in_b_map_for, require_positive_actuation_freshness)
 from rp2040_link import (
     HEARTBEAT_SCHEMA_FAULT, IDENTITY_MAX_RETRIES, REBOOT_FAULT, RP2040Link)
 from identity_evidence import ControllerOwnerLease, IdentityEvidenceStore
 from flight_recorder import FlightRecorder
 from cam_telemetry import CamTelemetry, CycleShipper
-from diag_events import (DiagWriter, HttpSink, make_event, stamp_delivery,
+from diag_events import (DiagEvent, DiagWriter, HttpSink, make_event, stamp_delivery,
                          SERVER_URL_ENV)
 import health_drop
 from health_drop import HEALTH_DROP_FILENAME, SERVICE_CONTROLLER, SERVICE_CAMERA
@@ -170,7 +171,8 @@ BALL_RETURN_S_ENV = "WSL_DIAG_BALL_RETURN_S"  # ball-return timeout (s)
 DIST_GAP_S_ENV = "WSL_DIAG_DIST_GAP_S"        # dist-index pulse gap during a cycle (s)
 PLATFORM_ENV = "WSL_DIAG_PLATFORM"            # platform-health background thread
 PLATFORM_POLL_S_ENV = "WSL_DIAG_PLATFORM_POLL_S"
-AUX_ROLES_ENV = "WSL_DIAG_AUX_ROLES"          # e.g. "aux1=be_current,aux2=exit_beam,aux3=dist_index"
+AUX_ROLES_ENV = "WSL_DIAG_AUX_ROLES"          # one-board compatibility only
+AUX_ROLES_LANE_ENV_PREFIX = "WSL_DIAG_AUX_ROLES_L"  # e.g. ..._L21
 # Codex round-2 (2026-07-21) knobs:
 BOARD_REVS_ENV = "WSL_BOARD_REVS"             # R2-6: EXPLICIT per-lane PCB rev, e.g. "revC" or "21=revC,22=revD"
 FW_BUILD_ALLOWLIST_ENV = "WSL_RP2040_BUILD_ALLOWLIST"
@@ -272,6 +274,10 @@ DEFAULT_BE_WINDOW_S = 60.0
 DEFAULT_BALL_RETURN_S = 45.0
 DEFAULT_DIST_GAP_S = 5.0
 DEFAULT_PLATFORM_POLL_S = 60.0
+FOREIGN_DELIVERY_LEDGER_FILENAME = "controller_foreign_delivery.json"
+FOREIGN_DELIVERY_LEDGER_VERSION = 1
+FOREIGN_RELAY_FUTURE_TOLERANCE_S = 300.0
+SQLITE_INT64_MAX = (1 << 63) - 1
 
 # Manual-override inputs (scope §1 mechanic-at-machine discrimination). MAN_* +
 # TENTH live on IN-B; PBC is on IN-A (netlist truth — see controller_io maps).
@@ -551,27 +557,189 @@ def _parse_aux_roles(spec):
                 f"AUX role {v.strip()!r} on {k.strip()!r} is not a known role "
                 f"(valid roles: {list(aux_roles_valid())}) — fix the typo or "
                 f"register the role; it will NOT be silently ignored")
+        if name in roles:
+            raise ValueError(
+                f"AUX channel {name} is configured more than once; every "
+                "channel must have exactly one role")
+        if role in roles.values():
+            prior = next(key for key, value in roles.items()
+                         if value == role)
+            raise ValueError(
+                f"AUX role {role!r} is configured on both {prior} and {name}; "
+                "each diagnostic role is a singleton per board")
         roles[name] = role
     return roles
 
 
-def _parse_board_revs(spec):
+def _aux_roles_for_lane(lane, environ=None):
+    """Resolve one board's AUX map, preferring its explicit lane override.
+
+    ``WSL_DIAG_AUX_ROLES`` remains a backward-compatible one-board bench
+    fallback. Multi-board services must use ``WSL_DIAG_AUX_ROLES_L<lane>`` so
+    pair-shared inputs such as ``exit_beam`` never appear on an unwired mate.
+    A present-but-blank lane variable explicitly leaves that board unmapped.
+    """
+    env = os.environ if environ is None else environ
+    lane_env = f"{AUX_ROLES_LANE_ENV_PREFIX}{int(lane)}"
+    spec = env.get(lane_env) if lane_env in env else env.get(AUX_ROLES_ENV)
+    return _parse_aux_roles(spec)
+
+
+def _validated_aux_role_map(roles, *, context):
+    """Validate programmatic role maps as strictly as environment maps."""
+    result = dict(roles or {})
+    valid_inputs = set(_AUX_KEY_TO_INPUT.values())
+    unknown_inputs = sorted(set(result) - valid_inputs)
+    if unknown_inputs:
+        raise ValueError(
+            f"{context} has unknown AUX input(s) {unknown_inputs}; valid "
+            f"inputs: {sorted(valid_inputs)}")
+    unknown_roles = sorted(set(result.values()) - set(AUX_ROLE_HANDLERS))
+    if unknown_roles:
+        raise ValueError(
+            f"{context} has unknown AUX role(s) {unknown_roles}; valid roles: "
+            f"{list(aux_roles_valid())}")
+    seen = {}
+    for name, role in result.items():
+        if role in seen:
+            raise ValueError(
+                f"{context} maps singleton role {role!r} on both "
+                f"{seen[role]} and {name}")
+        seen[role] = name
+    return result
+
+
+def _validate_aux_channels_for_revision(roles, *, lane, board_rev):
+    """Reject role channels absent from the declared PCB before hardware opens."""
+    in_b_map = in_b_map_for(board_rev)
+    unsupported = sorted(name for name in roles if name not in in_b_map)
+    if unsupported:
+        raise ValueError(
+            f"L{lane}: AUX role(s) on channel(s) {unsupported} are not "
+            f"carried by board_rev={board_rev!r} (IN-B map has "
+            f"{sorted(key for key in in_b_map if key.startswith('AUX'))})")
+
+
+def _validate_exit_beam_topology(configs):
+    """Permit zero or one source for the pair-shared exit photoeye."""
+    sources = [
+        (cfg.lane, name)
+        for cfg in configs
+        for name, role in (cfg.aux_roles or {}).items()
+        if role == "exit_beam"
+    ]
+    if len(sources) <= 1:
+        return
+    rendered = ", ".join(f"L{lane}:{name}" for lane, name in sources)
+    raise ValueError(
+        "exit_beam is one physical source per lane pair, but multiple AUX "
+        f"mappings were configured ({rendered}). Remove exit_beam from the "
+        f"shared {AUX_ROLES_ENV} fallback and map it on exactly one board via "
+        f"{AUX_ROLES_LANE_ENV_PREFIX}<lane>.")
+
+
+def _provision_aux_roles(configs, environ=None):
+    """Return copied configs with explicit, topology-validated per-board maps."""
+    env = os.environ if environ is None else environ
+    known_lanes = {int(cfg.lane) for cfg in configs}
+    try:
+        known_lanes.update(int(cfg.lane) for cfg in DEFAULT_BOARDS)
+    except NameError:  # helper unit tests can run before defaults are declared
+        pass
+    for key in env:
+        if not str(key).startswith(AUX_ROLES_LANE_ENV_PREFIX):
+            continue
+        suffix = str(key)[len(AUX_ROLES_LANE_ENV_PREFIX):]
+        if not suffix.isdigit():
+            raise ValueError(
+                f"malformed per-lane AUX variable {key!r}; expected "
+                f"{AUX_ROLES_LANE_ENV_PREFIX}<integer lane>")
+        lane = int(suffix)
+        canonical = f"{AUX_ROLES_LANE_ENV_PREFIX}{lane}"
+        if key != canonical or lane not in known_lanes:
+            raise ValueError(
+                f"unknown/noncanonical per-lane AUX variable {key!r}; "
+                f"known lanes are {sorted(known_lanes)}")
+    shared = env.get(AUX_ROLES_ENV)
+    if (len(configs) > 1 and shared is not None
+            and str(shared).strip()):
+        raise ValueError(
+            f"{AUX_ROLES_ENV} is an unscoped one-board compatibility setting "
+            "and cannot be used by a multi-board service. Configure each "
+            f"board explicitly with {AUX_ROLES_LANE_ENV_PREFIX}<lane>; this "
+            "prevents an unwired mate from becoming a false sensor source.")
+    if len(configs) > 1:
+        explicit_lanes = {
+            int(cfg.lane) for cfg in configs if cfg.aux_roles is not None
+        }
+        explicit_lanes.update(
+            int(cfg.lane) for cfg in configs
+            if f"{AUX_ROLES_LANE_ENV_PREFIX}{int(cfg.lane)}" in env
+        )
+        selected_lanes = {int(cfg.lane) for cfg in configs}
+        if explicit_lanes and explicit_lanes != selected_lanes:
+            missing = sorted(selected_lanes - explicit_lanes)
+            raise ValueError(
+                "partial per-board AUX provisioning is forbidden for a "
+                f"multi-board service; explicitly configure {missing} with "
+                f"{AUX_ROLES_LANE_ENV_PREFIX}<lane> (use an exact blank value "
+                "to declare an intentionally unmapped board)")
+    provisioned = []
+    for cfg in configs:
+        if cfg.aux_roles is not None:
+            roles = _validated_aux_role_map(
+                cfg.aux_roles, context=f"L{cfg.lane} BoardConfig.aux_roles")
+        else:
+            lane_env = f"{AUX_ROLES_LANE_ENV_PREFIX}{int(cfg.lane)}"
+            if lane_env in env:
+                roles = _parse_aux_roles(env.get(lane_env))
+            elif len(configs) > 1:
+                roles = {}
+            else:
+                roles = _aux_roles_for_lane(cfg.lane, env)
+        if cfg.board_rev:
+            _validate_aux_channels_for_revision(
+                roles, lane=cfg.lane, board_rev=cfg.board_rev)
+        provisioned.append(replace(cfg, aux_roles=roles))
+    _validate_exit_beam_topology(provisioned)
+    return provisioned
+
+
+def _parse_board_revs(spec, *, known_lanes=None):
     """R2-6: parse WSL_BOARD_REVS / --board-revs. Accepts a single rev for
     every lane ('revC') or per-lane pairs ('21=revC,22=revD'). Returns
     (default_rev_or_None, {lane: rev}). Raises ValueError on garbage —
     a typo must never silently run a board with the wrong channel map."""
     default = None
     per_lane = {}
+    allowed_lanes = None if known_lanes is None \
+        else {int(lane) for lane in known_lanes}
     if spec is None or not str(spec).strip():
         return None, {}
     for tok in str(spec).replace(",", " ").split():
         if "=" in tok:
             lane_s, rev = tok.split("=", 1)
-            per_lane[int(lane_s)] = rev.strip()
+            if (not lane_s.isdecimal()
+                    or str(int(lane_s)) != lane_s
+                    or not 1 <= int(lane_s) <= 32):
+                raise ValueError(
+                    f"invalid/noncanonical lane in board-rev token {tok!r}")
+            lane = int(lane_s)
+            if allowed_lanes is not None and lane not in allowed_lanes:
+                raise ValueError(
+                    f"board-rev token {tok!r} names unselected/unknown lane "
+                    f"{lane}; selected lanes are {sorted(allowed_lanes)}")
+            if lane in per_lane:
+                raise ValueError(
+                    f"duplicate board-rev assignment for lane {lane}")
+            rev = rev.strip()
+            in_b_map_for(rev)
+            per_lane[lane] = rev
         else:
             if default is not None:
                 raise ValueError(f"multiple default revs in {spec!r}")
             default = tok.strip()
+            in_b_map_for(default)
     return default, per_lane
 
 
@@ -749,9 +917,10 @@ class BoardConfig:
     wdog_pin: int       # Pi BCM GPIO -> this board's NE555 watchdog kick
     # AUX sensor role map for the diagnostics rules ({'AUX1': 'be_current',
     # 'AUX2': 'exit_beam', 'AUX3': 'dist_index'; rev-D boards add AUX4-11}).
-    # None -> the WSL_DIAG_AUX_ROLES env applies. Sensors are NOT installed
-    # yet, so the shipped default is UNMAPPED and every AUX rule stays dormant
-    # (scope §4 shortlist lands here).
+    # None -> the lane-specific WSL_DIAG_AUX_ROLES_L<lane> env applies; the
+    # unscoped WSL_DIAG_AUX_ROLES fallback is accepted only for one-board bench
+    # use. Sensors are NOT installed yet, so the shipped default is UNMAPPED
+    # and every AUX rule stays dormant (scope §4 shortlist lands here).
     aux_roles: dict = field(default=None)
     # PCB revision driving this lane — selects the IN-B channel map
     # (controller_io.IN_B_MAPS): rev-B/C = 8 GPA channels; rev-D adds the
@@ -837,57 +1006,177 @@ class BallReturnTracker:
         self.returned_total = {l: 0 for l in self.lanes}
         self._transit_ewma = None   # learned typical throw->return transit (s)
         self._emitters = {}     # lane -> callable(detail_dict, t)
-        # Exit-beam source availability. UNKNOWN/unavailable pauses the
-        # logical timeout clock; a dead/missing input bank must never age
-        # pending balls into fabricated return faults.
+        self._clearers = {}     # lane -> callable() for pending-delivery cancel
+        # Exit-beam source availability. UNKNOWN invalidates every active
+        # absence episode: a ball may return unseen, so no pending timer or
+        # attribution evidence may survive the blind interval.
         self._sources = {}          # source lane -> None/True/False
+        # Each lane's RP2040 ball edge is also an attribution source.  A blind
+        # launch source can hide a ball whose late exit pulse would otherwise
+        # consume the first legitimate post-recovery pending ball.
+        self._ball_sources = {}     # lane -> None/True/False
+        self._rules_enabled = True
         self._pause_since = None
+        self._blind_activity = False
+        # After a real outage, ignore both balls and exit pulses for one full
+        # return timeout. This drains a ball that was launched while blind so a
+        # late return cannot be misattributed to the first post-recovery ball.
+        self._quarantine_until = None
 
-    def register(self, lane, emit_fn):
+    def register(self, lane, emit_fn, clear_fn=None):
         self._emitters[lane] = emit_fn
+        if clear_fn is not None:
+            self._clearers[lane] = clear_fn
 
     def register_source(self, lane):
         """Declare a lane board that carries the pair's exit-beam input."""
         with self._lock:
-            self._sources.setdefault(lane, None)
+            if lane not in self._sources and self._sources:
+                raise ValueError(
+                    "BallReturnTracker accepts exactly one pair-shared "
+                    f"exit_beam source; already registered "
+                    f"{sorted(self._sources)}, refused L{lane}")
+            if lane not in self._sources:
+                was_paused = self._is_paused_locked()
+                self._sources[lane] = None
+                if not was_paused:
+                    # Registration changes a legacy unsupervised tracker into
+                    # UNKNOWN. There is no timestamp yet, but pending evidence
+                    # still cannot cross that boundary.
+                    self._discard_unverifiable_locked()
+                    self._quarantine_until = None
+
+    def register_ball_source(self, lane):
+        """Declare one lane's RP2040 ball-event observation source."""
+        with self._lock:
+            if lane not in self._pending:
+                raise ValueError(
+                    f"BallReturnTracker has no tracked lane L{lane}")
+            if lane not in self._ball_sources:
+                was_paused = self._is_paused_locked()
+                self._ball_sources[lane] = None
+                if not was_paused:
+                    self._discard_unverifiable_locked()
+                    self._quarantine_until = None
+
+    def _is_paused_locked(self):
+        return (not self._rules_enabled
+                or (bool(self._sources)
+                    and any(v is not True for v in self._sources.values()))
+                or (bool(self._ball_sources)
+                    and any(v is not True
+                            for v in self._ball_sources.values())))
+
+    def _discard_unverifiable_locked(self):
+        for dq in self._pending.values():
+            dq.clear()
+        for tracked_lane in self.lanes:
+            self._last_return[tracked_lane] = None
+            self._last_missing[tracked_lane] = None
+            self._warned[tracked_lane] = False
+            # Do not clear a retained timeout incident here. The timed-out ball
+            # was already conclusively missing before this later blind
+            # boundary. A real successful return still invokes the clearer in
+            # on_exit_pulse() and may cancel a not-yet-delivered old warning.
+        self._transit_ewma = None
+
+    def _enter_blind_locked(self, t):
+        if self._pause_since is None:
+            self._pause_since = t
+        self._blind_activity = True
+        self._quarantine_until = None
+        self._discard_unverifiable_locked()
+
+    def _recover_locked(self, t):
+        # A confirmed outage, a dynamic rule-gate pause, or even one observed
+        # ball/pulse while startup state was UNKNOWN can leave an old ball in
+        # flight. Drain one full return window before accepting new evidence.
+        if self._pause_since is not None or self._blind_activity:
+            self._quarantine_until = t + self.timeout_s
+        self._pause_since = None
+        self._blind_activity = False
 
     def set_source_available(self, lane, available, t):
-        """Set one exit-beam source's state and pause/resume logical time."""
+        """Set source state; blindness quarantines unverifiable absence data."""
         with self._lock:
             if lane not in self._sources:
                 return
-            was_paused = (not self._sources
-                          or any(v is not True for v in self._sources.values()))
+            was_paused = self._is_paused_locked()
             self._sources[lane] = bool(available)
-            is_paused = any(v is not True for v in self._sources.values())
-            if is_paused and not was_paused:
-                self._pause_since = t
-            elif not is_paused and was_paused:
-                # On first-ever availability there is no outage interval to
-                # account for. Subsequent recovery shifts every time anchor so
-                # timeout/attribution math excludes the unreadable interval.
-                if self._pause_since is not None:
-                    dt = max(0.0, t - self._pause_since)
-                    for dq in self._pending.values():
-                        for i in range(len(dq)):
-                            dq[i] += dt
-                    for state in (self._last_return, self._last_missing):
-                        for key, value in state.items():
-                            if value is not None:
-                                state[key] = value + dt
-                self._pause_since = None
+            is_paused = self._is_paused_locked()
+            if is_paused:
+                # The first explicit False sample is a real outage even though
+                # the registered source was already UNKNOWN.
+                if not was_paused or (not available
+                                      and self._pause_since is None):
+                    self._enter_blind_locked(t)
+            elif was_paused:
+                self._recover_locked(t)
+
+    def set_ball_source_available(self, lane, available, t):
+        """Set one lane's ball-edge observability for pair attribution."""
+        with self._lock:
+            if lane not in self._ball_sources:
+                return
+            was_paused = self._is_paused_locked()
+            self._ball_sources[lane] = bool(available)
+            is_paused = self._is_paused_locked()
+            if is_paused:
+                if not was_paused or (not available
+                                      and self._pause_since is None):
+                    self._enter_blind_locked(t)
+            elif was_paused:
+                self._recover_locked(t)
+
+    def note_unverifiable_ball(self, t):
+        """Drain attribution after a ball edge is intentionally discarded."""
+        with self._lock:
+            self._discard_unverifiable_locked()
+            if self._is_paused_locked():
+                self._enter_blind_locked(t)
+                return
+            # The edge itself proves a potentially in-flight ball even though
+            # both sources are currently healthy.  Ignore pair balls/pulses for
+            # one complete transit timeout so its late return cannot steal a
+            # post-inhibit pending ball.
+            until = t + self.timeout_s
+            self._quarantine_until = max(
+                self._quarantine_until or until, until)
+
+    def set_enabled(self, enabled, t):
+        """Dynamically gate tracking without carrying evidence across silence."""
+        with self._lock:
+            was_paused = self._is_paused_locked()
+            self._rules_enabled = bool(enabled)
+            is_paused = self._is_paused_locked()
+            if is_paused:
+                if not was_paused or (not enabled
+                                      and self._pause_since is None):
+                    self._enter_blind_locked(t)
+            elif was_paused:
+                self._recover_locked(t)
+
+    def _source_observable(self, t):
+        return (
+            not self._is_paused_locked()
+            and (self._quarantine_until is None
+                 or t >= self._quarantine_until)
+        )
 
     def on_ball(self, lane, t):
         with self._lock:
-            # A ball observed while the exit-photoeye source is UNKNOWN may
-            # return unseen.  Do not turn that blind interval into a fabricated
-            # missing-ball timer; the source/supply fault is the evidence.
-            if self._sources and any(v is not True
-                                     for v in self._sources.values()):
-                return
+            # A ball observed while the source is UNKNOWN or draining an outage
+            # may return without defensible attribution. The source/supply
+            # fault is the only evidence for that interval.
+            if not self._source_observable(t):
+                if self._is_paused_locked():
+                    self._enter_blind_locked(t)
+                return False
             dq = self._pending.get(lane)
             if dq is not None:
                 dq.append(t)
+                return True
+            return False
 
     def on_exit_pulse(self, t):
         """One exit-beam pulse = one ball back; a stray pulse with nothing
@@ -905,9 +1194,11 @@ class BallReturnTracker:
         of silently absorbing the pair-mate's returns. Per-lane order stays
         FIFO. Attribution is still a heuristic (catalog §1.2: component
         attribution is human)."""
+        clear = None
         with self._lock:
-            if self._sources and any(v is not True
-                                     for v in self._sources.values()):
+            if not self._source_observable(t):
+                if self._is_paused_locked():
+                    self._enter_blind_locked(t)
                 return
             best = None      # (key, lane, age) — smallest key wins
             for lane in self.lanes:
@@ -930,6 +1221,12 @@ class BallReturnTracker:
             self._last_return[lane] = t
             self.returned_total[lane] += 1
             self._warned[lane] = False   # healthy again -> re-arm the alert
+            clear = self._clearers.get(lane)
+        if clear is not None:
+            try:
+                clear()
+            except Exception:
+                log.debug("BallReturnTracker clearer swallowed", exc_info=True)
 
     def poll(self, t):
         """Expire overdue pending balls; fire ONE 'ball_return_missing' alert per
@@ -937,8 +1234,7 @@ class BallReturnTracker:
         fired = []
         try:
             with self._lock:
-                if self._sources and any(v is not True
-                                         for v in self._sources.values()):
+                if not self._source_observable(t):
                     return fired
                 for lane in self.lanes:
                     dq = self._pending[lane]
@@ -1020,18 +1316,44 @@ class LaneDiag:
         self._manual_episode_start = None
         self._manual_last_seen = None    # t of the last tick with manual activity
         self._manual_cap_warned = False
+        self._manual_rearm_required = False
+        # Bounded retry set for persistent rule conditions.  A nonblocking
+        # writer rejection must not permanently consume a once-per-episode
+        # latch, and a warn downgraded during mechanic suppression must be
+        # reasserted if the condition still exists when suppression ends.
+        self._pending_alerts = {}
+        self._pending_alerts_max = 64
+        self._event_attempts = set()
+        self._rule_gate_states = {
+            MANUAL_RULE_ENV: None,
+            STUCK_RULE_ENV: None,
+            BEAM_RULE_ENV: None,
+        }
         self._last_activity = None       # t of the last FSM transition (any)
         self._cycle_start_t = None
         self._be_deadline = None         # be_no_current window end
         self._be_quiet_warned = False
         self._be_stuck_warned = False
+        self._be_cycle_invalidated = \
+            "be_current" in self.aux_roles.values()
         self._dist_last_pulse = None
         self._dist_warned_cycle = False
-        # One union-of-unavailability clock for the distributor observation.
+        # One union-of-unavailability episode for the distributor observation.
         # Bank UNKNOWN, FIELD_WET loss, and external sensor-24V loss may
-        # overlap; a single state prevents additive/conditional timer shifts.
+        # overlap; active absence evidence is invalidated once at entry.
         self._dist_source_available = None
         self._dist_pause_since = None
+        self._exit_source_available = None
+        self._invalidated_pulse_cycles = {
+            role for role in self.aux_roles.values()
+            if role in ("exit_beam", "dist_index")
+        }
+        self._pulse_seen_since_completion = set()
+        # FSM transitions precede this tick's IN-B read. Defer absence claims
+        # until poll() has current availability and pulse evidence.
+        self._pending_cycle_completions = deque(maxlen=16)
+        self._aux_rules_suspended = False
+        self._all_rules_suspended = False
         # R2-16 field_wet_ok loopback role (AUX11 jumper = harness item; the
         # software side lands now and stays dormant until the role is mapped)
         self._field_wet_input = next(
@@ -1054,10 +1376,13 @@ class LaneDiag:
         self._stale_warned = set()
         self._role_missing_warned = set()
         # A configured AUX role is UNKNOWN until its first actual bank sample.
-        # Per-role outage anchors let recovery pause, rather than consume,
-        # diagnostic timer budgets.
+        # Per-role outage anchors support recovery evidence. Absence-based
+        # timers/counters are invalidated on entry, never resumed after a blind
+        # interval in which the missing event may actually have happened.
         self._aux_unavailable = set(self.aux_roles)
         self._aux_unknown_since = {}
+        self._inb_known_names = set()
+        self._diell_known_names = set()
 
     # ---- emission (enqueue-only; suppression-aware) ------------------------
     _SUPPRESSIBLE_WARN_TYPES = {
@@ -1065,14 +1390,33 @@ class LaneDiag:
         "stuck_input", "unexpected_edge",
     }
 
-    def emit_event(self, severity, event_type, code=None, detail=None, *, t=None):
+    def emit_event(self, severity, event_type, code=None, detail=None, *, t=None,
+                   persistent=False, retain_across_blind=False):
         """Build + enqueue one DiagEvent. Never blocks, never raises; returns
         True only if the event reached the writer queue."""
-        if not _env_on(DIAG_EVENTS_ENV):
-            return False
+        if t is None:
+            t = time.monotonic()
+        original_severity = severity
+        original_detail = dict(detail or {})
+        key = (event_type, code or "")
+        gate_active = _env_on(DIAG_EVENTS_ENV)
+        original_event = None
         try:
-            if t is None:
-                t = time.monotonic()
+            original_event = make_event(
+                self.lane, original_severity, event_type,
+                code=code, detail=original_detail)
+            if not gate_active:
+                # The master gate suppresses immediate delivery. Current-state
+                # rules are discarded and must be re-proven after the blind
+                # interval; immutable incidents explicitly marked for retention
+                # wait in the bounded retry store with their occurrence stamp.
+                if persistent and retain_across_blind:
+                    self._retain_pending_alert(
+                        key, original_event, t, reason="gated",
+                        retain_across_blind=True)
+                return False
+            self._event_attempts.add(key)
+            suppressed = False
             if (severity == "warn"
                     and event_type in self._SUPPRESSIBLE_WARN_TYPES
                     and self.suppress_until and t < self.suppress_until):
@@ -1080,18 +1424,210 @@ class LaneDiag:
                 detail["suppressed"] = True
                 detail["orig_severity"] = severity
                 severity = "info"
+                suppressed = True
                 self.suppressed_count += 1
                 log.info("L%s: ALERT SUPPRESSED (mechanic window): %s %s",
                          self.lane, event_type, code or "")
-            ev = make_event(self.lane, severity, event_type, code=code,
-                            detail=detail)
+            if persistent and key in self._pending_alerts:
+                prior_reason = self._pending_alerts[key].get(
+                    "reason", "dropped")
+                self._retain_pending_alert(
+                    key, original_event, t,
+                    reason="suppressed" if suppressed else prior_reason,
+                    retain_across_blind=retain_across_blind)
+                if suppressed:
+                    return False
+                pending = self._pending_alerts[key]
+                pending["next_retry"] = min(pending["next_retry"], t)
+                return self._attempt_pending_delivery(key, pending, t)
+            ev = original_event
+            if suppressed:
+                ev = DiagEvent(
+                    original_event.ts_utc, original_event.ts_mono,
+                    original_event.lane_id, severity,
+                    original_event.event_type, code=original_event.code,
+                    detail=detail)
             self.emitted += 1
+            accepted = False
             if self._writer is not None:
-                return bool(self._writer.emit(ev))
-            return False
+                accepted = bool(self._writer.emit(ev))
+            if persistent:
+                if suppressed or not accepted:
+                    self._retain_pending_alert(
+                        key, original_event, t,
+                        reason="suppressed" if suppressed else "dropped",
+                        retain_across_blind=retain_across_blind)
+                else:
+                    self._pending_alerts.pop(key, None)
+            return accepted
         except Exception:
             self.drops += 1
+            if persistent:
+                try:
+                    if original_event is None:
+                        original_event = make_event(
+                            self.lane, original_severity, event_type,
+                            code=code, detail=original_detail)
+                    self._retain_pending_alert(
+                        key, original_event, t, reason="dropped",
+                        retain_across_blind=retain_across_blind)
+                except Exception:
+                    pass
             return False
+
+    @staticmethod
+    def _pending_priority(event, retain_across_blind):
+        # Severity is the primary ordering.  Retention across a blind interval
+        # is only a tie-breaker within one severity: an informational incident
+        # must never evict an active warning/fault whose once-per-episode latch
+        # has already advanced after the writer rejected it.
+        severity_rank = {"info": 0, "warn": 2, "fault": 4}
+        return severity_rank.get(event.severity, 0) + int(
+            bool(retain_across_blind))
+
+    def _retain_pending_alert(self, key, event, t, *, reason,
+                              retain_across_blind=False):
+        priority = self._pending_priority(event, retain_across_blind)
+        if key not in self._pending_alerts \
+                and len(self._pending_alerts) >= self._pending_alerts_max:
+            # Never let a flood of lower-priority telemetry evict an active
+            # warning/fault. Evict only the oldest minimum-priority entry when
+            # the new record is strictly more important; equal/lower arrivals
+            # are dropped while the older incident remains recoverable.
+            minimum = min(
+                pending.get("priority", 0)
+                for pending in self._pending_alerts.values())
+            if priority <= minimum:
+                self.drops += 1
+                return
+            victim = next(
+                existing_key
+                for existing_key, pending in self._pending_alerts.items()
+                if pending.get("priority", 0) == minimum)
+            self._pending_alerts.pop(victim, None)
+        prior = self._pending_alerts.get(key)
+        retries = int((prior or {}).get("retries", 0))
+        self._pending_alerts[key] = {
+            "event": (prior or {}).get("event", event),
+            "latest_event": event,
+            "occurrence_count": int(
+                (prior or {}).get("occurrence_count", 0)) + 1,
+            "reason": reason,
+            "was_suppressed": bool(
+                reason == "suppressed"
+                or (prior or {}).get("was_suppressed", False)),
+            "retries": retries,
+            "next_retry": (
+                t if reason in ("suppressed", "gated") else t + 0.25),
+            "priority": max(priority, int((prior or {}).get("priority", 0))),
+            # Current-condition warnings are canceled at blind boundaries and
+            # re-proven from fresh evidence. One-shot trip/record incidents
+            # were already observed and must merely pause until the gate opens.
+            "retain_across_blind": bool(
+                retain_across_blind
+                or (prior or {}).get("retain_across_blind", False)),
+        }
+
+    def _cancel_pending_alert(self, event_type, code):
+        key = (event_type, code or "")
+        self._pending_alerts.pop(key, None)
+
+    def _cancel_pending_alert_types(self, event_types=None):
+        allowed = set(event_types) if event_types is not None else None
+        for key in list(self._pending_alerts):
+            if allowed is None or key[0] in allowed:
+                self._pending_alerts.pop(key, None)
+
+    def cancel_pending_event_type(self, event_type, *, preserve_codes=()):
+        preserved = {code or "" for code in preserve_codes}
+        for key in list(self._pending_alerts):
+            if key[0] == event_type and key[1] not in preserved:
+                self._pending_alerts.pop(key, None)
+
+    def start_event_generation(self):
+        self._event_attempts.clear()
+
+    def event_attempted(self, event_type, code=None):
+        if code is None:
+            return any(key[0] == event_type for key in self._event_attempts)
+        return (event_type, code or "") in self._event_attempts
+
+    def _attempt_pending_delivery(self, key, pending, t):
+        first = pending["event"]
+        latest = pending.get("latest_event", first)
+        detail = dict(latest.detail)
+        occurrences = int(pending.get("occurrence_count", 1))
+        if occurrences > 1:
+            detail["occurrence_count"] = occurrences
+            detail["first_occurrence_detail"] = dict(first.detail)
+            detail["last_occurrence_ts_utc"] = latest.ts_utc
+            detail["last_occurrence_ts_mono"] = latest.ts_mono
+        detail["retry_after_suppression"] = bool(
+            pending.get("was_suppressed", False))
+        detail["delivery_retry"] = pending["retries"] + 1
+        retry_event = DiagEvent(
+            first.ts_utc, first.ts_mono, first.lane_id,
+            first.severity, first.event_type, code=first.code,
+            detail=detail)
+        accepted = False
+        try:
+            self.emitted += 1
+            self._event_attempts.add(key)
+            if self._writer is not None:
+                accepted = bool(self._writer.emit(retry_event))
+        except Exception:
+            self.drops += 1
+        if accepted:
+            self._pending_alerts.pop(key, None)
+            return True
+        pending["reason"] = "dropped"
+        pending["retries"] += 1
+        pending["next_retry"] = t + min(
+            30.0, 0.25 * (2 ** min(pending["retries"], 7)))
+        return False
+
+    def _retry_pending_alerts(self, t, *, include_suppressible=True):
+        """Retry bounded persistent alerts without blocking or per-tick floods."""
+        if not _env_on(DIAG_EVENTS_ENV):
+            return
+        for key, pending in list(self._pending_alerts.items()):
+            event = pending["event"]
+            suppressible = (
+                event.severity == "warn"
+                and event.event_type in self._SUPPRESSIBLE_WARN_TYPES
+            )
+            if suppressible and not include_suppressible:
+                continue
+            if t < pending["next_retry"]:
+                continue
+            if (suppressible
+                    and self.suppress_until and t < self.suppress_until):
+                continue
+            self._attempt_pending_delivery(key, pending, t)
+
+    def pump_pending_delivery(self, t=None, *, force=False):
+        """Boundedly retry retained events without evaluating sensor rules.
+
+        Failed boards no longer execute ``poll()``, but their final safety trip
+        still has to survive a momentarily full writer queue. The daemon loop
+        calls this one-pass pump while a mate remains live and during bounded
+        shutdown draining. It never blocks and never synthesizes observations.
+        """
+        try:
+            if t is None:
+                t = time.monotonic()
+            if force:
+                for pending in self._pending_alerts.values():
+                    pending["next_retry"] = min(pending["next_retry"], t)
+            self._retry_pending_alerts(t)
+        except Exception:
+            self.drops += 1
+            log.debug("L%s pending-delivery pump swallowed",
+                      self.lane, exc_info=True)
+        return len(self._pending_alerts)
+
+    def pending_alert_count(self):
+        return len(self._pending_alerts)
 
     # ---- hooks from the board controller ----------------------------------
     def set_ball_tracker(self, tracker):
@@ -1100,54 +1636,346 @@ class LaneDiag:
             self.lane,
             lambda detail, t: self.emit_event(
                 "warn", "ball_return_missing", code="exit_beam",
-                detail=detail, t=t))
+                detail=detail, t=t, persistent=True,
+                retain_across_blind=True))
         if "exit_beam" in self.aux_roles.values():
             tracker.register_source(self.lane)
+
+    def mark_board_unavailable(self, t):
+        """Invalidate board-derived evidence when its control tick cannot run."""
+        try:
+            for name, role in self.aux_roles.items():
+                self._aux_unavailable.add(name)
+                self._aux_unknown_since.setdefault(name, t)
+                self._prev_levels.pop(name, None)
+                self._assert_since.pop(name, None)
+                self._invalidate_aux_absence(role)
+            self._pending_cycle_completions.clear()
+            self._cycle_start_t = None
+            self._dist_last_pulse = None
+            self._dist_warned_cycle = False
+            self._invalidate_field_observation()
+            if self.ball_tracker is not None:
+                self.ball_tracker.set_ball_source_available(
+                    self.lane, False, t)
+            if "exit_beam" in self.aux_roles.values():
+                self._exit_source_available = False
+                if self.ball_tracker is not None:
+                    self.ball_tracker.set_source_available(
+                        self.lane, False, t)
+            if "dist_index" in self.aux_roles.values():
+                self._dist_source_available = False
+                if self._dist_pause_since is None:
+                    self._dist_pause_since = t
+        except Exception:
+            self.drops += 1
+            log.debug("L%s mark_board_unavailable swallowed",
+                      self.lane, exc_info=True)
+
+    def rebaseline_input_generation(self, t):
+        """Forget input edge/hold evidence without declaring a sensor outage."""
+        try:
+            self._invalidate_field_observation()
+            self._diell_known_names.clear()
+            self._cancel_pending_alert_types({
+                "stuck_input", "beam_blocked", "stale_channel",
+                "be_no_current", "be_stuck_running", "dist_index_stall",
+            })
+        except Exception:
+            self.drops += 1
+            log.debug("L%s rebaseline_input_generation swallowed",
+                      self.lane, exc_info=True)
+
+    def rebaseline_inputs(self, names, t):
+        """Forget only selected shared-input consumers at a rule-gate change."""
+        try:
+            for name in set(names):
+                self._prev_levels.pop(name, None)
+                self._assert_since.pop(name, None)
+                self._stuck_warned.discard(name)
+                self._beam_warned.discard(name)
+                self._manual_counts.pop(name, None)
+                self._cancel_pending_alert(
+                    "stuck_input", f"input:{name}")
+                self._cancel_pending_alert(
+                    "beam_blocked", f"diell:{name}")
+                if name in MANUAL_INPUT_NAMES:
+                    self._manual_rearm_required = True
+                role = self.aux_roles.get(name)
+                if role is not None:
+                    self._invalidate_aux_absence(role)
+        except Exception:
+            self.drops += 1
+            log.debug("L%s rebaseline_inputs swallowed",
+                      self.lane, exc_info=True)
 
     def note_activity(self, t):
         """Any FSM transition = cycle activity (feeds the BE stuck-running rule)."""
         self._last_activity = t
+        self._cancel_pending_alert(
+            "be_stuck_running", "aux:be_current")
 
     def on_ball(self, t):
         """A cycle started (ball event)."""
+        if (not _env_on(DIAG_EVENTS_ENV)
+                or not _env_on(AUX_RULE_ENV)
+                or self._aux_rules_suspended):
+            self._suspend_aux_rules(t)
+            return
         # A cycle starting while its supply-backed index sensor is blind has no
         # defensible timer anchor. Skip that one diagnostic episode.
-        self._cycle_start_t = (
-            None if not self._dist_source_is_available() else t)
+        if self._be_source_is_available():
+            self._be_cycle_invalidated = False
+        dist_available = self._dist_source_is_available()
+        self._cycle_start_t = t if dist_available else None
+        if dist_available:
+            self._invalidated_pulse_cycles.discard("dist_index")
+            for name, role in self.aux_roles.items():
+                if role == "dist_index":
+                    self._pulse_seen_since_completion.discard(name)
         self._dist_warned_cycle = False
+        self._cancel_pending_alert(
+            "dist_index_stall", "aux:dist_index")
         if self.ball_tracker is not None:
-            self.ball_tracker.on_ball(self.lane, t)
+            if self.ball_tracker.on_ball(self.lane, t):
+                self._invalidated_pulse_cycles.discard("exit_beam")
+                for name, role in self.aux_roles.items():
+                    if role == "exit_beam":
+                        self._pulse_seen_since_completion.discard(name)
+        elif self._exit_source_is_available():
+            self._invalidated_pulse_cycles.discard("exit_beam")
+            for name, role in self.aux_roles.items():
+                if role == "exit_beam":
+                    self._pulse_seen_since_completion.discard(name)
 
     def note_cycle_complete(self, t):
-        """Cycle finished -> READY. Opens the be_no_current watch window (the
-        intentional ~30 s post-cycle BE run should show current inside it) and
-        advances the stale-channel counters (R2-12): a pulse-role channel
-        (exit_beam / dist_index) that stays silent while cycles keep completing
-        is a dead sensor, wire, or opto — not a quiet machine."""
+        """Queue READY completion until this tick's diagnostic sample is known.
+
+        Production observes FSM transitions before reading IN-B. Deferral keeps
+        a completion from creating BE/stale evidence just before the same tick
+        discovers a bank or supply outage, and lets a same-tick pulse count.
+        """
+        self._cycle_start_t = None
+        self._cancel_pending_alert(
+            "dist_index_stall", "aux:dist_index")
+        if (not _env_on(DIAG_EVENTS_ENV)
+                or not _env_on(AUX_RULE_ENV)
+                or self._aux_rules_suspended):
+            self._suspend_aux_rules(t)
+            return
+        self._pending_cycle_completions.append(t)
+
+    def _resolve_cycle_completion(self, completion_t):
+        """Create only absence claims proven by the current observed sample."""
+        if ("be_current" in self.aux_roles.values()
+                and self._be_source_is_available()
+                and not self._be_cycle_invalidated):
+            names = [name for name, role in self.aux_roles.items()
+                     if role == "be_current"]
+            if (not self._be_quiet_warned
+                    and self._be_deadline is None
+                    and not any(self._prev_levels.get(name, False)
+                                for name in names)):
+                self._be_deadline = completion_t + _env_float(
+                    BE_WINDOW_S_ENV, DEFAULT_BE_WINDOW_S)
         if "be_current" in self.aux_roles.values():
-            self._be_deadline = t + _env_float(BE_WINDOW_S_ENV, DEFAULT_BE_WINDOW_S)
+            self._be_cycle_invalidated = True
         thr = int(_env_float(STALE_CYCLES_ENV, DEFAULT_STALE_CYCLES))
         for name, role in self.aux_roles.items():
             if role not in ("exit_beam", "dist_index"):
                 continue
             if (name in self._aux_unavailable
-                    or self._sensor_24v_blocks(role)):
+                    or self._sensor_24v_blocks(role)
+                    or role in self._invalidated_pulse_cycles):
+                self._pulse_seen_since_completion.discard(name)
+                continue
+            if name in self._pulse_seen_since_completion:
+                self._cycles_since_pulse[name] = 0
+                self._pulse_seen_since_completion.discard(name)
                 continue
             n = self._cycles_since_pulse.get(name, 0) + 1
             self._cycles_since_pulse[name] = n
             if thr > 0 and n >= thr and name not in self._stale_warned:
                 self._stale_warned.add(name)
-                self.emit_event("warn", "stale_channel", code=f"aux:{name}",
-                                detail={"input": name, "role": role,
-                                        "cycles_without_pulse": n,
-                                        "threshold": thr}, t=t)
+                self.emit_event(
+                    "warn", "stale_channel", code=f"aux:{name}",
+                    detail={"input": name, "role": role,
+                            "cycles_without_pulse": n,
+                            "threshold": thr}, t=completion_t,
+                    persistent=True)
+
+    def _resolve_cycle_completions(self, sample_t):
+        while self._pending_cycle_completions:
+            self._resolve_cycle_completion(
+                self._pending_cycle_completions.popleft())
+        # Completion may have arrived at firmware-edge time before this poll.
+        # If its observation window is already over, evaluate the current
+        # sampled BE level now instead of waiting another control tick.
+        if self._be_source_is_available():
+            for name, role in self.aux_roles.items():
+                if role == "be_current":
+                    self._be_rule(
+                        sample_t, name,
+                        bool(self._prev_levels.get(name, False)))
+
+    def _invalidate_field_observation(self):
+        """Discard state whose elapsed time is unknowable without FIELD_WET."""
+        self._invalidate_aux_absence("be_current")
+        self._prev_levels.clear()
+        self._assert_since.clear()
+        self._stuck_warned.clear()
+        self._beam_warned.clear()
+        self._manual_counts.clear()
+        self._manual_episode_start = None
+        self._manual_last_seen = None
+        self._manual_cap_warned = False
+        self._manual_rearm_required = True
+        self.suppress_until = 0.0
+        self._pending_cycle_completions.clear()
+        self._pulse_seen_since_completion.clear()
+        self._cancel_pending_alert_types({
+            "stuck_input", "beam_blocked", "stale_channel",
+            "be_no_current", "be_stuck_running", "dist_index_stall",
+        })
+
+    def _suspend_aux_rules(self, t):
+        """Make a dynamic AUX/master gate-off interval explicitly UNKNOWN."""
+        if not self._aux_rules_suspended:
+            self._aux_rules_suspended = True
+            self._pending_cycle_completions.clear()
+            self._cycle_start_t = None
+            self._dist_last_pulse = None
+            self._dist_warned_cycle = False
+            for name, role in self.aux_roles.items():
+                self._aux_unavailable.add(name)
+                self._aux_unknown_since.setdefault(name, t)
+                self._prev_levels.pop(name, None)
+                self._assert_since.pop(name, None)
+                self._invalidate_aux_absence(role)
+            self._pulse_seen_since_completion.clear()
+            self._role_missing_warned.clear()
+            self._field_wet_seen = False
+            self._field_wet_lost = False
+            self._field_wet_lost_t = None
+            self._sensor_24v_seen = False
+            self._sensor_24v_lost = False
+            self._sensor_24v_lost_t = None
+        if self.ball_tracker is not None:
+            self.ball_tracker.set_enabled(False, t)
+        self._sync_exit_source_availability(t)
+        self._sync_dist_source_availability(t)
+
+    def _resume_aux_rules(self, t):
+        if not self._aux_rules_suspended:
+            return
+        self._aux_rules_suspended = False
+        if self.ball_tracker is not None:
+            # Source state remains UNKNOWN until this poll baselines every
+            # configured input and both supply monitors consume the sample.
+            self.ball_tracker.set_enabled(True, t)
+
+    def _suspend_all_rules(self, t):
+        self._all_rules_suspended = True
+        self._suspend_aux_rules(t)
+        self._invalidate_field_observation()
+        for key, pending in list(self._pending_alerts.items()):
+            if not pending.get("retain_across_blind", False):
+                self._pending_alerts.pop(key, None)
+
+    def _update_inb_observation(self, inb_levels):
+        """Invalidate fixed IN-B input state across bank/key UNKNOWN.
+
+        AUX roles have richer source-specific handling below, but manual and
+        TENTH inputs share the same expander. Their held/edge state cannot cross
+        an unreadable interval either.
+        """
+        present = set(inb_levels or ()) if inb_levels is not None else set()
+        missing = (set(self._inb_known_names) if inb_levels is None
+                   else self._inb_known_names - present)
+        for name in missing:
+            self._prev_levels.pop(name, None)
+            self._assert_since.pop(name, None)
+            self._stuck_warned.discard(name)
+            self._manual_counts.pop(name, None)
+            if name in MANUAL_INPUT_NAMES:
+                self._manual_rearm_required = True
+        if inb_levels is not None:
+            self._inb_known_names.update(present)
+
+    def _sync_nonaux_rule_gates(self, t, slow_levels, inb_levels,
+                                diell_levels, rising=None):
+        """Rebaseline per-rule elapsed state when a dynamic gate changes."""
+        merged = {}
+        for levels in (slow_levels, inb_levels):
+            if levels:
+                merged.update(levels)
+        for env_name in (MANUAL_RULE_ENV, STUCK_RULE_ENV, BEAM_RULE_ENV):
+            active = _env_on(env_name)
+            previous = self._rule_gate_states[env_name]
+            self._rule_gate_states[env_name] = active
+            if previous is None or previous == active:
+                continue
+            if env_name == MANUAL_RULE_ENV:
+                self._manual_counts.clear()
+                self._manual_episode_start = None
+                self._manual_last_seen = None
+                self._manual_cap_warned = False
+                self.suppress_until = 0.0
+                if active and rising is not None:
+                    # A level change may have occurred anywhere in the blind
+                    # interval. The first enabled sample is a baseline, never a
+                    # mechanic edge.
+                    rising.difference_update(MANUAL_INPUT_NAMES)
+                    self._manual_rearm_required = any(
+                        bool(merged.get(name, False))
+                        for name in MANUAL_INPUT_NAMES)
+            elif env_name == STUCK_RULE_ENV:
+                self._stuck_warned.clear()
+                self._cancel_pending_alert_types({"stuck_input"})
+                for name, level in merged.items():
+                    if name in STUCK_EXEMPT or name.startswith("DIELL"):
+                        continue
+                    if active and bool(level):
+                        self._assert_since[name] = t
+                    elif not active:
+                        self._assert_since.pop(name, None)
+            else:
+                self._beam_warned.clear()
+                self._cancel_pending_alert_types({"beam_blocked"})
+                for name, level in (diell_levels or {}).items():
+                    if active and bool(level):
+                        self._assert_since[name] = t
+                    else:
+                        self._assert_since.pop(name, None)
 
     # ---- per-tick rule evaluation (enqueue-only, never raises) --------------
     def poll(self, t, *, ready, in_motion, slow_levels=None, inb_levels=None,
              diell_levels=None):
-        if not _env_on(DIAG_EVENTS_ENV):
-            return
         try:
+            if not _env_on(DIAG_EVENTS_ENV):
+                self._suspend_all_rules(t)
+                return
+            self._all_rules_suspended = False
+            self._update_inb_observation(inb_levels)
+            if not _env_on(AUX_RULE_ENV):
+                self._suspend_aux_rules(t)
+                non_aux_inb = None if inb_levels is None else {
+                    name: level for name, level in inb_levels.items()
+                    if name not in self.aux_roles
+                }
+                edges = self._track_levels(t, slow_levels, non_aux_inb)
+                self._sync_nonaux_rule_gates(
+                    t, slow_levels, non_aux_inb, diell_levels, edges)
+                self._manual_rule(t, edges, slow_levels, non_aux_inb)
+                self._stuck_rule(t, ready, slow_levels, non_aux_inb)
+                self._beam_rule(t, ready, diell_levels)
+                # Evaluate/cancel every current condition before retrying a
+                # rejected alert. Otherwise a condition that clears on its
+                # retry-due sample can be delivered as a fresh-looking fault
+                # immediately before its rule observes the recovery.
+                self._retry_pending_alerts(t)
+                return
+            self._resume_aux_rules(t)
             self._update_aux_availability(t, inb_levels)
             # R2-16 FIELD_WET loopback FIRST: when the field wetting supply is
             # down, every field-side input reads deasserted at once — the
@@ -1155,8 +1983,16 @@ class LaneDiag:
             # cause. One field_wet_lost fault, dependents suppressed.
             self._field_wet_rule(t, inb_levels)
             if self._field_wet_input in self._aux_unavailable:
+                self._invalidate_field_observation()
+                self._sync_exit_source_availability(t)
+                self._sync_dist_source_availability(t)
+                self._retry_pending_alerts(t)
                 return
             if self._field_wet_lost:
+                self._invalidate_field_observation()
+                self._sync_exit_source_availability(t)
+                self._sync_dist_source_availability(t)
+                self._retry_pending_alerts(t)
                 return
             # This supply is distinct from FIELD_WET_V. Evaluate it before
             # edge tracking so recovery levels cannot become synthetic pulses.
@@ -1167,10 +2003,14 @@ class LaneDiag:
             self._sync_exit_source_availability(t)
             self._sync_dist_source_availability(t)
             edges = self._track_levels(t, slow_levels, inb_levels)
+            self._sync_nonaux_rule_gates(
+                t, slow_levels, inb_levels, diell_levels, edges)
             self._manual_rule(t, edges, slow_levels, inb_levels)
             self._stuck_rule(t, ready, slow_levels, inb_levels)
             self._beam_rule(t, ready, diell_levels)
             self._aux_rules(t, in_motion, edges, inb_levels)
+            self._resolve_cycle_completions(t)
+            self._retry_pending_alerts(t)
         except Exception:
             self.drops += 1
             log.debug("L%s LaneDiag.poll swallowed", self.lane, exc_info=True)
@@ -1179,8 +2019,9 @@ class LaneDiag:
         """Track UNKNOWN/recovery per configured AUX input.
 
         Missing keys are not coerced to ``False``. On recovery the observed
-        level is installed as a new baseline (never a synthetic rising edge)
-        and all dependent time anchors are shifted by the unreadable interval.
+        level is installed as a new baseline (never a synthetic rising edge).
+        Entering UNKNOWN invalidates absence claims because the event being
+        timed may have happened while the input was unreadable.
         """
         if not self.aux_roles:
             return
@@ -1192,6 +2033,7 @@ class LaneDiag:
                 if not was_unavailable:
                     self._aux_unavailable.add(name)
                     self._aux_unknown_since[name] = t
+                    self._invalidate_aux_absence(role)
                 else:
                     self._aux_unknown_since.setdefault(name, t)
                 # Forget the pre-outage edge/assert baseline. Recovery's first
@@ -1203,7 +2045,8 @@ class LaneDiag:
                     self._role_missing_warned.add(name)
                     self.emit_event(
                         "warn", "configured_role_missing", code=f"aux:{name}",
-                        detail={"input": name, "role": role}, t=t)
+                        detail={"input": name, "role": role}, t=t,
+                        persistent=True)
                 continue
 
             level = bool(inb_levels[name])
@@ -1214,32 +2057,38 @@ class LaneDiag:
                 self._prev_levels[name] = level
                 if level:
                     self._assert_since[name] = t
-                self._shift_aux_timers(role, since, dt)
                 if name in self._role_missing_warned:
                     self._role_missing_warned.discard(name)
+                    self._cancel_pending_alert(
+                        "configured_role_missing", f"aux:{name}")
                     self.emit_event(
                         "info", "recovered", code="configured_role_missing",
                         detail={"input": name, "role": role,
-                                "unknown_s": round(dt, 3)}, t=t)
-        self._sync_exit_source_availability(t)
-        self._sync_dist_source_availability(t)
-
-    def _shift_aux_timers(self, role, since, dt):
-        """Exclude an UNKNOWN interval from a role's logical timer budget."""
-        if since is None or dt <= 0:
-            return
-
-        def shifted(value):
-            return (value + dt
-                    if value is not None and value <= since else value)
-
+                                "unknown_s": round(dt, 3),
+                                "recovered_event_type":
+                                    "configured_role_missing",
+                                "recovered_code": f"aux:{name}"}, t=t)
+    def _invalidate_aux_absence(self, role):
+        """Discard absence evidence that cannot survive an UNKNOWN interval."""
         if role == "be_current":
-            # A future deadline also consumes wall time during the outage, so
-            # shift it unconditionally; historical activity anchors shift only
-            # when they predate the outage.
-            if self._be_deadline is not None:
-                self._be_deadline += dt
-            self._last_activity = shifted(self._last_activity)
+            self._be_deadline = None
+            self._be_quiet_warned = False
+            self._be_stuck_warned = False
+            self._be_cycle_invalidated = True
+            self._cancel_pending_alert_types(
+                {"be_no_current", "be_stuck_running"})
+        if role in ("exit_beam", "dist_index"):
+            self._invalidated_pulse_cycles.add(role)
+            for name, mapped_role in self.aux_roles.items():
+                if mapped_role == role:
+                    self._cycles_since_pulse.pop(name, None)
+                    self._stale_warned.discard(name)
+                    self._cancel_pending_alert(
+                        "stale_channel", f"aux:{name}")
+                    self._pulse_seen_since_completion.discard(name)
+            if role == "dist_index":
+                self._cancel_pending_alert_types(
+                    {"dist_index_stall", "stale_channel"})
 
     def _sensor_24v_blocks(self, role):
         """Whether a supply-backed role must currently be UNKNOWN.
@@ -1250,6 +2099,8 @@ class LaneDiag:
         """
         if role not in SENSOR_24V_DEPENDENT_ROLES:
             return False
+        if self._aux_rules_suspended:
+            return True
         if (self._field_wet_input is not None
                 and (self._field_wet_input in self._aux_unavailable
                      or not self._field_wet_seen
@@ -1261,17 +2112,40 @@ class LaneDiag:
                 or not self._sensor_24v_seen
                 or self._sensor_24v_lost)
 
-    def _sync_exit_source_availability(self, t):
-        """Drive the shared ball-return tracker's logical source gate."""
-        if self.ball_tracker is None:
-            return
+    def _be_source_is_available(self):
+        names = [name for name, role in self.aux_roles.items()
+                 if role == "be_current"]
+        if not names or self._aux_rules_suspended:
+            return False
+        if any(name in self._aux_unavailable for name in names):
+            return False
+        if self._field_wet_input is None:
+            return True
+        return (self._field_wet_input not in self._aux_unavailable
+                and self._field_wet_seen
+                and not self._field_wet_lost)
+
+    def _exit_source_is_available(self):
+        """Current effective availability of every exit-photoeye source."""
         names = [n for n, role in self.aux_roles.items()
                  if role == "exit_beam"]
         if not names:
+            return True
+        return (not self._aux_rules_suspended
+                and all(n not in self._aux_unavailable for n in names)
+                and not self._sensor_24v_blocks("exit_beam"))
+
+    def _sync_exit_source_availability(self, t):
+        """Invalidate blind pair evidence and drive the shared source gate."""
+        if "exit_beam" not in self.aux_roles.values():
             return
-        available = (all(n not in self._aux_unavailable for n in names)
-                     and not self._sensor_24v_blocks("exit_beam"))
-        self.ball_tracker.set_source_available(self.lane, available, t)
+        available = self._exit_source_is_available()
+        previous = self._exit_source_available
+        self._exit_source_available = available
+        if not available and previous is not False:
+            self._invalidate_aux_absence("exit_beam")
+        if self.ball_tracker is not None:
+            self.ball_tracker.set_source_available(self.lane, available, t)
 
     def _dist_source_is_available(self):
         """Current effective availability of every distributor-index source."""
@@ -1279,30 +2153,28 @@ class LaneDiag:
                  if role == "dist_index"]
         if not names:
             return True
-        return (all(n not in self._aux_unavailable for n in names)
+        return (not self._aux_rules_suspended
+                and all(n not in self._aux_unavailable for n in names)
                 and not self._sensor_24v_blocks("dist_index"))
 
     def _sync_dist_source_availability(self, t):
-        """Pause/resume distributor timers across the UNION of source outages."""
+        """Invalidate distributor absence evidence over one union outage."""
         if "dist_index" not in self.aux_roles.values():
             return
         available = self._dist_source_is_available()
         previous = self._dist_source_available
         self._dist_source_available = available
-        if previous is None or available == previous:
+        if available == previous:
             return
         if not available:
-            self._dist_pause_since = t
+            if self._dist_pause_since is None:
+                self._dist_pause_since = t
+            self._cycle_start_t = None
+            self._dist_last_pulse = None
+            self._dist_warned_cycle = False
+            self._invalidate_aux_absence("dist_index")
             return
-        since = self._dist_pause_since
         self._dist_pause_since = None
-        if since is None:
-            return
-        dt = max(0.0, t - since)
-        if self._cycle_start_t is not None:
-            self._cycle_start_t += dt
-        if self._dist_last_pulse is not None:
-            self._dist_last_pulse += dt
 
     def _baseline_sensor_24v_dependents(self, t, inb_levels):
         """Make first post-outage sensor samples levels, never edges."""
@@ -1329,8 +2201,6 @@ class LaneDiag:
         if name is None or not _env_on(AUX_RULE_ENV):
             return
         if inb_levels is None or name not in inb_levels:
-            self._sync_exit_source_availability(t)
-            self._sync_dist_source_availability(t)
             return
         level = bool(inb_levels[name])
         detail = {
@@ -1346,10 +2216,7 @@ class LaneDiag:
                 detail["at_startup"] = True
                 self.emit_event(
                     "fault", "sensor_supply_lost", code=f"aux:{name}",
-                    detail=detail, t=t)
-            if not level:
-                self._sync_exit_source_availability(t)
-                self._sync_dist_source_availability(t)
+                    detail=detail, t=t, persistent=True)
             return
         if level and self._sensor_24v_lost:
             since = self._sensor_24v_lost_t
@@ -1357,8 +2224,8 @@ class LaneDiag:
             self._baseline_sensor_24v_dependents(t, inb_levels)
             self._sensor_24v_lost = False
             self._sensor_24v_lost_t = None
-            self._sync_exit_source_availability(t)
-            self._sync_dist_source_availability(t)
+            self._cancel_pending_alert(
+                "sensor_supply_lost", f"aux:{name}")
             detail["outage_s"] = None if since is None else round(dt, 1)
             self.emit_event(
                 "info", "sensor_supply_restored", code=f"aux:{name}",
@@ -1366,12 +2233,10 @@ class LaneDiag:
         elif not level and not self._sensor_24v_lost:
             self._sensor_24v_lost = True
             self._sensor_24v_lost_t = t
-            self._sync_exit_source_availability(t)
-            self._sync_dist_source_availability(t)
             detail["at_startup"] = False
             self.emit_event(
                 "fault", "sensor_supply_lost", code=f"aux:{name}",
-                detail=detail, t=t)
+                detail=detail, t=t, persistent=True)
 
     def _field_wet_rule(self, t, inb_levels):
         """R2-16: AUX11 FIELD_WET loopback (a harness jumper wired straight
@@ -1393,17 +2258,18 @@ class LaneDiag:
                 # as a baseline observation (no edge was seen).
                 self._field_wet_lost = True
                 self._field_wet_lost_t = t
+                self._invalidate_aux_absence("be_current")
                 self.emit_event("fault", "field_wet_lost", code=f"aux:{name}",
                                 detail={"input": name, "at_startup": True},
-                                t=t)
-            self._sync_exit_source_availability(t)
-            self._sync_dist_source_availability(t)
+                                t=t, persistent=True)
             return
         if level and self._field_wet_lost:
             outage = None if self._field_wet_lost_t is None \
                 else round(t - self._field_wet_lost_t, 1)
             self._field_wet_lost = False
             self._field_wet_lost_t = None
+            self._cancel_pending_alert(
+                "field_wet_lost", f"aux:{name}")
             # Re-baseline the input rules: every field input deasserted during
             # the outage; their re-assertion must not read as fresh edges or
             # stale asserts.
@@ -1416,10 +2282,10 @@ class LaneDiag:
         elif not level and not self._field_wet_lost:
             self._field_wet_lost = True
             self._field_wet_lost_t = t
-            self._sync_exit_source_availability(t)
-            self._sync_dist_source_availability(t)
+            self._invalidate_aux_absence("be_current")
             self.emit_event("fault", "field_wet_lost", code=f"aux:{name}",
-                            detail={"input": name, "at_startup": False}, t=t)
+                            detail={"input": name, "at_startup": False}, t=t,
+                            persistent=True)
 
     def _track_levels(self, t, slow_levels, inb_levels):
         """Merge the tick's level reads, update assert-since bookkeeping, and
@@ -1441,6 +2307,8 @@ class LaneDiag:
             else:
                 self._assert_since.pop(name, None)
                 self._stuck_warned.discard(name)
+                self._cancel_pending_alert(
+                    "stuck_input", f"input:{name}")
         return rising
 
     def _manual_rule(self, t, rising, slow_levels, inb_levels):
@@ -1449,6 +2317,10 @@ class LaneDiag:
         window_s = _env_float(SUPPRESS_MIN_ENV, DEFAULT_SUPPRESS_MIN) * 60.0
         max_s = _env_float(SUPPRESS_MAX_MIN_ENV, DEFAULT_SUPPRESS_MAX_MIN) * 60.0
         any_active = any(self._prev_levels.get(n) for n in MANUAL_INPUT_NAMES)
+        if self._manual_rearm_required:
+            if any_active:
+                return
+            self._manual_rearm_required = False
         if any_active:
             # Episode bookkeeping (2026-07-19 review): a quiet gap longer
             # than the suppress window since the last observed activity
@@ -1512,11 +2384,22 @@ class LaneDiag:
                 self.emit_event("warn", "stuck_input", code=f"input:{name}",
                                 detail={"input": name,
                                         "held_s": round(held, 1),
-                                        "threshold_s": thr}, t=t)
+                                        "threshold_s": thr}, t=t,
+                                persistent=True)
 
     def _beam_rule(self, t, ready, diell_levels):
         """DIELL beam statically blocked (a jammed pin/ball in the beam gives
         ONE edge, not cycling — scope §1 'stuck ball switch' row)."""
+        present = set(diell_levels or ()) if diell_levels is not None else set()
+        missing = (set(self._diell_known_names) if diell_levels is None
+                   else self._diell_known_names - present)
+        for name in missing:
+            self._assert_since.pop(name, None)
+            self._beam_warned.discard(name)
+            self._cancel_pending_alert(
+                "beam_blocked", f"diell:{name}")
+        if diell_levels is not None:
+            self._diell_known_names.update(present)
         if not _env_on(BEAM_RULE_ENV) or diell_levels is None:
             return
         thr = _env_float(BEAM_S_ENV, DEFAULT_BEAM_S)
@@ -1527,6 +2410,8 @@ class LaneDiag:
             else:
                 self._assert_since.pop(name, None)
                 self._beam_warned.discard(name)
+                self._cancel_pending_alert(
+                    "beam_blocked", f"diell:{name}")
                 continue
             if not ready or name in self._beam_warned:
                 continue
@@ -1535,7 +2420,8 @@ class LaneDiag:
                 self._beam_warned.add(name)
                 self.emit_event("warn", "beam_blocked", code=f"diell:{name}",
                                 detail={"beam": name, "held_s": round(held, 1),
-                                        "threshold_s": thr}, t=t)
+                                        "threshold_s": thr}, t=t,
+                                persistent=True)
 
     def _aux_rules(self, t, in_motion, rising, inb_levels):
         """Config-driven AUX sensor rules — fully dormant for unmapped roles.
@@ -1579,23 +2465,32 @@ class LaneDiag:
 
     def _suppress_aux_on_bank_unknown(self):
         """R3-9: the IN-B bank is unreadable this tick — hold every bank-derived
-        AUX rule in UNKNOWN. Timer/edge state is preserved and rebased by
-        _update_aux_availability when the bank recovers."""
-        # Timers are paused and shifted on recovery by
-        # _update_aux_availability(); clearing them here would silently consume
-        # the diagnostic episode instead of preserving it.
+        AUX rule in UNKNOWN. _update_aux_availability already discarded active
+        absence episodes and recovery will install levels as fresh baselines."""
         return
 
     def _note_pulse(self, name, t):
         """A pulse-role channel fired: reset its stale-channel episode."""
+        role = self.aux_roles.get(name)
+        if (self._aux_rules_suspended
+                or role in self._invalidated_pulse_cycles):
+            return
         self._cycles_since_pulse[name] = 0
         self._stale_warned.discard(name)
+        self._cancel_pending_alert(
+            "stale_channel", f"aux:{name}")
+        self._pulse_seen_since_completion.add(name)
+        if role == "dist_index":
+            self._cancel_pending_alert(
+                "dist_index_stall", "aux:dist_index")
 
     def _be_rule(self, t, name, level):
         if level:
             # any BE current cancels the quiet watch + re-arms its alert
             self._be_deadline = None
             self._be_quiet_warned = False
+            self._cancel_pending_alert(
+                "be_no_current", "aux:be_current")
             since = self._assert_since.get(name, t)
             # stuck-running: current flowing with NO cycle activity for the
             # whole threshold (post-cycle run-on is covered by note_activity —
@@ -1606,9 +2501,12 @@ class LaneDiag:
                 self._be_stuck_warned = True
                 self.emit_event("fault", "be_stuck_running", code="aux:be_current",
                                 detail={"running_s": round(t - since, 1),
-                                        "quiet_s": round(t - quiet_since, 1)}, t=t)
+                                        "quiet_s": round(t - quiet_since, 1)},
+                                t=t, persistent=True)
         else:
             self._be_stuck_warned = False
+            self._cancel_pending_alert(
+                "be_stuck_running", "aux:be_current")
             if self._be_deadline is not None and t > self._be_deadline:
                 self._be_deadline = None
                 if not self._be_quiet_warned:
@@ -1616,7 +2514,8 @@ class LaneDiag:
                     self.emit_event(
                         "warn", "be_no_current", code="aux:be_current",
                         detail={"window_s": _env_float(BE_WINDOW_S_ENV,
-                                                       DEFAULT_BE_WINDOW_S)}, t=t)
+                                                      DEFAULT_BE_WINDOW_S)},
+                        t=t, persistent=True)
 
     def _dist_rule(self, t, in_motion):
         if not in_motion or self._cycle_start_t is None or self._dist_warned_cycle:
@@ -1629,7 +2528,8 @@ class LaneDiag:
             self._dist_warned_cycle = True
             self.emit_event("warn", "dist_index_stall", code="aux:dist_index",
                             detail={"gap_s": round(t - anchor, 1),
-                                    "threshold_s": gap}, t=t)
+                                    "threshold_s": gap}, t=t,
+                            persistent=True)
 
 
 # ---- built-in AUX role handlers (R2-16 registry) ------------------------------
@@ -1673,6 +2573,108 @@ register_aux_role(SENSOR_24V_ROLE, _role_sensor_24v)
 AUX_ROLE_VALID = aux_roles_valid()
 
 
+class _PreparedRelayEvent:
+    """A validated event row with a restart-stable delivery identity.
+
+    ``DiagWriter`` normally stamps source/boot/sequence while dispatching. A
+    foreign relay obligation must instead carry that identity in its WAL before
+    the first offer, so replay after an ambiguous crash is server-idempotent.
+    The attribute properties retain the small DiagEvent surface used by tests
+    and writer stubs.
+    """
+
+    _BASE_FIELDS = {
+        "ts_utc", "ts_mono", "lane_id", "severity", "event_type",
+        "code", "detail",
+    }
+    _IDENTITY_FIELDS = {"source_id", "boot_id", "seq"}
+
+    def __init__(self, row):
+        if not isinstance(row, dict) \
+                or set(row) != self._BASE_FIELDS | self._IDENTITY_FIELDS:
+            raise ValueError("prepared relay row has an invalid field set")
+        ts_utc = row.get("ts_utc")
+        ts_mono = row.get("ts_mono")
+        lane_id = row.get("lane_id")
+        if (not isinstance(ts_utc, str) or not ts_utc.strip()
+                or len(ts_utc) > 64):
+            raise ValueError("prepared relay UTC stamp is invalid")
+        try:
+            parsed_utc = datetime.fromisoformat(
+                ts_utc[:-1] + "+00:00" if ts_utc.endswith("Z") else ts_utc)
+            if parsed_utc.tzinfo is None:
+                raise ValueError
+            if ((parsed_utc.astimezone(timezone.utc)
+                 - datetime.now(timezone.utc)).total_seconds()
+                    > FOREIGN_RELAY_FUTURE_TOLERANCE_S):
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValueError("prepared relay UTC stamp is invalid") from None
+        if (not isinstance(ts_mono, (int, float))
+                or isinstance(ts_mono, bool)
+                or not math.isfinite(float(ts_mono))
+                or float(ts_mono) < 0):
+            raise ValueError("prepared relay monotonic stamp is invalid")
+        if (not isinstance(lane_id, int) or isinstance(lane_id, bool)
+                or not 1 <= lane_id <= 32):
+            raise ValueError("prepared relay lane is invalid")
+        normalized = DiagEvent(
+            ts_utc, ts_mono, lane_id, row.get("severity"),
+            row.get("event_type"), code=row.get("code"),
+            detail=row.get("detail")).to_dict()
+        if any(normalized[field] != row.get(field)
+               for field in self._BASE_FIELDS):
+            raise ValueError("prepared relay payload is not canonical/bounded")
+        for field, max_len in (("source_id", 120), ("boot_id", 80)):
+            value = row.get(field)
+            if (not isinstance(value, str) or not value.strip()
+                    or len(value) > max_len):
+                raise ValueError(
+                    f"prepared relay {field} is invalid")
+        seq = row.get("seq")
+        if (not isinstance(seq, int) or isinstance(seq, bool)
+                or not 0 < seq <= SQLITE_INT64_MAX):
+            raise ValueError("prepared relay sequence is invalid")
+        self._row = copy.deepcopy(row)
+
+    @classmethod
+    def from_event(cls, event):
+        row = event.to_dict()
+        stamp_delivery(row)
+        return cls(row)
+
+    def to_dict(self):
+        return copy.deepcopy(self._row)
+
+    @property
+    def ts_utc(self):
+        return self._row["ts_utc"]
+
+    @property
+    def ts_mono(self):
+        return self._row["ts_mono"]
+
+    @property
+    def lane_id(self):
+        return self._row["lane_id"]
+
+    @property
+    def severity(self):
+        return self._row["severity"]
+
+    @property
+    def event_type(self):
+        return self._row["event_type"]
+
+    @property
+    def code(self):
+        return self._row["code"]
+
+    @property
+    def detail(self):
+        return self._row["detail"]
+
+
 class PlatformHealth(threading.Thread):
     """Background platform-health emitter (scope Phase 1.6) + the off-tick pump
     for cam-telemetry baseline persistence. ALL file/subprocess I/O lives on
@@ -1683,23 +2685,40 @@ class PlatformHealth(threading.Thread):
     def __init__(self, boards, writer, *, poll_s=None, dir_path=None):
         super().__init__(name="platform-health", daemon=True)
         self.boards = list(boards)
+        self._foreign_lanes = frozenset(
+            int(board.cfg.lane) for board in self.boards)
         self.writer = writer
         self.poll_s = float(poll_s if poll_s is not None
                             else _env_float(PLATFORM_POLL_S_ENV, DEFAULT_PLATFORM_POLL_S))
         self.dir = (dir_path or os.environ.get("WSL_DIAG_DIR", "").strip()
                     or "./diag_logs")
         self.start_count = None
-        self._lane = self.boards[0].cfg.lane if self.boards else 0
+        # Host/no-board probes still need a contract-valid representative lane;
+        # lane 0 would create an undeliverable startup obligation.
+        self._lane = self.boards[0].cfg.lane if self.boards else 1
         self._stop_ev = threading.Event()
         self._vcgencmd_missing = False
         self._last_throttled = 0
+        self._current_throttled = 0
         self.errors = 0
         # R2-14 probe state (episode latches + baselines)
         self._thermal_missing = False
         self._thermal_warned = False
         self._disk_warned = False
         self._readonly_warned = False
+        self._thermal_active = False
+        self._disk_low_active = False
+        self._readonly_active = False
         self._clock_base = None       # time.time() - time.monotonic() baseline
+        # A clock step is an immutable occurrence, not merely a current state.
+        # Keep the original event/stamp until the writer accepts it; otherwise
+        # a step that reverses before the next poll disappears permanently.
+        self._clock_pending = None
+        self._service_start_path = os.path.join(
+            self.dir, "service_starts.json")
+        self._service_start_pending = {}
+        self._service_start_pending_overflow = 0
+        self._service_start_ledger_error = None
         # R2-12: writer-stats promotion baselines (diag/http drop counters)
         self._prev_queue_drops = 0
         self._prev_http_drops = 0
@@ -1735,30 +2754,123 @@ class PlatformHealth(threading.Thread):
         # Per-service relay episode state (fingerprint + active typed faults).
         # health_drop.plan_foreign_relay owns the shape.
         self._last_foreign_status = {}
+        self._foreign_pending = {}
+        self._foreign_pending_max = 128
+        self._foreign_pending_sequence = 0
+        self._foreign_delivered_active = set()
+        self._foreign_pending_drops = 0
+        self._foreign_pending_drops_reported = 0
+        # A delivered foreign fault must survive a process restart. Otherwise
+        # the first fresh/healthy snapshot in the new process has no causal
+        # memory and cannot clear the open machine incident. The ledger is
+        # loaded on this background thread before the first foreign sample and
+        # is updated only after local JSONL durability is acknowledged.
+        self._foreign_delivery_path = os.path.join(
+            self.dir, FOREIGN_DELIVERY_LEDGER_FILENAME)
+        self._foreign_delivery_loaded = False
+        self._foreign_delivery_blocked = False
+        self._foreign_delivery_dirty = False
+        self._foreign_delivery_ledger_error = None
+        self._foreign_delivery_ledger_errors = 0
+        # The master event gate is intentionally runtime-observable.  A disabled
+        # interval is an UNKNOWN observation interval, not permission for probes
+        # to consume episode latches/baselines whose initiating event is dropped.
+        self._event_gate_state = _env_on(DIAG_EVENTS_ENV)
+        self._identity_missing_pending = {}
 
     def _emit(self, severity, event_type, code=None, detail=None, lane=None):
         try:
+            if not self._diagnostic_events_enabled():
+                return False
             if self.writer is not None:
-                self.writer.emit(make_event(lane or self._lane, severity,
-                                            event_type, code=code,
-                                            detail=detail))
+                return bool(self.writer.emit(
+                    make_event(lane or self._lane, severity, event_type,
+                               code=code, detail=detail)))
         except Exception:
             self.errors += 1
+        return False
+
+    def _emit_prebuilt(self, event):
+        """Offer an already-stamped platform incident without restamping it."""
+        try:
+            if not self._diagnostic_events_enabled():
+                return False
+            if self.writer is not None:
+                durable = getattr(self.writer, "emit_durable", None)
+                if callable(durable):
+                    return bool(durable(event))
+                # Foreign/start/clock occurrences drive causal delivery state.
+                # A volatile queue acceptance is not evidence of local
+                # persistence, so a writer without the durable API fails closed.
+                self.errors += 1
+                return False
+        except Exception:
+            self.errors += 1
+        return False
+
+    def _diagnostic_events_enabled(self):
+        """Return the live master-gate state and invalidate episode evidence.
+
+        Platform-health probes run on a slow background cadence and several own
+        once-per-episode latches.  If those latches advance while the master
+        gate is off, a persistent fault that starts in the blind interval never
+        emits after the gate comes back.  Re-arm current-condition latches and
+        rebaseline elapsed state at each transition; cumulative writer
+        counters deliberately stay frozen while disabled and are promoted on
+        the first enabled poll.
+        """
+        active = _env_on(DIAG_EVENTS_ENV)
+        previous = self._event_gate_state
+        self._event_gate_state = active
+        if previous != active:
+            self._thermal_warned = False
+            self._disk_warned = False
+            self._readonly_warned = False
+            self._last_throttled = 0
+            self._clock_base = None
+            self._health_drop_write_warned = False
+            if active:
+                # Capability probes are re-tried after a blind interval; a
+                # transient/mocked absence must not permanently disable them.
+                self._thermal_missing = False
+                self._vcgencmd_missing = False
+        return active
 
     # ---- R3-5: firmware-identity re-request after a reboot -----------------
     def _poll_identity(self):
         """Drive each board's link.poll_identity() off-tick. When the budget
         is spent with no id line on a board that should report it, emit ONE
         fw_identity_missing (the tick's ARM gate inhibits arming in parallel)."""
+        events_enabled = self._diagnostic_events_enabled()
         for b in self.boards:
             try:
                 if b.link.poll_identity() == "missing":
-                    self._emit("fault", "fw_identity_missing", code="no_id_line",
-                               detail={"board_rev": b.cfg.board_rev,
-                                       "retries": IDENTITY_MAX_RETRIES},
-                               lane=b.cfg.lane)
+                    self._identity_missing_pending[b.cfg.lane] = {
+                        "board_rev": b.cfg.board_rev,
+                        "retries": IDENTITY_MAX_RETRIES,
+                    }
+                # A later identity response (valid or faulted) conclusively
+                # ends the *missing* condition; the board's typed fw_identity
+                # path owns any content/policy fault. The legacy Rev-C policy
+                # can likewise make absence acceptable. Never ship an old
+                # missing alert after either recovery.
+                policy_ok = False
+                try:
+                    policy_ok = bool(
+                        b._identity_arm_ok(
+                            allow_shadow_bypass=False)[0])
+                except (AttributeError, TypeError):
+                    policy_ok = bool(b.link.identity_status()[0])
+                if b.link.fw_identity() is not None or policy_ok:
+                    self._identity_missing_pending.pop(b.cfg.lane, None)
             except Exception:
                 self.errors += 1
+        if events_enabled:
+            for lane, detail in list(self._identity_missing_pending.items()):
+                if self._emit(
+                        "fault", "fw_identity_missing", code="no_id_line",
+                        detail=detail, lane=lane):
+                    self._identity_missing_pending.pop(lane, None)
 
     # ---- R3-11: shared health-drop hand-off between the two services -------
     def _poll_common_platform(self):
@@ -1766,9 +2878,49 @@ class PlatformHealth(threading.Thread):
         self._common_platform = health_drop.collect_platform_health(
             self.dir, require_pi_probes=True)
 
+    def _current_platform_snapshot(self):
+        snapshot = dict(self._common_platform)
+        reasons = list(snapshot.get("reasons") or [])
+        if self._readonly_active:
+            reasons.append("filesystem_readonly")
+        if self._thermal_active:
+            reasons.append("thermal")
+        if self._disk_low_active:
+            reasons.append("disk_low")
+        if self._current_throttled & 0xF:
+            reasons.append("pi_power_or_throttle")
+        if self._foreign_pending_drops:
+            reasons.append("foreign_pending_overflow")
+        if self._foreign_delivery_ledger_error:
+            reasons.append("foreign_delivery_ledger_error")
+        if self._service_start_pending_overflow:
+            reasons.append("service_start_pending_overflow")
+        if self._service_start_ledger_error:
+            reasons.append("service_start_ledger_error")
+        snapshot["reasons"] = sorted(set(reasons))
+        snapshot["ok"] = not snapshot["reasons"]
+        snapshot.update({
+            "readonly_fs": self._readonly_active,
+            "thermal_warned": self._thermal_active,
+            "disk_low": self._disk_low_active,
+            "last_throttled": self._current_throttled,
+            "foreign_pending": len(self._foreign_pending),
+            "foreign_pending_drops": self._foreign_pending_drops,
+            "foreign_delivery_ledger_error":
+                self._foreign_delivery_ledger_error,
+            "foreign_delivery_ledger_errors":
+                self._foreign_delivery_ledger_errors,
+            "service_start_pending": len(self._service_start_pending),
+            "service_start_pending_overflow":
+                self._service_start_pending_overflow,
+            "service_start_ledger_error": self._service_start_ledger_error,
+        })
+        return snapshot
+
     def _write_health_drop(self):
         """Write this (controller/Track-B) service's platform-health snapshot
         to the shared drop file so a Track-A run can ship it later."""
+        events_enabled = self._diagnostic_events_enabled()
         try:
             board_health = []
             for b in self.boards:
@@ -1784,18 +2936,8 @@ class PlatformHealth(threading.Thread):
                         "fw_version"):
                     board.pop(field, None)
                 board_health.append(board)
-            platform_reasons = list(
-                self._common_platform.get("reasons") or [])
-            if self._readonly_warned:
-                platform_reasons.append("filesystem_readonly")
-            if self._thermal_warned:
-                platform_reasons.append("thermal")
-            if self._disk_warned:
-                platform_reasons.append("disk_low")
-            # get_throttled's low nibble is the *current* condition; the high
-            # historical bits alone must not hold a relay episode open forever.
-            if self._last_throttled & 0xF:
-                platform_reasons.append("pi_power_or_throttle")
+            platform = self._current_platform_snapshot()
+            platform_reasons = platform["reasons"]
             board_policy_ok = all(
                 not health_drop.controller_board_policy_reasons(board)
                 for board in board_health)
@@ -1803,11 +2945,11 @@ class PlatformHealth(threading.Thread):
                 "ok": not platform_reasons and board_policy_ok,
                 "service_starts": self.start_count,
                 "vcgencmd_missing": self._vcgencmd_missing,
-                "last_throttled": self._last_throttled,
-                "readonly_fs": self._readonly_warned,
-                "thermal_warned": self._thermal_warned,
-                "disk_low": self._disk_warned,
-                "platform": dict(self._common_platform),
+                "last_throttled": self._current_throttled,
+                "readonly_fs": self._readonly_active,
+                "thermal_warned": self._thermal_active,
+                "disk_low": self._disk_low_active,
+                "platform": platform,
                 "lanes": [b.cfg.lane for b in self.boards],
                 "boards": board_health,
                 "contract_sha256": self._contract_sha,
@@ -1820,73 +2962,864 @@ class PlatformHealth(threading.Thread):
                 self._health_drop_path, SERVICE_CONTROLLER, payload)
             if not ok:
                 self.errors += 1
-                if not self._health_drop_write_warned:
-                    self._health_drop_write_warned = True
-                    self._emit(
+                if events_enabled and not self._health_drop_write_warned:
+                    self._health_drop_write_warned = self._emit(
                         "warn", "diag_drops", code="health_drop_write",
                         detail={"path": self._health_drop_path,
                                 "stats": health_drop.stats()})
-            elif self._health_drop_write_warned:
-                self._health_drop_write_warned = False
-                self._emit("info", "recovered", code="health_drop_write")
+            elif events_enabled and self._health_drop_write_warned:
+                if self._emit(
+                        "info", "recovered", code="health_drop_write",
+                        detail={
+                            "recovered_event_type": "diag_drops",
+                            "recovered_code": "health_drop_write",
+                        }):
+                    self._health_drop_write_warned = False
         except Exception:
             self.errors += 1
 
-    def _emit_foreign_relay(self, event, lane):
+    def _emit_foreign_relay(self, event, lane, prepared_event=None):
         """Emit a planned relay event through literal, contract-auditable sites."""
         severity = event["severity"]
         event_type = event["event_type"]
         code = event.get("code")
         detail = event.get("detail")
+        if prepared_event is not None:
+            if event_type not in {
+                    "camera_health", "pi_fs_readonly", "pi_disk_low",
+                    "pi_thermal", "pi_undervoltage",
+                    "diag_storage_error",
+                    "health_drop_unhealthy", "health_drop_stale",
+                    "recovered"}:
+                self.errors += 1
+                log.warning("ignored unsupported foreign health event %r",
+                            event_type)
+                return False
+            return self._emit_prebuilt(prepared_event)
         if event_type == "camera_health":
-            self._emit(severity, "camera_health", code=code, detail=detail,
-                       lane=lane)
+            return self._emit(severity, "camera_health", code=code,
+                              detail=detail, lane=lane)
         elif event_type == "pi_fs_readonly":
-            self._emit(severity, "pi_fs_readonly", code=code, detail=detail,
-                       lane=lane)
+            return self._emit(severity, "pi_fs_readonly", code=code,
+                              detail=detail, lane=lane)
         elif event_type == "pi_disk_low":
-            self._emit(severity, "pi_disk_low", code=code, detail=detail,
-                       lane=lane)
+            return self._emit(severity, "pi_disk_low", code=code,
+                              detail=detail, lane=lane)
         elif event_type == "pi_thermal":
-            self._emit(severity, "pi_thermal", code=code, detail=detail,
-                       lane=lane)
+            return self._emit(severity, "pi_thermal", code=code,
+                              detail=detail, lane=lane)
         elif event_type == "pi_undervoltage":
-            self._emit(severity, "pi_undervoltage", code=code, detail=detail,
-                       lane=lane)
+            return self._emit(severity, "pi_undervoltage", code=code,
+                              detail=detail, lane=lane)
+        elif event_type == "diag_storage_error":
+            return self._emit(severity, "diag_storage_error", code=code,
+                              detail=detail, lane=lane)
         elif event_type == "health_drop_unhealthy":
-            self._emit(severity, "health_drop_unhealthy", code=code,
-                       detail=detail, lane=lane)
+            return self._emit(severity, "health_drop_unhealthy", code=code,
+                              detail=detail, lane=lane)
         elif event_type == "health_drop_stale":
-            self._emit(severity, "health_drop_stale", code=code,
-                       detail=detail, lane=lane)
+            return self._emit(severity, "health_drop_stale", code=code,
+                              detail=detail, lane=lane)
         elif event_type == "recovered":
-            self._emit(severity, "recovered", code=code, detail=detail,
-                       lane=lane)
+            return self._emit(severity, "recovered", code=code,
+                              detail=detail, lane=lane)
         else:
             self.errors += 1
             log.warning("ignored unsupported foreign health event %r",
                         event_type)
+            return False
+
+    @staticmethod
+    def _foreign_priority(event):
+        if event.get("event_type") == "recovered":
+            # Clearing an alert already delivered to the desk is causally part
+            # of that alert, not disposable informational telemetry.
+            return 3
+        return {"info": 0, "warn": 1, "fault": 2}.get(
+            event.get("severity"), 0)
+
+    def _validate_foreign_plan_event(self, event, *, active=False):
+        """Return a bounded copy of one relay-plan event or raise ValueError."""
+        if not isinstance(event, dict):
+            raise ValueError("foreign event is not an object")
+        allowed = (
+            {"severity", "event_type", "code", "lanes", "evidence"}
+            if active else
+            {"severity", "event_type", "code", "detail", "lanes"})
+        required = {"severity", "event_type", "code", "lanes"}
+        if set(event) - allowed or not required <= set(event):
+            raise ValueError("foreign event has unknown fields")
+        severity = event.get("severity")
+        event_type = event.get("event_type")
+        code = event.get("code")
+        detail = event.get("detail")
+        lanes = event.get("lanes")
+        if detail is None:
+            detail = {}
+        if lanes is None:
+            lanes = []
+        if severity not in {"info", "warn", "fault"}:
+            raise ValueError("invalid foreign severity")
+        if event_type not in {
+                "camera_health", "pi_fs_readonly", "pi_disk_low",
+                "pi_thermal", "pi_undervoltage", "diag_storage_error",
+                "health_drop_unhealthy", "health_drop_stale", "recovered"}:
+            raise ValueError("invalid foreign event type")
+        if active and (
+                severity not in {"warn", "fault"}
+                or event_type in {"recovered", "health_drop_stale"}):
+            raise ValueError("invalid planner-active foreign event")
+        if event_type == "recovered" and severity != "info":
+            raise ValueError("foreign recovery must be informational")
+        if code is not None and not isinstance(code, str):
+            raise ValueError("invalid foreign code")
+        if isinstance(code, str) and len(code) > 120:
+            raise ValueError("oversized foreign code")
+        if not isinstance(detail, dict):
+            raise ValueError("invalid foreign detail")
+        snapshot_id = detail.get("snapshot_id")
+        if (snapshot_id is not None
+                and (not isinstance(snapshot_id, str)
+                     or len(snapshot_id) > 200)):
+            raise ValueError("invalid foreign snapshot identity")
+        occurrence_id = detail.get("relay_occurrence_id")
+        if (occurrence_id is not None
+                and (
+                    not isinstance(occurrence_id, str)
+                    or re.fullmatch(r"[0-9a-f]{32}", occurrence_id) is None)):
+            raise ValueError("invalid foreign relay occurrence identity")
+        if not isinstance(lanes, (list, tuple)) or len(lanes) > 32:
+            raise ValueError("invalid foreign lane set")
+        normalized_lanes = []
+        for lane in lanes:
+            if (not isinstance(lane, int) or isinstance(lane, bool)
+                    or lane not in self._foreign_lanes
+                    or lane in normalized_lanes):
+                raise ValueError("invalid/duplicate foreign lane")
+            normalized_lanes.append(lane)
+        representative_lane = min(self._foreign_lanes) \
+            if self._foreign_lanes else 1
+        if active:
+            evidence = event.get("evidence")
+            if evidence is not None and not isinstance(evidence, dict):
+                raise ValueError("invalid planner-active evidence")
+            canonical = DiagEvent(
+                "1970-01-01T00:00:00+00:00", 0.0,
+                representative_lane, severity, event_type, code=code,
+                detail={"evidence": evidence} if evidence is not None else {})
+            result = {
+                "severity": severity,
+                "event_type": event_type,
+                "code": canonical.code,
+                "lanes": normalized_lanes,
+            }
+            if evidence is not None:
+                result["evidence"] = copy.deepcopy(
+                    canonical.detail["evidence"])
+            return result
+        from_service = detail.get("from_service")
+        if from_service != SERVICE_CAMERA:
+            raise ValueError("foreign event names an unexpected source service")
+        recovered_fields = {
+            "recovered_event_type", "recovered_code"} & set(detail)
+        if event_type == "recovered":
+            if recovered_fields != {
+                    "recovered_event_type", "recovered_code"}:
+                raise ValueError("foreign recovery lacks an exact fault family")
+            recovered_type = detail.get("recovered_event_type")
+            recovered_code = detail.get("recovered_code")
+            if (recovered_type not in {
+                    "camera_health", "pi_fs_readonly", "pi_disk_low",
+                    "pi_thermal", "pi_undervoltage", "diag_storage_error",
+                    "health_drop_unhealthy", "health_drop_stale"}
+                    or code != recovered_type
+                    or (recovered_code is not None
+                        and (not isinstance(recovered_code, str)
+                             or len(recovered_code) > 120))):
+                raise ValueError("foreign recovery family is invalid")
+        elif recovered_fields:
+            raise ValueError("foreign fault carries recovery metadata")
+        canonical = DiagEvent(
+            "1970-01-01T00:00:00+00:00", 0.0, representative_lane,
+            severity, event_type, code=code, detail=detail)
+        result = copy.deepcopy(event)
+        result["severity"] = severity
+        result["event_type"] = event_type
+        result["code"] = canonical.code
+        result["detail"] = copy.deepcopy(canonical.detail)
+        result["lanes"] = normalized_lanes
+        return result
+
+    @staticmethod
+    def _restore_diag_event(payload):
+        """Rebuild one immutable, restart-idempotent retry event."""
+        return _PreparedRelayEvent(payload)
+
+    def _foreign_delivery_payload(self):
+        """Serialize planner, retry, and delivered-active state without tuple keys."""
+        statuses = []
+        for service in sorted(self._last_foreign_status):
+            record = self._last_foreign_status[service]
+            fingerprint = record.get("fingerprint")
+            if fingerprint is None:
+                serialized_fingerprint = None
+            else:
+                serialized_fingerprint = list(fingerprint)
+            statuses.append({
+                "service": service,
+                "fingerprint": serialized_fingerprint,
+                "status": record.get("status"),
+                "active": [
+                    copy.deepcopy(event)
+                    for _key, event in sorted(
+                        (record.get("active") or {}).items(),
+                        key=lambda item: repr(item[0]))
+                ],
+            })
+        delivered = [
+            {
+                "service": service,
+                "event_type": event_type,
+                "code": code,
+                "lane": lane,
+            }
+            for service, event_type, code, lane
+            in sorted(self._foreign_delivered_active, key=repr)
+        ]
+        pending = [
+            {
+                "service": pending["condition"][0],
+                "event": copy.deepcopy(pending["event"]),
+                "lane": pending["lane"],
+                "diag_event": pending["diag_event"].to_dict(),
+                "sequence": pending["sequence"],
+            }
+            for _key, pending in sorted(
+                self._foreign_pending.items(), key=lambda item: repr(item[0]))
+        ]
+        return {
+            "version": FOREIGN_DELIVERY_LEDGER_VERSION,
+            "last_foreign_status": statuses,
+            "delivered_active": delivered,
+            "pending": pending,
+            "pending_drops": self._foreign_pending_drops,
+            "pending_drops_reported": self._foreign_pending_drops_reported,
+        }
+
+    def _restore_foreign_delivery_payload(self, payload):
+        """Validate a complete ledger before replacing any in-memory state."""
+        if not isinstance(payload, dict):
+            raise ValueError("delivery ledger is not an object")
+        if set(payload) != {
+                "version", "last_foreign_status", "delivered_active",
+                "pending", "pending_drops", "pending_drops_reported"}:
+            raise ValueError("delivery ledger field set is invalid")
+        if payload.get("version") != FOREIGN_DELIVERY_LEDGER_VERSION:
+            raise ValueError("delivery ledger version is invalid")
+        statuses_raw = payload.get("last_foreign_status", [])
+        delivered_raw = payload.get("delivered_active", [])
+        pending_raw = payload.get("pending", [])
+        if (not isinstance(statuses_raw, list) or len(statuses_raw) > 2
+                or not isinstance(delivered_raw, list)
+                or len(delivered_raw) > self._foreign_pending_max
+                or not isinstance(pending_raw, list)
+                or len(pending_raw) > self._foreign_pending_max):
+            raise ValueError("delivery ledger collection is invalid/oversized")
+
+        statuses = {}
+        for entry in statuses_raw:
+            if (not isinstance(entry, dict)
+                    or set(entry) != {
+                        "service", "fingerprint", "status", "active"}):
+                raise ValueError("foreign status entry is not an object")
+            service = entry.get("service")
+            status = entry.get("status")
+            fingerprint = entry.get("fingerprint")
+            active_raw = entry.get("active", [])
+            if service != SERVICE_CAMERA \
+                    or service in statuses:
+                raise ValueError("foreign status service is invalid/duplicate")
+            if status not in {None, "fresh", "stale", "missing"}:
+                raise ValueError("foreign status value is invalid")
+            if fingerprint is not None:
+                if (not isinstance(fingerprint, list)
+                        or len(fingerprint) != 2
+                        or fingerprint[0] != status
+                        or (fingerprint[1] is not None
+                            and (not isinstance(fingerprint[1], str)
+                                 or len(fingerprint[1]) > 200))):
+                    raise ValueError("foreign status fingerprint is invalid")
+                fingerprint = tuple(fingerprint)
+            if not isinstance(active_raw, list) \
+                    or len(active_raw) > self._foreign_pending_max:
+                raise ValueError("foreign active set is invalid/oversized")
+            active = {}
+            for raw_event in active_raw:
+                event = self._validate_foreign_plan_event(
+                    raw_event, active=True)
+                key = (
+                    event["event_type"], event.get("code"),
+                    tuple(event.get("lanes") or ()))
+                if key in active:
+                    raise ValueError("duplicate foreign active condition")
+                active[key] = event
+            statuses[service] = {
+                "fingerprint": fingerprint,
+                "status": status,
+                "active": active,
+            }
+
+        delivered = set()
+        for entry in delivered_raw:
+            if (not isinstance(entry, dict)
+                    or set(entry) != {
+                        "service", "event_type", "code", "lane"}):
+                raise ValueError("delivered condition is not an object")
+            condition = (
+                entry.get("service"), entry.get("event_type"),
+                entry.get("code"), entry.get("lane"))
+            service, event_type, code, lane = condition
+            if service != SERVICE_CAMERA:
+                raise ValueError("delivered condition service is invalid")
+            if event_type not in {
+                    "camera_health", "pi_fs_readonly", "pi_disk_low",
+                    "pi_thermal", "pi_undervoltage", "diag_storage_error",
+                    "health_drop_unhealthy", "health_drop_stale"}:
+                raise ValueError("delivered condition event type is invalid")
+            if (code is not None
+                    and (not isinstance(code, str) or len(code) > 120)):
+                raise ValueError("delivered condition code is invalid")
+            if (not isinstance(lane, int) or isinstance(lane, bool)
+                    or lane not in self._foreign_lanes
+                    or condition in delivered):
+                raise ValueError("delivered condition lane/identity is invalid")
+            delivered.add(condition)
+
+        pending_entries = {}
+        pending_sequences = set()
+        for entry in pending_raw:
+            if (not isinstance(entry, dict)
+                    or set(entry) != {
+                        "service", "event", "lane", "diag_event",
+                        "sequence"}):
+                raise ValueError("pending condition is not an object")
+            service = entry.get("service")
+            lane = entry.get("lane")
+            if service != SERVICE_CAMERA \
+                    or not isinstance(lane, int) or isinstance(lane, bool) \
+                    or lane not in self._foreign_lanes:
+                raise ValueError("pending service/lane is invalid")
+            sequence = entry.get("sequence")
+            if (not isinstance(sequence, int) or isinstance(sequence, bool)
+                    or not 0 < sequence <= SQLITE_INT64_MAX
+                    or sequence in pending_sequences):
+                raise ValueError("pending sequence is invalid/duplicate")
+            pending_sequences.add(sequence)
+            event = self._validate_foreign_plan_event(entry.get("event"))
+            diag_event = self._restore_diag_event(entry.get("diag_event"))
+            if (diag_event.lane_id != lane
+                    or (event.get("lanes")
+                        and lane not in event.get("lanes"))
+                    or diag_event.severity != event["severity"]
+                    or diag_event.event_type != event["event_type"]
+                    or diag_event.code != event.get("code")
+                    or diag_event.detail != event.get("detail")):
+                raise ValueError("pending event and diagnostic row disagree")
+            condition = self._foreign_condition_key(service, event, lane)
+            key = self._foreign_pending_key(service, event, lane)
+            if key in pending_entries:
+                raise ValueError("duplicate pending delivery identity")
+            pending_entries[key] = {
+                "event": event,
+                "lane": lane,
+                "diag_event": diag_event,
+                "priority": self._foreign_priority(event),
+                "condition": condition,
+                "sequence": sequence,
+            }
+
+        drops = payload.get("pending_drops", 0)
+        drops_reported = payload.get("pending_drops_reported", 0)
+        if (not isinstance(drops, int) or isinstance(drops, bool)
+                or not isinstance(drops_reported, int)
+                or isinstance(drops_reported, bool)):
+            raise ValueError("pending drop counters are invalid")
+        if (not 0 <= drops <= SQLITE_INT64_MAX
+                or not 0 <= drops_reported <= SQLITE_INT64_MAX
+                or drops_reported > drops):
+            raise ValueError("pending drop counters are inconsistent")
+
+        planner_conditions = set()
+        for service, record in statuses.items():
+            for event in record["active"].values():
+                for lane in event.get("lanes") or self._foreign_lanes:
+                    planner_conditions.add(
+                        self._foreign_condition_key(service, event, lane))
+        pending_alerts = {
+            entry["condition"] for entry in pending_entries.values()
+            if entry["event"].get("event_type") != "recovered"
+        }
+        pending_recoveries = {
+            entry["condition"] for entry in pending_entries.values()
+            if entry["event"].get("event_type") == "recovered"
+        }
+
+        def recovery_matches(recovery_condition, alert_condition):
+            return (
+                recovery_condition[0] == alert_condition[0]
+                and recovery_condition[1] == alert_condition[1]
+                and recovery_condition[2] == alert_condition[2]
+                and recovery_condition[3] == alert_condition[3]
+            )
+
+        # Replay each exact family as an alternating delivery state machine.
+        # A delivered alert may legitimately have both a pending recovery and
+        # a later recurrence alert.  Sequence, rather than event severity,
+        # proves the only safe order: alert -> recovery -> re-alert.  Reject a
+        # ledger that would ever clear an absent alert or repeat an already
+        # active one.
+        projected_delivery = set(delivered)
+        for pending in sorted(
+                pending_entries.values(),
+                key=lambda entry: entry["sequence"]):
+            condition = pending["condition"]
+            is_recovery = (
+                pending["event"].get("event_type") == "recovered")
+            currently_active = condition in projected_delivery
+            if is_recovery:
+                if not currently_active:
+                    raise ValueError(
+                        "pending recovery lacks a causal alert earlier "
+                        "in sequence")
+                projected_delivery.discard(condition)
+            else:
+                if currently_active:
+                    raise ValueError(
+                        "pending alert lacks an earlier causal recovery")
+                projected_delivery.add(condition)
+        camera_status = statuses.get(SERVICE_CAMERA, {}).get("status")
+        if camera_status in {"stale", "missing"}:
+            unavailable_conditions = {
+                (SERVICE_CAMERA, "health_drop_stale",
+                 f"{SERVICE_CAMERA}:{status}", lane)
+                for status in ("stale", "missing")
+                for lane in self._foreign_lanes
+            }
+            required_unavailable = {
+                (SERVICE_CAMERA, "health_drop_stale",
+                 f"{SERVICE_CAMERA}:{camera_status}", lane)
+                for lane in self._foreign_lanes
+            }
+            if not (
+                    planner_conditions | required_unavailable
+                    <= projected_delivery
+                    <= planner_conditions | unavailable_conditions):
+                raise ValueError(
+                    "projected delivery state disagrees with unavailable "
+                    "planner state")
+        elif projected_delivery != planner_conditions:
+            raise ValueError(
+                "projected delivery state disagrees with planner state")
+        delivery_evidence = delivered | pending_alerts
+        missing_planner = planner_conditions - delivery_evidence
+        if missing_planner:
+            raise ValueError(
+                "planner-active fault lacks a durable delivery obligation")
+        if camera_status in {"stale", "missing"}:
+            expected_stale = {
+                (SERVICE_CAMERA, "health_drop_stale",
+                 f"{SERVICE_CAMERA}:{camera_status}", lane)
+                for lane in self._foreign_lanes
+            }
+            if not expected_stale <= delivery_evidence:
+                raise ValueError(
+                    "foreign unavailable state lacks a delivery obligation")
+        for alert in pending_alerts:
+            has_pending_recovery = any(
+                recovery_matches(recovery, alert)
+                for recovery in pending_recoveries)
+            if (alert not in planner_conditions
+                    and not has_pending_recovery
+                    and not (
+                        alert[1] == "health_drop_stale"
+                        and camera_status in {"stale", "missing"})):
+                raise ValueError("pending alert lacks active planner evidence")
+        for alert in delivered:
+            has_pending_recovery = any(
+                recovery_matches(recovery, alert)
+                for recovery in pending_recoveries)
+            if (alert not in planner_conditions
+                    and not has_pending_recovery
+                    and not (
+                        alert[1] == "health_drop_stale"
+                        and camera_status in {"stale", "missing"})):
+                raise ValueError(
+                    "delivered alert lacks active or clearing planner state")
+
+        self._last_foreign_status = statuses
+        self._foreign_delivered_active = delivered
+        self._foreign_pending = pending_entries
+        self._foreign_pending_sequence = max(pending_sequences, default=0)
+        self._foreign_pending_drops = drops
+        self._foreign_pending_drops_reported = drops_reported
+
+    def _ensure_foreign_delivery_loaded(self):
+        """Load once, before sampling; invalid evidence blocks relay fail-closed."""
+        if self._foreign_delivery_loaded:
+            return not self._foreign_delivery_blocked
+        self._foreign_delivery_loaded = True
+        payload = health_drop.read_delivery_ledger(
+            self._foreign_delivery_path,
+            version=FOREIGN_DELIVERY_LEDGER_VERSION)
+        if payload == {}:
+            return True
+        try:
+            if payload is None:
+                raise ValueError("unreadable/version-mismatched ledger")
+            self._restore_foreign_delivery_payload(payload)
+            self._foreign_delivery_ledger_error = None
+            return True
+        except Exception as exc:
+            self.errors += 1
+            self._foreign_delivery_ledger_errors += 1
+            self._foreign_delivery_ledger_error = "load_invalid"
+            self._foreign_delivery_blocked = True
+            log.error(
+                "foreign diagnostic relay blocked: invalid delivery ledger %s "
+                "(manual preservation/reconciliation required): %s",
+                self._foreign_delivery_path, exc)
+            return False
+
+    def _persist_foreign_delivery_state(self):
+        """Atomically commit a dirty relay state; retain it for later retry."""
+        if (not self._foreign_delivery_loaded
+                or self._foreign_delivery_blocked
+                or not self._foreign_delivery_dirty):
+            return not self._foreign_delivery_ledger_error
+        if health_drop.write_delivery_ledger(
+                self._foreign_delivery_path,
+                self._foreign_delivery_payload()):
+            self._foreign_delivery_dirty = False
+            self._foreign_delivery_ledger_error = None
+            return True
+        self.errors += 1
+        self._foreign_delivery_ledger_errors += 1
+        self._foreign_delivery_ledger_error = "write_failed"
+        return False
+
+    @staticmethod
+    def _foreign_condition_key(service, event, lane):
+        if event.get("event_type") == "recovered":
+            detail = event.get("detail") or {}
+            recovered_type = (
+                detail.get("recovered_event_type") or event.get("code"))
+            recovered_code = detail.get("recovered_code")
+            return (service, recovered_type, recovered_code, lane)
+        return (
+            service, event.get("event_type"), event.get("code"), lane)
+
+    @staticmethod
+    def _foreign_pending_key(service, event, lane):
+        """Uniquely identify one concrete fault/recovery WAL occurrence."""
+        detail = event.get("detail") or {}
+        return (
+            service, event.get("event_type"), event.get("code"), lane,
+            detail.get("snapshot_id"), detail.get("recovered_event_type"),
+            detail.get("recovered_code"),
+            detail.get("relay_occurrence_id"))
+
+    def _matching_foreign_conditions(self, condition):
+        service, event_type, code, lane = condition
+        candidates = set(self._foreign_delivered_active)
+        candidates.update(
+            pending.get("condition")
+            for pending in self._foreign_pending.values())
+        candidates.discard(None)
+        return {
+            item for item in candidates
+            if item[0] == service and item[1] == event_type
+            and item[2] == code and item[3] == lane
+        }
+
+    def _mark_foreign_accepted(self, pending):
+        event = pending["event"]
+        condition = pending["condition"]
+        if event.get("event_type") == "recovered":
+            for matched in self._matching_foreign_conditions(condition):
+                self._foreign_delivered_active.discard(matched)
+        else:
+            self._foreign_delivered_active.add(condition)
+        self._foreign_delivery_dirty = True
+
+    def _retain_foreign_event(self, key, service, event, lane, diag_event):
+        """Keep one rejected concrete relay occurrence in a bounded outbox."""
+        if not isinstance(diag_event, _PreparedRelayEvent):
+            raise ValueError(
+                "foreign relay obligation lacks a prepared delivery identity")
+        if key != self._foreign_pending_key(service, event, lane):
+            raise ValueError("foreign relay obligation key is inconsistent")
+        priority = self._foreign_priority(event)
+        existing = self._foreign_pending.get(key)
+        if key not in self._foreign_pending \
+                and len(self._foreign_pending) >= self._foreign_pending_max:
+            self._foreign_pending_drops += 1
+            self.errors += 1
+            self._foreign_delivery_dirty = True
+            # Do not evict an older obligation whose planner transition was
+            # already committed. The new source fingerprint remains uncommitted
+            # and is therefore planned again after capacity returns.
+            return False
+        if existing is None:
+            if self._foreign_pending_sequence >= SQLITE_INT64_MAX:
+                raise OverflowError(
+                    "foreign delivery ordering sequence exhausted")
+            self._foreign_pending_sequence += 1
+            sequence = self._foreign_pending_sequence
+        else:
+            sequence = existing["sequence"]
+        retained_event = copy.deepcopy(event)
+        retained_event["severity"] = diag_event.severity
+        retained_event["event_type"] = diag_event.event_type
+        retained_event["code"] = diag_event.code
+        retained_event["detail"] = copy.deepcopy(diag_event.detail)
+        self._foreign_pending[key] = {
+            "event": retained_event,
+            "lane": lane,
+            "diag_event": diag_event,
+            "priority": priority,
+            "condition": self._foreign_condition_key(
+                service, retained_event, lane),
+            "sequence": sequence,
+        }
+        self._foreign_delivery_dirty = True
+        return True
+
+    def _retry_foreign_pending(self):
+        """Complete WAL obligations in causal order, persisting each receipt."""
+        if self._foreign_delivery_dirty \
+                and not self._persist_foreign_delivery_state():
+            return 0
+        accepted = 0
+        ordered = sorted(
+            self._foreign_pending.items(),
+            key=lambda item: item[1].get("sequence", 0))
+        blocked_conditions = set()
+        for key, pending in ordered:
+            if self._foreign_pending.get(key) is not pending:
+                continue
+            condition = pending["condition"]
+            if condition in blocked_conditions:
+                continue
+            if pending["event"].get("event_type") == "recovered":
+                if not (
+                        self._matching_foreign_conditions(condition)
+                        & self._foreign_delivered_active):
+                    # The causal alert may be immediately ahead of this row in
+                    # the same WAL. Never emit a recovery first.
+                    blocked_conditions.add(condition)
+                    continue
+            elif condition in self._foreign_delivered_active:
+                # This is a recurrence retained behind an ambiguous recovery.
+                # Do not offer it until that exact recovery has durably cleared
+                # the prior alert; otherwise server incident grouping could let
+                # the recovery close both occurrences and leave a false green.
+                blocked_conditions.add(condition)
+                continue
+            if not self._emit_foreign_relay(
+                    pending["event"], pending["lane"],
+                    prepared_event=pending["diag_event"]):
+                # Preserve per-family FIFO even when another event type would
+                # currently pass its state guard.  A later recurrence must
+                # never leapfrog an unaccepted alert/recovery receipt.
+                blocked_conditions.add(condition)
+                continue
+            self._mark_foreign_accepted(pending)
+            self._foreign_pending.pop(key, None)
+            if not self._foreign_pending:
+                self._foreign_pending_sequence = 0
+            self._foreign_delivery_dirty = True
+            accepted += 1
+            # If this write fails, the old WAL still contains the same fully
+            # stamped row. Stop offering; restart/retry is server-idempotent.
+            if not self._persist_foreign_delivery_state():
+                break
+        return accepted
+
+    def _report_foreign_pending_drops(self):
+        if self._foreign_pending_drops <= \
+                self._foreign_pending_drops_reported:
+            return
+        if self._emit(
+                "warn", "diag_drops", code="foreign_pending_overflow",
+                detail={
+                    "new": (
+                        self._foreign_pending_drops
+                        - self._foreign_pending_drops_reported),
+                    "total": self._foreign_pending_drops,
+                    "pending": len(self._foreign_pending),
+                    "capacity": self._foreign_pending_max,
+                }):
+            self._foreign_pending_drops_reported = \
+                self._foreign_pending_drops
+            self._foreign_delivery_dirty = True
 
     def _ship_foreign_health(self):
-        """Relay Track-A health as typed, episode-deduplicated diagnostics."""
+        """Relay Track-A health through a restart-safe write-ahead outbox.
+
+        A planner transition and every concrete per-lane occurrence are one
+        transaction: all rows must fit and reach the fsynced ledger before the
+        first durable writer offer.  Ambiguous writer failures therefore leave
+        the same stamped identity available for replay, and capacity pressure
+        cannot advance the source fingerprint past an unrecorded lane.
+        """
+        if not self._diagnostic_events_enabled():
+            return
         try:
-            lanes = [b.cfg.lane for b in self.boards]
+            if not self._ensure_foreign_delivery_loaded():
+                return
+            # Never offer while memory is ahead of disk.  Then replay older WAL
+            # rows before planning a newer source snapshot so causal alerts can
+            # make room for their eventual recoveries.
+            if (self._foreign_delivery_dirty
+                    and not self._persist_foreign_delivery_state()):
+                return
+            self._retry_foreign_pending()
+            if self._foreign_delivery_dirty:
+                return
+
+            configured_lanes = sorted(self._foreign_lanes)
             required = os.environ.get(
                 "WSL_PHASE8_REQUIRED_SERVICES", "")
             if not health_drop.foreign_service_required(
-                    required, "scoring", lanes):
+                    required, "scoring", configured_lanes):
+                self._report_foreign_pending_drops()
+                self._persist_foreign_delivery_state()
                 return
             statuses = health_drop.read_foreign_statuses(
                 self._health_drop_path, SERVICE_CONTROLLER)
             for item in statuses:
-                for event in health_drop.plan_foreign_relay(
-                        item, self._last_foreign_status):
-                    lanes = event.get("lanes") or [
-                        b.cfg.lane for b in self.boards]
-                    for lane in sorted(set(lanes)):
-                        self._emit_foreign_relay(event, lane)
+                service = item.get("service")
+                if service != SERVICE_CAMERA:
+                    raise ValueError("unexpected foreign relay service")
+                candidate_state = copy.deepcopy(self._last_foreign_status)
+                planned = health_drop.plan_foreign_relay(
+                    item, candidate_state)
+                staged = []
+                staged_keys = set()
+                staged_alerts = set()
+                existing_alerts = set(self._foreign_delivered_active)
+                existing_alerts.update(
+                    pending["condition"]
+                    for pending in self._foreign_pending.values()
+                    if pending["event"].get("event_type") != "recovered")
+
+                for raw_event in planned:
+                    event = self._validate_foreign_plan_event(raw_event)
+                    lanes = event.get("lanes") or configured_lanes
+                    if not lanes:
+                        raise ValueError(
+                            "foreign relay has no configured destination lane")
+                    for lane in lanes:
+                        condition = self._foreign_condition_key(
+                            service, event, lane)
+                        if event.get("event_type") == "recovered":
+                            # The planner deliberately offers exact clears for
+                            # every unavailable code it may have observed.
+                            # Commit only those backed by a fault obligation.
+                            matches = self._matching_foreign_conditions(
+                                condition)
+                            matches.update(
+                                alert for alert in staged_alerts
+                                if alert[0] == condition[0]
+                                and alert[1] == condition[1]
+                                and alert[2] == condition[2]
+                                and alert[3] == condition[3]
+                            )
+                            if not (matches & (
+                                    existing_alerts | staged_alerts)):
+                                continue
+                        elif condition in self._foreign_delivered_active:
+                            # A same-family recurrence is new evidence only
+                            # when an earlier exact recovery is already in the
+                            # WAL. Retain the recurrence behind that recovery;
+                            # its distinct prepared identity must survive a
+                            # crash at either receipt boundary.
+                            has_pending_recovery = any(
+                                pending["condition"] == condition
+                                and pending["event"].get("event_type")
+                                == "recovered"
+                                for pending in self._foreign_pending.values())
+                            if not has_pending_recovery:
+                                continue
+
+                        concrete_event = copy.deepcopy(event)
+                        concrete_detail = dict(
+                            concrete_event.get("detail") or {})
+                        # Source snapshot ids intentionally repeat while a
+                        # payload is unchanged and unavailable states use None.
+                        # A local occurrence id distinguishes later causal
+                        # episodes of the same exact family in one WAL.
+                        concrete_detail["relay_occurrence_id"] = \
+                            uuid.uuid4().hex
+                        concrete_event["detail"] = concrete_detail
+                        concrete_event = self._validate_foreign_plan_event(
+                            concrete_event)
+                        key = self._foreign_pending_key(
+                            service, concrete_event, lane)
+                        if key in self._foreign_pending \
+                                or key in staged_keys:
+                            continue
+                        prepared = _PreparedRelayEvent.from_event(make_event(
+                            lane, concrete_event["severity"],
+                            concrete_event["event_type"],
+                            code=concrete_event.get("code"),
+                            detail=concrete_event.get("detail")))
+                        staged.append((
+                            key, service, concrete_event, lane, prepared))
+                        staged_keys.add(key)
+                        if concrete_event.get("event_type") != "recovered":
+                            staged_alerts.add(condition)
+
+                available = (
+                    self._foreign_pending_max - len(self._foreign_pending))
+                if len(staged) > available:
+                    self._foreign_pending_drops = min(
+                        SQLITE_INT64_MAX,
+                        self._foreign_pending_drops + len(staged) - max(
+                            available, 0))
+                    self.errors += 1
+                    self._foreign_delivery_dirty = True
+                    # Do not commit candidate_state: the unchanged source
+                    # fingerprint will deterministically re-plan every lane.
+                    if not self._persist_foreign_delivery_state():
+                        return
+                    continue
+
+                pending_before = dict(self._foreign_pending)
+                sequence_before = self._foreign_pending_sequence
+                for key, staged_service, event, lane, prepared in staged:
+                    if not self._retain_foreign_event(
+                            key, staged_service, event, lane, prepared):
+                        self._foreign_pending = pending_before
+                        self._foreign_pending_sequence = sequence_before
+                        self._foreign_delivery_dirty = True
+                        if not self._persist_foreign_delivery_state():
+                            return
+                        break
+                else:
+                    self._last_foreign_status = candidate_state
+                    self._foreign_delivery_dirty = True
+                    if not self._persist_foreign_delivery_state():
+                        return
+                    self._retry_foreign_pending()
+                    if self._foreign_delivery_dirty:
+                        return
+
+            self._report_foreign_pending_drops()
+            self._persist_foreign_delivery_state()
         except Exception:
             self.errors += 1
+            log.exception("foreign diagnostic relay poll failed")
 
     # ---- R3-2: periodic authenticated heartbeat / lease renewal ------------
     def _maybe_heartbeat(self):
@@ -1936,9 +3869,9 @@ class PlatformHealth(threading.Thread):
                     # pi_fs_readonly EVENT can't be persisted — the heartbeat
                     # (direct network POST, no disk) is the only channel left
                     # to surface it. Pre-allocated flag, always sent.
-                    "ro_fs": bool(self._readonly_warned),
+                    "ro_fs": bool(self._readonly_active),
                     "outbox": outbox,
-                    "platform": dict(self._common_platform),
+                    "platform": self._current_platform_snapshot(),
                     "serial_parse_errors": body.pop("parse_errors"),
                     "diag_record_drops": body.pop("diag_record_drops"),
                 })
@@ -1980,10 +3913,17 @@ class PlatformHealth(threading.Thread):
             self._stop_ev.set()
             if self.is_alive():
                 self.join(timeout)
+            self._retry_service_start_events()
         except Exception:
             pass
 
     def run(self):
+        try:
+            # File I/O stays on this background thread, but continuity state is
+            # restored before the first platform/foreign-health observation.
+            self._ensure_foreign_delivery_loaded()
+        except Exception:
+            self.errors += 1
         try:
             self._count_service_start()
         except Exception:
@@ -1991,6 +3931,10 @@ class PlatformHealth(threading.Thread):
             log.debug("PlatformHealth service-start count swallowed", exc_info=True)
         while not self._stop_ev.is_set():
             now = time.monotonic()
+            try:
+                self._retry_service_start_events()
+            except Exception:
+                self.errors += 1
             # Platform probes stay on the slow poll_s cadence (they own their
             # own baselines/latches and some spawn subprocesses — vcgencmd —
             # that must NOT run 3x more often just because the loop woke early
@@ -2043,45 +3987,156 @@ class PlatformHealth(threading.Thread):
         'service_restart_loop' fault when N starts land within the window —
         systemd's StartLimitBurst latches the unit silently; this makes the
         crash loop visible on the desk before that."""
-        path = os.path.join(self.dir, "service_starts.json")
-        count, recent = 0, []
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            count = int(data.get("count", 0))
-            recent = [float(x) for x in data.get("recent", [])][-20:]
-        except Exception:
-            count, recent = 0, []
-        count += 1
-        now_epoch = time.time()
-        recent.append(now_epoch)
-        recent = recent[-20:]
-        self.start_count = count
-        try:
-            os.makedirs(self.dir, exist_ok=True)
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"count": count, "last_start": _utc_now_iso(),
-                           "recent": recent}, f)
-            os.replace(tmp, path)
-        except Exception:
-            self.errors += 1
-        self._emit("info", "service_restart", code="daemon_start",
-                   detail={"count": count})
         loop_n = int(_env_float(RESTART_LOOP_N_ENV, DEFAULT_RESTART_LOOP_N))
         window_s = _env_float(RESTART_LOOP_MIN_ENV,
                               DEFAULT_RESTART_LOOP_MIN) * 60.0
-        in_window = [x for x in recent if now_epoch - x <= window_s]
-        if loop_n > 0 and len(in_window) >= loop_n:
-            self._emit("fault", "service_restart_loop", code="daemon_start",
-                       detail={"starts_in_window": len(in_window),
-                               "window_min": round(window_s / 60.0, 1),
-                               "threshold": loop_n})
+        facts = health_drop.record_service_start(
+            self._service_start_path,
+            window_s=window_s,
+            threshold=(loop_n if loop_n > 0 else 2 ** 31 - 1),
+            track_delivery=True,
+            monotonic_now=time.monotonic())
+        self.start_count = int(facts.get("count", 0) or 0)
+        self._service_start_pending_overflow = int(
+            facts.get("pending_delivery_overflow", 0) or 0)
+        if not facts.get("persisted"):
+            self._service_start_ledger_error = (
+                facts.get("error") or "service_start_state_not_persisted")
+            self.errors += 1
+            self._emit(
+                "warn", "diag_storage_error",
+                code="service_start_counter", detail={
+                    key: value for key, value in facts.items()
+                    if key != "pending_events"
+                })
+            return
+        self._service_start_ledger_error = None
+        for item in facts.get("pending_events", []):
+            if not self._restore_service_start_obligation(item):
+                if not self._service_start_ledger_error:
+                    self._service_start_ledger_error = (
+                        "service_start_delivery_prepare_failed")
+                self.errors += 1
+        self._retry_service_start_events()
+
+    def _restore_service_start_obligation(self, item):
+        """Restore or prepare one exact, restart-stable startup occurrence.
+
+        The concrete delivery row is fsynced into the counter WAL before its
+        first writer offer.  If a previous process died after the JSONL fsync
+        but before the WAL acknowledgement, the exact local receipt is
+        reconciled without offering even an idempotent duplicate.
+        """
+        try:
+            count = int(item["count"])
+            epoch = float(item["started_at_epoch"])
+            mono = float(item["started_at_monotonic"])
+            stamp = datetime.fromtimestamp(
+                epoch, timezone.utc).isoformat(timespec="milliseconds")
+            detail = {
+                "count": count,
+                "started_at_epoch": epoch,
+                "starts_in_window": int(item["starts_in_window"]),
+                "window_s": float(item["window_s"]),
+                "threshold": int(item["threshold"]),
+                "restart_loop": bool(item["restart_loop"]),
+                "replayed_start_evidence": count != self.start_count,
+            }
+            for event_type, severity in (
+                    ("service_restart_loop", "fault"),
+                    ("service_restart", "info")):
+                if not item.get(f"{event_type}_pending"):
+                    continue
+                delivery_field = f"{event_type}_deliveries"
+                rows = item.get(delivery_field)
+                if rows is None:
+                    prepared = _PreparedRelayEvent.from_event(DiagEvent(
+                        stamp, mono, self._lane, severity,
+                        event_type, code="daemon_start", detail=detail))
+                    rows = health_drop.prepare_service_start_deliveries(
+                        self._service_start_path, count, event_type,
+                        [prepared.to_dict()])
+                if not isinstance(rows, list) or len(rows) != 1:
+                    return False
+                prepared = _PreparedRelayEvent(rows[0])
+                if (
+                        prepared.lane_id != self._lane
+                        or prepared.code != "daemon_start"):
+                    return False
+                receipt_status = health_drop.delivery_receipt_status(
+                    self.dir, prepared.to_dict())
+                if receipt_status not in {
+                        health_drop.DELIVERY_RECEIPT_EXACT,
+                        health_drop.DELIVERY_RECEIPT_ABSENT}:
+                    self._service_start_ledger_error = (
+                        "service_start_receipt_" + receipt_status)
+                    return False
+                key = (count, event_type)
+                existing = self._service_start_pending.get(key)
+                if existing is not None \
+                        and existing["event"].to_dict() != prepared.to_dict():
+                    return False
+                self._service_start_pending.setdefault(key, {
+                    "event": prepared,
+                    "accepted": (
+                        receipt_status
+                        == health_drop.DELIVERY_RECEIPT_EXACT),
+                })
+            return True
+        except Exception:
+            return False
+
+    def _retry_service_start_events(self):
+        if self._service_start_ledger_error:
+            obligations = health_drop.read_service_start_pending(
+                self._service_start_path)
+            if obligations is not None:
+                restored = all(
+                    self._restore_service_start_obligation(item)
+                    for item in obligations)
+                if restored:
+                    self._service_start_ledger_error = None
+        # Fault evidence goes first when queue capacity is constrained.
+        ordered = sorted(
+            list(self._service_start_pending.items()),
+            key=lambda pair: (
+                0 if pair[1]["event"].severity == "fault" else 1,
+                pair[0][0],
+            ))
+        for key, pending in ordered:
+            if not pending["accepted"]:
+                if not self._diagnostic_events_enabled():
+                    continue
+                durable_emit = getattr(
+                    self.writer, "emit_durable", None)
+                if callable(durable_emit):
+                    pending["accepted"] = bool(
+                        durable_emit(pending["event"], timeout=2.0))
+                else:
+                    # Test/minimal writer doubles have no persistence receipt;
+                    # their boolean is their complete acceptance contract.
+                    pending["accepted"] = self._emit_prebuilt(
+                        pending["event"])
+            if not pending["accepted"]:
+                continue
+            count, event_type = key
+            event = pending["event"]
+            row = event.to_dict()
+            if health_drop.acknowledge_service_start_lane(
+                    self._service_start_path, count, event_type,
+                    event.lane_id, row["source_id"], row["boot_id"],
+                    row["seq"]):
+                self._service_start_pending.pop(key, None)
+            else:
+                # Do not enqueue duplicates in this process while durable
+                # acknowledgement is retried.
+                self.errors += 1
 
     def _poll_thermal(self):
         """R2-14: SoC temperature via sysfs (millidegrees C). Warn once per
         over-threshold episode; 5 °C hysteresis re-arms. Absent path (non-Pi
         host) disables the probe after one info log."""
+        events_enabled = self._diagnostic_events_enabled()
         if self._thermal_missing:
             return
         path = "/sys/class/thermal/thermal_zone0/temp"
@@ -2097,29 +4152,40 @@ class PlatformHealth(threading.Thread):
             self.errors += 1
             return
         thr = _env_float(TEMP_MAX_ENV, DEFAULT_TEMP_MAX_C)
-        if temp_c >= thr and not self._thermal_warned:
-            self._thermal_warned = True
-            self._emit("warn", "pi_thermal", code="soc_temp",
-                       detail={"temp_c": round(temp_c, 1),
-                               "threshold_c": thr})
-        elif temp_c < thr - 5.0:
+        if self._thermal_active:
+            self._thermal_active = temp_c >= thr - 5.0
+        else:
+            self._thermal_active = temp_c >= thr
+        if (self._thermal_active and events_enabled
+                and not self._thermal_warned):
+            self._thermal_warned = self._emit(
+                "warn", "pi_thermal", code="soc_temp",
+                detail={"temp_c": round(temp_c, 1),
+                        "threshold_c": thr})
+        elif not self._thermal_active:
             self._thermal_warned = False
 
     def _poll_disk(self):
         """R2-14: free space on the diag volume + a read-only-filesystem
         write probe (the classic SD-card end-of-life mode: the card silently
         remounts ro and every 'successful' write vanishes)."""
+        events_enabled = self._diagnostic_events_enabled()
         import shutil
         try:
             os.makedirs(self.dir, exist_ok=True)
             free_mb = shutil.disk_usage(self.dir).free / (1024.0 * 1024.0)
             floor = _env_float(DISK_MIN_ENV, DEFAULT_DISK_MIN_MB)
-            if free_mb < floor and not self._disk_warned:
-                self._disk_warned = True
-                self._emit("warn", "pi_disk_low", code="diag_volume",
-                           detail={"free_mb": round(free_mb, 1),
-                                   "floor_mb": floor})
-            elif free_mb >= floor * 1.2:
+            if self._disk_low_active:
+                self._disk_low_active = free_mb < floor * 1.2
+            else:
+                self._disk_low_active = free_mb < floor
+            if (self._disk_low_active and events_enabled
+                    and not self._disk_warned):
+                self._disk_warned = self._emit(
+                    "warn", "pi_disk_low", code="diag_volume",
+                    detail={"free_mb": round(free_mb, 1),
+                            "floor_mb": floor})
+            elif not self._disk_low_active:
                 self._disk_warned = False
         except Exception:
             self.errors += 1
@@ -2128,18 +4194,27 @@ class PlatformHealth(threading.Thread):
             with open(probe, "w") as f:
                 f.write("ok")
             os.remove(probe)
+            self._readonly_active = False
             self._readonly_warned = False
         except Exception:
-            if not self._readonly_warned:
-                self._readonly_warned = True
-                self._emit("fault", "pi_fs_readonly", code="diag_volume",
-                           detail={"dir": self.dir})
+            self._readonly_active = True
+            if events_enabled and not self._readonly_warned:
+                self._readonly_warned = self._emit(
+                    "fault", "pi_fs_readonly", code="diag_volume",
+                    detail={"dir": self.dir})
 
     def _poll_clock_drift(self):
         """R2-14: wall-clock vs monotonic step detection. A big jump in
         (time.time() - time.monotonic()) is an NTP step / RTC-less cold boot
         correction — every UTC-stamped record around it is suspect. Warn per
         step, then re-baseline."""
+        if not self._diagnostic_events_enabled():
+            return
+        if self._clock_pending is not None:
+            if not self._emit_prebuilt(self._clock_pending["event"]):
+                return
+            self._clock_base = self._clock_pending["new_base"]
+            self._clock_pending = None
         cur = time.time() - time.monotonic()
         if self._clock_base is None:
             self._clock_base = cur
@@ -2147,10 +4222,17 @@ class PlatformHealth(threading.Thread):
         thr = _env_float(CLOCK_DRIFT_ENV, DEFAULT_CLOCK_DRIFT_S)
         delta = cur - self._clock_base
         if abs(delta) >= thr:
-            self._emit("warn", "pi_clock_drift", code="wall_step",
-                       detail={"step_s": round(delta, 3),
-                               "threshold_s": thr})
-            self._clock_base = cur
+            event = make_event(
+                self._lane, "warn", "pi_clock_drift", code="wall_step",
+                detail={"step_s": round(delta, 3),
+                        "threshold_s": thr})
+            if self._emit_prebuilt(event):
+                self._clock_base = cur
+            else:
+                self._clock_pending = {
+                    "event": event,
+                    "new_base": cur,
+                }
 
     def _poll_writer_drops(self):
         """R2-12: promote DiagQueue overflow drops + HTTP/outbox delivery
@@ -2158,15 +4240,20 @@ class PlatformHealth(threading.Thread):
         the DELTA once per poll; the event itself rides the same pipe, so a
         totally dead pipe is caught by the server-side lease going OFFLINE
         (R2-10), not by this."""
+        if not self._diagnostic_events_enabled():
+            return
         w = self.writer
         if w is None or not hasattr(w, "stats"):
             return
         s = w.stats()
         qd = int(s.get("queue_drops", 0) or 0)
         if qd > self._prev_queue_drops:
-            self._emit("warn", "diag_drops", code="queue_overflow",
-                       detail={"new_drops": qd - self._prev_queue_drops,
-                               "total": qd})
+            if self._emit(
+                    "warn", "diag_drops", code="queue_overflow",
+                    detail={"new_drops": qd - self._prev_queue_drops,
+                            "total": qd}):
+                self._prev_queue_drops = qd
+        elif qd < self._prev_queue_drops:
             self._prev_queue_drops = qd
         http_dropped = 0
         for name, sink in (s.get("sinks") or {}).items():
@@ -2174,10 +4261,13 @@ class PlatformHealth(threading.Thread):
         ob = s.get("outbox") or {}
         http_dropped += int(ob.get("post_errors", 0) or 0)
         if http_dropped > self._prev_http_drops:
-            self._emit("warn", "http_sink_drops", code="delivery",
-                       detail={"new": http_dropped - self._prev_http_drops,
-                               "total": http_dropped,
-                               "outbox": ob or None})
+            if self._emit(
+                    "warn", "http_sink_drops", code="delivery",
+                    detail={"new": http_dropped - self._prev_http_drops,
+                            "total": http_dropped,
+                            "outbox": ob or None}):
+                self._prev_http_drops = http_dropped
+        elif http_dropped < self._prev_http_drops:
             self._prev_http_drops = http_dropped
 
         # R4: every persistence/replay honesty counter must be observable as a
@@ -2201,14 +4291,17 @@ class PlatformHealth(threading.Thread):
         for key, (field, total, context) in counter_sources.items():
             prior = self._prev_diag_counters.get(key, 0)
             if total > prior:
-                self._emit_diag_counter(
+                accepted = self._emit_diag_counter(
                     field, {
                         "counter": field,
                         "new": total - prior,
                         "total": total,
                         **context,
                     })
-            self._prev_diag_counters[key] = total
+                if accepted:
+                    self._prev_diag_counters[key] = total
+            else:
+                self._prev_diag_counters[key] = total
 
         for b in self.boards:
             health = b.link.parse_health()
@@ -2216,25 +4309,31 @@ class PlatformHealth(threading.Thread):
             parse_errors = int(health["parse_errors"])
             prior = self._prev_link_parse_errors.get(lane, 0)
             if parse_errors > prior:
-                self._emit(
+                accepted = self._emit(
                     "warn", "diag_drops", code="uart_parse",
                     detail={"new_drops": parse_errors - prior,
                             "total": parse_errors,
                             "quarantined_lines":
                                 health["quarantined_lines"]},
                     lane=lane)
-            self._prev_link_parse_errors[lane] = parse_errors
+                if accepted:
+                    self._prev_link_parse_errors[lane] = parse_errors
+            else:
+                self._prev_link_parse_errors[lane] = parse_errors
 
             record_drops = int(health["diag_record_drops"])
             prior = self._prev_link_diag_drops.get(lane, 0)
             if record_drops > prior:
-                self._emit(
+                accepted = self._emit(
                     "warn", "diag_drops", code="link_record_queue",
                     detail={"new_drops": record_drops - prior,
                             "total": record_drops,
                             "pending": health["pending_diag_records"]},
                     lane=lane)
-            self._prev_link_diag_drops[lane] = record_drops
+                if accepted:
+                    self._prev_link_diag_drops[lane] = record_drops
+            else:
+                self._prev_link_diag_drops[lane] = record_drops
 
     def _emit_diag_counter(self, field, detail):
         """Promote one known diagnostic counter with literal event types.
@@ -2243,34 +4342,36 @@ class PlatformHealth(threading.Thread):
         prove every emitted type belongs to machine_contract.json.
         """
         if field == "write_errors":
-            self._emit("warn", "diag_storage_error",
-                       code="jsonl_write", detail=detail)
+            return self._emit("warn", "diag_storage_error",
+                              code="jsonl_write", detail=detail)
         elif field == "retry_batches":
-            self._emit("warn", "diag_storage_error",
-                       code="jsonl_retry", detail=detail)
+            return self._emit("warn", "diag_storage_error",
+                              code="jsonl_retry", detail=detail)
         elif field == "dropped":
-            self._emit("warn", "diag_drops", code="sink_drop", detail=detail)
+            return self._emit(
+                "warn", "diag_drops", code="sink_drop", detail=detail)
         elif field == "prune_deferred":
-            self._emit("warn", "diag_storage_error",
-                       code="retention_deferred", detail=detail)
+            return self._emit("warn", "diag_storage_error",
+                              code="retention_deferred", detail=detail)
         elif field == "repaired_tails":
-            self._emit("warn", "diag_corrupt_row",
-                       code="partial_tail_repaired", detail=detail)
+            return self._emit("warn", "diag_corrupt_row",
+                              code="partial_tail_repaired", detail=detail)
         elif field == "corrupt_rows":
-            self._emit("warn", "diag_corrupt_row",
-                       code="outbox_row", detail=detail)
+            return self._emit("warn", "diag_corrupt_row",
+                              code="outbox_row", detail=detail)
         elif field == "cursor_errors":
-            self._emit("warn", "diag_storage_error",
-                       code="cursor", detail=detail)
+            return self._emit(
+                "warn", "diag_storage_error", code="cursor", detail=detail)
         elif field == "cursor_resets":
-            self._emit("warn", "diag_storage_error",
-                       code="cursor_reset", detail=detail)
+            return self._emit("warn", "diag_storage_error",
+                              code="cursor_reset", detail=detail)
         elif field == "quarantine_errors":
-            self._emit("fault", "diag_storage_error",
-                       code="quarantine", detail=detail)
+            return self._emit("fault", "diag_storage_error",
+                              code="quarantine", detail=detail)
         elif field == "post_errors":
-            self._emit("warn", "http_sink_drops",
-                       code="outbox_post", detail=detail)
+            return self._emit("warn", "http_sink_drops",
+                              code="outbox_post", detail=detail)
+        return False
 
     def _poll_dir_retention(self):
         """R2-14: bound the diag dir (JSONL outbox + blackboxes live here).
@@ -2313,6 +4414,7 @@ class PlatformHealth(threading.Thread):
     def _poll_throttled(self):
         """`vcgencmd get_throttled` -> 'pi_undervoltage' warn on a nonzero,
         CHANGED bitmask (bit 0 undervoltage now, 16 undervoltage occurred...)."""
+        events_enabled = self._diagnostic_events_enabled()
         if self._vcgencmd_missing:
             return
         try:
@@ -2331,10 +4433,14 @@ class PlatformHealth(threading.Thread):
             val = int(txt.split("=", 1)[1], 16)
         except Exception:
             return
-        if val and val != self._last_throttled:
-            self._emit("warn", "pi_undervoltage", code="get_throttled",
-                       detail={"throttled": hex(val)})
-        self._last_throttled = val
+        self._current_throttled = val
+        if val and val != self._last_throttled and events_enabled:
+            if self._emit(
+                    "warn", "pi_undervoltage", code="get_throttled",
+                    detail={"throttled": hex(val)}):
+                self._last_throttled = val
+        elif not val:
+            self._last_throttled = 0
 
 
 class BoardController:
@@ -2359,6 +4465,14 @@ class BoardController:
                 f"(--board-revs '21=revC,22=revD' / {BOARD_REVS_ENV} in the "
                 f"systemd env file / BoardConfig.board_rev). A silent revC "
                 f"default would swallow AUX4-11 roles on a rev-D board.")
+        roles = aux_roles
+        if roles is None:
+            roles = cfg.aux_roles if cfg.aux_roles is not None \
+                else _aux_roles_for_lane(cfg.lane)
+        roles = _validated_aux_role_map(
+            roles, context=f"L{cfg.lane} AUX provisioning")
+        _validate_aux_channels_for_revision(
+            roles, lane=cfg.lane, board_rev=cfg.board_rev)
         self._allowed_fw_builds = _normalize_allowlist(
             cfg.allowed_fw_builds, FW_BUILD_ALLOWLIST_ENV)
         self._allowed_fw_cfgs = _normalize_allowlist(
@@ -2495,25 +4609,6 @@ class BoardController:
         # Diagnostics event pipe (2026-07-19 scope): per-lane rules + suppression
         # over the shared DiagWriter. writer=None (sim/tests default) keeps the
         # rules running but emission local-only; main() wires the real writer.
-        roles = aux_roles
-        if roles is None:
-            roles = cfg.aux_roles if cfg.aux_roles is not None \
-                else _parse_aux_roles(os.environ.get(AUX_ROLES_ENV))
-        # R2-6: reject roles the DECLARED revision cannot carry — loudly, at
-        # startup. On a rev-B/C board an aux4-11 role would otherwise be
-        # silently dormant forever (the exact Codex finding: a wrong/defaulted
-        # revision swallows the role with zero log lines).
-        in_b_map = getattr(self.io, "in_b_map", None)
-        if in_b_map is None:               # ShadowIO wrapper: ask the map for the rev
-            from controller_io import in_b_map_for
-            in_b_map = in_b_map_for(cfg.board_rev)
-        unsupported = sorted(n for n in roles if n not in in_b_map)
-        if unsupported:
-            raise ValueError(
-                f"L{cfg.lane}: AUX role(s) on channel(s) {unsupported} are "
-                f"not carried by board_rev={cfg.board_rev!r} (IN-B map has "
-                f"{sorted(k for k in in_b_map if k.startswith('AUX'))}) "
-                f"— fix {AUX_ROLES_ENV}/aux_roles or the declared revision")
         self.diag = LaneDiag(cfg.lane, writer=diag_writer, aux_roles=roles)
         self.shipper = cycle_shipper       # CycleShipper (or None): machine_cycles rows
 
@@ -2527,7 +4622,8 @@ class BoardController:
             cfg.lane, recorder=self.recorder, sink=cam_sink,
             persist=not sim,
             diag_emit=lambda sev, et, code, detail: self.diag.emit_event(
-                sev, et, code=code, detail=detail, t=self.io.now()))
+                sev, et, code=code, detail=detail, t=self.io.now(),
+                persistent=True, retain_across_blind=True))
 
         self.fsm = CycleController(cfg.lane, self.io)
         # FSM diagnostics hook (wave-1 R3): unexpected-edge observations ->
@@ -2569,7 +4665,19 @@ class BoardController:
                         SLOW_DEBOUNCE_FSM_ENV)
         self._prev_slow = {}
         self._fsm_deb = {}
-        self._diag_deb = {}     # lazily per-name (IN-A watched + IN-B channels)
+        self._diag_deb = {}     # diagnostics debounce for IN-A watched inputs
+        self._diag_inb_deb = {} # IN-B state is discarded on bank/key UNKNOWN
+        self._diag_health_inputs = {
+            role: next((name for name, mapped in roles.items()
+                        if mapped == role), None)
+            for role in ("field_wet_ok", SENSOR_24V_ROLE)
+        }
+        self._diag_missing_health = set()
+        self._diag_health_levels = {}
+        self._diag_sensor_dependents = {
+            name for name, role in roles.items()
+            if role in SENSOR_24V_DEPENDENT_ROLES
+        }
         for name in self._watched:
             cur = bool(self.io.read_input(name))
             if cur:
@@ -2604,6 +4712,7 @@ class BoardController:
         # machine_cycles row bookkeeping (assembled at cycle completion, shipped
         # via the CycleShipper thread — scope §2 schema)
         self._cycle_open = False
+        self._telemetry_baseline_cycle_eligible = False
         self._cycle_started_utc = None
         self._cycle_ball = None
         self.failed = False        # set by run() when TICK_ERROR_BUDGET is exhausted
@@ -2616,7 +4725,17 @@ class BoardController:
         self._bank_warned = False
         self._run_mm_since = None  # first t the link reported a run mismatch
         self._run_mm_warned = False
+        self._run_mm_fault_code = None
         self._v5_warned = False
+        self._diag_gate_states = {
+            name: _env_on(name)
+            for name in (DIAG_EVENTS_ENV, AUX_RULE_ENV, MANUAL_RULE_ENV,
+                         STUCK_RULE_ENV, BEAM_RULE_ENV)
+        }
+        self._diag_master_reconcile_pending = False
+        self._diag_identity_reconcile_pending = False
+        self._unexpected_edge_gate_state = _env_on(DIAG_EVENTS_ENV)
+        self._unexpected_edge_blind_keys = set()
         self._tapdump_requested_ep = None  # one TAPDUMP request per boot epoch
         # Immutable-generation report committed only after a complete control
         # tick. PlatformHealth never assembles a mixed-time view from mutable
@@ -2773,6 +4892,15 @@ class BoardController:
 
     def tick(self):
         tick_started_at = self._latch_control_loop_gap_before_tick()
+        # Same-tick reconciliation dedupe is a per-control-sample scratch set,
+        # not a session-long cache. Bound it and allow later real episodes with
+        # the same type/code to reconcile independently.
+        self.diag.start_event_generation()
+        # Observe a dynamic diagnostic master-gate transition before any
+        # safety/identity producer in this tick can emit. This defines one
+        # attempt-generation so the later current-state reconciliation cannot
+        # duplicate a naturally emitted transition event in the same sample.
+        self._sync_diag_gate_generation(self.io.now())
         # One bounded transaction freezes health/identity/max-run facts and
         # snapshots inbound motion before the precheck. No identity
         # invalidation can race event dispatch while ARM remains permitted.
@@ -3056,12 +5184,20 @@ class BoardController:
                 "fault", "fw_config_mismatch", code="maxrun_desync",
                 detail={"fw_maxrun_ms": self.link.maxrun_ms(),
                         "fw_version": self.link.fw_version()},
-                t=self.io.now())
+                t=self.io.now(), persistent=True)
         elif mr_ok and self._maxrun_refused:
             log.info("L%s: max-run ceiling reconciled; a fresh First-Ball-Zero "
                      "is still required", self.cfg.lane)
             self.diag.emit_event("info", "recovered",
-                                 code="fw_config_mismatch", t=self.io.now())
+                                 code="fw_config_mismatch",
+                                 detail={
+                                     "recovered_event_type":
+                                         "fw_config_mismatch",
+                                     "recovered_code": "maxrun_desync",
+                                 },
+                                 t=self.io.now())
+        if mr_ok:
+            self.diag.cancel_pending_event_type("fw_config_mismatch")
         self._maxrun_refused = not mr_ok
 
         id_ok, id_reason = self._identity_arm_ok()
@@ -3073,6 +5209,12 @@ class BoardController:
         elif id_ok and self._identity_refused:
             log.info("L%s: firmware identity resolved; a fresh First-Ball-Zero "
                      "is still required", self.cfg.lane)
+        if id_ok:
+            # Clear superseded fault-coded identity retries, but keep a
+            # rejected healthy provenance record (code=None) deliverable.
+            self.diag.cancel_pending_event_type(
+                "fw_identity", preserve_codes=(None,))
+            self.diag.cancel_pending_event_type("fw_identity_missing")
         self._identity_refused = not id_ok
         self._identity_refusal_reason = id_reason if not id_ok else None
 
@@ -3113,8 +5255,11 @@ class BoardController:
 
     def _drain_inhibited_control_inputs(self, events):
         """Discard motion/PBZ control edges while preserving input baselines."""
+        discarded_ball = any(event[0] == "ball" for event in events)
         discarded = self.link.apply_event_batch(
             events, _INHIBITED_EVENT_SINK)
+        if discarded_ball and self.diag.ball_tracker is not None:
+            self.diag.ball_tracker.note_unverifiable_ball(self.io.now())
         slow_levels = self._slow_edges(dispatch_actions=False)
         if discarded:
             log.warning("L%s: discarded %d firmware control edge(s) while ARM "
@@ -3149,6 +5294,11 @@ class BoardController:
             # control-loop gap generations obey the same rule: current good
             # health can never erase an intervening loss before a hard-safe
             # sample/drain and fresh operator PBZ.
+            # No diagnostic debounce candidate or absence/attribution timer may
+            # cross the same blind interval.  Invalidate before hard-safe so an
+            # exception cannot preserve apparently-continuous evidence; the
+            # inhibited sample below then establishes fresh raw baselines.
+            self._mark_diagnostics_unavailable(self.io.now())
             reasons = []
             if link_discontinuity:
                 # Preserve the established rail-drop reason: the monotonic
@@ -3401,12 +5551,18 @@ class BoardController:
                 self.telemetry.on_event(ev, t)
                 if ev == "ball":
                     self._cycle_open = True
+                    self._telemetry_baseline_cycle_eligible = _env_on(
+                        DIAG_EVENTS_ENV)
                     self._cycle_started_utc = _utc_now_iso()
                     self._cycle_ball = getattr(self.fsm.ball, "value", None)
                     self.diag.on_ball(t)
             # 3) cycle boundary: arriving back at READY finalizes the cycle's intervals
             if new is State.READY and prev not in (State.MANUAL_INTERVENTION, State.POWER_OFF):
-                durations = self.telemetry.end_cycle()
+                durations = self.telemetry.end_cycle(
+                    fold_baseline=(
+                        self._telemetry_baseline_cycle_eligible
+                        and _env_on(DIAG_EVENTS_ENV)))
+                self._telemetry_baseline_cycle_eligible = False
                 self.diag.note_cycle_complete(t)
                 self._ship_cycle("READY", durations=durations)
             # 3b) aborted cycle: a FAULT / safety trip / power-off abandons the
@@ -3416,6 +5572,7 @@ class BoardController:
             # a minutes-long garbage sample into the drift baselines (observe-only).
             elif new in (State.FAULT, State.MANUAL_INTERVENTION, State.POWER_OFF):
                 self.telemetry.abort_cycle()
+                self._telemetry_baseline_cycle_eligible = False
                 self._ship_cycle("FAULT" if new is State.FAULT
                                  else "MANUAL_INTERVENTION", aborted=True)
             # 4) FAULT entry: dump the black box (best-effort)
@@ -3470,26 +5627,284 @@ class BoardController:
                             "fsm_state": getattr(self.fsm.state, "value", "?"),
                             "fw_fault": self.link.fault(),
                             "rp_ok": self.link.rp_ok()},
-                    t=self.io.now())
+                    t=self.io.now(), persistent=True,
+                    retain_across_blind=True)
             self._prev_arm = bool(want)
         except Exception:
             log.debug("L%s _note_arm swallowed", self.cfg.lane, exc_info=True)
 
-    def _debounce_for_diag(self, levels):
+    def _invalidate_diag_debounce_generation(self):
+        """Discard diagnostic debounce candidates across an UNKNOWN interval."""
+        self._diag_deb.clear()
+        self._diag_inb_deb.clear()
+        self._diag_missing_health.clear()
+        self._diag_health_levels.clear()
+
+    def _invalidate_diag_input_names(self, names):
+        """Drop debounce candidates only for the named diagnostic inputs."""
+        names = set(names)
+        for name in names:
+            self._diag_deb.pop(name, None)
+            self._diag_inb_deb.pop(name, None)
+        for role, health_name in self._diag_health_inputs.items():
+            if health_name in names:
+                self._diag_health_levels.pop(role, None)
+                self._diag_missing_health.discard(health_name)
+
+    def _reset_board_diag_episodes(self):
+        """Clear controller-owned current-fault evidence at a blind boundary."""
+        self._bank_fail_n = 0
+        self._bank_warned = False
+        self._v5_warned = False
+        self._run_mm_since = None
+        self._run_mm_warned = False
+        self._run_mm_fault_code = None
+        for event_type in (
+                "bank_unavailable", "v5_out_of_range", "run_mismatch"):
+            self.diag.cancel_pending_event_type(event_type)
+
+    def _mark_diagnostics_unavailable(self, t):
+        """One board-level observation discontinuity, used by every path."""
+        self._invalidate_diag_debounce_generation()
+        self._reset_board_diag_episodes()
+        self.diag.mark_board_unavailable(t)
+
+    def _sync_diag_gate_generation(self, t):
+        """Apply dynamic gate transitions before sampling this tick.
+
+        A transition can begin while an N-sample debouncer has only part of an
+        edge.  Keeping that candidate would release a synthetic edge after the
+        gate re-opens.  Treat every diagnostic gate transition as a new sample
+        generation and baseline all diagnostic inputs from the first raw sample.
+        Board-level episode latches are controlled by the master gate and must
+        likewise restart from fresh post-gate evidence.
+        """
+        current = {
+            name: _env_on(name)
+            for name in self._diag_gate_states
+        }
+        changed = {
+            name for name, active in current.items()
+            if self._diag_gate_states.get(name) != active
+        }
+        if DIAG_EVENTS_ENV in changed:
+            self.diag.start_event_generation()
+            if self._cycle_open:
+                self._telemetry_baseline_cycle_eligible = False
+            self._mark_diagnostics_unavailable(t)
+            self._unexpected_edge_gate_state = current[DIAG_EVENTS_ENV]
+            if current[DIAG_EVENTS_ENV]:
+                # Incidents retained while the gate was closed own the original
+                # occurrence timestamp/detail. Retry them before same-tick
+                # current-state reconciliation can report a newer duplicate.
+                self.diag.pump_pending_delivery(t, force=True)
+                self._diag_master_reconcile_pending = True
+                self._diag_identity_reconcile_pending = True
+        else:
+            selected = set()
+            if AUX_RULE_ENV in changed:
+                selected.update(self.diag.aux_roles)
+            if MANUAL_RULE_ENV in changed:
+                selected.update(MANUAL_INPUT_NAMES)
+            if STUCK_RULE_ENV in changed:
+                candidates = set(self._watched)
+                candidates.update(in_b_map_for(self.cfg.board_rev))
+                selected.update(
+                    name for name in candidates
+                    if name not in STUCK_EXEMPT
+                    and not name.startswith("DIELL"))
+            # BEAM_RULE_ENV consumes firmware DIELL levels directly; LaneDiag
+            # resets those anchors and no MCP debounce state is shared.
+            if selected:
+                self._invalidate_diag_input_names(selected)
+                self.diag.rebaseline_inputs(selected, t)
+        self._diag_gate_states = current
+        return current[DIAG_EVENTS_ENV]
+
+    def _reconcile_current_diagnostic_faults(self, t, link_healthy):
+        """Emit current persistent states after a master-gate blind interval."""
+        reconcile_all = self._diag_master_reconcile_pending
+        if not reconcile_all and not self._diag_identity_reconcile_pending:
+            return
+        if reconcile_all:
+            self._diag_master_reconcile_pending = False
+
+        if (reconcile_all and not link_healthy
+                and not self.diag.event_attempted("link_lost")):
+            self.diag.emit_event(
+                "fault", "link_lost", code=self.link.fault() or None,
+                detail={"alive": self.link.is_alive(),
+                        "rp_ok": self.link.rp_ok(),
+                        "reconciled_after_gate": True},
+                t=t, persistent=True)
+        fw_fault = self.link.fault()
+        # Reboot has its own typed event. Every other live firmware/link fault,
+        # including heartbeat-schema failure, is also a fw_fault just as it is
+        # when first observed with diagnostics enabled.
+        if (reconcile_all and fw_fault and fw_fault != REBOOT_FAULT
+                and not self.diag.event_attempted("fw_fault", fw_fault)):
+            self.diag.emit_event(
+                "fault", "fw_fault", code=fw_fault,
+                detail={"reconciled_after_gate": True},
+                t=t, persistent=True)
+
+        if (reconcile_all and not self.link.maxrun_ok()
+                and not self.diag.event_attempted(
+                    "fw_config_mismatch", "maxrun_desync")):
+            self.diag.emit_event(
+                "fault", "fw_config_mismatch", code="maxrun_desync",
+                detail={"fw_maxrun_ms": self.link.maxrun_ms(),
+                        "fw_version": self.link.fw_version(),
+                        "reconciled_after_gate": True},
+                t=t, persistent=True)
+
+        identity_ok, identity_reason = self._identity_arm_ok(
+            allow_shadow_bypass=False)
+        identity = self.link.fw_identity()
+        identity_conclusive = (
+            link_healthy
+            and (identity is not None or self.link.identity_missing())
+        )
+        if identity_conclusive and identity_ok:
+            self._diag_identity_reconcile_pending = False
+        if not identity_ok and identity_conclusive:
+            identity = identity or {}
+            event_type = ("fw_identity_missing"
+                          if self.link.identity_missing()
+                          else "fw_identity")
+            code = ("no_id_line" if event_type == "fw_identity_missing"
+                    else identity_reason)
+            # Dedupe only the exact current verdict.  An informational identity
+            # provenance record (code="") retained across the blind interval
+            # cannot satisfy a later rid/build/policy fault.
+            if not self.diag.event_attempted(event_type, code):
+                detail = {
+                    key: identity.get(key)
+                    for key in ("fw", "bn", "pcb", "rid", "uid",
+                                "build", "cfg", "fi1")
+                }
+                detail.update({
+                    "declared_rev": self.cfg.board_rev,
+                    "identity_ok": False,
+                    "identity_reason": identity_reason,
+                    "reconciled_after_gate": True,
+                })
+                self.diag.emit_event(
+                    "fault", event_type, code=code, detail=detail, t=t,
+                    persistent=True)
+            if self.diag.event_attempted(event_type, code):
+                self._diag_identity_reconcile_pending = False
+
+        if (reconcile_all and self.fsm.state is State.FAULT
+                and not self.diag.event_attempted("fsm_fault")):
+            last_fault = self.fsm.last_fault or {}
+            self.diag.emit_event(
+                "fault", "fsm_fault", code=last_fault.get("code"),
+                detail={"why": last_fault.get("why"),
+                        "state": last_fault.get("state"),
+                        "reconciled_after_gate": True},
+                t=t, persistent=True)
+
+    def _debounce_for_diag(self, levels, *, source="slow"):
         """Apply the diagnostics-path stable-time debounce (H3) to a raw
         {name: level} dict. Per-input SlowDebounce state is created on first
         sight, BASELINED to the first observed level (never an edge — the
-        review-#28 startup rule extended to every diagnostics input)."""
+        review-#28 startup rule extended to every diagnostics input).
+
+        IN-B has a separate state table: a failed bank read or omitted channel
+        deletes its debouncer. The first recovered raw sample is therefore a
+        new baseline instead of a delayed synthetic edge from the blind period.
+        """
+        states = self._diag_inb_deb if source == "inb" else self._diag_deb
         if levels is None:
+            if source == "inb":
+                states.clear()
+                self._diag_health_levels.clear()
+                self._diag_missing_health = {
+                    name for name in self._diag_health_inputs.values()
+                    if name is not None
+                }
+                if self._diag_health_inputs["field_wet_ok"] is not None:
+                    self._diag_deb.clear()
             return None
+        if source == "inb":
+            missing_health = {
+                name for name in self._diag_health_inputs.values()
+                if name is not None and name not in levels
+            }
+            for role, name in self._diag_health_inputs.items():
+                if name is not None and name in missing_health:
+                    self._diag_health_levels.pop(role, None)
+            changed_health = missing_health ^ self._diag_missing_health
+            field_name = self._diag_health_inputs["field_wet_ok"]
+            sensor_name = self._diag_health_inputs[SENSOR_24V_ROLE]
+            if field_name is not None and (
+                    field_name in missing_health
+                    or field_name in changed_health):
+                # FIELD_WET health UNKNOWN makes every field input's debounce
+                # history unusable, including the separately-read IN-A bank.
+                states.clear()
+                self._diag_deb.clear()
+            elif sensor_name is not None and (
+                    sensor_name in missing_health
+                    or sensor_name in changed_health):
+                for name in self._diag_sensor_dependents:
+                    states.pop(name, None)
+            self._diag_missing_health = missing_health
+            for name in set(states) - set(levels):
+                states.pop(name, None)
         out = {}
         for name, raw in levels.items():
-            deb = self._diag_deb.get(name)
+            deb = states.get(name)
             if deb is None:
-                deb = self._diag_deb[name] = SlowDebounce(self._diag_deb_n,
-                                                          initial=raw)
+                deb = states[name] = SlowDebounce(
+                    self._diag_deb_n, initial=raw)
             out[name] = deb.update(raw)
         return out
+
+    def _rebaseline_on_supply_transition(self, raw_levels, debounced_levels):
+        """Reset affected debounce candidates when a health level changes.
+
+        Missing health keys already reset candidates in ``_debounce_for_diag``.
+        A real, debounce-qualified FIELD_WET or external-sensor-supply level
+        transition is the same observation boundary: inputs may have changed
+        anywhere in the blind interval and must use the current raw sample as a
+        baseline rather than release a delayed synthetic edge.
+        """
+        if raw_levels is None or debounced_levels is None:
+            return debounced_levels
+        transitions = set()
+        for role, name in self._diag_health_inputs.items():
+            if name is None or name not in debounced_levels:
+                self._diag_health_levels.pop(role, None)
+                continue
+            current = bool(debounced_levels[name])
+            previous = self._diag_health_levels.get(role)
+            self._diag_health_levels[role] = current
+            if previous is not None and previous != current:
+                transitions.add(role)
+
+        if "field_wet_ok" in transitions:
+            self._diag_inb_deb.clear()
+            for name, raw in raw_levels.items():
+                self._diag_inb_deb[name] = SlowDebounce(
+                    self._diag_deb_n, initial=raw)
+                debounced_levels[name] = bool(raw)
+            self._diag_deb.clear()
+            for role, name in self._diag_health_inputs.items():
+                if name is not None and name in debounced_levels:
+                    self._diag_health_levels[role] = bool(
+                        debounced_levels[name])
+            return debounced_levels
+
+        if SENSOR_24V_ROLE in transitions:
+            for name in self._diag_sensor_dependents:
+                self._diag_inb_deb.pop(name, None)
+                if name in raw_levels:
+                    self._diag_inb_deb[name] = SlowDebounce(
+                        self._diag_deb_n, initial=raw_levels[name])
+                    debounced_levels[name] = bool(raw_levels[name])
+        return debounced_levels
 
     def _diag_poll(self, slow_levels):
         """Feed this tick's levels to the diagnostics rules. IN-B is 1-2 extra
@@ -3501,6 +5916,7 @@ class BoardController:
         as-is."""
         try:
             t = self.io.now()
+            master_enabled = self._sync_diag_gate_generation(t)
             inb = None
             reader = getattr(self.io, "read_inputs_b", None)
             if reader is not None:
@@ -3509,21 +5925,36 @@ class BoardController:
                 except Exception:
                     log.debug("L%s IN-B read failed (diagnostics skipped)",
                               self.cfg.lane, exc_info=True)
-            self._bank_health(t, reader is not None, inb is not None)
+            if master_enabled:
+                self._bank_health(t, reader is not None, inb is not None)
+            link_healthy = self.link.health_ok()
+            # Drain typed records before gate reconciliation. If an identity
+            # record itself reports the current state in this generation,
+            # reconciliation observes the attempt and does not duplicate it.
+            self._consume_link_records()
+            if master_enabled:
+                self._reconcile_current_diagnostic_faults(t, link_healthy)
+            if self.diag.ball_tracker is not None:
+                self.diag.ball_tracker.set_ball_source_available(
+                    self.cfg.lane, link_healthy, t)
             diell = None
-            lv = self.link.input_levels()
-            if lv:
+            lv = self.link.input_levels() if link_healthy else None
+            if lv is not None:
                 diell = {k: lv[k] for k in ("DIELL_L", "DIELL_R") if k in lv}
+            debounced_inb = self._debounce_for_diag(inb, source="inb")
+            debounced_inb = self._rebaseline_on_supply_transition(
+                inb, debounced_inb)
+            debounced_slow = self._debounce_for_diag(slow_levels)
             self.diag.poll(t,
                            ready=self.fsm.state is State.READY,
                            in_motion=self.fsm.state in MOTION_STATES,
-                           slow_levels=self._debounce_for_diag(slow_levels),
-                           inb_levels=self._debounce_for_diag(inb),
+                           slow_levels=debounced_slow,
+                           inb_levels=debounced_inb,
                            diell_levels=diell)
-            # R2-11/R2-12 promotions (all enqueue-only, edge-triggered):
-            self._consume_link_records()
-            self._v5_rule(t)
-            self._run_mismatch_rule(t)
+            if master_enabled:
+                if link_healthy:
+                    self._v5_rule(t)
+                self._run_mismatch_rule(t, link_healthy=link_healthy)
         except Exception:
             log.debug("L%s _diag_poll swallowed", self.cfg.lane, exc_info=True)
 
@@ -3535,10 +5966,16 @@ class BoardController:
         if not have_reader:
             return
         if read_ok:
+            self.diag.cancel_pending_event_type("bank_unavailable")
             if self._bank_warned:
                 self.diag.emit_event("info", "recovered",
                                      code="bank_unavailable",
-                                     detail={"failed_reads": self._bank_fail_n},
+                                     detail={
+                                         "failed_reads": self._bank_fail_n,
+                                         "recovered_event_type":
+                                             "bank_unavailable",
+                                         "recovered_code": "in_b",
+                                     },
                                      t=t)
             self._bank_fail_n = 0
             self._bank_warned = False
@@ -3550,7 +5987,7 @@ class BoardController:
             self.diag.emit_event(
                 "warn", "bank_unavailable", code="in_b",
                 detail={"consecutive_failures": self._bank_fail_n,
-                        "threshold": thr}, t=t)
+                        "threshold": thr}, t=t, persistent=True)
 
     def _v5_rule(self, t):
         """R2-11: VCC_5V hb-window extrema out of the allowed window (v1.2
@@ -3568,22 +6005,39 @@ class BoardController:
             self.diag.emit_event(
                 "warn", "v5_out_of_range", code="adc_vcc5",
                 detail={"v5_mv": v5, "v5_min_mv": v5n, "v5_max_mv": v5x,
-                        "floor_mv": lo, "ceiling_mv": hi}, t=t)
+                        "floor_mv": lo, "ceiling_mv": hi}, t=t,
+                persistent=True)
         elif not bad:
+            self.diag.cancel_pending_event_type("v5_out_of_range")
             self._v5_warned = False
 
-    def _run_mismatch_rule(self, t):
+    def _run_mismatch_rule(self, t, *, link_healthy=None):
         """R2-12: promote a PERSISTING firmware/commanded run-state desync to
         a structured fault (the link already re-sends bounded; a mismatch
         that outlives the retries means the UART is eating lines and the
         firmware max-run backstop may be desynced for those motors)."""
+        if link_healthy is None:
+            link_healthy = self.link.health_ok()
+        if not link_healthy:
+            # Cached commanded/firmware state is not evidence during a
+            # heartbeat outage. A mismatch that had not yet matured must hold
+            # for a fresh full interval after observability returns.
+            self._run_mm_since = None
+            return
         mm = self.link.run_mismatch()
         if not mm:
+            self.diag.cancel_pending_event_type("run_mismatch")
             if self._run_mm_warned:
-                self.diag.emit_event("info", "recovered", code="run_mismatch",
-                                     t=t)
+                self.diag.emit_event(
+                    "info", "recovered", code="run_mismatch",
+                    detail={
+                        "recovered_event_type": "run_mismatch",
+                        "recovered_code": self._run_mm_fault_code,
+                    },
+                    t=t)
             self._run_mm_since = None
             self._run_mm_warned = False
+            self._run_mm_fault_code = None
             return
         if self._run_mm_since is None:
             self._run_mm_since = t
@@ -3591,10 +6045,12 @@ class BoardController:
         hold = _env_float(RUN_MISMATCH_S_ENV, DEFAULT_RUN_MISMATCH_S)
         if (t - self._run_mm_since) >= hold and not self._run_mm_warned:
             self._run_mm_warned = True
+            self._run_mm_fault_code = ",".join(mm)
             self.diag.emit_event(
-                "fault", "run_mismatch", code=",".join(mm),
+                "fault", "run_mismatch", code=self._run_mm_fault_code,
                 detail={"motors": list(mm),
-                        "held_s": round(t - self._run_mm_since, 1)}, t=t)
+                        "held_s": round(t - self._run_mm_since, 1)}, t=t,
+                persistent=True)
 
     def _consume_link_records(self):
         """R2-11: drain the link's typed v1.2.x records into DiagEvents.
@@ -3610,11 +6066,13 @@ class BoardController:
                     self.diag.emit_event(
                         "warn", "uart_drops", code="fw_tx",
                         detail={"lost": rec.get("lost"),
-                                "total": rec.get("total")}, t=t)
+                                "total": rec.get("total")}, t=t,
+                        persistent=True, retain_across_blind=True)
                 elif kind == "tap_warn":
                     self.diag.emit_event(
                         "warn", "tap_warn", code=rec.get("code") or None,
-                        detail={"t_fw_ms": rec.get("t_fw")}, t=t)
+                        detail={"t_fw_ms": rec.get("t_fw")}, t=t,
+                        persistent=True, retain_across_blind=True)
                 elif kind == "tapdump":
                     meta = rec.get("meta") or {}
                     self.diag.emit_event(
@@ -3626,7 +6084,8 @@ class BoardController:
                                 # fresh entries ONLY drive diagnosis; stale
                                 # (pre-reboot epoch) entries ride along
                                 # explicitly flagged (R2-11 epoch rule).
-                                "entries": rec.get("entries")}, t=t)
+                                "entries": rec.get("entries")}, t=t,
+                        persistent=True, retain_across_blind=True)
                 elif kind == "fw_boot":
                     if rec.get("ring_preserved") and (rec.get("ring_entries")
                                                       or 0) > 0:
@@ -3668,7 +6127,9 @@ class BoardController:
                     detail["identity_ok"] = policy_ok
                     detail["identity_reason"] = policy_reason
                     self.diag.emit_event(sev, "fw_identity", code=code,
-                                         detail=detail, t=t)
+                                         detail=detail, t=t,
+                                         persistent=True,
+                                         retain_across_blind=True)
         except Exception:
             log.debug("L%s _consume_link_records swallowed", self.cfg.lane,
                       exc_info=True)
@@ -3682,12 +6143,27 @@ class BoardController:
         try:
             if event.get("kind") != "unexpected_edge":
                 return
+            key = f"{event.get('event')}:{event.get('state')}"
+            gate_active = _env_on(DIAG_EVENTS_ENV)
+            if gate_active != self._unexpected_edge_gate_state:
+                self._unexpected_edge_gate_state = gate_active
+            if not gate_active:
+                self._unexpected_edge_blind_keys.add(key)
+                return
             n = int(event.get("count", 1))
-            if n == 1 or (n > 1 and n in (10, 100, 1000)) or (n >= 10000 and n % 10000 == 0):
+            force_after_blind = key in self._unexpected_edge_blind_keys
+            if (force_after_blind
+                    or n == 1
+                    or (n > 1 and n in (10, 100, 1000))
+                    or (n >= 10000 and n % 10000 == 0)):
+                self._unexpected_edge_blind_keys.discard(key)
                 self.diag.emit_event(
                     "info", "unexpected_edge",
-                    code=f"{event.get('event')}:{event.get('state')}",
-                    detail={"count": n}, t=event.get("t"))
+                    code=key,
+                    detail={"count": n,
+                            "reconciled_after_gate": force_after_blind},
+                    t=event.get("t"), persistent=True,
+                    retain_across_blind=True)
         except Exception:
             pass
 
@@ -3724,11 +6200,15 @@ class BoardController:
                 self.diag.emit_event("fault", "fsm_fault",
                                      code=lf.get("code"),
                                      detail={"why": lf.get("why"),
-                                             "state": lf.get("state")}, t=t)
+                                             "state": lf.get("state")}, t=t,
+                                     persistent=True,
+                                     retain_across_blind=True)
             elif reason == "rp2040_link_lost":
                 self.diag.emit_event("fault", "link_lost", code=fw_flt or None,
                                      detail={"alive": self.link.is_alive(),
-                                             "rp_ok": self.link.rp_ok()}, t=t)
+                                             "rp_ok": self.link.rp_ok()}, t=t,
+                                     persistent=True,
+                                     retain_across_blind=True)
                 if fw_flt == REBOOT_FAULT:
                     reboot_wdt = (
                         self.link.boot_wdt_reset()
@@ -3736,15 +6216,20 @@ class BoardController:
                         else bool(reboot_wdt_override))
                     et = ("rp2040_wdt_reset" if reboot_wdt
                           else "fw_reboot")
-                    self.diag.emit_event("fault", et, code=fw_flt, t=t)
+                    self.diag.emit_event(
+                        "fault", et, code=fw_flt, t=t, persistent=True,
+                        retain_across_blind=True)
                 elif fw_flt:
                     # explicit firmware fault (motion_timeout / chatter / ...)
-                    self.diag.emit_event("fault", "fw_fault", code=fw_flt, t=t)
+                    self.diag.emit_event(
+                        "fault", "fw_fault", code=fw_flt, t=t,
+                        persistent=True, retain_across_blind=True)
             elif reason == "tick_error_budget":
                 self.diag.emit_event(
                     "fault", "rail_drop", code="tick_error_budget",
                     detail={"reason": "tick error budget exhausted; NE555 kick "
-                                      "stops for this board"}, t=t)
+                                      "stops for this board"}, t=t,
+                    persistent=True, retain_across_blind=True)
             elif reason == "controller_loop_gap":
                 self.diag.emit_event(
                     "fault", "rail_drop", code="controller_loop_gap",
@@ -3754,7 +6239,7 @@ class BoardController:
                         "continuity": dict(
                             self._control_loop_gap_detail or {}),
                     },
-                    t=t)
+                    t=t, persistent=True, retain_across_blind=True)
             elif reason == "arm_inhibit_with_motion_latched":
                 self.diag.emit_event(
                     "fault", "fsm_fault",
@@ -3769,7 +6254,7 @@ class BoardController:
                                 self, "_last_inhibit_active",
                                 self._active_motion_latches())),
                     },
-                    t=t)
+                    t=t, persistent=True, retain_across_blind=True)
         except Exception:
             log.debug("L%s _on_safety_trip diag emit swallowed", self.cfg.lane,
                       exc_info=True)
@@ -3818,6 +6303,11 @@ def run(boards, hz: float = 50.0):
                 # its NE555 kick stops too, so its hardware rail drops by itself)
                 # and keep the healthy board running.
                 if b.failed:
+                    try:
+                        b._mark_diagnostics_unavailable(b.io.now())
+                        b.diag.pump_pending_delivery(b.io.now())
+                    except Exception:
+                        pass
                     continue
                 try:
                     b.tick()
@@ -3838,6 +6328,10 @@ def run(boards, hz: float = 50.0):
                     # GPIOs low; it must never be isolated as one skipped lane.
                     safe_complete = b._hard_safe(
                         "tick_exception", raise_on_failure=False)
+                    try:
+                        b._mark_diagnostics_unavailable(b.io.now())
+                    except Exception:
+                        pass
                     if b.fatal or not safe_complete:
                         log.critical(
                             "L%s hard-safe incomplete -> DAEMON-FATAL pair "
@@ -3872,6 +6366,22 @@ def run(boards, hz: float = 50.0):
         log.info("controller_daemon shutting down -> safe-off all boards")
         for b in boards:
             b.safe_off()
+        # No control deadline remains after safe-off. Give final retained safety
+        # events a small bounded chance to enter a writer queue that may have
+        # been full at the trip instant. A permanently failed writer can delay
+        # shutdown by at most 175 ms.
+        for attempt in range(8):
+            pending = 0
+            for b in boards:
+                try:
+                    pending += b.diag.pump_pending_delivery(
+                        b.io.now(), force=True)
+                except Exception:
+                    pass
+            if not pending:
+                break
+            if attempt < 7:
+                time.sleep(0.025)
         if any(getattr(b, "fatal", False) for b in boards):
             rc = 1
         # After safe-off: give any in-flight async black-box writers a moment to
@@ -3919,6 +6429,8 @@ def _make_quarantine_notifier(diag_writer):
     lands and is visibly attributed to 'the outbox', not a machine)."""
     def _notify(count, sample_lane, errors):
         try:
+            if not _env_on(DIAG_EVENTS_ENV):
+                return
             lane = sample_lane if isinstance(sample_lane, int) \
                 and 1 <= sample_lane <= 32 else 1
             ev = make_event(lane, "warn", "outbox_quarantine",
@@ -3937,12 +6449,54 @@ def _wire_pair_diagnostics(boards):
     lane registers its emitter so per-lane attribution alerts land on the
     right lane regardless of which board carries the sensor. Returns the
     tracker, or None (roles unmapped -> rule fully dormant)."""
-    if not any("exit_beam" in b.diag.aux_roles.values() for b in boards):
+    sources = [
+        (b.cfg.lane, name)
+        for b in boards
+        for name, role in b.diag.aux_roles.items()
+        if role == "exit_beam"
+    ]
+    if not sources:
         return None
+    if len(sources) != 1:
+        rendered = ", ".join(f"L{lane}:{name}" for lane, name in sources)
+        raise ValueError(
+            "refusing ambiguous pair-shared exit_beam sources at runtime: "
+            f"{rendered}")
     tracker = BallReturnTracker([b.cfg.lane for b in boards])
     for b in boards:
+        tracker.register_ball_source(b.cfg.lane)
         b.diag.set_ball_tracker(tracker)
     return tracker
+
+
+def _drain_final_diagnostics(diag_writer, boards):
+    """Persist every bounded lane incident after stopping network replay."""
+    writer_stopped = diag_writer.stop()
+    if not writer_stopped:
+        return sum(board.diag.pending_alert_count() for board in boards)
+    # Interleave offer and local drain. A queue may be smaller than the retained
+    # incident set (including queue_max=1); one pump cannot admit every event.
+    max_rounds = 1 + sum(
+        int(getattr(board.diag, "_pending_alerts_max", 64))
+        for board in boards)
+    for _ in range(max_rounds):
+        for board in boards:
+            try:
+                board.diag.pump_pending_delivery(
+                    board.io.now(), force=True)
+            except Exception:
+                pass
+        if not diag_writer.drain_local():
+            break
+        try:
+            queue_empty = diag_writer.queue.empty()
+        except Exception:
+            queue_empty = False
+        pending = sum(
+            board.diag.pending_alert_count() for board in boards)
+        if pending == 0 and queue_empty:
+            return 0
+    return sum(board.diag.pending_alert_count() for board in boards)
 
 
 def main(argv=None):
@@ -3991,7 +6545,8 @@ def main(argv=None):
     rev_spec = (args.board_revs if args.board_revs is not None
                 else os.environ.get(BOARD_REVS_ENV))
     try:
-        default_rev, per_lane_rev = _parse_board_revs(rev_spec)
+        default_rev, per_lane_rev = _parse_board_revs(
+            rev_spec, known_lanes={cfg.lane for cfg in configs})
     except (ValueError, TypeError) as e:
         log.error("bad board-rev spec %r: %s", rev_spec, e)
         return 1
@@ -4004,6 +6559,17 @@ def main(argv=None):
             cfg.board_rev = rev
         log.info("L%s: board_rev=%s", cfg.lane,
                  cfg.board_rev or "UNPROVISIONED (will be refused)")
+
+    # Resolve every AUX map before diagnostics threads or physical hardware
+    # open. Multi-board services require per-lane maps; otherwise the old
+    # shared env silently cloned pair-scoped sensors onto an unwired board.
+    try:
+        configs = _provision_aux_roles(configs)
+    except (ValueError, TypeError) as e:
+        log.error("bad per-board AUX role provisioning: %s", e)
+        return 1
+    for cfg in configs:
+        log.info("L%s: AUX roles=%s", cfg.lane, cfg.aux_roles or "UNMAPPED")
 
     # Diagnostics stack (2026-07-19 scope §3): one shared DiagWriter thread
     # (JSONL always; HTTP when WSL_DIAG_SERVER_URL is set), a CycleShipper for
@@ -4059,7 +6625,15 @@ def main(argv=None):
         if cycle_shipper is not None:
             cycle_shipper.stop()
         if diag_writer is not None:
-            diag_writer.stop()
+            # First drain releases any queue capacity that was unavailable to
+            # a board's final retained trip. Re-offer those bounded in-memory
+            # incidents, then synchronously drain once more; stop() is
+            # intentionally idempotent and drains even with a dead thread.
+            remaining = _drain_final_diagnostics(diag_writer, boards)
+            if remaining:
+                log.error(
+                    "shutdown diagnostic drain exhausted with %d retained "
+                    "incidents still in memory", remaining)
 
 
 # --------------------------------------------------------------------------

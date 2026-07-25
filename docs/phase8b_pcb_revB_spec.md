@@ -1,12 +1,15 @@
 # Phase 8 - PCB Rev-B Schematic Contract
 
-> ⛔ **FROZEN REV-B ELECTRICAL CONTRACT — NOT CURRENT FIELD-WIRING OR CUTOVER
-> AUTHORITY.** The PCB topology and fabrication record below are retained as
-> historical evidence. Its external TB/SC J_SAFE1-2 loop and v1.1-era operational
-> assumptions are superseded. Lane 21/22 uses Candidate C: a controlled J_SAFE1-2
-> jumper, the powered-proven OEM parallel closed-when-safe S/T coil ladder, and a
-> mandatory per-lane G3 S-and-T coil-drop insertion proof. Use
-> `phase8_interlock_redesign.md`, the lane harness build sheet, the current
+> ⛔ **FROZEN REV-B ELECTRICAL RECORD — NOT CURRENT FIELD-WIRING, SAFETY,
+> OR CUTOVER AUTHORITY.** The PCB topology and fabrication record below remain
+> historical evidence only. Its external TB/SC J_SAFE1-2 loop, assumed Stop/C.I.S.
+> chain, and v1.1-era operational conclusions are superseded. Lane 21/22 uses
+> Candidate C: a controlled J_SAFE1-2 jumper, the powered-proven OEM parallel
+> closed-when-safe S/T coil ladder, and a mandatory per-lane G3 S-and-T coil-drop
+> insertion proof. A 2026-07-24 inspection found no C.I.S. device or wiring on
+> those lanes; the other pit-interlock disposition and approved Stop/control-power
+> interface remain open, so J14.3–4 stays OPEN and the field rail must not arm.
+> Use `phase8_interlock_redesign.md`, the lane harness build sheet, current
 > `manual_src/`, and the Track-B cutover runbook for Rev-D work.
 
 **Status:** CONTRACT + ROUTED REV-B FAB PACKAGE (2026-06-03, OEM doc-audited, logic status-LED decision implemented). This is the hard electrical contract plus the current routed/manual KiCad board and bare-PCB fab package. It is PCB-fab-ready under the conservative DRC contract, but not assembly/cutover-ready.

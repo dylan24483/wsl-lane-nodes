@@ -55,6 +55,13 @@ proof. TB/SC J_SAFE terminal discovery is no longer open — J_SAFE1-2 is the
 controlled jumper and primary protection remains in the OEM ladder. Details:
 **§5**, **§15**, and **§21**.
 
+J_SAFE3-4 is different: its board-side source position exists, but the lane-21/22
+harness leaves it physically open. The field rail therefore cannot arm until an
+approved external energize-to-prove control-power interface is landed and its
+end-to-end demand proof is complete. Only that interface's isolated dry contact
+may reach J14; sensed machine voltage and mains stay off Rev-D. Never jumper 3–4
+at the machine.
+
 > **The two tracks converge** into a single Pi-per-pair node that both scores (Track A) and controls (Track B). A useful convergence detail: once Track A supplies pin data, the controller board does **not** need to drive the 10 physical pin-indicator lamps — the camera already knows which pins stand — so those outputs are omitted in the baseline board (see §1.6 and §5).
 
 ### 1.5 The one-Pi-per-lane-pair model
@@ -93,11 +100,13 @@ Phase 8's organizing principle is **eliminate every end-of-life dependency** by 
 
 Owning the brain shifts the burden to *us* to preserve the machine's safety behavior. The non-negotiable rule, stated in the board contract, is that **the controller board must never be the only safety device**:
 
-- The machine's upstream **Stop switch + C.I.S. (Cover Interlock Switch) → master circuit breaker** chain stays in hardware and remains the final physical stop.
+- OEM documentation describes an upstream **Stop switch + C.I.S. (Cover Interlock Switch) → master circuit breaker** chain. Physical inspection found no C.I.S. device or wiring on lanes 21/22; their installed final disconnect is Stop → master breaker. Before motion, prove Stop removes control power, record C.I.S. as **N/A — device absent**, and resolve whether any other pit-entry interlock exists.
 - The **TB/SC table-sweep collision interlock** stays in the OEM S/T coil ladder and can block both motor-contactor coils without any software involvement. Powered 2026-07-07: its contacts are parallel closed-when-safe; both levers BACK/open is the blocking state.
 - The motors' **regenerative braking** (in the relay normally-closed contacts) stays in hardware.
-- The board's motor-relay coils are powered through a hardware **relay-enable rail** gated by the **NE555 watchdog**, Pi **ARM**, **RP2040_OK** (including enabled cam-stop enforcement), and the implemented **Stop/CIS** loop. Under decided Candidate C, J_SAFE1-2 carries only the controlled jumper; the independent primary TB/SC permission remains in the OEM S/T coil ladder and must pass the per-lane G3 coil-drop proof. The Pi physically cannot bypass either the on-board rail gates or a correctly inserted OEM ladder.
+- The board's motor-relay coils are powered through a hardware **relay-enable rail** gated by the **NE555 watchdog**, Pi **ARM**, **RP2040_OK** (including enabled cam-stop enforcement), and the J_SAFE3-4 external-source position. That 3–4 position is currently open/unlanded on the lane-21/22 harness, so the field rail cannot arm until a measured, fail-safe, energize-to-prove control-power interface is approved. Its isolated N.O. dry contact may optionally be placed in series with an approved new pit-entry-interlock contact; neither device routes machine voltage onto Rev-D. Under decided Candidate C, J_SAFE1-2 carries only the controlled jumper; the independent primary TB/SC permission remains in the OEM S/T coil ladder and must pass the per-lane G3 coil-drop proof.
 - The board **fails open** (motion-dead) on loss of logic power, watchdog kick, RP2040 health, arm permission, or the hardware interlock.
+- At commissioning and periodically thereafter, a qualified electrician verifies protective-earth continuity/bonding and hot/neutral polarity using an appropriately listed external tester. Mains stays entirely outside Rev-D and every board harness.
+- Before pilot motion, inspect the machine and ask the mechanic whether any device automatically removes power on pit entry. If none exists, installing a new interlock versus accepting a documented owner and qualified machine-safety decision is a hard design gate; normal lockout/tagout remains mandatory either way.
 
 This layered model is the heart of Track B and is detailed in **§19, Safety Architecture**. It is introduced here because no part of this system should be operated, repaired, or modified without understanding it first.
 
@@ -114,7 +123,9 @@ The controller connects to each 82-70 machine through two standard AMP "M"-type 
 These are the *machine-side* connectors. The Phase 8 board does **not** expose C1/C2A pin numbers directly; it exposes **function-named terminal blocks** (J_FAST_IN, J_SLOW_IN_A/B, J_MOTION_*, J_LAMP_LED, J_SAFETY, plus J_PI and J_PWR), and a per-chassis **adapter harness** maps those to the actual C1/C2A cavities at cutover. The board's connector inventory and the function↔connector mapping are in **§5, The Rev-B Controller Board**; the machine-side connector pinouts are in **§3, The AMF 82-70 Machine & Control Theory**. (Connectors: `docs/phase8_8270_SYSTEM_REFERENCE.md` §4; harness contract: `docs/phase8b_pcb_revB_spec.md` §7.)
 
 > ⚠️ **Exact C1/C2A cavity numbers are chassis-specific.** Per-gripper labels,
-> independently landed SA/SB/TA1/TA2 inputs, Stop/CIS J_SAFE3-4, and S/T output
+> independently landed SA/SB/TA1/TA2 inputs, the still-open/unlanded external
+> control-power J_SAFE3-4 interface and its demand proof, the pilot pit-entry
+> interlock disposition, and S/T output
 > insertion remain field captures. TB/SC J_SAFE1-2 is resolved: controlled
 > Candidate-C jumper, no machine landing, with per-lane G3 coil proof. Do not treat
 > a historical cavity guess as final.
@@ -205,10 +216,10 @@ This is the starting glossary; later sections expand individual entries. Where a
 | **RP2040_OK** | The RP2040's fail-safe-low health/permission output (GP2). HIGH only when the firmware is healthy and past boot settle; one of the series conditions gating the relay-enable rail. |
 | **MCP23017** | The I²C 16-bit I/O expander (3 per board) used for the slow inputs (grippers/switches) and the relay/lamp outputs. Run at 3.3 V. |
 | **NE555 watchdog** | A hardware monostable timer that the Pi must repeatedly "kick"; a missed kick drops the motor-relay rail. The board-level sibling of the FSM's software watchdog. |
-| **relay-enable rail** | The hardware-gated supply for the on-board motor-relay coils. Candidate C leaves five effective on-board permissions (watchdog + ARM + RP2040_OK/cam-stop + Stop/CIS, with the J_SAFE1-2 design position closed by the controlled jumper); the OEM TB/SC ladder separately gates the S/T coil circuits. The board cannot bypass either path when its output taps pass G3. |
+| **relay-enable rail** | The hardware-gated supply for the on-board motor-relay coils. Candidate C leaves the controlled J_SAFE1-2 jumper plus watchdog, ARM, RP2040_OK/cam-stop, and the J_SAFE3-4 external-source position; the OEM TB/SC ladder separately gates the S/T coil circuits. On lanes 21/22, 3–4 is currently OPEN/unlanded, so the field rail cannot arm. |
 | **ARM** | A dedicated Pi GPIO permission, asserted only after a verified operator-safe state, that is one of the series conditions for the relay-enable rail (implements the OEM "Power-Down / require First Ball Zero on power restore" rule in part). |
 | **TB/SC interlock** | The table-sweep collision interlock: powered-proven **parallel closed-when-safe** OEM contacts in the S/T coil ladder. Both levers BACK/open block both coils. Candidate C preserves that ladder as the primary hardware guard through correct output insertion and per-lane G3 proof; J_SAFE1-2 is the controlled jumper, not a machine landing. The default-off SC∧TB firmware echo is secondary/unvalidated. See §19. |
-| **Stop / C.I.S.** | The **Stop** switch and **C**over **I**nterlock **S**witch (plug-duct cover), wired in parallel; either one cuts the rear-panel master circuit breaker → whole machine dead. The final physical stop; preserved upstream of the board. |
+| **Stop / C.I.S.** | OEM term for the **Stop** switch and **C**over **I**nterlock **S**witch (plug-duct cover), documented as parallel devices that each cut the rear-panel master circuit breaker. Pilot lanes 21/22 physically have no C.I.S. device or wiring: demand-test Stop, record C.I.S. as **N/A — device absent**, and separately resolve whether another pit-entry interlock exists. J_SAFE continuity is not end-to-end power-removal proof. |
 | **PCBA** | **P**rinted **C**ircuit **B**oard **A**ssembly — a populated board (vs a bare PCB). The rev-B *bare-PCB* fab package exists; full PCBA (population/assembly) is a remaining Track-B item. |
 | **DNP** | **D**o **N**ot **P**opulate — a footprint present in the layout but intentionally left unpopulated. On rev-B this includes the **M1** (ball-return) relay channel (8 parts) — M1 is unverified on these chassis and the FSM does not drive it — plus the value-DNP RC-snubber/MOV arc-suppression footprints on the motion outputs (populated only after at-machine load characterization). Current fab package: 27 DNP refs, all excluded from the assembly BOM/placement files. |
 | **opto / optocoupler** | An isolation device (here, PC817B) that passes a signal across a galvanic barrier with light, so a machine-side fault cannot backfeed the logic/Pi side. Every machine input crosses an opto; outputs cross relay/PhotoMOS packages. |

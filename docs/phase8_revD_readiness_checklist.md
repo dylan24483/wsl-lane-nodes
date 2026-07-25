@@ -46,7 +46,7 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > batch. The round-2 CLOSING RECORD — final R2-1…R2-17 statuses (16 CLOSED · 1
 > DISPOSITIONED), both nuanced dispositions, recorded HEADs, and the definitive
 > open-gates list — is `phase8_revD_round2_report_2026-07-21.md`.** The
-> first-article pack is now FA-1…**FA-12** (adds the ≥ 100 MΩ tap-probe rule +
+> first-article pack was then FA-1…**FA-12** (adds the ≥ 100 MΩ tap-probe rule +
 > TP-pad-only probing, FA-9 per-channel PC817B qualification at min FIELD_WET +
 > ≥ 70 °C [R2-7], FA-12 J16 SDA/SCL short recovery [R2-4]); the PC817B
 > disposition is remediation spec §R4 (revised 2026-07-23).
@@ -62,6 +62,17 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > upload from them. Full record:
 > run-log "ROUND-2 BOARD/BOM/EXPORT BATCH" + "ROUND-3 FIX BATCH" +
 > "FINALIZE (ROUND 2)" entries.
+>
+> **2026-07-24 R5 safety/diagnostics supersession:** the generated pack is now
+> **FA-1…FA-14**. FA-13 is a system-level P0 gate: J14.3–4 remains physically
+> OPEN and the field rail cannot arm until an approved Stop/control-power
+> interface is landed. Physical inspection found no C.I.S. on lanes 21/22;
+> C.I.S. is N/A, not passed. Resolve whether another pit-entry interlock exists,
+> approve install-versus-Stop+LOTO-only disposition, and prove Stop plus every
+> installed/new pit interlock independently. A final pit interlock acts
+> upstream—J14-only permission gating is not equivalent. FA-14 requires
+> qualified-electrician/listed-instrument protective-earth and hot/neutral
+> polarity proof. These tests add no mains or SAFE_* copper to Rev-D.
 
 > **⚠️ GATE SCOPE NOTE (the rev-C lesson, applied up front).** The rev-C checklist went green
 > on G1–G5 while change-list items 3/5/6–8 were unresolved, and the order shipped without
@@ -310,10 +321,30 @@ rev-D extensions. One channel of each NEW I/O type must pass before trusting the
   `scripts/generate_first_article_docs_revD.py` (re-run it after ANY netlist/placement
   change — derived docs, never hand-edit). The pack carries the 46-row REFDES_SHIFT
   table (ISO_WET U37→U45, U_WDOG U36→U44, rail-gate pullup R106→R124 …), the relocated
-  TP map, the FA-1…FA-12 procedures (incl. the R1.9 tap fault injection with the
+  TP map, the FA-1…FA-14 procedures (incl. the R1.9 tap fault injection with the
   ≥ 70 °C repeat, the GPB poke, the ADC read, cross-mate refusal + sacrificial-pair
   coding proof, and R4 V_CE sampling). **Every rev-C bench artifact still names WRONG
   parts on a rev-D board — use ONLY the rev-D pack at the bench.**
+
+- `[ ]` **FA-13 Stop / pit-interlock system gate (P0):** do not jumper J14.3–4
+  at the machine. Approve and meter the fail-safe Stop/control-power interface,
+  determine whether another pit-entry interlock exists on lanes 21/22, and
+  obtain the qualified install-versus-Stop+LOTO-only disposition. Prove Stop
+  drops master/control power and TP16 within the recorded bounds. Prove every
+  installed/new pit interlock separately in its approved upstream
+  safety-disconnect path; a J14-only switch is not sufficient. Exercise every
+  monitor open-wire/proof control. Execute the per-lane Candidate-C TB/SC G3
+  insertion proof: command S and T separately from the board with both levers
+  BACK/open, prove each coil dead, verify the OEM ladder was not bypassed, and
+  capture the exact result in the signed commissioning latch. Record the
+  periodic retest owner; the manifest-controlled interval is **365 days
+  maximum**, and expired evidence blocks healthy monitor status.
+- `[ ]` **FA-14 mains-integrity gate:** a qualified electrician verifies
+  protective-earth continuity/bonding and hot/neutral polarity with a listed,
+  in-calibration external tester. Board rails and `control_power_ok` do not
+  satisfy this gate; mains/PE test current stay outside Rev-D. Repeat at the
+  manifest-controlled interval of **365 days maximum**, and sooner after
+  relevant electrical service; expired evidence blocks healthy monitor status.
 
 - `[ ]` Rails at TPs — **NEW: TP4 unloaded reads ≤ ~6 V** (item A landed; 11–14 V float
   gone — if TP4 still floats high the bleed is missing/open). TP4 under opto load ≥ ~4.5 V.

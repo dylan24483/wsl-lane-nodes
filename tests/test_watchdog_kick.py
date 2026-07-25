@@ -33,6 +33,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import time
 import types
 
@@ -178,6 +179,691 @@ def fresh_lane_node():
     sys.modules.pop('lane_node', None)   # force re-exec: fresh fake devices/state
     import lane_node
     return lane_node
+
+
+class _SelectiveDiagWriter:
+    """Track-A diagnostic writer with per-lane, runtime-selectable admission."""
+
+    def __init__(self, accepted_lanes=()):
+        self.accepted_lanes = set(accepted_lanes)
+        self.attempts = []
+        self.events = []
+
+    def emit(self, event):
+        self.attempts.append(event)
+        if event.lane_id not in self.accepted_lanes:
+            return False
+        self.events.append(event)
+        return True
+
+    def emit_durable(self, event, timeout=0):
+        return self.emit(event)
+
+
+def test_track_a_condition_delivery_is_per_lane_and_causal():
+    ln = fresh_lane_node()
+    writer = _SelectiveDiagWriter({21})
+    ln._DIAG_WRITER = writer
+
+    result = ln._diag_emit_lanes(
+        "warn", "pi_thermal", code="soc_temp",
+        detail={"temp_c": 90.0},
+        condition=("track_a_platform", "thermal"))
+    assert result == {21: True, 22: False}
+    rejected = next(
+        event for event in writer.attempts if event.lane_id == 22)
+
+    writer.accepted_lanes = {21, 22}
+    ln._diag_emit_lanes(
+        "info", "recovered", code="pi_thermal",
+        condition=("track_a_platform", "thermal"),
+        clear_condition=True)
+
+    lane_21 = [
+        (event.event_type, event.code) for event in writer.events
+        if event.lane_id == 21]
+    lane_22 = [
+        (event.event_type, event.code) for event in writer.events
+        if event.lane_id == 22]
+    assert lane_21 == [
+        ("pi_thermal", "soc_temp"), ("recovered", "pi_thermal")]
+    assert lane_22 == [
+        ("pi_thermal", "soc_temp"), ("recovered", "pi_thermal")]
+    assert rejected in writer.events
+    assert not ln._diag_pending
+
+
+def test_track_a_condition_retry_preserves_original_stamp_then_recovers():
+    ln = fresh_lane_node()
+    writer = _SelectiveDiagWriter()
+    ln._DIAG_WRITER = writer
+    ln._diag_emit_lanes(
+        "warn", "pi_disk_low", code="diag_volume",
+        detail={"free_bytes": 1},
+        condition=("track_a_platform", "disk_low"))
+    first = {
+        event.lane_id: (event.ts_utc, event.ts_mono)
+        for event in writer.attempts}
+
+    writer.accepted_lanes = {21, 22}
+    assert ln._diag_pump_pending() == 2
+    for event in writer.events:
+        assert (event.ts_utc, event.ts_mono) == first[event.lane_id]
+    ln._diag_emit_lanes(
+        "info", "recovered", code="pi_disk_low",
+        condition=("track_a_platform", "disk_low"),
+        clear_condition=True)
+    for lane in (21, 22):
+        assert [
+            event.event_type for event in writer.events
+            if event.lane_id == lane
+        ] == ["pi_disk_low", "recovered"]
+
+
+def test_track_a_clock_step_retries_without_orphan_recovery(
+        monkeypatch, tmp_path):
+    ln = fresh_lane_node()
+    writer = _SelectiveDiagWriter()
+    ln._DIAG_WRITER = writer
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+    import health_drop
+
+    samples = iter([
+        {
+            "ok": True, "drifted": True, "baseline": False,
+            "code": "wall_step", "step_s": 9.0, "threshold_s": 5.0,
+        },
+        {
+            "ok": True, "drifted": False, "baseline": False,
+            "code": None, "step_s": 0.0, "threshold_s": 5.0,
+        },
+    ])
+
+    class Monitor:
+        def sample(self):
+            return next(samples)
+
+    ln._track_a_clock_monitor = Monitor()
+    monkeypatch.setattr(
+        health_drop, "collect_platform_health",
+        lambda *a, **k: {"ok": True, "reasons": []})
+    monkeypatch.setattr(health_drop, "write_drop", lambda *a, **k: True)
+    monkeypatch.setattr(
+        health_drop, "read_foreign_statuses", lambda *a, **k: [])
+
+    ln._health_drop_hop_unlocked({"ok": True, "lanes": [21, 22]})
+    rejected = {
+        event.lane_id: event for event in writer.attempts
+        if event.event_type == "pi_clock_drift"}
+    assert set(rejected) == {21, 22}
+
+    writer.accepted_lanes = {21, 22}
+    ln._health_drop_hop_unlocked({"ok": True, "lanes": [21, 22]})
+    accepted = [
+        event for event in writer.events
+        if event.event_type == "pi_clock_drift"]
+    assert len(accepted) == 2
+    assert not [
+        event for event in writer.events
+        if event.event_type == "recovered"
+        and event.code == "clock_drift"]
+    for event in accepted:
+        original = rejected[event.lane_id]
+        assert (event.ts_utc, event.ts_mono) == (
+            original.ts_utc, original.ts_mono)
+
+
+def test_track_a_health_drop_recovery_never_precedes_rejected_warning(
+        monkeypatch, tmp_path):
+    ln = fresh_lane_node()
+    writer = _SelectiveDiagWriter()
+    ln._DIAG_WRITER = writer
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+    import health_drop
+
+    writes = iter([False, False, True])
+    monkeypatch.setattr(
+        health_drop, "collect_platform_health",
+        lambda *a, **k: {"ok": True, "reasons": []})
+    monkeypatch.setattr(
+        health_drop, "write_drop", lambda *a, **k: next(writes))
+    monkeypatch.setattr(
+        health_drop, "read_foreign_statuses", lambda *a, **k: [])
+    ln._track_a_clock_monitor = type(
+        "Monitor", (), {"sample": lambda self: {
+            "ok": True, "drifted": False, "baseline": False,
+            "code": None, "step_s": 0.0, "threshold_s": 5.0,
+        }})()
+
+    ln._health_drop_hop_unlocked({"ok": True, "lanes": [21, 22]})
+    ln._health_drop_hop_unlocked({"ok": True, "lanes": [21, 22]})
+    writer.accepted_lanes = {21, 22}
+    ln._health_drop_hop_unlocked({"ok": True, "lanes": [21, 22]})
+
+    for lane in (21, 22):
+        assert [
+            (event.event_type, event.code) for event in writer.events
+            if event.lane_id == lane
+            and event.code == "health_drop_write"
+        ] == [
+            ("diag_storage_error", "health_drop_write"),
+            ("recovered", "health_drop_write"),
+        ]
+    assert not ln._diag_pending
+
+
+def test_track_a_service_start_ack_waits_for_both_lanes(
+        monkeypatch, tmp_path):
+    ln = fresh_lane_node()
+    writer = _SelectiveDiagWriter({21})
+    ln._DIAG_WRITER = writer
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+
+    facts = asyncio.run(ln._record_track_a_service_start())
+    path = tmp_path / "lane_node_service_starts.json"
+    state = json.loads(path.read_text(encoding="utf-8"))
+    obligation = state["pending_events"][0]
+    assert obligation["service_restart_pending"] is True
+    assert [
+        row["lane_id"]
+        for row in obligation["service_restart_deliveries"]
+    ] == [22]
+    rejected = next(
+        event for event in writer.attempts
+        if event.lane_id == 22
+        and event.event_type == "service_restart")
+    assert facts["persisted"] is True
+
+    writer.accepted_lanes = {21, 22}
+    assert ln._diag_pump_pending() == 1
+    state = json.loads(path.read_text(encoding="utf-8"))
+    assert "pending_events" not in state
+    accepted = next(
+        event for event in writer.events
+        if event.lane_id == 22
+        and event.event_type == "service_restart")
+    assert (accepted.ts_utc, accepted.ts_mono) == (
+        rejected.ts_utc, rejected.ts_mono)
+
+
+def test_track_a_service_start_restart_replays_only_unaccepted_lane(
+        monkeypatch, tmp_path):
+    first = fresh_lane_node()
+    first_writer = _SelectiveDiagWriter({21})
+    first._DIAG_WRITER = first_writer
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+
+    first_facts = asyncio.run(first._record_track_a_service_start())
+    assert first_facts["persisted"] is True
+    path = tmp_path / "lane_node_service_starts.json"
+    state = json.loads(path.read_text(encoding="utf-8"))
+    old_count = first_facts["count"]
+    old_item = next(
+        item for item in state["pending_events"]
+        if item["count"] == old_count)
+    assert [
+        row["lane_id"]
+        for row in old_item["service_restart_deliveries"]
+    ] == [22]
+    persisted_lane_22 = dict(
+        old_item["service_restart_deliveries"][0])
+
+    # Model process death: all in-memory pending/acceptance state disappears.
+    restarted = fresh_lane_node()
+    restarted_writer = _SelectiveDiagWriter({21, 22})
+    restarted._DIAG_WRITER = restarted_writer
+    second_facts = asyncio.run(restarted._record_track_a_service_start())
+    assert second_facts["persisted"] is True
+
+    old_attempts = [
+        event for event in restarted_writer.attempts
+        if event.event_type == "service_restart"
+        and event.detail["count"] == old_count
+    ]
+    assert [event.lane_id for event in old_attempts] == [22]
+    assert old_attempts[0].to_dict() == persisted_lane_22
+    state = json.loads(path.read_text(encoding="utf-8"))
+    assert "pending_events" not in state
+
+
+def test_track_a_service_start_reconciles_crash_after_local_receipt(
+        monkeypatch, tmp_path):
+    first = fresh_lane_node()
+    first_writer = _SelectiveDiagWriter()
+    first._DIAG_WRITER = first_writer
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+    first_facts = asyncio.run(first._record_track_a_service_start())
+    old_count = first_facts["count"]
+    path = tmp_path / "lane_node_service_starts.json"
+    state = json.loads(path.read_text(encoding="utf-8"))
+    rows = state["pending_events"][0]["service_restart_deliveries"]
+    lane_21 = next(row for row in rows if row["lane_id"] == 21)
+    lane_22 = next(row for row in rows if row["lane_id"] == 22)
+
+    # Model the only non-atomic window: emit_durable fsynced L21's exact row,
+    # then power failed before the per-lane service-state acknowledgement.
+    (tmp_path / "diag-20260724.jsonl").write_text(
+        json.dumps(lane_21, separators=(",", ":")) + "\n",
+        encoding="utf-8")
+
+    restarted = fresh_lane_node()
+    restarted_writer = _SelectiveDiagWriter({21, 22})
+    restarted._DIAG_WRITER = restarted_writer
+    asyncio.run(restarted._record_track_a_service_start())
+    old_attempts = [
+        event for event in restarted_writer.attempts
+        if event.event_type == "service_restart"
+        and event.detail["count"] == old_count
+    ]
+    assert [event.lane_id for event in old_attempts] == [22]
+    assert old_attempts[0].to_dict() == lane_22
+    state = json.loads(path.read_text(encoding="utf-8"))
+    assert "pending_events" not in state
+
+
+def test_track_a_foreign_relay_partial_delivery_clears_only_seen_lane():
+    ln = fresh_lane_node()
+    writer = _SelectiveDiagWriter({21})
+    ln._DIAG_WRITER = writer
+    alert = {
+        "severity": "warn",
+        "event_type": "diag_storage_error",
+        "code": "disk_probe",
+        "lanes": [21, 22],
+        "detail": {
+            "from_service": "controller",
+            "status": "fresh",
+            "snapshot_id": "controller-1",
+        },
+    }
+    assert ln._diag_emit_relay(alert) == {21: True, 22: False}
+
+    writer.accepted_lanes = {21, 22}
+    recovery = {
+        "severity": "info",
+        "event_type": "recovered",
+        "code": "diag_storage_error",
+        "lanes": [21, 22],
+        "detail": {
+            "from_service": "controller",
+            "status": "fresh",
+            "snapshot_id": "controller-2",
+            "recovered_event_type": "diag_storage_error",
+            "recovered_code": "disk_probe",
+        },
+    }
+    ln._diag_emit_relay(recovery)
+    assert [
+        (event.event_type, event.code) for event in writer.events
+        if event.lane_id == 21
+    ] == [
+        ("diag_storage_error", "disk_probe"),
+        ("recovered", "diag_storage_error"),
+    ]
+    assert [
+        (event.event_type, event.code) for event in writer.events
+        if event.lane_id == 22
+    ] == [
+        ("diag_storage_error", "disk_probe"),
+        ("recovered", "diag_storage_error"),
+    ]
+
+
+def test_track_a_foreign_pending_status_change_replaces_stale_event():
+    ln = fresh_lane_node()
+    writer = _SelectiveDiagWriter()
+    ln._DIAG_WRITER = writer
+    stale = {
+        "severity": "warn",
+        "event_type": "health_drop_stale",
+        "code": "controller:stale",
+        "lanes": [21, 22],
+        "detail": {"from_service": "controller", "status": "stale"},
+    }
+    ln._diag_emit_relay(stale)
+    old_stamps = {
+        event.lane_id: (event.ts_utc, event.ts_mono)
+        for event in writer.attempts}
+
+    writer.accepted_lanes = {21, 22}
+    missing = {
+        **stale,
+        "code": "controller:missing",
+        "detail": {"from_service": "controller", "status": "missing"},
+    }
+    ln._diag_emit_relay(missing)
+    assert {
+        (event.lane_id, event.code) for event in writer.events
+    } == {(21, "controller:missing"), (22, "controller:missing")}
+    assert all(
+        (event.ts_utc, event.ts_mono) != old_stamps[event.lane_id]
+        for event in writer.events)
+    assert not ln._diag_pending
+
+
+def test_track_a_camera_partial_rejection_has_no_orphan_recovery(monkeypatch):
+    ln = fresh_lane_node()
+    writer = _SelectiveDiagWriter({21})
+    ln._DIAG_WRITER = writer
+    ln._PAIR_CAMERA = None
+    ln._cam_health_warned = False
+    monkeypatch.setattr(ln, "_health_drop_hop", lambda *a, **k: None)
+    asyncio.run(ln._camera_health_probe_once())
+
+    class HealthyCamera:
+        def frame_health(self):
+            return {"ok": True, "grabbed": True, "stale": False}
+
+    async def healthy_operation(*args, **kwargs):
+        return {"ok": True, "grabbed": True, "stale": False}
+
+    ln._PAIR_CAMERA = HealthyCamera()
+    writer.accepted_lanes = {21, 22}
+    monkeypatch.setattr(ln, "_run_camera_operation", healthy_operation)
+    asyncio.run(ln._camera_health_probe_once())
+
+    assert [
+        event.event_type for event in writer.events
+        if event.lane_id == 21
+    ] == ["camera_health", "recovered"]
+    assert [
+        event.event_type for event in writer.events
+        if event.lane_id == 22
+    ] == ["camera_health", "recovered"]
+
+
+def test_track_a_rejected_alert_restart_healthy_emits_nothing(
+        monkeypatch, tmp_path):
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+    ln = fresh_lane_node()
+    ln._DIAG_WRITER = _SelectiveDiagWriter()
+    assert ln._load_diag_condition_ledger() is True
+    ln._diag_emit_lanes(
+        "warn", "pi_thermal", code="soc_temp",
+        condition=("track_a_platform", "thermal"))
+    ledger = json.loads(
+        (tmp_path / "track_a_condition_delivery.json").read_text(
+            encoding="utf-8"))
+    assert len(ledger["pending_alerts"]) == 2
+
+    restarted = fresh_lane_node()
+    writer = _SelectiveDiagWriter({21, 22})
+    restarted._DIAG_WRITER = writer
+    assert restarted._load_diag_condition_ledger() is True
+    restarted._diag_emit_lanes(
+        "info", "recovered", code="pi_thermal",
+        condition=("track_a_platform", "thermal"),
+        clear_condition=True)
+    assert writer.events == []
+    assert restarted._diag_delivered_conditions == set()
+    assert restarted._diag_condition_pending_alerts == {}
+
+
+def test_track_a_durable_alert_restart_healthy_recovers_exact_lanes(
+        monkeypatch, tmp_path):
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+    ln = fresh_lane_node()
+    first_writer = _SelectiveDiagWriter({21, 22})
+    ln._DIAG_WRITER = first_writer
+    assert ln._load_diag_condition_ledger() is True
+    ln._diag_emit_lanes(
+        "warn", "pi_disk_low", code="diag_volume",
+        condition=("track_a_platform", "disk_low"))
+    assert len(first_writer.events) == 2
+
+    restarted = fresh_lane_node()
+    second_writer = _SelectiveDiagWriter({21, 22})
+    restarted._DIAG_WRITER = second_writer
+    assert restarted._load_diag_condition_ledger() is True
+    restarted._diag_emit_lanes(
+        "info", "recovered", code="pi_disk_low",
+        condition=("track_a_platform", "disk_low"),
+        clear_condition=True)
+    assert [
+        (event.lane_id, event.event_type, event.code)
+        for event in second_writer.events
+    ] == [
+        (21, "recovered", "pi_disk_low"),
+        (22, "recovered", "pi_disk_low"),
+    ]
+
+
+def test_track_a_fsynced_alert_crash_window_reconciles_without_duplicate(
+        monkeypatch, tmp_path):
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+    ln = fresh_lane_node()
+    assert ln._load_diag_condition_ledger() is True
+
+    class FsyncThenTimeout:
+        def emit_durable(self, event, timeout=0):
+            path = tmp_path / "diag-20990101.jsonl"
+            with path.open("a", encoding="utf-8") as target:
+                target.write(json.dumps(event.to_dict()) + "\n")
+                target.flush()
+                os.fsync(target.fileno())
+            return False
+
+    ln._DIAG_WRITER = FsyncThenTimeout()
+    # Use the condition path: it pre-stamps the row and writes the pending
+    # phase before the simulated crash after local fsync.
+    ln._diag_emit_lanes(
+        "warn", "camera_health", code="frozen", lanes=[21],
+        condition=("track_a_camera_health",))
+
+    restarted = fresh_lane_node()
+    writer = _SelectiveDiagWriter({21, 22})
+    restarted._DIAG_WRITER = writer
+    assert restarted._load_diag_condition_ledger() is True
+    assert (
+        "track_a_camera_health", 21
+    ) in restarted._diag_delivered_conditions
+    restarted._clear_track_a_camera_conditions(
+        {"reason": "healthy_camera_probe"})
+    assert [
+        (event.event_type, event.code) for event in writer.events
+    ] == [("recovered", "camera_health")]
+
+
+def test_track_a_pending_recovery_replays_same_identity_after_restart(
+        monkeypatch, tmp_path):
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+    ln = fresh_lane_node()
+    ln._DIAG_WRITER = _SelectiveDiagWriter({21})
+    assert ln._load_diag_condition_ledger() is True
+    ln._diag_emit_lanes(
+        "warn", "pi_fs_readonly", code="rootfs", lanes=[21],
+        condition=("track_a_platform", "filesystem_readonly"))
+    ln._DIAG_WRITER = _SelectiveDiagWriter()
+    ln._diag_emit_lanes(
+        "info", "recovered", code="pi_fs_readonly", lanes=[21],
+        condition=("track_a_platform", "filesystem_readonly"),
+        clear_condition=True)
+    original = dict(next(iter(
+        ln._diag_condition_pending_clears.values())))
+
+    restarted = fresh_lane_node()
+    writer = _SelectiveDiagWriter({21})
+    restarted._DIAG_WRITER = writer
+    assert restarted._load_diag_condition_ledger() is True
+    restarted._diag_emit_lanes(
+        "info", "recovered", code="pi_fs_readonly", lanes=[21],
+        condition=("track_a_platform", "filesystem_readonly"),
+        clear_condition=True)
+    assert len(writer.events) == 1
+    replayed = writer.events[0].to_dict()
+    assert (
+        replayed["source_id"], replayed["boot_id"], replayed["seq"]
+    ) == (
+        original["source_id"], original["boot_id"], original["seq"])
+
+
+def test_track_a_foreign_restart_clears_only_from_fresh_snapshot(
+        monkeypatch, tmp_path):
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+    ln = fresh_lane_node()
+    ln._DIAG_WRITER = _SelectiveDiagWriter({21})
+    assert ln._load_diag_condition_ledger() is True
+    ln._diag_emit_relay({
+        "severity": "warn",
+        "event_type": "diag_storage_error",
+        "code": "controller_store",
+        "lanes": [21],
+        "detail": {"from_service": "controller", "status": "fresh"},
+    })
+
+    restarted = fresh_lane_node()
+    writer = _SelectiveDiagWriter({21})
+    restarted._DIAG_WRITER = writer
+    assert restarted._load_diag_condition_ledger() is True
+    restarted._reconcile_foreign_delivery({
+        "service": "controller",
+        "status": "stale",
+        "snapshot_id": "old",
+        "payload": None,
+    })
+    assert writer.events == []
+    restarted._reconcile_foreign_delivery({
+        "service": "controller",
+        "status": "fresh",
+        "snapshot_id": "healthy",
+        "payload": {"ok": True, "lanes": [21]},
+    })
+    assert [
+        (event.event_type, event.code) for event in writer.events
+    ] == [("recovered", "diag_storage_error")]
+
+
+def test_track_a_corrupt_condition_ledger_is_repaired_and_reported_causally(
+        monkeypatch, tmp_path):
+    monkeypatch.setenv("WSL_DIAG_DIR", str(tmp_path))
+    ledger_path = tmp_path / "track_a_condition_delivery.json"
+    ledger_path.write_text(
+        '{"version":3,"active":"not-a-list"}', encoding="utf-8")
+    ln = fresh_lane_node()
+    writer = _SelectiveDiagWriter({21, 22})
+    ln._DIAG_WRITER = writer
+    assert ln._load_diag_condition_ledger() is False
+    assert ln._diag_condition_ledger_error is True
+
+    import health_drop
+    monkeypatch.setattr(
+        health_drop, "collect_platform_health",
+        lambda *a, **k: {"ok": True, "reasons": []})
+    monkeypatch.setattr(health_drop, "write_drop", lambda *a, **k: True)
+    monkeypatch.setattr(
+        health_drop, "read_foreign_statuses", lambda *a, **k: [])
+    ln._track_a_clock_monitor = type(
+        "Monitor", (), {"sample": lambda self: {
+            "ok": True, "drifted": False, "baseline": False,
+            "code": None, "step_s": 0.0, "threshold_s": 5.0,
+        }})()
+    ln._health_drop_hop_unlocked({"ok": True, "lanes": [21, 22]})
+
+    assert ln._diag_condition_ledger_error is False
+    repaired = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert repaired == {
+        "active": [],
+        "pending_alerts": [],
+        "pending_clears": [],
+        "version": 3,
+    }
+    for lane in (21, 22):
+        assert [
+            (event.event_type, event.code) for event in writer.events
+            if event.lane_id == lane
+        ] == [
+            ("diag_storage_error", "condition_delivery_ledger"),
+            ("recovered", "diag_storage_error"),
+        ]
+
+
+def test_track_a_stable_ledger_row_matches_server_identity_bounds():
+    ln = fresh_lane_node()
+    row = ln._stable_diag_event(
+        "warn", "camera_health", "frozen", {},
+        lane=21).to_dict()
+    assert ln._diag_event_row_valid(row)
+
+    oversized_seq = dict(row)
+    oversized_seq["seq"] = (1 << 63)
+    assert not ln._diag_event_row_valid(oversized_seq)
+
+    oversized_boot = dict(row)
+    oversized_boot["boot_id"] = "b" * 81
+    assert not ln._diag_event_row_valid(oversized_boot)
+
+    future_stamp = dict(row)
+    future_stamp["ts_utc"] = "9999-01-01T00:00:00+00:00"
+    assert not ln._diag_event_row_valid(future_stamp)
+
+
+def test_track_a_shutdown_never_claims_unflushed_obligations_drained():
+    ln = fresh_lane_node()
+
+    class NeverFlush:
+        def __init__(self):
+            self.queue = type(
+                "Queue", (), {"empty": lambda self: True})()
+
+        def emit_durable(self, event, timeout=0):
+            return False
+
+        def stop(self):
+            return True
+
+        def drain_local(self):
+            return True
+
+    writer = NeverFlush()
+    ln._DIAG_WRITER = writer
+    ln._diag_emit_lanes(
+        "fault", "scoring_event_transport",
+        code="physical_command_clock_guard_unavailable",
+        retain=True,
+        pending_key=("incident", "shutdown_durability"))
+    assert ln._drain_track_a_diagnostics(writer) == 2
+    assert len(ln._diag_pending) == 2
+
+
+def test_track_a_condition_transition_is_serialized_during_durable_offer():
+    ln = fresh_lane_node()
+    started = threading.Event()
+    release = threading.Event()
+
+    class BlockingWriter:
+        def __init__(self):
+            self.events = []
+
+        def emit_durable(self, event, timeout=0):
+            if event.event_type == "pi_thermal":
+                started.set()
+                assert release.wait(2.0)
+            self.events.append(event)
+            return True
+
+    writer = BlockingWriter()
+    ln._DIAG_WRITER = writer
+    alert = threading.Thread(target=lambda: ln._diag_condition_alert(
+        "warn", "pi_thermal", "soc_temp", {},
+        lane=21, condition=("track_a_platform", "thermal")))
+    clear = threading.Thread(target=lambda: ln._diag_condition_clear(
+        "recovered", "pi_thermal", {},
+        lane=21, condition=("track_a_platform", "thermal")))
+    alert.start()
+    assert started.wait(2.0)
+    clear.start()
+    time.sleep(0.02)
+    assert clear.is_alive()
+    release.set()
+    alert.join(2.0)
+    clear.join(2.0)
+    assert not alert.is_alive() and not clear.is_alive()
+    assert [
+        (event.event_type, event.code) for event in writer.events
+    ] == [
+        ("pi_thermal", "soc_temp"),
+        ("recovered", "pi_thermal"),
+    ]
 
 
 def test_physical_node_identity_and_pair_have_no_unsafe_fallback():
@@ -403,6 +1089,9 @@ def test_camera_init_failure_is_immediately_unhealthy_on_both_lanes():
             self.events.append(event)
             return True
 
+        def emit_durable(self, event, timeout=0):
+            return self.emit(event)
+
     class FailedCamera:
         def __init__(self, **_kwargs):
             raise RuntimeError("forced init failure")
@@ -439,6 +1128,9 @@ def test_camera_timeout_latches_manual_without_worker_accumulation():
         def emit(self, event):
             self.events.append(event)
             return True
+
+        def emit_durable(self, event, timeout=0):
+            return self.emit(event)
 
     calls = {"score": 0, "health": 0}
     published = []
@@ -762,6 +1454,39 @@ def test_heartbeat_ack_after_stall_emits_recovery_once():
         kwargs["detail"]["recovery"] == "durably_committed_heartbeat_ack",
         "ACK recovery lacks durable-commit evidence")
     print("ok  test_heartbeat_ack_after_stall_emits_recovery_once")
+
+
+def test_heartbeat_ack_reconciles_restart_persisted_stall():
+    ln = fresh_lane_node()
+    ack_state = {
+        "session_id": "restart-recovered-ack-session",
+        "sent_seq": 0,
+        "acked_seq": -1,
+    }
+    diagnostics = []
+    original_diag = ln._diag_emit_lanes
+    try:
+        ln._diag_emit_lanes = lambda *a, **kw: diagnostics.append((a, kw))
+        ln._scoring_ack_stalled = False
+        ln._diag_delivered_conditions.update({
+            ("track_a_scoring_ack_stalled", 21),
+            ("track_a_scoring_ack_stalled", 22),
+        })
+        asyncio.run(ln.command_handler(FiniteFrameSocket([
+            _ack_frame(
+                ln, ack_state["session_id"], 0,
+                "2026-07-23T00:00:00Z"),
+        ]), ack_state))
+    finally:
+        ln._diag_emit_lanes = original_diag
+
+    assert_true(len(diagnostics) == 1,
+                "restart-persisted ACK stall was not reconciled")
+    args, kwargs = diagnostics[0]
+    assert_true(args[:2] == ("info", "recovered"),
+                "restart ACK reconciliation did not emit recovery")
+    assert_true(kwargs.get("clear_condition") is True,
+                "restart ACK recovery did not clear delivery ledger state")
 
 
 def test_heartbeat_ack_can_interleave_inside_send():

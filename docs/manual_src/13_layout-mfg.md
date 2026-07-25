@@ -102,10 +102,10 @@ Every named net on the board is assigned to exactly one of five KiCad net classe
 > **Classification correction worth remembering (the `SAFE_*` reclass).** An early draft put
 > `SAFE_STOP_RETURN` / `SAFE_TBSC_RETURN` in **Machine_Output**, which forced the ≥3.2 mm
 > LOGIC↔MACHINE creepage against the very rail/gate those nets are supposed to drive → 7 false DRC
-> violations. They are board-side **Candidate-C source-jumper + Stop/CIS sense**
-> positions, logic/rail-domain, not
+> violations. They are board-side **Candidate-C source-jumper + reserved external
+> source-position** nets, logic/rail-domain, not evidence of a landed field loop and not
 > 250 VAC machine contacts. They were moved to **Safety_Rail** and take logic-domain clearance.
-> If you ever re-derive classes, do not put the interlock-sense nets in the machine-output class.
+> If you ever re-derive classes, do not put the J_SAFE source-position nets in the machine-output class.
 
 > **A second remembered fix (the anonymous-net trap).** A blanket "`N$* → Logic_Signal`" rule would
 > have been *unsafe*, because the old `N$1`–`N$32` were FIELD-side PC817 LED series nets and the old
@@ -272,7 +272,7 @@ probe map for Section 21 (bench bring-up).
 | TP12 | WDOG_OK_PULLDOWN | LOGIC signal | Watchdog-OK pulldown node into the rail AND chain |
 | TP13 | ARM_PERMIT | LOGIC signal | Pi arm-permission GPIO (rail condition) |
 | TP14 | RP2040_OK | LOGIC signal | RP2040 health/cam-stop permission (Pico GP2) — rail condition |
-| TP15 | SAFE_STOP_RETURN | Safety_Rail | Bottom of the external NC interlock series loop, into the pass-FET source |
+| TP15 | SAFE_STOP_RETURN | Safety_Rail | Pass-FET source return after the J_SAFE positions; current lane-21/22 J_SAFE3-4 harness is OPEN/unlanded |
 | TP16 | RELAY_ENABLE_RAIL | Safety_Rail | **The rail itself** — must be live for any relay coil to energize |
 
 | Mounting hole | Spec |
@@ -280,10 +280,12 @@ probe map for Section 21 (bench bring-up).
 | MK1–MK4 | M3, 3.2 mm NPTH (`MountingHole_3.2mm_M3`) |
 
 The four rail-permission conditions are directly probeable: TP13 (ARM_PERMIT), TP14 (RP2040_OK),
-TP15 (SAFE_STOP_RETURN, after the Candidate-C jumper + Stop/CIS source positions),
+TP15 (SAFE_STOP_RETURN, after the Candidate-C jumper + reserved external source position),
 and TP16 (RELAY_ENABLE_RAIL, the result). Neither proves the separate OEM TB/SC
 S/T-coil path; that is the per-lane G3 test.
-If TP16 is low with TP13/TP14 high and the loop closed, work backward through the watchdog
+The current field harness deliberately leaves 3–4 open, so TP15/TP16 should be dead.
+On an off-machine bench only, a controlled 3–4 jumper may support dummy-load tests
+and must be removed before machine connection. If TP16 is low with TP13/TP14 high and an approved source path closed, work backward through the watchdog
 (TP9/TP10/TP11/TP12) and the AND chain. See Section 10 for the rail logic and Section 21 for the
 bring-up sequence.
 

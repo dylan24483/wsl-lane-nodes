@@ -233,8 +233,29 @@ v1.2.1) → `97ba04c` (r2 mirror record) → the FINALIZE commits (this report).
 - **Debounce:** `controller_daemon` `SlowDebounce` — diagnostics-path inputs at
   `WSL_SLOW_DEBOUNCE_N` (default 3 consecutive 50 Hz samples ≈ 60 ms); FSM action inputs
   (PBZ/BS/Foul) stay RAW by default behind the flagged `WSL_SLOW_DEBOUNCE_FSM_N` knob
-  (raising it logs a safety-path warning banner). AUX1–11 valid in `WSL_DIAG_AUX_ROLES`,
-  dormant-unless-mapped, stuck-exempt.
+  (raising it logs a safety-path warning banner). AUX1–11 are dormant-unless-mapped
+  and stuck-exempt.
+- **2026-07-24 R5 supersession:** the controller daemon has no board-revision
+  default even though the lower-level direct-I/O bench constructor retains its
+  legacy rev-C default. A paired daemon must use complete
+  `WSL_DIAG_AUX_ROLES_L<lane>` maps; once either board is configured, its mate
+  must be present (an exact blank declares intentionally unmapped).
+  `WSL_DIAG_AUX_ROLES` is accepted only in one-board bench mode. Unsupported
+  role/revision channels, duplicate or unknown board-revision assignments, and
+  partial pair maps are rejected before threads or hardware open.
+- **2026-07-24 R5 physical/diagnostic supersession:** the generated
+  first-article pack is now FA-1…FA-14. FA-13 records that J14.3–4 is physically
+  open until a measured, approved Stop/control-power interface exists. Physical
+  inspection found no C.I.S. device or wiring on lanes 21/22, so C.I.S. is N/A,
+  not passed. FA-13 requires Stop→master/control-power plus TP16-drop proof,
+  resolution of whether another pit-entry interlock exists, and an approved
+  install-versus-Stop+LOTO-only disposition. Any new final pit interlock acts
+  upstream; a J14-only contact is not an equivalent safety disconnect.
+  FA-14 assigns protective-earth and hot/neutral polarity verification to a
+  qualified electrician with a listed external tester; neither is a Rev-D
+  input. Command-off CT/Hall evidence is
+  `uncommanded_motor_current`/`external-feed-or-welded`, not conclusive weld
+  attribution.
 
 ### H4 — Cycle POST contract mismatch; fake-vs-fake tests — CLOSED
 

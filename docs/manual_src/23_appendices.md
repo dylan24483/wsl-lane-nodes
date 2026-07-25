@@ -165,7 +165,8 @@ The 20 `excluded_non_dnp_refs` are not in any assembly file but exist on the boa
 > GND↔FIELD_GND isolation (TP2 vs TP5 must show no continuity). TP8–TP12 walk the
 > NE555 watchdog. TP13/TP14/TP16 verify the board rail: TP16 should be dead unless
 > ARM, RP2040_OK, the watchdog, the controlled Candidate-C J_SAFE1-2 jumper, and
-> Stop/CIS J_SAFE3-4 are satisfied. This does **not** prove TB/SC; G3 separately
+> an approved J_SAFE3-4 interface are satisfied. The current lane-21/22 3–4
+> harness is OPEN/unlanded, so TP16 must stay dead. This does **not** prove TB/SC; G3 separately
 > commands S and T and requires both coils dead with both OEM levers BACK/open.
 
 #### 23.A.6 Provisional / unconfirmed BOM values
@@ -269,7 +270,7 @@ This expands the seed in **§1.11**. Entries already defined there are not repea
 | **VSYS** | The Raspberry Pi Pico's main 5 V system-input pin (module pin 39). The board feeds the logic 5 V rail into VSYS; the Pico's on-board regulator supplies the 3V3 rail. |
 | **uart0 / 115200 8N1** | The Pi↔RP2040 serial link: hardware UART0 on **GP0 (TX) / GP1 (RX)**, 115200 baud, 8 data / no parity / 1 stop. The RP2040 **pushes** edge events; the FSM consumes them (no polling). |
 | **RP2040_OK** | The RP2040's fail-safe-low rail-permission output (**GP2**). HIGH only when firmware is healthy and past `BOOT_SETTLE_MS`; Hi-Z (unpowered/reset) → external 100k pulldown → rail dead. A first-class safety-rail condition. |
-| **relay-enable rail (`RELAY_ENABLE_RAIL`)** | Hardware-gated board-relay coil supply. On lanes 21/22 it requires ARM · RP2040_OK · NE555-OK, the controlled Candidate-C J_SAFE1-2 jumper, and Stop/CIS J_SAFE3-4. TB/SC is **not** a J14 loop: the OEM parallel-safe ladder separately blocks the S/T machine coils and is accepted only by per-lane G3 proof. |
+| **relay-enable rail (`RELAY_ENABLE_RAIL`)** | Hardware-gated board-relay coil supply. It requires ARM · RP2040_OK · NE555-OK, the controlled Candidate-C J_SAFE1-2 jumper, and an approved J_SAFE3-4 external control-power / optional pit-interlock dry-contact interface. Lane 21/22 currently leaves 3–4 OPEN/unlanded, so the field rail cannot arm. TB/SC is **not** a J14 loop: the OEM parallel-safe ladder separately blocks the S/T machine coils and is accepted only by per-lane G3 proof. |
 | **ARM / ARM_PERMIT** | The Pi GPIO permission (one AND-chain input) asserted only in a verified operator-safe state; part of replicating the OEM "Power-Down / require First Ball Zero on power restore" rule. |
 | **watchdog kick (`WDOG_KICK`)** | The Pi-driven pulse (lane_node GPIO12) that pets the NE555 monostable. A missed kick times out and drops the rail. Independent of the RP2040's own hardware watchdog. |
 | **GND vs FIELD_GND** | Logic ground vs the isolated machine-sense ground. They share **0 nodes** (verified: GND=92 nodes, FIELD_GND=6 nodes) — the isolation barrier is intact and only crosses inside the opto/relay/DC-DC packages. |

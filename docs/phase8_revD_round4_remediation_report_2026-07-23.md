@@ -296,7 +296,9 @@ survived on its merits after the fixes below.
 
 - **CONFIRMED GOOD (committed as-is):** reliable transport/outbox/strict-JSON
   hardening; daemon identity/sensor hardening + ARM-inhibit P0 (verified in sim,
-  5 scenarios, rev-C compat preserved); ball-return UNKNOWN pause; server
+  5 scenarios, rev-C compat preserved); the then-current ball-return UNKNOWN
+  pause (**superseded later on 2026-07-24 by R5 invalidation + recovery-drain
+  semantics because an unseen return cannot be resumed honestly**); server
   source-id/token/command-ack hardening; machine contract v3 (dual-copy
   byte-identical `dd7b0929…`, equality gate proven load-bearing); firmware
   release provenance (UF2 sha `d5570efd…` byte-exact); board 47k change (full
@@ -378,3 +380,26 @@ gate on lane-nodes history still stands.
 
 DEPLOY: flag-day. Both repos + Pi/server env + migrations together, per
 `docs/deploy_server_to_wsl_srv.md` and `PHASE8_DEPLOYMENT_RELEASE_GATE.md`.
+
+### 2026-07-24 round-5 supersession
+
+The round-4 software conclusion is superseded where it described UNKNOWN
+intervals as pausing/resuming evidence. The accepted rule is now invalidation:
+an event may have happened unseen, so return timers, current/index absence
+anchors, stale counters, debounce candidates, and incomplete baseline samples
+do not cross the blind interval. The later round also closed bounded delivery
+ordering, immutable incident timestamps, exact-family cross-service
+write-ahead retry/recovery (including recovery→re-alert serialization when a
+condition recurs during an ambiguous clear), durable startup evidence,
+signed-64 database boundaries, non-recursive quarantine notification, and
+single-owner shutdown draining. The physical re-audit additionally made the
+physically open J14.3–4 Stop/control-power interface and demand-to-power-drop
+proof a P0 gate. A later 2026-07-24 field inspection established that lanes
+21/22 have no C.I.S.; FA-13 now requires an explicit pit-interlock disposition
+instead of a fictitious C.I.S. pass, and any new final pit interlock must act in
+the approved upstream safety-disconnect architecture rather than only J14. The
+same review assigned PE/polarity to external electrician-controlled proof and
+reclassified command-off current as `external-feed-or-welded` rather than weld
+proof. See `phase8_diagnostics_scope_2026-07-19.md` and the round-5 entry in
+`phase8_revD_run_log.md`. No powered qualification or deployment claim is
+implied.

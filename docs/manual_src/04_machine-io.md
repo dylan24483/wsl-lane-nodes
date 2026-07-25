@@ -160,7 +160,7 @@ The foul detector is the **Radaray** unit at the foul line (an infrared/optical 
 
 ### 4.7 DIELL ball detect (the cycle trigger) ⭐
 
-This is the single most important *input* in the system: on the 82-70, the cushion's shock absorber actuates a **Start Switch (SS)** that is the cycle trigger. **On the Westside lanes the SS function is performed by DIELL photoelectric ball-detect sensors** (there is no separate cushion microswitch in the read path). When a thrown ball breaks the beam, that is the "ball delivered" event that starts the whole cycle. The DIELL also doubles as a **safety interlock** at the machine (preserve the machine's safety chain in hardware — see §19).
+This is the single most important *input* in the system: on the 82-70, the cushion's shock absorber actuates a **Start Switch (SS)** that is the cycle trigger. **On the Westside lanes the SS function is performed by DIELL photoelectric ball-detect sensors** (there is no separate cushion microswitch in the read path). When a thrown ball breaks the beam, that is the "ball delivered" event that starts the whole cycle. Physical inspection confirms DIELL's cycle-trigger role but found no C.I.S. device or wiring on lanes 21/22. **Do not count DIELL as a personnel/pit-entry safety interlock**; §19's pit-entry disposition remains open.
 
 There are **two beams per lane** (left/right, mounted on the kickback), coalesced into one logical "ball" event in firmware.
 

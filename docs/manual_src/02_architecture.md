@@ -235,12 +235,13 @@ architectural summary.
    | RP2040 OK | RP2040 `RP2040_OK` (GP2) heartbeat/permission | false |
    | Cam-stop OK | RP2040 immediate cam-stop drop path | false on reset/fault |
    | TB/SC interlock OK | **Candidate C:** OEM parallel closed-when-safe contacts in the S/T coil ladder; J14 pins 1–2 carry the controlled jumper | both levers BACK/open; or G3 insertion proof fails |
-   | Stop/CIS/master chain OK | external machine safety chain at J14 | open/false |
+   | External control-power proof / optional approved pit interlock OK | future externally mounted energize-to-prove relay dry contact, optionally in series with a newly installed pit-entry-interlock contact, at J14 pins 3–4; **currently OPEN/unlanded** | open/false; field rail cannot arm |
 
    The Pi **cannot** bypass these in software. The rail can only de-energize a
-   coil; it cannot open a *welded* contact — so the existing master breaker /
-   Stop / CIS chain remains the final physical stop (see Section 19, "welded
-   contact limitation"). Live motor current always stays on the machine
+   coil; it cannot open a *welded* contact — so the installed master breaker /
+   Stop chain remains the pilot's final physical stop (see Section 19, "welded
+   contact limitation"). OEM machines with a real C.I.S. retain and test that
+   device; lanes 21/22 record it as N/A. Live motor current always stays on the machine
    contactors; the board only opens/closes isolated dry contacts in the existing
    control circuits.
 
@@ -342,7 +343,7 @@ schematic components / 236 board footprints (incl. test pads + mounting holes) /
 | **Mask status LEDs** | J13 (J_LAMP_LED, 6-pos) | Our LEDs in the existing mask housings: VCC_5V, GND, and four LED returns. |
 | **Machine field inputs** | J3/J4/J5 | J3 (J_FAST_IN, 10-pos): SA/SB/SC/TA1/TA2/TB/DIELL-L/DIELL-R + 2× FIELD_GND. J4 (J_SLOW_IN_A, 14-pos): GS1–GS10, GP, OS, BS + FIELD_GND. J5 (J_SLOW_IN_B, 12-pos): PBZ, PBC, Foul, 10th, manual T/S/SWS/SWSR, AUX1–3 + FIELD_GND. |
 | **Machine motion outputs** | J6–J12 | One isolated 2-pin contact pair per output: J6=S, J7=T, J8=SP, J9=BE, J10=M, J11=M2, **J12=M1 (DNP)**. (5.08 mm MKDS terminal blocks.) |
-| **Safety loop** | J14 (J_SAFETY, 4-pos) | Board-side provision for two series positions. **Field implementation:** J14-1/2 = controlled Candidate-C jumper (no machine landing); J14-3/4 = Stop/CIS/master-chain loop. Primary TB/SC protection stays in the OEM S/T coil ladder and is re-proven per lane at G3. |
+| **Safety loop** | J14 (J_SAFETY, 4-pos) | Board-side provision for two series source positions. **Current lane-21/22 harness:** J14-1/2 = controlled Candidate-C jumper (no machine landing); J14-3/4 = physically OPEN/CUT+LABEL-ONLY. The field rail cannot arm until a reviewed external energize-to-prove control-power relay supplies an isolated N.O. dry contact, optionally in series with an approved new pit-entry-interlock contact. Never jumper 3–4 at the machine, and never route sensed machine voltage or mains to Rev-D. Primary TB/SC protection stays in the OEM S/T coil ladder and is re-proven per lane at G3. |
 | **Machine adapter harness** | J3–J14 ↔ C1/C2A | Per-chassis. Maps the board's function-named pins to the real C1 (34-pin motor/relay/power) and C2A (50-pin switch/control) cavities. See Section 14. |
 | **Harness mating plugs** | J3/J4/J5/J13/J14 | Phoenix MC 1,5-ST-3,5 screw plugs (10/14/12/6/4-pos, MFR 1840447/1840489/1840463/1840405/1840382). Ordered with the harness, not placed on the PCB. |
 
@@ -379,3 +380,9 @@ is, electrically, a modern MP chassis. (Sources: `phase8_8270_SYSTEM_REFERENCE.m
 §0/§4/§5; `phase8b_pcb_revB_spec.md` §3.1.) For the full machine-side description
 of contactors, cams, grippers, and the C1/C2A interface, see Section 3 (Machine
 Overview) and Section 14 (Connectors & Harness).
+
+The upstream mains installation remains outside this architecture. Before
+commissioning and periodically thereafter, a qualified electrician must use an
+appropriately listed external tester to verify protective-earth continuity/bonding
+and correct hot/neutral polarity. Never route hot, neutral, or protective earth
+through Rev-D or J14.

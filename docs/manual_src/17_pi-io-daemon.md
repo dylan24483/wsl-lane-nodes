@@ -14,8 +14,9 @@ These modules sit **above** the rev-B board hardware (Sections 5–13) and **bes
 > authoritative TB/SC guard is Candidate C's powered-proven OEM parallel-safe S/T
 > coil ladder, with a controlled J_SAFE1-2 jumper and per-lane G3 proof — not a J14
 > NC machine loop. Other hardware layers include the implemented relay-enable gates,
-> fail-safe `RP2040_OK`, Stop/CIS/master breaker, and regenerative braking. The
-> software SC∧TB path is default-off, secondary, and unvalidated.
+> fail-safe `RP2040_OK`, the external installed Stop/master-breaker chain, and regenerative
+> braking. J_SAFE3-4 is currently OPEN/unlanded and receives no field-protection
+> credit. The software SC∧TB path is default-off, secondary, and unvalidated.
 
 ---
 
@@ -43,7 +44,7 @@ These modules sit **above** the rev-B board hardware (Sections 5–13) and **bes
 Two behaviours of this contract are load-bearing for safety and are easy to get wrong when extending the code:
 
 - **`poll()` kicks the watchdog.** The NE555 is petted *only* from inside the FSM's `poll()` (via `io.watchdog_kick()`), which the daemon calls once per tick. If the control loop stalls, the kicks stop, and the NE555 drops the rail in hardware (Section 10). This coupling is deliberate and must be preserved (contrast with the Track-A scoring node, where scoring must **never** be able to stop the machine).
-- **`arm(on)` only *gates* the rail.** Asserting arm does not energize anything by itself; implemented on-board gates still include watchdog, RP2040-OK/cam-stop, Candidate-C J_SAFE source continuity, and Stop/CIS. S/T additionally require the OEM TB/SC ladder to permit their coils. De-asserting arm is a real disable.
+- **`arm(on)` only *gates* the rail.** Asserting arm does not energize anything by itself; on-board gates still include watchdog, RP2040-OK/cam-stop, and J_SAFE source continuity. Candidate C supplies the controlled J_SAFE1-2 jumper. The lane-21/22 J_SAFE3-4 external-source position is currently OPEN/unlanded, so the field rail cannot arm until a validated external energize-to-prove control-power relay dry-contact interface exists. S/T additionally require the OEM TB/SC ladder to permit their coils. De-asserting arm is a real disable.
 
 ---
 
@@ -492,7 +493,7 @@ and fail closed; G3, not `interlock_ok()`, proves the physical TB/SC path.
 - **Section 8 — Rev-B Field Inputs: PC817 Opto-isolators** — the active-low front-ends behind `INPUT_ACTIVE_LOW`.
 - **Section 9 — Rev-B Machine Outputs: G5LE Relays** — the relays `OUT_A_MAP` drives (and the M1 DNP decision).
 - **Section 10 — Rev-B Safety Hardware: NE555 Watchdog + Relay-Enable Rail** — implemented on-board gates plus Candidate-C OEM-ladder boundary.
-- **Section 11 — Rev-B Connector Pinouts (J1–J14)** — `J_PI`/J1, `J_SAFETY`/J14 (controlled pins-1/2 jumper + Stop/CIS), `J_FAST_IN`/J3, `J_SLOW_IN_A`/J4.
+- **Section 11 — Rev-B Connector Pinouts (J1–J14)** — `J_PI`/J1, `J_SAFETY`/J14 (controlled pins-1/2 jumper + currently OPEN/unlanded reserved external-source pins 3/4), `J_FAST_IN`/J3, `J_SLOW_IN_A`/J4.
 - **Section 12 — Rev-B Channel Maps: RP2040 GPIO + MCP23017 Bit Maps** — the canonical channel/bit tables (`OUT_A_MAP`/`IN_A_MAP`/fast-input GPIO) this section mirrors.
 - **Section 14 — Machine Interface: C1/C2A Connectors & the Adapter Harness** — where each signal lands on the machine, and the exact LCSC part numbers.
 - **Section 21 — Cutover Procedure (Track B)** — where the `# CONFIRM` bench items get nailed down.
