@@ -78,6 +78,28 @@
 
 **Motion cams share a COMMON → C2A-N.** The cam COM wires bus together to one cavity, **N** (confirmed 2026-06-27 — both SA and TA2 ring to N regardless of lever). Because they share this common, **cold per-cam cavity reads are ambiguous** (every cam shows N + maybe its own cavity). **Finish the per-cam SA/SB/TA1/TA2 → cavity mapping at powered cutover** — rotate the mechanism, watch which cavity goes live as each cam trips (§4.2 PART C2); it does **not** gate the board. Cold sweeps also pick up **sneak paths through relay coils** — SA's lower wire reads ~21 Ω to CC (a coil path, ≈BE's 22 Ω coil) plus ~0 Ω to N/FF/F (commons). Those paths prove the region is not an isolated dry harness and make cold topology inference invalid; they do not prove whether the safety contacts themselves are series or parallel. **Do the mapping powered** (rotate, watch the cavity go live).
 
+> **⛔ COLD CAM MAPPING IS A CLOSED METHOD — DO NOT ATTEMPT A THIRD TIME (2026-07-24).**
+> Attempted twice at the machine (2026-06-27, and again 2026-07-24 via the "lever differential"
+> trick with C2A unmated). Both failed the same way: no clean per-cam closure to N appears at
+> rest, the only low-ohm hits are the documented commons (**F** rang <3 Ω to N — it is a common,
+> not a cam) plus unstable higher-resistance sneak paths (lowercase **t**), and readings are not
+> reproducible enough to identify anything. Meter/leads verified good during the 2026-07-24
+> attempt, so this is the method failing, not the instrument.
+>
+> **The only approved path is POWERED, AT THE CAM SWITCH TERMINALS** (not at the connector):
+> machine running under OEM control, clip onto a cam switch's own terminal, watch it through a
+> cycle. That yields identification **and** the mandatory voltage class in one operation — and
+> the class is the answer that actually matters before any cam lead touches a PC817 (this
+> machine has produced 33 VDC on PBZ and 42 VAC on the DIELL board's middle block).
+> **Fallback if connector-side identification stays impractical: tap the cams AT THE SWITCHES**
+> and skip C2A for those four channels entirely — four extra wires to route, zero identification
+> problem.
+>
+> **Not on the critical path.** Stage 6b (first commanded motion / coil-drop proof) needs the
+> output taps and the rail, not cam inputs. Cam signals are required only for full FSM cycle
+> timing, which is after first motion. Priority order stands: **Stop/CIS landing → output taps →
+> Stage 6b → cams.**
+
 **Isolate it (for one clean beep):** actuate the switch to the state that **opens the contact you're reading**, so that wire disconnects from the bused common — then only its own cavity beeps. **N.C. (motion cams): press** the lever to open it. **N.O. (SC/TB interlock): release / pull the lever off** the button to open it. (Or skip isolating and just take the single *unique* cavity, ignoring the common-bus beeps.)
 **Even easier if it survived the retrofit:** every wire lands on a numbered terminal strip (the "TS-nn" above). If that strip is still in the machine, clip there instead of piercing.
 
