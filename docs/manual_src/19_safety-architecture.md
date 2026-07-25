@@ -19,6 +19,11 @@ which layer is authoritative for each failure mode.
 > (`docs/phase8b_pcb_revB_spec.md` §"Non-negotiable safety rule" and §4.5) and repeated in the
 > firmware (`firmware/rp2040/main.c` SAFETY MODEL header) and the cutover runbook
 > (`docs/phase8_trackB_controller_cutover_runbook.md` §0).
+>
+> The board's J_SAFE3-4 Stop/CIS source position is **not currently a field
+> protection**: lane 21/22 leaves it physically OPEN/unlanded because no suitable
+> dry tap has been measured. The resulting no-arm state is deliberate. Never
+> jumper 3–4 at the machine.
 
 Sources grounding this section: the design contract `docs/phase8b_pcb_revB_spec.md` (§4 Safety
 Rail Contract, §2/§3 domains/outputs); the OEM system reference `docs/phase8_8270_SYSTEM_REFERENCE.md`
@@ -62,13 +67,62 @@ line of software is wrong or absent.
 Per the AMF 82-70 manuals (`docs/phase8_8270_SYSTEM_REFERENCE.md` §5), the **Stop switch and the
 Cushion Interlock Switch (C.I.S.)** are wired **in parallel**, and either one **cuts the
 rear-panel master circuit breaker**, which kills all control power to the machine. This is the
-**irreducible, final physical stop.** Phase 8 does **not** replace or move it — the cutover
-runbook (§1, §3.5) explicitly leaves the Stop/CIS/master chain intact and upstream, and the
-controller's safety rail additionally *requires* this chain to be closed (condition 6 below).
+intended **irreducible, final physical stop.** Phase 8 does **not** replace or move it.
+
+Documentation is not proof of the installed lane. Before motion, actuate Stop and
+CIS separately and verify the OEM rear master breaker/control power drops. The
+current lane-21/22 harness has no measured dry tap for this chain: J_SAFE3-4 is
+physically OPEN/CUT+LABEL-ONLY, so the field rail cannot arm. Never jumper 3–4 at
+the machine. After an engineered fail-safe dry interface is installed, also
+require each Stop/CIS demand to drop TP16. Opening the 3–4 interface alone proves
+board-source continuity, not the OEM breaker path.
 
 Why it stays the final stop: it is the only layer that removes machine control *power*, as
 opposed to removing *permission*. It is therefore the only thing that can stop a machine whose
 on-board relay contact has welded closed (see §19.2.6).
+
+A wiring bypass can read healthy throughout normal operation and remain invisible
+until Stop or CIS is demanded. The individual demand tests are therefore repeated
+periodically, not treated as a one-time continuity check.
+
+> **⚠ FIELD FINDING 2026-07-24 (lane 21/22, physical inspection — Dylan at the machine):
+> THERE IS NO C.I.S. ON THESE LANES. The chain here is STOP-ONLY.**
+> The cushion was inspected thoroughly and is **purely mechanical** — shock absorber with a
+> coil-over spring, **no switch and no wiring of any kind**. Consistent with the documented
+> retrofit history: the original **SS (cushion start)** switch was the ball detector and was
+> **replaced by DIELL** (`phase8_8270_SYSTEM_REFERENCE.md` input list: *"SS (cushion start —
+> DIELL on our lanes)"*), confirmed at the machine — **DIELL triggers the cycle.** The CIS
+> hardware appears to have gone with it.
+>
+> Consequences:
+> - The §19.2.1 "Stop **+ C.I.S.** in parallel" topology above is **OEM-manual history, not the
+>   installed lane.** Every CIS demand test (§19.2.1, the gate table, and the FMEA row) is
+>   **N/A on 21/22**; the Stop demand test stands and is still required.
+> - **STILL OPEN:** whether any *other* pit-entry interlock exists (gate switch, pull cord,
+>   frame switch). Resolve by asking a mechanic the operational question — *"does anything kill
+>   the machine automatically when you enter the pit, or do you hit Stop first?"* Record the
+>   answer here. If none exists, lockout discipline is the only pit-entry protection today.
+> - **J_SAFE3-4 design implication:** with no OEM CIS to borrow a contact from, the leading
+>   candidate is a **control-power sensing relay** (24 VAC coil bridged across a control rail,
+>   N.O. contact → J14-3/4: power-present = closed = safe; Stop, breaker trip, coil failure, or
+>   broken tap all open it — **fail-safe in every direction**, and the inverse of the flaw that
+>   disqualified interlock Candidate B) **optionally in series with a NEW pit-entry interlock
+>   switch we install** — which would give the machine an automatic pit interlock it does not
+>   currently have. Owner decision; neither is landed. Never a substitute for the Stop switch
+>   or for lockout during service.
+> - DIELL model: its output serves the **machine's** trigger circuit (the ex-SS path — most
+>   likely the 42 VAC middle block measured 2026-07-21); a parallel feed to the VDB is possible
+>   but unproven. Sensor-side taps (terminals 2+3 per group) remain the correct and only
+>   approved tap points; middle block stays untouched.
+
+#### 19.2.1a Protective earth and mains polarity (external to Rev-D)
+
+Hot, neutral, and protective earth never enter Rev-D, J14, or any board harness.
+At commissioning and periodic maintenance, a qualified electrician must use an
+appropriately listed external tester to verify protective-earth continuity and
+bonding, confirm correct hot/neutral polarity, and record the result. A low-voltage
+board measurement, a software diagnostic, or a J_SAFE continuity check cannot
+certify the mains installation.
 
 #### 19.2.2 The TB/SC table–sweep collision interlock (OEM ladder, Candidate C)
 
@@ -142,7 +196,9 @@ The single most important on-board safety structure is the **relay-enable rail**
 live only when a P-channel pass-FET (**Q14**, AO3401A, LCSC C347476) is on. The
 table retains the PCB contract's six named positions, but Candidate C closes row 5
 with the controlled jumper and delegates primary TB/SC blocking to the separate OEM
-S/T coil ladder. Rows 1–4 and 6 remain effective on-board permissions:
+S/T coil ladder. Rows 1–4 are effective on-board permissions. Row 6 is the
+designed Stop/CIS source position, but it is currently OPEN/unlanded and holds the
+field rail dead:
 
 | # | Condition | Source | Where it acts on the rail | Fail-safe default |
 |---|---|---|---|---|
@@ -151,15 +207,17 @@ S/T coil ladder. Rows 1–4 and 6 remain effective on-board permissions:
 | 3 | **RP2040 OK** | RP2040 `GP2` health/permission line (`RP2040_OK`) → NPN Q16 | Middle of the gate AND chain (Q16 must conduct) | false (R110 100 k base pulldown; GP2 Hi-Z on reset) |
 | 4 | **Cam-stop OK** | RP2040 immediate cam-stop drop path | **Folds into condition 3** — firmware drives `GP2` LOW on a cam-stop violation/timeout | false on RP2040 reset/fault |
 | 5 | **TB/SC board provision** | Controlled Candidate-C jumper on J14 pins 1↔2; no machine landing | Closes the first FET-source position; primary guard is the OEM S/T coil ladder | keyed/labeled jumper only; G3 fails if either commanded S/T coil remains live with both levers BACK |
-| 6 | **Stop/CIS/master chain** | External NC loop on `J_SAFETY` J14 pins 3↔4 | In series with the FET source, after the Candidate-C jumper position | open |
+| 6 | **Reserved Stop/CIS source position** | Future validated fail-safe dry interface on `J_SAFETY` J14 pins 3↔4; **currently OPEN/unlanded** | In series with the FET source, after the Candidate-C jumper position | open; field rail cannot arm |
 
 Two structural facts make this a genuine hardware AND (verified against
 `scripts/generate_kicad_netlist_revB.py` `block_rail()`):
 
 - **The J_SAFE positions are in series with the FET source.** +5 V traverses the
-  Candidate-C pin-1/2 jumper, the on-board pin-2/pin-3 net, and the Stop/CIS
-  pin-3/4 loop before Q14. Opening 1–2 proves only the PCB provision; it does not
-  simulate or validate the OEM TB/SC ladder.
+  Candidate-C pin-1/2 jumper and the on-board pin-2/pin-3 net, then can reach Q14
+  only through a future approved 3–4 interface. The present open 3–4 harness holds
+  the field rail dead. Opening either completed source position proves board
+  continuity only; it does not validate the OEM TB/SC ladder or the OEM
+  Stop/CIS-to-breaker path.
 - **Conditions 1, 2, and 3 (= 4) are a series transistor stack on the FET gate.** The gate
   (`RAIL_GATE`) is pulled **up to the source** by R106 (100 k) — off by default. To turn the rail
   on, three transistors in series (Q15 "AND ARM" → Q16 "AND RP_OK" → Q13 "wdog") must **all**
@@ -201,6 +259,12 @@ the architecture:
   (§19.2.1) removes machine control power regardless of any welded on-board contact. The rail is a
   **permission** layer, not a **disconnect** layer.
 - **Regenerative braking stays in machine hardware** (§19.2.3), independent of the board.
+
+If a future CT/Hall channel detects motor current while the controller command is
+OFF, report **`uncommanded_motor_current`** with suspected cause
+**external-feed-or-welded**. Current alone cannot distinguish a welded contact
+from another external feed or bypass; do not label that observation
+`welded_contact` without independent contact/circuit evidence.
 
 > **(VERIFY: relay contact rating headroom.)** Whether the Omron **G5LE-14, 5 VDC** relay
 > (K1–K6, LCSC C116963 — BOM note: "Critical: 5VDC coil. Do not substitute 9V/12V/24V coil.")
@@ -351,7 +415,7 @@ state consistent. "Rail" = `RELAY_ENABLE_RAIL` live? "Coils" = can any motion re
 
 | Hazard / event | Caught by (lowest → highest) | Net effect on the rail |
 |---|---|---|
-| Loss of 115 VAC / operator hits Stop / cushion (C.I.S.) | **HW:** master breaker cuts all control power | machine dead (power removed, not just permission) |
+| Loss of 115 VAC / operator hits Stop / actuates C.I.S. | **HW intended:** master breaker cuts all control power; **must be demand-proven per device** | machine dead (power removed, not just permission) |
 | Table–sweep collision course | **HW:** OEM parallel-safe contacts both open with levers BACK; correct Candidate-C insertion blocks the commanded S/T coil. **FW/SW echo:** default-off/unvalidated, no credit | rail may stay live; affected machine coil must be dead |
 | Pi process hangs / OS dies | **HW:** NE555 stops being kicked → Q13 off (cond. 1) | rail dead, coils drop |
 | Pi de-asserts ARM (or enters MANUAL_INTERVENTION/FAULT) | **HW:** Q15 off (cond. 2), driven by **SW** power-down/fault logic | rail dead |
@@ -364,7 +428,8 @@ state consistent. "Rail" = `RELAY_ENABLE_RAIL` live? "Coils" = can any motion re
 | Welded relay contact | **HW:** master breaker only — the rail drops the coil but cannot open a welded contact (§19.2.6) | rail dead, **but welded contact stays made → breaker required** |
 | Motor runs but must brake | **HW:** OEM regenerative braking on the contactor NC contacts (§19.2.3) | independent of the board |
 | Board powers up (pre-init) | **HW:** GP2 Hi-Z + ARM low + no kicks → all three gate conditions off | rail dead |
-| Implemented on-board conditions true | Q15·Q16·Q13 conduct; Candidate-C jumper + Stop/CIS source path closed | **rail live** — S/T machine coils still require the OEM ladder |
+| Current lane-21/22 harness | J_SAFE3-4 OPEN/unlanded | **rail dead by design** |
+| On-board conditions true after an approved 3–4 interface is installed | Q15·Q16·Q13 conduct; Candidate-C jumper + approved Stop/CIS source path closed | **rail live** — S/T machine coils still require the OEM ladder |
 
 ---
 
@@ -411,10 +476,12 @@ drop, then separately prove Candidate C at the machine:
 | RP2040 health | reset/halt the RP2040 | rail drops (GP2 → Hi-Z/LOW) | testable with v1 |
 | Cam-stop | trigger each release-enabled, measured stop-cam edge while "running" | rail drops | **BLOCKED on stock v1.2.3**; needs measured polarity + new controlled release (§19.3.4/§19.6) |
 | TB/SC interlock | board commands S, then T; force both levers BACK/open and meter each contactor coil | each coil dead even with board contact closed | **mandatory per lane; a J_SAFE rail-drop test is not a substitute** |
-| Stop/CIS | open the J14 Stop/CIS NC loop | rail drops | testable with v1 |
+| J_SAFE3-4 source continuity | open the reviewed 3–4 interface | rail drops | **BLOCKED: current harness is OPEN/unlanded; bench-only jumper testing is not field proof** |
+| Stop/CIS end-to-end | actuate Stop, then CIS separately | each action drops OEM master/control power and the board rail | **BLOCKED pending engineered 3–4 interface and guarded powered demand proof** |
 
-**Pass condition (G3):** every implemented rail gate drops permission and both Candidate-C
-coil tests are dead. **Fail action: ABORT and
+**Pass condition (G3):** every implemented rail gate drops permission, both Candidate-C
+coil tests are dead, and Stop and CIS each pass their separate end-to-end demand
+proof. **Fail action: ABORT and
 roll back to the OEM brain — do not "fix it live."** Any failure at or before the subsequent
 **G4** (commanded S/T/SP each stop on cams; full reset completes and stops; no runaway) is also a
 rollback (runbook §7, §8). The order is deliberate: capture cam polarity first
@@ -435,7 +502,7 @@ rail are bench-proven (runbook §2, §11; contract §12.9).
   snubber/MOV footprints) and the non-rail status-LED outputs.
 - **§10 Watchdog + Rail (circuit reference)** — the NE555 monostable, the pass-FET + AND-chain
   schematic, every pin→net table, the Candidate-C J_SAFE1-2 source jumper +
-  Stop/CIS J_SAFE3-4 wiring, the relay-coil rail map, and the
+  currently open/unlanded Stop/CIS J_SAFE3-4 source position, the relay-coil rail map, and the
   bench-bring-up probe list. **This section (19) is the consolidated model; §10 is the circuit
   detail.**
 - **§11 Connector Pinouts** — `J_SAFETY` (J14) and `J_PI` (J1) pin assignments.
