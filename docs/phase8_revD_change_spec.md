@@ -10,7 +10,9 @@
 > overwritten. Every script below is a COPY with `revD` in the name; every board/netlist output is
 > a NEW `wsl-phase8b-revD.*` file; every fab export goes to a NEW dated directory
 > (`kicad/fab_revD_YYYY-MM-DD/`). The read-only contract list is in the 2026-07-19 safeguard
-> snapshot (`backups/revC_design_snapshot_2026-07-19/MANIFEST.json`, 189 files hash-verified).
+> archive (`release_evidence/revC_design_snapshot_2026-07-19.zip`, 189 files hash-verified
+> internally from a clean clone). `scripts/verify_revC_snapshot.py --compare-checkout`
+> separately checks the 173 release-tracked paths; the 16 tool logs remain archive-only evidence.
 > Reminder: **every rev-C artifact carries a revB filename** — `generate_kicad_netlist_revB.py`
 > IS the rev-C generator; `kicad/fab_revB_routed_manual/` IS the rev-C-as-ordered package
 > (see its `PROVENANCE.md`).

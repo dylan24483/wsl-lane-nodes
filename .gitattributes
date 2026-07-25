@@ -29,3 +29,8 @@ generate_kicad_netlist_revD.erc -text whitespace=cr-at-eol
 kicad/fab_revD_*/** -text
 docs/phase8_revD_harness_bom.csv -text
 docs/phase8_revD_first_article_refdes_map.csv -text
+
+# Self-contained rev-C sacred-file evidence. Never normalize, diff, merge, or
+# apply an inherited LFS filter to the immutable archive.
+release_evidence/revC_design_snapshot_2026-07-19.zip -text -diff -merge -filter
+release_evidence/revC_design_snapshot_2026-07-19.zip.sha256 text eol=lf

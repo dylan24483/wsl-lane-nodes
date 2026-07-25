@@ -152,11 +152,15 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   rev-C's, M1 channel still DNP. **Safety_Rail == 13 is a stop-ship invariant.**
 
 ### G6 — Rev-C sacred-file integrity  `[x]`
-- 189/189 files in `backups/revC_design_snapshot_2026-07-19/MANIFEST.json` hash-verified
-  unchanged against the live tree before AND after every tool run (verified twice more in
-  the independent verify pass, and again at every batch of the 2026-07-21 remediation
-  campaign incl. its finalize — `scripts/verify_revC_snapshot.py`). Git shows no rev-C
-  design file modified. Re-verify once more immediately before the fab order.
+- 189/189 files in the tracked, clone-portable
+  `release_evidence/revC_design_snapshot_2026-07-19.zip` hash-verified internally;
+  the 173 release-tracked paths are separately compared by
+  `scripts/verify_revC_snapshot.py --compare-checkout`: binary content is byte-exact,
+  UTF-8 text is compared independent of checkout line endings, and the historical
+  Rev-B spec permits one exact additive non-authority safety notice while its frozen body
+  remains exact. Current result is 173/173 with zero failures; no Rev-C electrical or
+  fabrication body differs from the archive. Re-verify once more immediately before the
+  fab order.
 
 ### G7 — Rev-C carried verify-items 6–7 resolved OR explicitly waived  `[~]`  **(owner + powered-session)**
 - **Item 6 — per-channel front-end (dry-contact vs 24 VAC-rectified):** rev-D carries the

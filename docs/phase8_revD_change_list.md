@@ -7,22 +7,25 @@
 > Source catalog: `phase8_diagnostics_target_conditions_2026-07-19.md` §2 "Earns its place"
 > items 1–5.
 >
-> **SACRED-FILE RULE:** every rev-B/rev-C design file is untouched (189/189 snapshot-manifest
-> hashes verified before AND after every tool run — `backups/revC_design_snapshot_2026-07-19/
-> MANIFEST.json`). All rev-D work is in NEW `*revD*` files, committed on `fable-audit-fixes`
+> **SACRED-FILE RULE:** the rev-B/rev-C electrical and fabrication baseline is frozen.
+> The self-contained release archive
+> `release_evidence/revC_design_snapshot_2026-07-19.zip` verifies all 189 members;
+> `py -3 scripts/verify_revC_snapshot.py --compare-checkout` also compares the 173
+> release-tracked paths and permits only checkout line-ending conversion plus the one exact
+> frozen-record safety notice. All rev-D work is in NEW `*revD*` files on `fable-audit-fixes`
 > with explicit per-file staging only (`230f217` → `a045330` → `4896c48` → `67c3820` + the
-> finalize commit); no commit touches any rev-B/rev-C design file or the uncommitted
-> diagnostics-software campaign. Not pushed (branch has no remote — 160 MB-PDF push blocker).
+> finalize commit). The expanded ignored snapshot and external mirrors are recovery copies,
+> not hidden release-gate prerequisites. Publication is proven only by exact `git ls-remote`
+> containment of the WSL-pinned lane commit.
 > Reminder: **every rev-C artifact carries a revB filename** — `generate_kicad_netlist_revB.py`
 > IS the rev-C generator and `kicad/fab_revB_routed_manual/` IS the rev-C-as-ordered package.
 >
-> **2026-07-24 immutable-snapshot repair:** a later safety-banner insertion in
-> `phase8b_pcb_revB_spec.md` violated the rule above and made the standing gate
-> 188/189. The banner was removed and the file restored byte-for-byte to its
-> recorded SHA-256; the superseding Candidate-C/wiring warning remains in the
-> current Rev-D change list, diagnostics scope, harness documents, and service
-> manual. The repair commit touches the frozen file only to restore the exact
-> immutable baseline; `scripts/verify_revC_snapshot.py` is again 189/189.
+> **2026-07-24 immutable-snapshot repair:** the exact original
+> `phase8b_pcb_revB_spec.md` remains inside the SHA-pinned archive. The live historical copy
+> carries one exact additive non-authority safety notice while its frozen body remains
+> byte-identical after that notice is removed. The verifier enforces both facts: archive
+> **189/189**, checkout **173/173**, and 16 low-value historical tool logs retained
+> archive-only.
 
 ---
 

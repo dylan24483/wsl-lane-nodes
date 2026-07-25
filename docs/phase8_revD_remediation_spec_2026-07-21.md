@@ -15,7 +15,10 @@
 > in the change spec stands.
 >
 > **SACRED-FILE RULE unchanged:** no rev-B/rev-C design file is touched; hash-verify
-> `backups/revC_design_snapshot_2026-07-19/MANIFEST.json` (189 files) after every batch.
+> the tracked, clone-portable `release_evidence/revC_design_snapshot_2026-07-19.zip`
+> (189 files) after every batch via `scripts/verify_revC_snapshot.py --compare-checkout`.
+> The ignored `backups/revC_design_snapshot_2026-07-19/` tree is an expanded recovery copy,
+> not a hidden prerequisite for the release gate.
 > **Electrical invariants unchanged:** Safety_Rail netclass count EXACTLY 13 (drift =
 > stop-ship); no new copper on `SAFE_*` / `RELAY_ENABLE_RAIL` / `RAIL_GATE`; no load or
 > divider on the rail; GND↔FIELD_GND zero shared nodes; barriers crossed only inside

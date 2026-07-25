@@ -2580,17 +2580,33 @@ def test_contract_file_pins_server_vocab_and_shapes():
     # JSON it SERVES, not the sidecar text. deploy.ps1 compares the WSL pin
     # against this reported value, so a sidecar-trusting digest would let a
     # served-JSON/sidecar divergence pass green. Prove it hashes live AND
-    # ignores a deliberately-wrong sidecar.
+    # ignores a deliberately-wrong adjacent sidecar. Exercise that divergence
+    # in an isolated copy so a crash/kill can never corrupt the tracked pin.
     assert_eq(server._contract_sha256(), actual,
               "server reports the LIVE machine_contract.json hash")
-    _orig = sidecar_path.read_text(encoding='utf-8')
-    try:
-        sidecar_path.write_text("0" * 64 + "\n", encoding='utf-8')
-        assert_eq(server._contract_sha256(), actual,
-                  "reported digest stays the live JSON hash despite a WRONG "
-                  "sidecar (R3-8: no sidecar-trusting blind spot)")
-    finally:
-        sidecar_path.write_text(_orig, encoding='utf-8')
+    with tempfile.TemporaryDirectory(prefix="contract-sidecar-proof-") as temp_dir:
+        from unittest import mock
+
+        contract_copy = Path(temp_dir) / "machine_contract.json"
+        sidecar_copy = Path(temp_dir) / "machine_contract.sha256"
+        # Valid JSON with a deliberately different byte identity proves the
+        # end-to-end server result came from this isolated live file.
+        contract_copy.write_bytes(CONTRACT_PATH.read_bytes() + b"\n ")
+        sidecar_copy.write_bytes(b"0" * 64 + b"\n")
+        isolated_sha = hashlib.sha256(contract_copy.read_bytes()).hexdigest()
+        with mock.patch.object(
+            machine_store._contract,
+            "CONTRACT_PATH",
+            contract_copy,
+        ):
+            assert_eq(
+                server._contract_sha256(),
+                isolated_sha,
+                "server hashes isolated live JSON and ignores a WRONG "
+                "adjacent sidecar (R3-8: no sidecar-trusting blind spot)",
+            )
+    assert_eq(server._contract_sha256(), actual,
+              "server digest stays live JSON after isolated divergence proof")
 
 
 def test_machine_health_carries_bridge_contract_keys():
