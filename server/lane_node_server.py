@@ -746,14 +746,26 @@ def _build_identity():
             return value
     except Exception:
         pass
+    version_file = repo_root / 'VERSION'
     try:
-        value = (
-            repo_root / 'VERSION'
-        ).read_text(encoding='utf-8').strip().lower()
-        if re.fullmatch(r'[0-9a-f]{40}', value):
-            return value
+        value = version_file.read_text(encoding='utf-8').strip().lower()
     except OSError:
-        pass
+        return None
+    if re.fullmatch(r'[0-9a-f]{40}', value):
+        return value
+    # R5 regression guard (2026-07-25): this fallback previously accepted ANY
+    # non-empty text. It now requires a full 40-hex commit, because deploy.ps1
+    # hard-fails (LaneNodeSmokeFail) and watchdog.ps1 / wsl_monitor.py compare
+    # against expected_git_commit. A VERSION file carrying something reasonable
+    # like "v1.2.3" therefore degrades git_hash to null -- and did so SILENTLY,
+    # surfacing much later as an unexplained smoke-gate failure at deploy time.
+    # Keep the strict format (downstream depends on it) but say so out loud.
+    log.error(
+        "VERSION file %s does not contain a full 40-character lowercase Git "
+        "commit (found %r). git_hash will be reported as null and the deploy "
+        "smoke gate WILL fail. Write the deployed commit into this file, or "
+        "delete it and deploy from a real git checkout.",
+        version_file, value[:80])
     return None
 
 

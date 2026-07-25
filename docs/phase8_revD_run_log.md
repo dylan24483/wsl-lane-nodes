@@ -1652,3 +1652,87 @@ production-deployment gates.
   watchdog/ARM/RP2040 predicates, not the actual `RELAY_ENABLE_RAIL` / TP16
   outcome. Direct Q14/J14/rail-state diagnosis therefore remains an external
   isolated-monitor or future observe-only-board-FMEA item.
+
+---
+
+## 2026-07-25 — ROUND-5 AUDIT RESPONSE (independent verification + fixes)
+
+An independent pass re-derived every round-5 headline claim from the
+repositories rather than from the round-5 report. Claims that did not
+reproduce are corrected here so the record matches measurable reality.
+
+### Suite counts — MEASURED, not asserted
+
+| Suite | Round-5 claim | Measured 2026-07-25 |
+|---|---|---|
+| Lane repo `pytest tests/` | not claimed | **INTERNALERROR, 0 tests** → now **777 passed** (see fixes) |
+| WSL deploy gate (`test_pytest_phase8_deploy_gate.py`) | 39 | 39 → **40** after adding a real contract-pin check |
+| WSL backup/restore | 177 | 177, but **intermittently 176+1F** → de-flaked |
+| "integration 164" | 164 | **NO SUCH SUITE.** No WSL suite yields 164; the closest are phase8_lane_live 20, phase8_bridge_runtime 3, phase8_bridge_mutations 44, and phase8_bridge_contract (script-style, 0 under direct pytest). No summary line in `.codex-final-validation/*.out` contains 164. **Unreproducible as stated — withdraw the claim.** |
+| "lane remediation matrix 44/44" | 44/44 | **No round-5 lane remediation-matrix document exists.** The only 44/44 in either repo is the ROUND-4 RP2040 firmware FI-1 check count (`manual_src/15_rp2040-firmware.md:485`, `round4_board_report:127`, `round4_remediation_report:334`). Round 5's record is this run log plus four commit subjects with empty bodies. **Withdraw the claim.** |
+
+### Lane branch history rewrite — RESOLVED, not a defect
+
+`origin/fable-audit-fixes` is **not** a descendant of the round-4 audited
+baseline `a378dd8` (72 commits "dropped", 80 "new"), which makes
+`git log a378dd8..origin` misleadingly show all 80 commits as new. This was
+investigated to a conclusion and is **correct, deliberate work**:
+
+- Commit `792b59c` "Sanitize unpublished lane history for release publication"
+  ran `git-filter-repo` to remove **five copyrighted AMF OEM PDFs (~190 MB,
+  including a 168 MB service-parts manual)** from the entire history — required
+  because this repository is **public**, and the cause of the previously
+  recorded "push blocked by 160MB PDF in history".
+- `docs/history/phase8_fable_commit_map_20260724.txt` maps all 128 commits
+  (73 rewritten, 55 unchanged).
+- `a378dd8` maps to `4e1bee0`, which **IS** an ancestor of
+  `origin/fable-audit-fixes`. `git diff a378dd8 4e1bee0` is exactly the five
+  PDFs and nothing else.
+- Sampling 12 rewritten pairs: **no pair differs by anything other than PDFs.**
+
+**Conclusion: no source or design content was lost.** To diff round-5 work
+against the round-4 baseline, use the REWRITTEN baseline `4e1bee0`, not
+`a378dd8`.
+
+### Rev-C integrity gate — the round-4 gate really was broken in a clean clone
+
+Confirmed by cloning `a378dd8` with `--no-local`: `backups/` does not exist in
+a clone (gitignored), and the old `verify_revC_snapshot.py` hardcoded
+`REPO/backups/revC_design_snapshot_2026-07-19/MANIFEST.json`, dying with
+`FileNotFoundError`, exit 1. The "SACRED standing gate" could never run outside
+Dylan's workstation. Round 5's pinned-archive fix is **substantive, not
+cosmetic**. Current result re-verified: **189/189, 0 failures.**
+
+### OEM reference manifest — claim of redistribution is FALSE
+
+`OEM_REFERENCE_MANIFEST_2026-07-24.md` **excludes** the manuals from the public
+repo and records byte counts, SHA-256, and a controlled local storage path.
+Four of five hashes were re-verified against the actual files in `oem-manuals/`
+and **all match exactly**. Two cosmetic notes stand: the manifest is committed
+into the PUBLIC repo, and it discloses the owner's absolute local Windows paths
+and confirms possession of the manuals.
+
+### Items requiring Dylan's decision (NOT actioned here)
+
+1. **Neither HEAD is deployable.** `phase8_backup_restore.verify_lane_release_origin`
+   raises `GateError` against this repo for two independent reasons:
+   (a) `git status --porcelain -uno` reports ` M kicad/.history` — that
+   submodule holds **48 uncommitted DELETIONS** of phase8a design artifacts
+   (gerbers, DRC). Left untouched: those are design files and the deletions are
+   unreviewed. (b) Local HEAD is 1 ahead of the pinned release commit
+   `d1f68a7`, and the gate requires `head == policy['commit']` for kind
+   `lane` — "a clean local or unpushed commit cannot satisfy the release gate".
+   The fail-closed logic is correct by design; the delivered state simply is
+   not deployable. Resolve by pushing and repinning, or resetting to the pin.
+2. **`dylan24483/wsl-lane-nodes` is PUBLIC.** Anonymous `git ls-remote`
+   succeeds and returns `d1f68a7`; `wsl-systems` by contrast returns HTTP 401.
+   Everything pushed this round is world-readable. Nothing in the round-5
+   record establishes that public visibility was a deliberate, reviewed choice
+   for a repo carrying the site's full machine-control design.
+3. **Live Stripe secret key remains in `wsl-systems` history.** 84 blobs match
+   `sk_live_...` in `wsl_env.bat`, introduced at `aef294a` and untracked at
+   `88a89a0`. Mitigating: all 84 are ancestors of `origin/main` (pre-existing),
+   and that repo is PRIVATE — round 5 did not newly expose it. **Rotation
+   remains outstanding from the 2026-07-09 audit.** Note the memory
+   misattributes this to `wsl-lane-nodes`; verified, `aef294a` is not a valid
+   object in the lane repo.
