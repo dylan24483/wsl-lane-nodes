@@ -439,7 +439,19 @@ Deferred with DC1.
 - **Item 6 — per-channel input front-end: dry-contact vs 24 VAC-rectified sense.** Rev-D
   carries the dry-contact default on all 40 channels (field-validated input-side on machine
   22). Still blocked on the powered at-machine metering (meter tapped-lead live voltages
-  BEFORE reconnecting any board). May change per-channel population/BOM, not copper.
+  BEFORE reconnecting any board).
+  **CORRECTED 2026-07-25 — this line previously read "May change per-channel population/BOM,
+  not copper." That was FACTUALLY WRONG and is retracted.** Verified against the emitted
+  netlist `kicad/wsl-phase8b-revD.net`: all **40** `FIELD_LED_*` nets carry **exactly two
+  nodes** (`Rin` pin 2 → PC817 pin 1). There is **no series-diode footprint, no anti-parallel
+  clamp footprint, and no logic-side filter-cap footprint on any of the 40 channels.**
+  Population cannot add a part that has no pads, so any non-dry-contact outcome for item 6
+  **REQUIRES COPPER** and is **deferred to the fleet revision** — it cannot be absorbed by a
+  BOM/stuffing change on this spin.
+  Consequence for the first article: **PBZ (33 VDC measured) and DIELL_L / DIELL_R
+  (15.4–16 V measured) must NOT be landed directly on a bare board input.** Use the harness
+  interim mitigation (series 1N4007 in the harness lead, cathode toward the machine) or leave
+  those channels unlanded. See `phase8_revD_input_frontend_recommendation.md`.
 - **Item 7 — relay arc suppression sizing.** Snubber positions remain DNP, unchanged from
   rev-C; size from the measured inductive load in the powered session before populating.
 - Item 8 (5 V budget) is resolved on paper by spec §H.4 + the SS34 swap; bench PSU sizing

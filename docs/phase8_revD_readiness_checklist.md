@@ -166,7 +166,14 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 - **Item 6 — per-channel front-end (dry-contact vs 24 VAC-rectified):** rev-D carries the
   dry-contact default on all 40 channels. Blocked on the powered at-machine metering
   session (**meter tapped-lead live voltages BEFORE reconnecting any board** — standing
-  queue item). Outcome changes population/BOM per channel, not copper.
+  queue item).
+  **CORRECTED 2026-07-25:** this line previously claimed the outcome "changes population/BOM
+  per channel, not copper." That is false — verified against `kicad/wsl-phase8b-revD.net`,
+  all 40 `FIELD_LED_*` nets have exactly two nodes and **no series-diode / clamp / filter-cap
+  footprints exist on any input channel.** A non-dry-contact outcome therefore **REQUIRES
+  COPPER** and is deferred to the fleet revision. Closing this gate for the first article
+  means accepting the dry-contact default AND not landing PBZ / DIELL_L / DIELL_R on bare
+  board inputs.
 - **Item 7 — arc suppression sizing:** snubber positions carry DNP; size from the measured
   inductive load in the same powered session before populating.
 - Item 8 (5 V budget) is discharged on paper: spec §H.4 + SS34 swap; bench PSU ≥1 A stands.
@@ -310,6 +317,50 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   fleet-release status is contingent on FA-9 + OG-4 passing on the physical boards.
 
   `EXPERIMENTAL-ORDER ACCEPTANCE: _____________________________ (date / decision — experimental first-article, fleet-release gated on FA-9 numeric V_CE + OG-4 at-temp)`
+
+### G16 — Positive-actuation return bound MEASURED on the target Pi  `[ ]`  **(software; blocks LIVE, not fab)**
+
+`controller_io.POSITIVE_ACTUATION_MAX_S` (default **0.050 s**) bounds how long a
+safety-positive actuation — sweep-on / table-on / spot-on / arm-high / the NE555 watchdog
+kick — may take to return. **Exceeding it turns the motor OFF mid-motion and escalates to
+`_hard_safe` + MANUAL_INTERVENTION, which requires a physical PBZ to clear.**
+
+**The 0.050 s default is an ASSERTION, not a measurement.** Nothing measured actuation
+return time on a Raspberry Pi. The sample is taken with wall-clock `link.now()` around a
+call made from a thread competing under the CPython GIL with the serial reader, DiagWriter,
+PlatformHealth (which forks `vcgencmd` every 60 s), CycleShipper, and async recorder dumps —
+so it includes **scheduling preemption**, not just I²C/GPIO transport. Exposure is roughly
+2 boards × 50 Hz ≈ 100 evaluations/s (~8.6 M/day/Pi) for the watchdog kick alone, so a
+per-event probability above ~1e-7 is a **daily lane stoppage**.
+
+This project has already shipped this exact bug twice — `TAP_KICK_STARVE_MS` set below the
+real kick cadence, and a PlatformHealth poll cadence that false-expired healthy lanes. Do
+not ship a third guessed timing constant.
+
+**To close this gate:**
+
+```bash
+# ON THE PI, with the daemon's peer threads running (or matched via --threads):
+python3 scripts/measure_actuation_bound.py --seconds 900 --json /tmp/actuation.json
+```
+
+- `[ ]` Report attached to `phase8_revD_run_log.md` (paste the JSON).
+- `[ ]` If the recommendation exceeds the 0.050 s default, set **both** env vars in
+  `/etc/wsl-lane-node.env` before LIVE:
+  `WSL_POSITIVE_ACTUATION_MAX_S` and `WSL_WATCHDOG_KICK_MAX_S`.
+  Both **fail LOUD** (ValueError at import, before hardware opens) on garbage or
+  out-of-range values — they never silently restore the default.
+- `[ ]` If the recommendation exceeds the permitted ceiling (0.500 s), **do NOT raise the
+  ceiling.** The platform is too jittery to run the control loop as-is; fix the jitter
+  (thread count, fork cadence, CPU governor, `isolcpus`) and re-measure.
+
+**Already fixed in code (2026-07-25):** the watchdog kick no longer shares the write budget.
+Its body deliberately blocks for `WDOG_PULSE_S`, so `BoardController` now passes a derived
+`WDOG_PULSE_S + POSITIVE_ACTUATION_MAX_S` budget — charging a deliberate sleep against a
+transport budget was a category error. Note also that a genuinely late kick is already
+handled **in hardware**: the NE555 simply does not get its pulse and drops the rail. The
+software bound is defense in depth and must not be the thing that stops the lane on
+scheduler jitter alone.
 
 ---
 

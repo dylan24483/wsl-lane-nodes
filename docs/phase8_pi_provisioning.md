@@ -149,9 +149,55 @@ sudo nano /etc/wsl-lane-node.env         # set at minimum:
 #   WSL_RP2040_BUILD_ALLOWLIST=<release manifest build_id>
 #   WSL_RP2040_CFG_ALLOWLIST=<release manifest config hash>
 #   WSL_RP2040_UIDS=21=<Pico UID>,22=<Pico UID>
+#   --- output posture: EXACTLY ONE of these two is 1 (see §8.1) ---
+#   WSL_CONTROLLER_SHADOW=1
+#   WSL_LIVE_OUTPUTS=0
+#   WSL_CONTROLLER_EXPECTED_MODE=shadow   # MUST agree with the two above
 sudo systemctl daemon-reload
 sudo systemctl restart lane-node         # or lane-node-controller
 ```
+
+### 8.1 SHADOW → LIVE cutover — **three** variables, not two
+
+The shipped template is safe SHADOW. Going LIVE is a deliberate configuration change and
+requires editing **all three** of the following in `/etc/wsl-lane-node.env` **together**:
+
+| Variable | SHADOW (shipped) | LIVE |
+|---|---|---|
+| `WSL_CONTROLLER_SHADOW` | `1` | `0` |
+| `WSL_LIVE_OUTPUTS` | `0` | `1` |
+| **`WSL_CONTROLLER_EXPECTED_MODE`** | **`shadow`** | **`live`** (or comment the line out) |
+
+> **⚠️ The third one is the trap.** `systemd/wsl-lane-node.env.example` ships
+> `WSL_CONTROLLER_EXPECTED_MODE=shadow` **uncommented**. If you flip only the first two, the
+> daemon refuses startup — correctly and fail-safe, before GPIO/I2C/UART are opened — with:
+>
+> ```
+> WSL_CONTROLLER_EXPECTED_MODE=shadow does not match selected controller mode live
+> ```
+>
+> Because the unit is `Restart=on-failure` / `RestartSec=15` /
+> `StartLimitBurst=4` / `StartLimitIntervalSec=120`, it exhausts its restart budget and
+> latches `failed` in roughly 60 s. Fixing the env file alone is then **not enough** — you
+> must also clear the latch:
+>
+> ```bash
+> sudo systemctl reset-failed lane-node-controller.service
+> sudo systemctl restart lane-node-controller.service
+> ```
+
+Cutover procedure:
+
+```bash
+sudo nano /etc/wsl-lane-node.env          # change ALL THREE rows above
+sudo systemctl daemon-reload
+sudo systemctl reset-failed lane-node-controller.service   # harmless if not latched
+sudo systemctl restart lane-node-controller.service
+journalctl -u lane-node-controller -n 40  # expect the LIVE banner, no mode-mismatch line
+systemctl is-active lane-node-controller  # expect: active
+```
+
+Reverting to SHADOW is the same edit in reverse — again all three rows.
 
 Verify after restart:
 

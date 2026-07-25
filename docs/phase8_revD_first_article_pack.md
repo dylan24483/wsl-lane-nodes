@@ -1,6 +1,6 @@
 # Phase 8 Rev-D — First-Article / Bench Pack (GENERATED — do not hand-edit)
 
-> **GENERATED 2026-07-24 by `scripts/generate_first_article_docs_revD.py` from the rev-D
+> **GENERATED 2026-07-25 by `scripts/generate_first_article_docs_revD.py` from the rev-D
 > netlist + routed board. Re-run the script after ANY netlist or placement change —
 > hand edits will be overwritten.** This pack is the Codex-M6 remediation artifact:
 > the rev-C bench documents (TP map, board-1 bench packet, solder/bring-up guides)
@@ -28,6 +28,23 @@
 > boards. Do not scale to fleet quantity or field-deploy a lane on these boards until
 > FA-9 + OG-4 pass and the readiness-checklist G15 EXPERIMENTAL-ORDER acceptance line is
 > signed.
+
+> **⛔ INPUT FRONT-END IS BARE — DO NOT LAND OVER-VOLTAGE CHANNELS.** Every one of the
+> **40** input channels is the single hardcoded topology
+> `FIELD_WET_V → Rin (2k2) → PC817 LED → field pin`. Verified against the emitted netlist:
+> all 40 `FIELD_LED_*` nets have **exactly two nodes** — there is **no series blocking
+> diode, no anti-parallel clamp, and no logic-side filter cap footprint on any channel**,
+> so this is **not** a stuffing option on these boards.
+> Against the PC817 **6 V LED reverse maximum**, the measured lane-22 field classes give:
+> **PBZ = 33 VDC** (≈22 V reverse against an ~11 V wetting rail, 3.7× the limit) and
+> **DIELL_L / DIELL_R = 15.4–16 V** at rest, self-powered and persisting with the OEM
+> brain removed. **Do NOT land PBZ, DIELL_L, or DIELL_R directly on a first-article board
+> input.** Either leave those channels unlanded, or fit the documented harness mitigation
+> (series 1N4007 in the harness lead, cathode toward the machine) and record it per lane.
+> The cam channels (SA · SB · TA1 · TA2) are **UNMEASURED** and sit in the machine's
+> 24 VAC relay ladder — treat them as AC-exposed until metered.
+> Authority: `docs/phase8_revD_input_frontend_recommendation.md`;
+> change-list item 6 is **REQUIRES COPPER, deferred to the fleet revision**.
 
 ## 0. Hard rules before power
 

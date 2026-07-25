@@ -57,8 +57,20 @@ EnvironmentFile=/etc/wsl-lane-node.env
 # + the cycle FSM + the per-board arm/watchdog GPIOs. It runs a tight synchronous
 # control loop and kicks the NE555 from INSIDE that loop, so a stalled loop stops
 # kicking -> the watchdog drops the relay-enable rail -> motion stops.
-# CAUTION: switching from SHADOW to LIVE is a deliberate configuration change:
-# set WSL_CONTROLLER_SHADOW=0 and WSL_LIVE_OUTPUTS=1 together, then restart.
+# CAUTION: switching from SHADOW to LIVE is a deliberate configuration change.
+# Edit /etc/wsl-lane-node.env and change ALL THREE of these together, then restart:
+#     WSL_CONTROLLER_SHADOW=0
+#     WSL_LIVE_OUTPUTS=1
+#     WSL_CONTROLLER_EXPECTED_MODE=live     <-- or delete/comment the line entirely
+# The shipped template (systemd/wsl-lane-node.env.example) sets
+# WSL_CONTROLLER_EXPECTED_MODE=shadow UNCOMMENTED. If you flip only the first two,
+# startup is REFUSED before any hardware opens, with:
+#     WSL_CONTROLLER_EXPECTED_MODE=shadow does not match selected controller mode live
+# That is fail-safe (the lane stays disarmed) but it STALLS THE CUTOVER: with
+# Restart=on-failure + RestartSec=15 + StartLimitBurst=4/StartLimitIntervalSec=120
+# the unit latches "failed" in ~60 s and then needs a deliberate
+#     systemctl reset-failed lane-node-controller.service
+# before it will start again. Full runbook: docs/phase8_pi_provisioning.md §8.
 ExecStart=/home/pi/wsl-lane-nodes/.venv/bin/python3 lane_node/controller_daemon.py
 
 # GPIO-level safe-off after the daemon is reaped for ANY reason: force the ARM and
