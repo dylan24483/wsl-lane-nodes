@@ -33,6 +33,7 @@ Hardware deps (Pi only): `smbus2` (or `smbus`) for the MCP23017s. Imported
 lazily so this module loads + the RecordingIO path tests on any machine.
 """
 from __future__ import annotations
+import os
 import time
 import logging
 
@@ -152,8 +153,82 @@ MOTION_RELAYS = ("S", "T", "SP", "BE", "M", "M1", "M2")
 # operation itself must return within the bounded half-window below, preserving
 # an equal post-return reserve for rollback/hard-safe handling. Normal MCP/GPIO
 # control writes are millisecond-scale; a 50 ms return is already abnormal.
-POSITIVE_ACTUATION_MAX_S = 0.050
+#
+# ⚠️ UNMEASURED ON THE TARGET PLATFORM (recorded 2026-07-25).
+# The 0.050 s default is an ASSERTION, not a measurement. Nothing in this repo
+# measures actuation return time on a Raspberry Pi. The bound is sampled with
+# wall-clock ``link.now()`` around a call that the daemon runs on a thread
+# competing under the CPython GIL with the serial reader, DiagWriter,
+# PlatformHealth (which forks ``vcgencmd`` every 60 s), CycleShipper, and async
+# recorder dumps — so the measurement includes SCHEDULING PREEMPTION, not just
+# I2C/GPIO transport. Exceeding it drives ``action(False)`` mid-motion and then
+# ``_hard_safe`` + MANUAL_INTERVENTION, which needs a physical PBZ to clear.
+# Exposure is roughly 2 boards x 50 Hz = ~100 evaluations/s (~8.6M/day/Pi) for
+# the watchdog kick alone, so a per-event probability above ~1e-7 is a daily
+# lane stoppage.
+#
+# The failure direction is fail-safe (the machine stops); the cost is
+# AVAILABILITY, not injury. Do NOT relax this bound to make a symptom go away.
+# Instead MEASURE it on the target Pi with ``scripts/measure_actuation_bound.py``
+# and set the env escape below from p99.9 + margin. Readiness gate: G16.
+#
+# Explicit env escapes — both FAIL LOUD on garbage or out-of-range values
+# (ValueError at import, before any hardware opens); they never silently fall
+# back to the default the way ``controller_daemon._env_float`` does.
+_ACTUATION_BOUND_LO_S = 0.005
+_ACTUATION_BOUND_HI_S = 0.500
+
+
+def _env_bounded_seconds(name, default, *, lo, hi):
+    """Read a safety timing bound from the environment, failing LOUD.
+
+    An absent/empty value uses ``default``. Anything else must parse as a
+    finite float inside ``[lo, hi]`` or this raises ``ValueError`` — a bad
+    knob must stop startup, never quietly restore a default that the operator
+    believes they overrode.
+    """
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return float(default)
+    text = raw.strip()
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"{name}={text!r} is not a number; expected seconds as a decimal "
+            f"float in [{lo}, {hi}] (e.g. 0.080)") from None
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ValueError(f"{name}={text!r} is not a finite number")
+    if not (lo <= value <= hi):
+        raise ValueError(
+            f"{name}={value!r} is outside the permitted range "
+            f"[{lo}, {hi}] seconds. This bound is a safety deadline: raising "
+            f"it past {hi}s would let a positive actuation outlive its "
+            f"heartbeat lease, and lowering it below {lo}s guarantees "
+            f"false trips. Measure with scripts/measure_actuation_bound.py.")
+    return value
+
+
+POSITIVE_ACTUATION_MAX_S = _env_bounded_seconds(
+    "WSL_POSITIVE_ACTUATION_MAX_S", 0.050,
+    lo=_ACTUATION_BOUND_LO_S, hi=_ACTUATION_BOUND_HI_S)
 POSITIVE_ACTUATION_MIN_REMAINING_S = 0.100
+
+# The watchdog kick is NOT a transport-latency measurement: its body deliberately
+# BLOCKS for ``controller_daemon.WDOG_PULSE_S`` (the NE555 pulse width) between
+# the two monotonic samples. Measuring a deliberately-blocking call against a
+# bound sized for non-blocking register writes is a category error, so the kick
+# carries its own budget = deliberate blocking time + the same transport
+# allowance. ``BoardController`` passes the derived value; this is the fallback
+# used when a FreshnessGuardIO is built without one.
+#
+# NOTE ON THE REAL BACKSTOP: a genuinely late kick is already handled in
+# HARDWARE — the NE555 simply does not get its pulse and drops the relay-enable
+# rail. The software bound here is defense in depth, so it must not be the
+# component that stops the lane on scheduler jitter alone.
+WATCHDOG_KICK_MAX_S = _env_bounded_seconds(
+    "WSL_WATCHDOG_KICK_MAX_S", POSITIVE_ACTUATION_MAX_S + 0.002,
+    lo=_ACTUATION_BOUND_LO_S, hi=_ACTUATION_BOUND_HI_S)
 
 
 class LinkFreshnessError(RuntimeError):
@@ -612,15 +687,28 @@ class FreshnessGuardIO:
     operations always pass through.
     """
 
-    def __init__(self, io, link):
+    def __init__(self, io, link, *, watchdog_kick_max_s=None):
         object.__setattr__(self, "_io", io)
         object.__setattr__(self, "_link", link)
+        # The kick blocks by design; give it its own budget. See
+        # WATCHDOG_KICK_MAX_S. Callers that know the real pulse width
+        # (BoardController knows WDOG_PULSE_S) should pass it explicitly.
+        if watchdog_kick_max_s is None:
+            watchdog_kick_max_s = WATCHDOG_KICK_MAX_S
+        watchdog_kick_max_s = float(watchdog_kick_max_s)
+        if not (_ACTUATION_BOUND_LO_S
+                <= watchdog_kick_max_s <= _ACTUATION_BOUND_HI_S):
+            raise ValueError(
+                f"watchdog_kick_max_s={watchdog_kick_max_s!r} is outside the "
+                f"permitted range [{_ACTUATION_BOUND_LO_S}, "
+                f"{_ACTUATION_BOUND_HI_S}] seconds")
+        object.__setattr__(self, "_wdog_max_s", watchdog_kick_max_s)
 
     def __getattr__(self, name):
         return getattr(self._io, name)
 
     def __setattr__(self, name, value):
-        if name in ("_io", "_link"):
+        if name in ("_io", "_link", "_wdog_max_s"):
             object.__setattr__(self, name, value)
         else:
             setattr(self._io, name, value)
@@ -631,13 +719,15 @@ class FreshnessGuardIO:
         require_positive_actuation_freshness(
             self._link, action, min_remaining_s=min_remaining_s)
 
-    def _require_bounded_duration(self, action, started):
+    def _require_bounded_duration(self, action, started, max_s=None):
+        if max_s is None:
+            max_s = POSITIVE_ACTUATION_MAX_S
         elapsed = self._link.now() - started
-        if elapsed < 0.0 or elapsed > POSITIVE_ACTUATION_MAX_S:
+        if elapsed < 0.0 or elapsed > max_s:
             raise LinkFreshnessError(
                 f"refused {action}: positive operation returned in "
                 f"{elapsed:.6f}s, outside the 0.."
-                f"{POSITIVE_ACTUATION_MAX_S:.6f}s bound")
+                f"{max_s:.6f}s bound")
 
     def _positive_with_rollback(self, action, on, name):
         self._require_fresh(name)
@@ -696,7 +786,10 @@ class FreshnessGuardIO:
         except Exception as exc:
             raise LinkFreshnessError(
                 "watchdog-kick raised during positive operation") from exc
-        self._require_bounded_duration("watchdog-kick", started)
+        # Own budget: the kick BLOCKS for the NE555 pulse width by design, so it
+        # cannot be judged against a bound sized for non-blocking writes.
+        self._require_bounded_duration(
+            "watchdog-kick", started, self._wdog_max_s)
         self._require_fresh(
             "watchdog-kick-postcheck", min_remaining_s=0.0)
         return result

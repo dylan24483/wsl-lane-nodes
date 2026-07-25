@@ -70,6 +70,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cycle_control_8270 import CycleController, State, MOTION_STATES
 from controller_io import (
+    POSITIVE_ACTUATION_MAX_S,
     FreshnessGuardIO, LinkFreshnessError, MachineIO, RecordingIO, ShadowIO,
     in_b_map_for, require_positive_actuation_freshness)
 from rp2040_link import (
@@ -4579,7 +4580,14 @@ class BoardController:
         # Even while the link lock freezes mutations, its monotonic heartbeat
         # deadline can expire during a slow I2C/event operation. Guard every
         # safety-positive physical actuation at the call site.
-        self.io = FreshnessGuardIO(self.io, self.link)
+        # The watchdog kick's body BLOCKS for WDOG_PULSE_S by design
+        # (_kick_wdog: on() -> sleep(WDOG_PULSE_S) -> off()). Judging it against
+        # POSITIVE_ACTUATION_MAX_S, which is sized for non-blocking MCP/GPIO
+        # writes, would charge the deliberate pulse against a transport budget.
+        # Derive its budget here, where the real pulse width is known.
+        self.io = FreshnessGuardIO(
+            self.io, self.link,
+            watchdog_kick_max_s=WDOG_PULSE_S + POSITIVE_ACTUATION_MAX_S)
 
         # SHADOW/CANARY SOAK (idea #11): wrap the real io so the FSM drives NOTHING.
         # The wrapper records every command the FSM WOULD have issued and hard-holds
