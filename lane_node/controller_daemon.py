@@ -3879,10 +3879,53 @@ class PlatformHealth(threading.Thread):
                 body.pop("quarantined_lines", None)
                 body.pop("pending_diag_records", None)
                 self._post_heartbeat(body)
-            except Exception:
+            except Exception as exc:
                 self.errors += 1
+                # Previously this was `except Exception: self.errors += 1` with
+                # NO log line. A heartbeat the server rejects on SCHEMA grounds
+                # (e.g. this Pi and WSL-SRV on different builds) then retried
+                # forever in total silence: controller_seen_at never renewed,
+                # the lane fell to OFFLINE, and wsl_machine_alerts raised
+                # machine_offline ~300 s later with no hint of the real cause.
+                # Rate-limited so a genuine network outage cannot flood the log.
+                self._log_heartbeat_failure(exc)
+
+    # A rejected heartbeat is diagnosed from ONE log line or not at all; the
+    # operator-visible symptom (lane OFFLINE) is identical for a dead network,
+    # a bad token, and a schema mismatch.
+    _HB_FAIL_LOG_INTERVAL_S = 60.0
+
+    def _log_heartbeat_failure(self, exc):
+        text = str(exc)
+        now = time.monotonic()
+        last = getattr(self, "_hb_fail_log_at", None)
+        signature = text[:200]
+        changed = signature != getattr(self, "_hb_fail_log_sig", None)
+        if (not changed and last is not None
+                and now - last < self._HB_FAIL_LOG_INTERVAL_S):
+            return
+        self._hb_fail_log_at = now
+        self._hb_fail_log_sig = signature
+        schema = (
+            "missing required fields" in text
+            or "unknown fields" in text
+            or "HTTP 400" in text
+        )
+        if schema:
+            log.error(
+                "HEARTBEAT REJECTED BY SERVER (schema/contract): %s -- this "
+                "lane will show OFFLINE and raise machine_offline while it "
+                "persists. Most likely this Pi's lane-node checkout and "
+                "WSL-SRV are on DIFFERENT builds; deploy them together (see "
+                "docs/phase8_pi_provisioning.md). Total heartbeat errors: %d",
+                text, self.errors)
+        else:
+            log.warning(
+                "heartbeat POST failed: %s (total heartbeat errors: %d)",
+                text, self.errors)
 
     def _post_heartbeat(self, body):
+        import urllib.error
         import urllib.request
         data = json.dumps({"heartbeat": body}).encode("utf-8")
         headers = {"Content-Type": "application/json"}
@@ -3890,7 +3933,23 @@ class PlatformHealth(threading.Thread):
             headers["X-Lane-Token"] = self._hb_token
         req = urllib.request.Request(self._hb_url + "/api/machine/heartbeat",
                                      data=data, method="POST", headers=headers)
-        with urllib.request.urlopen(req, timeout=2.0) as resp:
+        try:
+            resp_cm = urllib.request.urlopen(req, timeout=2.0)
+        except urllib.error.HTTPError as http_exc:
+            # urlopen raises before the status check below on any 4xx/5xx, so
+            # without this the server's actual reason ("heartbeat missing
+            # required fields: [...]") was discarded and the operator saw only
+            # "HTTP Error 400: BAD REQUEST" -- or, before the caller logged at
+            # all, nothing whatsoever.
+            detail = ""
+            try:
+                detail = http_exc.read(4096).decode("utf-8", "replace").strip()
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"heartbeat HTTP {http_exc.code}"
+                + (f": {detail}" if detail else "")) from http_exc
+        with resp_cm as resp:
             raw = resp.read(4096)
             status = int(getattr(resp, "status", 200) or 200)
             if status >= 300:

@@ -1959,12 +1959,39 @@ def validate_heartbeat(body):
         raise ValueError("heartbeat must be an object")
     missing = sorted(_HEARTBEAT_REQUIRED_FIELDS - set(body))
     if missing:
-        raise ValueError(f"heartbeat missing required fields: {missing}")
+        # Deploy-skew hint: the producer (controller_daemon on the Pi) and this
+        # validator (behind lane_node_server on WSL-SRV) live in the same repo
+        # but on DIFFERENT machines, updated independently -- deploy.ps1 states
+        # it "never git-updates the lane repo". An older Pi against a newer
+        # server looks exactly like this. Name the cause in the message so it
+        # is not debugged as a lane fault.
+        raise ValueError(
+            f"heartbeat missing required fields: {missing} "
+            "(if these are all new fields, the lane node is running an OLDER "
+            "build than this server -- see docs/phase8_pi_provisioning.md "
+            "on deploying the lane repo and WSL-SRV together)")
+    # Forward compatibility: unknown fields are IGNORED, not rejected.
+    #
+    # Rejecting them made the schema un-deployable. The 9 runtime-safety fields
+    # added in round 5 are required here AND rejected as "unknown" by any
+    # server still on the previous build, so neither deploy order worked:
+    # old Pi -> new server failed as "missing", new Pi -> old server failed as
+    # "unknown". Because controller_daemon._maybe_heartbeat swallows the error
+    # and retries forever, that deadlock was SILENT: controller_seen_at never
+    # renewed, both lanes fell to OFFLINE, and wsl_machine_alerts fired
+    # machine_offline ~300 s later with no hint of a schema mismatch.
+    #
+    # Ignoring is also the strictly safer half: a server cannot act on a field
+    # it does not understand either way, so dropping the WHOLE heartbeat over
+    # one unrecognized key buys nothing and costs the lane's liveness. This
+    # matches the rule the RP2040 link protocol already follows -- additive
+    # fields tolerated, see tests/test_rp2040_link.py.
+    #
+    # Unknown keys are returned to the caller so ingest can surface them
+    # instead of hiding drift.
     unknown = sorted(
         set(body) - _HEARTBEAT_REQUIRED_FIELDS - _HEARTBEAT_OPTIONAL_FIELDS)
-    if unknown:
-        raise ValueError(f"heartbeat has unknown fields: {unknown}")
-    row = dict(body)
+    row = {k: v for k, v in body.items() if k not in set(unknown)}
     row['lane_id'] = _lane_id(row['lane_id'])
     for field in (
             'contract_loaded', 'identity_ok', 'ro_fs',
@@ -2079,6 +2106,9 @@ def validate_heartbeat(body):
     if len(platform_json) > 8000:
         raise ValueError("platform exceeds 8000 encoded characters")
     row['_platform_json'] = platform_json
+    # Surfaced, not hidden: ingest logs these so forward-compat tolerance can
+    # never quietly mask a producer sending fields this build cannot honour.
+    row['_unknown_fields'] = unknown
     return row
 
 
@@ -2334,6 +2364,16 @@ def record_heartbeat(body, *, when=None):
         raise StoreDisabled(f"{DISABLE_ENV} is off")
     hb = validate_heartbeat(body)
     lane_id = hb['lane_id']
+    if hb.get('_unknown_fields'):
+        # Tolerated for forward compatibility (see validate_heartbeat), but
+        # never silent: this is the signal that the lane node is running a
+        # NEWER build than this server.
+        log.warning(
+            "lane %s heartbeat carried %d field(s) this build does not "
+            "understand and ignored them: %s -- the lane node is probably "
+            "running a NEWER build than this server; update WSL-SRV.",
+            lane_id, len(hb['_unknown_fields']),
+            ",".join(hb['_unknown_fields'][:20]))
     now = _normalize_utc_iso(when) if when is not None else _utc_now_iso()
     cstatus = contract_status()
     contract_match = bool(
