@@ -68,9 +68,8 @@ Twisted-pair partner · Notes`.
 
 Summary for scoping:
 
-| Group | Connector (controller end) | Leads | AWG | Length |
-|---|---|---|---|---|
 | Group | Connector (controller end) | Leads | AWG | Length class | Length |
+|---|---|---|---|---|---|
 | Fast field inputs — cams | J3 — Phoenix MC 1,5/10-ST-3,5 | 5 (positions 1–5; all capped) | 22 | **L3** | 4.0 m |
 | Fast field inputs — DIELL | J3 (positions 7–10; **6 empty**) | 4 | 22 | **L2** | 3.0 m |
 | Slow inputs A | J4 — MC 1,5/14-ST-3,5 | 13 (positions 1–11, 13, 14; **12 empty**) | 22 | **L1** | 2.5 m |
