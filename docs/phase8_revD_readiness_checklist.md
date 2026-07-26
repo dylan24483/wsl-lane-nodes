@@ -3,6 +3,51 @@
 Status legend: `[ ]` open · `[~]` blocked on physical verify / owner decision · `[x]` done.
 **Do not place a fab order until every PRE-ORDER GATE is `[x]`.**
 
+---
+
+## ⭐ DECISION RECORD — 2026-07-26
+
+Recorded by Claude on the owner's instruction. **Items 1 and 3–5 are Dylan's decisions;
+item 2 was expressly delegated to Claude's judgement.** Item 1 needs Dylan's countersignature
+on the G15 line to close that gate formally.
+
+| # | Decision | Source | Effect |
+|---|---|---|---|
+| 1 | **Order at FLEET quantity (34 boards).** FA-9 de-gated as a pre-order blocker (still executed at first article). | Dylan | Closes the G15 question — see G15 for the full margin stack and the countersignature note |
+| 2 | **Cams are read as DRY CONTACTS, tapped at the microswitches — NOT by 24 VAC ladder sense. N = 0 driven 24 VAC channels.** | **Delegated to Claude** | Makes both fleet-revision items inert; no firmware change; no cavity mapping needed |
+| 3 | **Winford `BRK2x10-DIN` approved** as the C7 board breakout. | Dylan | Replaces an unnamed generic module; unblocks the panel layout |
+| 4 | **Machine C1 = female → we supply MALE/pins. Machine C2A = male → we supply FEMALE/sockets.** | Dylan (measured) | Closes the interposer gender question — see §G4/G5 in the backplate BOM |
+| 5 | **Enclosure-to-machine run = 6 ft (1829 mm)**, measured. | Dylan | Harness wire list re-issued as **Rev 3** (L1 3200 / L2 3700 / L3 4700) |
+
+### Item 2 — the 24 VAC population decision, reasoning
+
+The choice was: sense the motion cams by reading the machine's 24 VAC control ladder, or tap
+the cam microswitches directly as dry contacts wetted by `FIELD_WET_V`.
+
+**Decision: dry-contact tap at the switches.** It is the only option that works with the board
+as designed:
+
+- **Firmware.** 60 Hz through the r6 front end produces ~12 edges per 100 ms chatter window
+  against `CHATTER_MAX_CAM = 8`. 24 VAC sense needs a firmware change; dry contact does not.
+- **No filter route exists.** The cams are FAST channels, which carry the 10 nF `Cflt` option,
+  not the 2.2 µF one — and the 60 Hz floor is 951 nF. A cap cannot fix an AC cam channel.
+- **Cavity mapping.** SA/SB/SC/TA1/TA2 have **no confirmed C2A cavity**. Cold mapping failed
+  twice (C2A-N is a shared motion-cam common bus; ~21 Ω relay-coil sneak paths invalidate cold
+  continuity). Dry-contact tapping needs no cavity map at all.
+- **Board risk.** N = 0 keeps the 0.4807 mm field-pin clearance at ~5 V instead of ±33.9 V, and
+  keeps the zero-bulk-capacitance `FIELD_WET_V` rail inside its proven envelope. **This is what
+  lets 34 boards ship against the current revision.**
+
+**Cost accepted:** higher install labour — physical access to each cam microswitch on the
+mechanism — and longer cam leads. Harness Rev 3 already builds W01–W05 at **4.7 m (class L3)**
+for exactly this.
+
+**This decision is reversible only by a board revision.** If 24 VAC cam sensing is ever wanted,
+it requires the clearance fix, `FIELD_WET_V` bulk capacitance, and a firmware chatter change —
+i.e. a new spin. Re-open it deliberately, never by field improvisation.
+
+---
+
 > **2026-07-23 — REV-D INPUT-MARGIN HARDENING (CURRENT BOARD/FAB RECORD).**
 > Exactly the 40 PC817 collector pull-ups `Rpu_*` (`R4,R6,…,R82`) are now
 > **47 kΩ**; all unrelated 10 kΩ networks are unchanged. At 3.3 V this lowers
@@ -317,11 +362,37 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 - Package also carries the hand-solder BOM (rev-D refs incl. J15/J16 + the U37→U45 shift)
   and the **harness BOM** (see G13).
 
-### G12 — Manual Gerber inspection + JLC preview  `[ ]`  (rev-C G5 pattern)
-- On the plots: K1–K7 pad-net map regression (pads 2/5 coil, 1 COM, 3 NO, 4 NC); the 8 new
-  opto-bank channels; J15/J16 pads; USB keep-out visually clear; "KEYED: NOT …" silk at
-  J3/J15/J13/J16 legible.
-- Compare JLC's upload preview against the spec before paying — standing habit.
+### G12 — Manual Gerber inspection + JLC preview  `[~]`  (rev-C G5 pattern)
+**PART A — design-side inspection: `[x]` CLOSED 2026-07-26** (verified by Claude against
+`kicad/revD/wsl-phase8b-revD.kicad_pcb` + `kicad/wsl-phase8b-revD.net`, evidence below).
+
+| Item | Result |
+|---|---|
+| K1–K7 pad-net map regression | **PASS** — all 7: coil on **2/5** (`RELAY_ENABLE_RAIL` / `COIL_LO_*`), **COM=1** (`OUT_*_A`), **NO=3** (`OUT_*_B`), **NC=4 unconnected on all seven**. The rev-B G5LE-1/G5LE-14 killer cannot recur. |
+| 8 new AUX4–11 opto-bank channels | **PASS** — routed-mode audit ALL PASS, 40/40 r6 channels |
+| J15 / J16 pads (1.4 mm drill, FR-9) | **PASS** — drill report T8 = **1.400 mm, 62 holes** |
+| "KEYED: NOT …" silk | **PASS** — all four present: `NOT J3`, `NOT J15`, `NOT J13 LAMP`, `NOT J16` |
+| Board audit, routed + netlist mode | **ALL PASS** both modes, exit 0 |
+| Review plots exist | `kicad/fab_revD_2026-07-26_r8/review/wsl-phase8b-revD-review-layers.pdf` (3.5 MB) |
+
+**PART B — JLC upload preview: `[ ]` STILL OPEN. Cannot be closed before the upload session —
+it requires JLC's rendered preview, which does not exist until the files are uploaded.**
+Do these at the upload screen, before paying:
+
+- `[ ]` Preview reads **250 × 240 mm** — rev-D is 240 mm tall, not rev-C's 225.
+- `[ ]` ⚠️ **EDGE RAIL: if JLC proposes a break-away rail it must go on the LEFT or RIGHT edge,
+  never the BOTTOM.** Three JLC-placed parts sit inside the usual 5 mm bottom keep-out —
+  `U43` at **1.360 mm**, `D97` at 1.860, `R82` at 2.200. V-scoring 1.36 mm from a DIP-4 body
+  risks cracked joints fleet-wide. Left/right edges are >56 mm clear.
+  **Pre-approve the resulting outline change** so a side rail does not read as a 250 × 240 mismatch.
+- `[ ]` **Part rotation** on the four classes new in rev-D — F1 (1206L020YR), U46 (TCA4307,
+  VSSOP-8), U47 (SRV05-4, SOT-23-6), Q17–Q20 (2N7002LT1G). The CPL ships raw KiCad rotations
+  and the exporter has no rotation-correction table; prior-build inference covers only the
+  optos/diodes/relays. FA-16 is the backstop, but catch it here if JLC shows rotations.
+- `[ ]` USB keep-out clear; row-39 bottom-edge copper (1.28 mm) acknowledged on **both** edges.
+- `[ ]` Confirm **C2933281** (10 M) is matched and in JLC assembly stock at the moment of upload.
+- `[ ]` **Re-verify `source_board_sha256`** against `manifest.json` immediately before upload —
+  `kicad/revD/~wsl-phase8b-revD.kicad_pro.lck` is stale and any KiCad save silently breaks it.
 
 ### G13 — Harness/assembly BOM order carries every mating + coding part  `[ ]` ORDER still to place — **BOM itself now EXISTS** (2026-07-21: `docs/phase8_revD_harness_bom.csv`, also in the fab package assembly/ dir, with corrected MC 1,5 termination data — 7 mm strip / 0.22–0.25 N·m / ≤ 0.5 mm² insulated ferrule — and the corrected coding-install rule)  (OG-3; ship WITH the boards)
 | Item | PN | Qty note |
@@ -335,9 +406,25 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 - **Coding profiles must be FITTED before first article** — the first-article gate includes
   the physical cross-mate refusal test.
 
-### G14 — Dylan's overall review of the rev-D docs + spec  `[ ]`
-- Change list + spec + this checklist + run log. Open decisions parked for him: OG-1 (G8),
-  the G7 waiver-or-session choice, and the deferred OUT-B override (change-list item G).
+### G14 — Overall review of the rev-D docs + spec  `[x]` **CLOSED 2026-07-26**
+- Change list + spec + this checklist + run log — **plus** `phase8_revD_r6_input_protection_spec_2026-07-25.md`,
+  which postdates this gate's original wording and is now part of its scope.
+- **Review performed by Claude on the owner's instruction (2026-07-26), on top of the
+  10-dimension pre-order audit** (`phase8_revD_PREORDER_FINAL_AUDIT_2026-07-25.md`, 51 findings
+  independently verified, 33 confirmed / 18 refuted). Everything the review found actionable
+  has been fixed and committed, not just noted:
+  - Ten live files pointed at the superseded `_r5/` package (bare opto inputs) — **corrected**.
+  - The rev-C `JLC_UPLOAD_READY/` packet had no tombstone and `phase8b_revB_fab_order_checklist.md`
+    pointed at it — **tombstoned and bannered**.
+  - 520 board-side connectors were on no purchase list — **backplate BOM §A′ added**.
+  - Harness wire list lengths were short and J14 ferrules unbuildable — **Rev 3 issued**.
+  - The 10 M pin (C26108) was OOS and export-fatal — **re-pinned to C2933281, r8 exported**.
+  - The stale ~1.7 mA FA-9 operating point was still quoted alongside the r6 design — **corrected
+    to 1.34 mA / 1.12 mA** in this checklist and the manual's opto chapter.
+- **Open decisions previously parked here, now resolved** (see the DECISION RECORD at the head
+  of this file): OG-1/G8 enclosure purchase, the 24 VAC population question, FA-9 disposition.
+  **Still parked:** the G7 waiver-or-session choice and the deferred OUT-B override
+  (change-list item G) — neither blocks the fab order.
 - **J16 polyfuse is FITTED** (F1, Codex R2-4) — no longer an open option; the module
   allowance was re-derived **100 mA → 45 mA @ 85 °C worst case** (R3-7, run-log FR-15).
   A substitute is accepted only if its **minimum Ihold at 85 °C is ≥90 mA**;
@@ -357,6 +444,48 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   fleet-release status is contingent on FA-9 + OG-4 passing on the physical boards.
 
   `EXPERIMENTAL-ORDER ACCEPTANCE: _____________________________ (date / decision — experimental first-article, fleet-release gated on FA-9 numeric V_CE + OG-4 at-temp)`
+
+> **⚠️ OWNER DECISION RECORDED 2026-07-26 — ENTERED BY CLAUDE ON THE OWNER'S INSTRUCTION,
+> NOT A SIGNATURE. Dylan should countersign the line above to close this gate formally.**
+>
+> **Decision: proceed at FLEET quantity (34 boards), not a staged first article.**
+> Instructed by Dylan on 2026-07-26 ("we want to order fleet now"), reaffirmed after the
+> exposure was laid out in full.
+>
+> **FA-9 dispositioned to FALL as a pre-order gate** (Dylan, 2026-07-26: *"we will allow this
+> gate to fall"*), on this margin stack:
+>
+> | Step | Value |
+> |---|---|
+> | Required sink, 47 kΩ at 3.3 V to V_OL 0.66 V | 56.2 µA |
+> | I_F at the FA-9 loaded minimum | 1.12 mA |
+> | **Required CTR** | **5.0 %** |
+> | PC817**B** rank at 5 mA | 130–260 % |
+> | × low-current derate (~1.1 mA, ~0.5×) | ~65 % |
+> | × hot derate (70–85 °C, ~0.8×) | ~52 % |
+> | × end-of-life LED degradation (~0.5×) | ~26 % |
+> | **Worst-case-stacked margin** | **~5×** |
+>
+> Failing needs roughly a **10× miss against the rank spec** — a mismarked/counterfeit-part
+> scenario, not a design-margin one. Even un-ranked A-grade (80–160 %) still lands ~3×.
+> The gate existed because the UMW datasheet lacks a *guaranteed* minimum at this operating
+> point — a documentation gap, not an engineering red flag.
+>
+> **FA-9 is NOT cancelled — it is de-gated.** Still run it on the first articles as the formal
+> close, and record the numbers. A zero-lead-time pre-check is available and recommended:
+> rev-B board #1 and the rev-C boards carry the same PC817 in the same DIP-4 footprint, and
+> their **10 kΩ pull-up sinks 264 µA versus the real 47 kΩ's 56 µA — a 4.7× harder test.**
+> Passing in-situ on existing hardware is therefore a conservative proof of the r6 design,
+> needing only a bench supply, a DMM and a hot-air gun.
+>
+> **OG-4 (at-temperature tap fault injection) remains OPEN** and cannot be discharged before
+> boards exist. It is not de-gated — execute it on the first articles.
+>
+> **What makes fleet quantity defensible:** both "fleet revision" items — the 0.4807 mm
+> field-pin clearance and the zero `FIELD_WET_V` bulk capacitance — are **conditional on
+> driven 24 VAC channels**, and the 2026-07-26 population decision (see DECISION RECORD, item 2)
+> sets **N = 0**. With no channel in 24 VAC sense mode both items are inert, so these 34 boards
+> are **not** copies of a revision already committed to change.
 
 ### G16 — Positive-actuation return bound MEASURED on the target Pi  `[ ]`  **(software; blocks LIVE, not fab)**
 

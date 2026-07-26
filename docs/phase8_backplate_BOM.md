@@ -123,7 +123,7 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 > **(b) DRP2 compatibility** — confirm the Pi still seats in the DINrPlate with C5 fitted.
 > **(c) Access with C5 fitted** — microSD slot, USB-C power in (C9), and whether the screw
 > terminals are reachable with the assembly on the rail.
-| C7 | **Board breakout** | IDC20 2×10 → screw terminals, DIN/panel | **2** | **32** (+4) | $22–27 | one per board, panel-mounted beside its own J1 |
+| C7 | **Board breakout** | **Winford `BRK2x10-DIN`** ✅ | **2** | **32** (+4) | $22–27 | one per board, panel-mounted beside its own J1. **APPROVED 2026-07-26** |
 | C8 | 20-way ribbon, J1 ↔ breakout | 2×10 IDC socket-to-socket, **~150 mm** | **2** | **32** (+6) | ~$5 | ⚠ **SHORT is the requirement** — I²C integrity |
 | C9 | Pi power pigtail | USB-C to bare/ferruled, ~300 mm | 1 | **16** | ~$8 | from fuse F4; keeps the Pi's own input protection in circuit |
 
@@ -169,10 +169,35 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 | # | Item | Per lane | Per pair | ×32 house | Status |
 |---|---|---|---|---|---|
 | G1 | **Field harness assembly** | 1 | 2 | **34** | RFQ issued — `phase8_harness_RFQ.md`, $200–400 ea |
-| G2 | Machine interposer: C1 **plug** + pins (34-pos) | 1 | 2 | **32** (+4) | ⛔ **BLOCKED** on connector ID measurements |
-| G3 | Machine interposer: C2A **receptacle** + sockets (50-pos) | 1 | 2 | **32** (+4) | ⛔ same |
-| G4 | Contacts | ~42 avg/conn | — | **~2,700** | 66101-x sockets / 66099-x pins — ACTIVE, <$1 |
-| G5 | Crimp + extraction tooling | — | — | **2 sets** | size-16 crimper w/ positioner + TE 305183 class |
+| G2 | Machine interposer: C1 (34-pos) — **we supply MALE / PIN contacts** | 1 | 2 | **32** (+4) | Housing class **AMP 1-201357-1** (AMF `000025144`). Gender ✅ confirmed |
+| G3 | Machine interposer: C2A (50-pos) — **we supply FEMALE / SOCKET contacts** | 1 | 2 | **32** (+4) | Housing class **AMP 201358-1** (AMF `000028409`) |
+| G4a | **Pin** contacts, `.062` dia (size 16) — for C1 | ~24–30 used/lane | — | *see note* | AMF **`760011197`** TERM-PIN .062 DIA LP |
+| G4b | **Socket** contacts, `.062` dia (size 16) — for C2A | ~24–30 used/lane | — | *see note* | AMF **`760019201`** TERM SKT .062 DIA LP |
+| G5 | Crimp + extraction tooling | — | — | **2 sets** | size-16 crimper w/ positioner + extractor **AMF `030 004 031`** ("Amp Extracting Tool") |
+| G5a | Connector hardware | per conn | — | 32 sets | Guide pin `000028442` · guide socket `000028441` · locking spring clip `000029013` · strain-relief clamp `000029093` (C1) / `000029896` (C2A) |
+
+> **✅ INTERPOSER IDENTITIES FOUND 2026-07-26** — from the AMF 82-70 parts catalogue,
+> **C-1 Cable Assembly (p. 67)** and **C-2A Harness Assembly (pp. 74–75)**. This retires the
+> `67209 / 67211` molded numbers, which were never catalogue part numbers (5-digit `6xxxx` is
+> AMP's *contact* scheme; those were almost certainly mold/tool-cavity marks). It also replaces
+> the previously-guessed `66101-x` / `66099-x` contacts, which had no source.
+>
+> **`.062 dia` confirms size-16 contacts**, consistent with the AMP M Series hypothesis, and
+> `201357` / `201358` being consecutive confirms one family in two position counts.
+>
+> **⚠️ Gender (confirmed at the machine 2026-07-26): machine C1 is FEMALE → our half is MALE
+> with PIN contacts. Machine C2A is MALE → our half is FEMALE with SOCKET contacts.** Mixed
+> genders, almost certainly deliberate anti-mismating. Do not order two of the same.
+>
+> **⚠️ G4 quantity is NOT `~2,700`.** That figure assumed full population of every cavity and was
+> ~2.5× over. Real demand is ~24–30 *used* leads per lane, split between the two connectors —
+> derive the exact per-connector split from the harness wire list before ordering, then add ~25 %
+> for crimp practice and field spares. **Contacts and tooling are commodity and in production —
+> unlike the housings, they carry no obsolescence risk and need not be lifetime-bought.**
+>
+> **Remaining open on G2/G3: housing availability only.** Confirm the AMP housings are still
+> orderable (M Series is winding down — Mouser already flags it obsolete) or harvest from the
+> 32 retired OEM control boxes, which is the primary plan and carries zero ID risk.
 | G6 | PoE head-end | — | — | **18 injectors** (TL-POE170S ~$50) or 2× 16-port bt switch | |
 | G7 | Cat6 runs | — | 1/pair | **16 runs** | one per enclosure; carries power AND data |
 | G8 | J14 Stop/CIS interface | 1 | 2 | **32** | ⛔ **DECISION OPEN** — control-power sensing relay ± pit interlock, ~$25/lane |
