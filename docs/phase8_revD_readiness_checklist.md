@@ -22,6 +22,45 @@ on the G15 line to close that gate formally.
 | 7 | **FA-4 RISK ACCEPTED** — JLC may place A1 (Pico) without a first article proving USB access. | Dylan, 2026-07-26 | See below. **Conditional on the Pico C-number being confirmed as bare RP2040** |
 | 8 | **Pico C-number resolution delegated to Claude.** | Dylan | **UNRESOLVED from public data — escalated to JLC support.** See below |
 
+### Item 9 — J1 keying VERIFIED · 2026-07-26 · the "Candidate" hold is released
+
+Verified against rev-B board #1 (owner observation) plus the rev-B as-ordered CPL and the
+rev-D board file. **J1 orientation is geometrically identical between rev-B and rev-D**, so a
+part proven to mate on rev-B is proven to mate on rev-D:
+
+| | rev-B (as-ordered CPL) | rev-D (board file) |
+|---|---|---|
+| Footprint | `IDC-Header_2x10_P2.54mm_Vertical` | **same** |
+| Rotation | 90° | **90°** |
+| Pad-1 Y | 10.0 mm | **10.0 mm** |
+| X | 126.0 | 135.5 *(only this moved)* |
+
+Measured on rev-D: **odd row (pins 1,3…19) at y = 10.000 mm; even row at y = 7.460 mm**, board
+edge at y = 0. The pin-1 row is therefore the **interior-facing** row — matching the owner's
+rev-B/C observation that *"the notch is on the pin 1 side facing toward the inside of the board
+and away from the edge."* Since a 2×10 box header can only be inserted two ways, and both pin 1
+and the notch move together, correct pin-1 placement forces correct notch orientation.
+
+**Shroud + polarising notch confirmed present on rev-B/C** (owner, 2026-07-26) — so the part
+class is right and the ribbon cannot be mated backwards.
+
+**Disposition: J1 = CNC Tech `3020-20-0100-00` is RELEASED from HOLD.** Basis: 5 pcs were bought
+for rev-B (`phase8_revB_preorder_parts_list.md:76`), one is soldered to board #1, and that board
+brought up I²C successfully at 0x20/0x21/0x22. The footprint is generic DIN 41651 / IEC 60603-13,
+so any conforming 2×10 box header drops in.
+
+> ⚠️ **Two-minute confirmation still worth doing** (closes the owner's "red conductor or the one
+> to its right" uncertainty definitively). **J1 pin 1 = `VCC_5V`, pin 2 = `GND`.** With the board
+> UNPOWERED and the ribbon seated in J1, beep continuity from the **red conductor** at the free
+> end to **TP1** (the 5 V rail). Continuity ⇒ red = conductor 1 = pin 1. If instead it beeps to
+> GND, the ribbon was assembled with red on contact 2 and every downstream pin map is off by one.
+>
+> ⛔ **Standing rule, unchanged:** never land J1 pin 1 (`VCC_5V`) or pin 11 (`VCC_3V3`) on the Pi —
+> the board is powered from J2 and the rails would fight. Only pins 2/3/4 (GND/SDA/SCL) go across.
+
+**Consequence:** J1 is now a **wave-2 candidate**. If JLC can source a conforming 2×10 box header,
+that is another 20 THT joints/board — **680 fleet-wide**. Added to the JLC sourcing question.
+
 ### Item 7 — FA-4 risk acceptance (recorded verbatim)
 
 Under decision 1 (fleet quantity) there is no first article, so JLC placing A1 commits 34 Picos

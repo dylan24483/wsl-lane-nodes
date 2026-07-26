@@ -107,11 +107,17 @@ these may exist under C-numbers we have not found:
 | J5 | **1843703** | MCV 1,5/12-G-3,5 — 12-position vertical header, 3.5 mm |
 | J13, J16 | **1843648** | MCV 1,5/6-G-3,5 — 6-position vertical header, 3.5 mm |
 
-Plus one more, same request:
+Plus two more, same request:
 
 | Our ref | MPN | Description |
 |---|---|---|
 | U45 | **TMA 0505S** (TRACO Power) | Isolated 1 W 5 V→5 V SIP DC/DC converter, through-hole |
+| J1 | **3020-20-0100-00** (CNC Tech) | 2×10 shrouded IDC box header, 2.54 mm, vertical THT |
+
+For **J1 only**, a functionally equivalent part **is acceptable** provided it is a standard
+**DIN 41651 / IEC 60603-13 2×10 shrouded box header, 2.54 mm pitch, vertical through-hole, with a
+polarising notch**. If you have a library part meeting that description, please quote it — this
+is the one component on our board where we are flexible on manufacturer.
 
 Please tell us either (a) the C-numbers if they exist in your library, or (b) a Global Sourcing
 quote for the exact manufacturer part numbers above.

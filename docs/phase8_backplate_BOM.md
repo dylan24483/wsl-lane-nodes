@@ -69,7 +69,7 @@ use. If JLC ever proposes swapping back, refuse.
 | A12 | J4 | **1843729** | MCV 1,5/14-G-3,5 · 14-pos vertical header, **3.5 mm** | 1 | **38** |
 | A13 | J5 | **1843703** | MCV 1,5/12-G-3,5 · 12-pos vertical header, **3.5 mm** | 1 | **38** |
 | A14 | J13, J16 | **1843648** | MCV 1,5/6-G-3,5 · 6-pos vertical header, **3.5 mm** | 2 | **72** |
-| A16 | J1 | CNC Tech **3020-20-0100-00** | 2×10 IDC/box header, 2.54 mm | 1 | **38 — ⛔ HOLD** |
+| A16 | J1 | CNC Tech **3020-20-0100-00** | 2×10 IDC/box header, 2.54 mm | 1 | **38** ✅ |
 | A17 | — | **sacrificial MCV headers** | 2 × 1843680 + 2 × 1843648 + spares | — | **~10** |
 
 **A′.2 is a WAVE-2 CANDIDATE.** These four MCV part numbers are unresolved in JLC's library —
@@ -86,9 +86,14 @@ coding features facing away from the PCB — so JLC placing headers does not bre
 
 **J6–J11 is 6 blocks, not 7 — J12 (M1) is DNP.** Do not install a 7th.
 
-⚠️ **A16 (J1) is ON HOLD.** The hand-solder BOM marks it *"Candidate — verify body/keying."*
-Check shroud, key slot and pin-1 orientation against the KiCad footprint before ordering
-(this is verify-before-ordering item 4).
+✅ **A16 (J1) HOLD RELEASED 2026-07-26 — verify-before-ordering item 4 is CLOSED.** Shroud and
+polarising notch confirmed present on rev-B/C, and rev-D's J1 is **geometrically identical to
+rev-B** (same footprint, same 90° rotation, same pad-1 Y of 10.0 mm; only X moved 126 → 135.5).
+Measured on rev-D: pin-1 row at y = 10.000 mm vs the even row at 7.460 mm, board edge at y = 0 —
+so the **pin-1 row faces the board interior**, matching the rev-B/C notch orientation. A 2×10 box
+header inserts only two ways and pin 1 and the notch move together, so correct pin-1 placement
+forces correct keying. 5 pcs of this PN were bought for rev-B and one is soldered to board #1,
+which brought up I²C successfully. Full record: readiness checklist DECISION RECORD item 9.
 
 ⚠️ **PITCH TRAP:** every MKDS here is **5.08 mm**, every MCV is **3.5 mm**. Refuse any
 3.81 mm substitution — it will not fit the board.
