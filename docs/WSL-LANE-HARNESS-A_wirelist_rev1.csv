@@ -1,0 +1,54 @@
+Wire ID,AWG,UL Style,Color,End-A Connector,End-A Position,End-A Termination,End-B Termination,Finished Length (mm),Label Text (both ends),Twist Partner,Notes
+W01,22,UL1007 300V,Orange,J3,1,0.34mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1200,SA - DO NOT LAND,,Deliberately dead-ended lead
+W02,22,UL1007 300V,Orange,J3,2,0.34mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1200,SB - DO NOT LAND,,Deliberately dead-ended lead
+W03,22,UL1007 300V,Orange,J3,3,0.34mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1200,SC - DO NOT LAND,,Deliberately dead-ended lead
+W04,22,UL1007 300V,Orange,J3,4,0.34mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1200,TA1 - DO NOT LAND,,Deliberately dead-ended lead
+W05,22,UL1007 300V,Orange,J3,5,0.34mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1200,TA2 - DO NOT LAND,,Deliberately dead-ended lead
+,,,,J3,6,POSITION INTENTIONALLY EMPTY,,,,,Do not populate
+W06,22,UL1007 300V,Blue,J3,7,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1500,DIELL-L SIG,W08,Twisted pair with W08
+W07,22,UL1007 300V,Yellow,J3,8,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1500,DIELL-R SIG,W09,Twisted pair with W09
+W08,22,UL1007 300V,Black,J3,9,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1500,DIELL-L GND,W06,Twisted pair with W06
+W09,22,UL1007 300V,Black,J3,10,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1500,DIELL-R GND,W07,Twisted pair with W07
+W10,22,UL1007 300V,White,J4,1,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS1,,
+W11,22,UL1007 300V,White,J4,2,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS2,,
+W12,22,UL1007 300V,White,J4,3,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS3,,
+W13,22,UL1007 300V,White,J4,4,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS4,,
+W14,22,UL1007 300V,White,J4,5,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS5,,
+W15,22,UL1007 300V,White,J4,6,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS6,,
+W16,22,UL1007 300V,White,J4,7,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS7,,
+W17,22,UL1007 300V,White,J4,8,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS8,,
+W18,22,UL1007 300V,White,J4,9,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS9,,
+W19,22,UL1007 300V,White,J4,10,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,GS10,,
+W20,22,UL1007 300V,Orange,J4,11,0.34mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1200,GP - DO NOT LAND,,Deliberately dead-ended lead
+,,,,J4,12,POSITION INTENTIONALLY EMPTY,,,,,Do not populate
+W21,22,UL1007 300V,White,J4,13,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,BS,,
+W22,22,UL1007 300V,Green,J4,14,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,FGND J4-14,,Field ground; ring lug fitted on site
+W23,22,UL1007 300V,White,J5,1,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,PBZ,,
+W24,22,UL1007 300V,Orange,J5,2,0.34mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1200,PBC - DO NOT LAND,,Deliberately dead-ended lead
+W25,22,UL1007 300V,Orange,J5,3,0.34mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1000,FOUL - DO NOT LAND,,Deliberately dead-ended; SHORTER length
+,,,,J5,4-11,POSITIONS INTENTIONALLY EMPTY,,,,,Do not populate - 8 positions
+W26,22,UL1007 300V,Green,J5,12,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,1200,FGND J5-12,,Field ground; ring lug fitted on site
+W27,22,UL1007 300V,Red,J13,1,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,2500,LAMP 5V,,See RFQ section 9 - length option
+W28,22,UL1007 300V,Black,J13,2,0.34mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,2500,LAMP GND - RESERVE,,Reserve lead; capped
+W29,22,UL1007 300V,White,J13,3,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,2500,L_FIRST,,
+W30,22,UL1007 300V,White,J13,4,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,2500,L_SECOND,,
+W31,22,UL1007 300V,White,J13,5,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,2500,L_STRIKE,,
+W32,22,UL1007 300V,White,J13,6,0.34mm2 insulated ferrule; landed,Strip 10mm; no ferrule,2500,L_FOUL,,
+JMP1,18,UL1015 600V,Yellow,J14,1 and 2,0.75mm2 insulated ferrule BOTH ends; landed,N/A - internal jumper,120,see Plug Body Labels sheet,,SPECIAL - U-jumper INSIDE the plug between positions 1 and 2. Flag label on the loop. Finished plug MUST read SHORT 1-2.
+W33,18,UL1015 600V,Yellow,J14,3,0.75mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1200,STOP/CIS - DO NOT LAND,,Deliberately dead-ended lead
+W34,18,UL1015 600V,Yellow,J14,4,0.75mm2 insulated ferrule; landed,CAPPED - adhesive-lined heat shrink,1200,STOP/CIS - DO NOT LAND,,Deliberately dead-ended lead
+W35,18,UL1015 600V,Red,NONE - loose lead,J2-1,0.75mm2 insulated ferrule,0.75mm2 insulated ferrule,500,J2-1 +5V,,Both ends ferruled; lands in screw terminal on site
+W36,18,UL1015 600V,Black,NONE - loose lead,J2-2,0.75mm2 insulated ferrule,0.75mm2 insulated ferrule,500,J2-2 GND,,Both ends ferruled
+W37,18,UL1015 600V,Black,NONE - loose lead,J2-3,0.75mm2 insulated ferrule,0.75mm2 insulated ferrule,500,J2-3 GND,,Both ends ferruled
+W38,18,UL1015 600V,Red,NONE - loose lead,J6-1,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,S NO,,Bundle group: motion outputs
+W39,18,UL1015 600V,Black,NONE - loose lead,J6-2,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,S COM,,Pair with W38
+W40,18,UL1015 600V,Red,NONE - loose lead,J7-1,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,T NO,,
+W41,18,UL1015 600V,Black,NONE - loose lead,J7-2,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,T COM,,Pair with W40
+W42,18,UL1015 600V,Red,NONE - loose lead,J8-1,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,SP NO,,
+W43,18,UL1015 600V,Black,NONE - loose lead,J8-2,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,SP COM,,Pair with W42
+W44,18,UL1015 600V,Red,NONE - loose lead,J9-1,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,BE NO,,
+W45,18,UL1015 600V,Black,NONE - loose lead,J9-2,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,BE COM,,Pair with W44
+W46,18,UL1015 600V,Red,NONE - loose lead,J10-1,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,M NO,,
+W47,18,UL1015 600V,Black,NONE - loose lead,J10-2,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,M COM,,Pair with W46
+W48,18,UL1015 600V,Red,NONE - loose lead,J11-1,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,M2 NO,,
+W49,18,UL1015 600V,Black,NONE - loose lead,J11-2,0.75mm2 insulated ferrule,Strip 10mm; no ferrule,1200,M2 COM,,Pair with W48

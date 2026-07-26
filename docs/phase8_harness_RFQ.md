@@ -1,0 +1,223 @@
+# RFQ — Custom Wire Harness Assembly (Lane Controller Field Harness)
+
+**Westside Lanes · Olympia, WA** · Issued 2026-07-25 · Contact: Dylan DeYoung
+**Assembly:** WSL-LANE-HARNESS-A · Rev 1
+**Quantity:** 1 first article → 2 pilot → balance to **34 total** (32 lanes + 2 spares).
+Option pricing requested at 48 and 64.
+
+---
+
+## 0. Read this first — what kind of customer we are
+
+We are a **small business (a bowling center), not an OEM.** We do not require PPAP, a formal
+FAI package, ISO quality-system flow-down, a supplier audit, or source inspection. **Your
+standard Certificate of Conformance is acceptable.** Please do not price a documentation
+program into this quote — if you see a line item that exists only to satisfy an aerospace or
+automotive customer, leave it out and tell us you did.
+
+What we *do* care about, in priority order: **correct and unambiguous labeling**, 100%
+electrical test, consistency unit-to-unit, and on-time delivery.
+
+## 1. What this assembly is
+
+A field wiring harness for a replacement control board on bowling pinsetter machines. One
+harness per lane. It connects a controller PCB (mounted in a wall enclosure) to sensors,
+switches, and relay-coil circuits on the machine, roughly 1 m away.
+
+**Electrically trivial** — nothing above 33 V, nothing above ~1 A. This is a **labeling- and
+termination-intensive** assembly, not a high-voltage or high-current one. Cost lives in the
+~49 leads × 2 ends of printed markers, not in the wire.
+
+**Environment:** indoor, unconditioned equipment area behind bowling pinsetters. Ambient to
+~35 °C. Fine wood/pin dust and light lane-oil mist. Vibration from adjacent machinery. No
+flexing in service once installed — this is a static installation.
+
+## 2. Scope boundary (important)
+
+Quote the **controller-side harness only**, as specified here:
+
+- **Controller end (one end of every lead): FULLY TERMINATED** — insulated ferrule, landed and
+  torqued into its Phoenix plug, per §4/§5.
+- **Machine end (the other end): PREPARED BUT UNTERMINATED** — cut to length, labeled, and
+  left with **10 mm of insulation stripped, no ferrule** unless noted otherwise in the wire
+  list. We terminate the machine end ourselves on site (the machine-side interface is a legacy
+  1982 connector still being characterized).
+
+Do **not** quote any machine-side connector. If you have an opinion on whether the stripped
+ends should instead ship un-stripped, say so.
+
+## 3. Wire list
+
+**Attached as a separate CSV** (`WSL-LANE-HARNESS-A_wirelist_rev1.csv`), one row per lead, with
+columns: `Wire ID · AWG · UL style · Color · End-A connector ref + position · End-A termination ·
+End-B termination · Finished length · Label text (identical both ends) · Twisted-pair partner ·
+Notes`.
+
+Summary for scoping:
+
+| Group | Connector (controller end) | Leads | AWG | Length |
+|---|---|---|---|---|
+| Fast field inputs | J3 — Phoenix MC 1,5/10-ST-3,5 | 9 (positions 1–5, 7–10; **6 empty**) | 22 | 1.2 m, DIELL leads 1.5 m |
+| Slow inputs A | J4 — MC 1,5/14-ST-3,5 | 13 (positions 1–11, 13, 14; **12 empty**) | 22 | 1.2 m |
+| Slow inputs B | J5 — MC 1,5/12-ST-3,5 | 4 (positions 1, 2, 3, 12; **4–11 empty**) | 22 | 1.2 m (FOUL lead 1.0 m) |
+| Lamp outputs | J13 — MC 1,5/ 6-ST-3,5 | 6 | 22 | **2.5 m** (see §9 note) |
+| Safety loop | J14 — MC 1,5/ 4-ST-3,5 | 2 + 1 internal jumper | 18 | 1.2 m |
+| Power in | none — ferruled loose leads | 3 | 18 | 0.5 m |
+| Machine outputs | none — ferruled loose leads | 12 | 18 | 1.2 m |
+| **Total** | | **~49 leads** | | |
+
+## 4. BOM
+
+### Tier 1 — NO SUBSTITUTIONS (form/fit/function critical)
+
+| Item | Manufacturer | Part number | Qty/assy |
+|---|---|---|---|
+| Plug, 10-pos, 3.5 mm | Phoenix Contact | **1840447** (MC 1,5/10-ST-3,5) | 1 |
+| Plug, 14-pos, 3.5 mm | Phoenix Contact | **1840489** (MC 1,5/14-ST-3,5) | 1 |
+| Plug, 12-pos, 3.5 mm | Phoenix Contact | **1840463** (MC 1,5/12-ST-3,5) | 1 |
+| Plug, 6-pos, 3.5 mm | Phoenix Contact | **1840405** (MC 1,5/ 6-ST-3,5) | 1 |
+| Plug, 4-pos, 3.5 mm | Phoenix Contact | **1840382** (MC 1,5/ 4-ST-3,5) | 1 |
+
+### Tier 2 — functional equivalents acceptable (tell us what you'd use)
+
+Hook-up wire (UL1007 or UL1015 class, 300 V min for 22 AWG, 600 V for 18 AWG), insulated
+ferrules, printed heat-shrink marker stock, adhesive-lined heat-shrink end caps, lacing/ties,
+bags.
+
+**Wire colors are functionally meaningful — do not substitute colors.** See §6.
+
+## 5. Ferrule specification — and one DFM question we need your answer on
+
+- 22 AWG leads → **0.34 mm²** insulated ferrule, 8 mm barrel.
+- 18 AWG leads → **0.75 mm²** insulated ferrule, 8 mm barrel.
+- Phoenix AI-series or Weidmüller H-series preferred; equivalents acceptable.
+- Crimp to the ferrule manufacturer's die spec; **every ferruled joint must pass a pull test.**
+
+> **DFM QUESTION (please answer in your quote):** the Phoenix MC 1,5 series at 3.5 mm pitch is
+> rated 0.14–1.5 mm². We have hand-built one unit successfully using **insulated** ferrules at
+> both sizes above, but we want your judgment on whether the insulated collar's outer diameter
+> is within the clamping range at 0.75 mm² in a 3.5 mm-pitch terminal, or whether you would
+> recommend **uninsulated** ferrules (or bare stranded) on the 18 AWG leads. We will accept
+> your recommendation — please state it explicitly rather than silently substituting.
+
+## 6. Wire colors (functional, not cosmetic)
+
+| Color | Meaning |
+|---|---|
+| **White** | landed sense signal |
+| **Orange** | **DO-NOT-LAND lead** — capped at the machine end, deliberately unconnected until a future commissioning step. Orange must not appear on any other lead. |
+| **Green** | field ground / chassis bond |
+| **Black** | ground / return |
+| **Blue, Yellow (22 AWG)** | photoelectric sensor signals L and R |
+| **Red (18 AWG)** | relay normally-open output, and +5 V power |
+| **Black (18 AWG)** | relay common, and power return |
+| **Yellow (18 AWG)** | safety-loop circuit |
+
+## 7. Labeling — the cost driver, specified precisely
+
+- **Printed heat-shrink sleeve markers** (Brady PermaSleeve, Phoenix THERMOMARK, or equivalent),
+  white sleeve, black print, permanent. Not wrap-around adhesive labels; not hand-marked.
+- **BOTH ends of every lead**, ~49 leads = **~98 markers per assembly.**
+- Exact text is in the wire-list CSV, column `Label text`. Text is identical at both ends of a
+  given lead. **Labels are deliberately short — longest string is 22 characters** (`STOP/CIS - DO NOT LAND`).
+  Signal names only; no machine-specific wiring references appear on the wire, because those
+  vary per lane and live on a per-lane card instead. If any string is still too long for your
+  marker stock, tell us your maximum — do not truncate on your own initiative.
+- Position: within 40 mm of each termination, oriented so text reads with the lead running
+  left-to-right.
+- Additionally: each of the five Phoenix plug bodies carries its own printed label (text in the
+  CSV, `Plug body label` sheet).
+
+## 8. Special construction features
+
+1. **Twisted pairs (2 per assembly).** Blue+Black and Yellow+Black on J3, ~1 twist per 30–40 mm,
+   starting 50 mm from the plug and stopping **100 mm short of the machine ends** so those ends
+   remain independently routable. Pair partners are named in the wire list.
+2. **Capped leads (11 per assembly).** All orange leads plus the two 18 AWG yellow safety leads
+   get their **machine end sealed with adhesive-lined heat shrink** — no ferrule, no exposed
+   conductor. They still carry their printed label. These are deliberately dead-ended.
+3. **Empty connector positions.** J3-6, J4-12, and J5 positions 4–11 are **intentionally empty.**
+   Do not populate them. The wire list is authoritative; if a position isn't listed, it stays
+   empty.
+4. **J14 internal jumper.** A ~120 mm 18 AWG yellow U-jumper is fitted **inside the J14 plug
+   between positions 1 and 2**, ferruled both ends, with a printed flag label on the loop
+   (text in the CSV). This is a deliberate engineered link, not an error. Positions 3 and 4
+   carry the two capped leads. **A finished J14 must read SHORT across 1–2 and OPEN across 3–4.**
+5. **Loose ferruled leads.** The 3 power leads and 12 machine-output leads have **no connector at
+   the controller end** — they ship ferruled and labeled, loose, to be landed in screw terminals
+   at install. Bundle and tie them per group.
+
+## 9. Length note requiring your input
+
+The six **J13 lamp leads are specified at 2.5 m** as a planning figure; the true run is
+site-measured per lane and may vary 2–3 m. Please quote (a) at a fixed 2.5 m, and (b) tell us
+the cost delta to build those six leads at 3.0 m so we can standardize long and trim on site.
+
+## 10. Test and workmanship
+
+- **Workmanship: IPC/WHMA-A-620, Rev E, Class 2.** Class 2 is correct for this application —
+  please do not build or price to Class 3.
+- **100% electrical test on every assembly:** point-to-point continuity on all nets, **plus
+  isolation/shorts testing between all nets.** Isolation matters more than usual here — an
+  adjacent-position short inside a Phoenix plug is our most likely failure mode.
+- **Explicit exception:** the J14 1–2 jumper is an intentional short and must not be flagged.
+- **No hipot required** (max circuit voltage 33 V).
+- Ship a test record or pass/fail log per serialized assembly.
+
+## 11. Identification and traceability
+
+- Each assembly carries a printed label with **assembly PN + revision + serial number** on the
+  main bundle near the J4 plug.
+- Serial-level traceability requested (simple sequential numbering is fine — we need to tie a
+  harness to a lane, not to a wire lot).
+
+## 12. Quantity, ramp, and spares
+
+| Stage | Qty | Note |
+|---|---|---|
+| First article | **1** | Ship for our approval before proceeding. We will respond within 5 business days. |
+| Pilot | **2** | After FA approval |
+| Balance | **31** | 32 lanes + 2 spares total |
+| **Total program** | **34** | Please also quote **48** and **64** so we can see the price break |
+
+Additionally quote as separate line items: **10% spare loose leads** (assorted, pre-labeled) and
+**3 spare sets of the five Phoenix plugs**, unpopulated.
+
+## 13. Packaging and kitting
+
+**Individually bagged and labeled per assembly**, with the serial number visible on the outside
+of the bag. This is worth paying for on a 32-lane install — it is what prevents a
+wrong-harness-on-wrong-lane afternoon. Coil to ~250 mm diameter, tie in at least 3 places, one
+carton per 6–8 assemblies with a packing list.
+
+## 14. Commercial
+
+- **Target:** first article within 3 weeks of PO; balance within 8 weeks of FA approval.
+- Ship to Olympia, WA 98502. Freight prepaid and added is fine.
+- Quote NRE separately from unit price, and tell us what the NRE buys (fixture, program, setup)
+  and whether it recurs on a reorder.
+- State your acceptable over/under shipment tolerance.
+- **Drawing revision control stays with us.** We will issue revised wire lists as
+  `Rev 2`, `Rev 3`, etc.; please quote against the revision stated on the PO.
+
+## 15. Attachments provided with this RFQ
+
+1. `WSL-LANE-HARNESS-A_wirelist_rev1.csv` — the 49-row from-to wire list with label text
+2. `WSL-LANE-HARNESS-A_layout_rev1.pdf` — 2D flat layout, dimensioned, with breakout points
+3. Photographs of the hand-built prototype (unit 000) as a golden-sample reference
+4. Phoenix Contact datasheets for the five Tier-1 plugs
+
+> **On attachment 3:** we have hand-built and installed one working unit. It is available as a
+> reference sample on request and we recommend you ask for it — it collapses most ambiguity in
+> this document and should reduce your risk premium.
+
+---
+
+## Questions we specifically want answered in your quote
+
+1. The §5 ferrule DFM question (insulated vs uninsulated at 0.75 mm² in a 3.5 mm-pitch terminal).
+2. Your maximum legible characters per heat-shrink marker (§7).
+3. The §9 length delta.
+4. Whether you would build the machine ends stripped, un-stripped, or ferruled (§2).
+5. Anything in this package that is over-specified and costing us money for no benefit. We would
+   rather hear that than pay for it.
