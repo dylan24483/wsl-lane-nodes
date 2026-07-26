@@ -103,10 +103,26 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 |---|---|---|---|---|---|---|
 | C1 | Raspberry Pi 4 Model B | 4 GB | 1 | **16** (+2) | ~$65 | one Pi serves BOTH lanes |
 | C2 | microSD card | 32 GB industrial/endurance | 1 | **16** (+4) | ~$12 | endurance grade — this is a 24/7 write-cycle role |
-| C3 | Pi heatsink / thermal | passive kit | 1 | **16** | ~$5 | sealed box, ~+8 °C rise |
+| C3 | Pi heatsink / thermal | passive kit | 1 | **16** | ~$5 | ⚠ **height-limited — see C5 note.** Sealed box |
 | C4 | Pi DIN mount | **DINrPlate DRP2** | 1 | **16** | $12.95 | rail 2 |
-| C5 | **Pi GPIO breakout** | **CZH-LABS F-1019** | 1 | **16** (+2) | $35.00 | 40-pin → labelled screw terminals; DIN or panel |
-| C6 | 40-way ribbon, Pi ↔ F-1019 | 40-pin IDC, ~200 mm | 1 | **16** | ~$6 | **VERIFY whether the F-1019 ships with one** |
+| C5 | **Pi GPIO breakout** | **CZH-LABS F-1019** | 1 | **16** (+2) | $35.00 | ✅ **STACKS DIRECTLY ON THE PI** — see note |
+| C6 | ~~40-way ribbon, Pi ↔ F-1019~~ | — | — | **DELETED** | — | ✅ **NOT REQUIRED** — C5 has a GPIO receptacle, no cable |
+
+> **✅ C5 FORM FACTOR CONFIRMED IN HAND (2026-07-25, part opened).** The F-1019 is **not** a
+> remote DIN/panel module fed by a ribbon — it carries a **40-pin receptacle that seats directly
+> on the Pi's GPIO header** and sits above the board, HAT-style. Three consequences:
+> ① **C6 is deleted** (−16 ribbons, ~$96). ② **Pi + F-1019 is ONE stacked unit** on the C4 DRP2 —
+> it is *not* a third panel-mounted module, so the panel stack loses one item *(this does **not**
+> by itself unwind the 36×30 upsize — see the layout note in §E)*. ③ The I²C path loses a cable
+> and a connector transition, which **helps** the standing I²C-length concern.
+>
+> **⚠ Three things to check on the unit you now have, before buying 15 more:**
+> **(a) Heatsink clearance** — C5 sits over the SoC. Measure the standoff height against the C3
+> heatsink; a tall passive heatsink may not fit, and C5 blocks convection over the SoC in a
+> sealed box. A low-profile heatsink or a different thermal approach may be required.
+> **(b) DRP2 compatibility** — confirm the Pi still seats in the DINrPlate with C5 fitted.
+> **(c) Access with C5 fitted** — microSD slot, USB-C power in (C9), and whether the screw
+> terminals are reachable with the assembly on the rail.
 | C7 | **Board breakout** | IDC20 2×10 → screw terminals, DIN/panel | **2** | **32** (+4) | $22–27 | one per board, panel-mounted beside its own J1 |
 | C8 | 20-way ribbon, J1 ↔ breakout | 2×10 IDC socket-to-socket, **~150 mm** | **2** | **32** (+6) | ~$5 | ⚠ **SHORT is the requirement** — I²C integrity |
 | C9 | Pi power pigtail | USB-C to bare/ferruled, ~300 mm | 1 | **16** | ~$8 | from fuse F4; keeps the Pi's own input protection in circuit |
@@ -180,8 +196,11 @@ benchmark is still the highest-leverage cost lever in this list, and the hard re
 
 ## Verify-before-ordering
 
-1. **F-1019 and IDC20 module footprints** — measure both in hand; the 780 mm panel figure is provisional.
-2. **Does the F-1019 ship with its 40-way ribbon?** (line C6)
+1. **IDC20 module footprint** — measure in hand; the 780 mm panel figure is provisional and its
+   source drawing draws DIN devices at ~28 mm against a real ~90 mm across-rail. *(F-1019 half of
+   this item is CLOSED — it stacks on the Pi and is not a panel module.)*
+2. ~~Does the F-1019 ship with its 40-way ribbon?~~ ✅ **CLOSED — moot, it plugs straight onto the
+   GPIO header.** Replaced by the three C5 checks: heatsink clearance, DRP2 fit, port access.
 3. **IDC20 terminal→pin mapping** — beep it once, record on the wire-map card. Do not trust silkscreen.
 4. **Ribbon keying / pin-1** on the 20-way (line C8) against the real J1 — the standing unverified item.
 5. **Plywood yield** — ~3 panels per 4×8 sheet at 686 × 838; confirm against the box's actual stud pattern.
