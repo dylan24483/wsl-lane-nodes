@@ -16,8 +16,9 @@ Contract (spec step I.7 / change-list P3 / remediation task H6):
 - BOM <-> CPL <-> netlist equality is ASSERTED, not assumed: every non-testpoint/mounting
   footprint on the board must exist in kicad/wsl-phase8b-revD.net with the same value and
   footprint, the DNP set must match the generator's DNP rule exactly, and the CPL refs must
-  equal the placed (non-DNP) set exactly. Pinned counts: 271 parts / 28 DNP / 243 placed /
-  226 JLC-placed / 27 JLC lines / 17 hand-solder.
+  equal the placed (non-DNP) set exactly. Pinned counts (see the EXPECTED_* constants -
+  never re-type them here): 391 parts / 68 DNP / 323 placed / 306 JLC-placed /
+  27 JLC lines / 17 hand-solder, after the r6 spin.
   (History: 252 pre-remediation -> 262 after R1.7 -> 271 after the 2026-07-21 round-2
   batch: +9 parts for the R2-4 J16 protection stack and R2-6 REV_ID straps; the JP1
   default-OPEN solder link is the 28th DNP.)
@@ -31,6 +32,14 @@ Contract (spec step I.7 / change-list P3 / remediation task H6):
   line and the remaining 10k networks stay on C17414. The production
   configuration must leave RP2040 GP6-GP13 internal pulls disabled and read
   back MCP input GPPUA/GPPUB=0x00 so the external 47k is the sole bias.
+- r6 input-protection equality gate (2026-07-25): the totals above cannot distinguish
+  "40 series diodes + 40 clamps" from "80 clamps and no series diode", so
+  assert_r6_input_protection() checks every one of the 40 channels individually - part
+  identity, DNP state, membership in placed/CPL/JLC, and the three-node FIELD_LED_<n>
+  topology. It also emits the per-channel STUFFING BOM (all 40 channels populated
+  uniformly; the DNP Cflt is the only decision and each row carries the measurement that
+  decides it) and locks the FIELD-STUFFED (non-JLC) MPNs: Cflt 2.2uF = Samsung
+  CL21B225KAFNNNE / C19110 (FR-17), Cflt 10nF = TORCH C0805B103K500NT / C17702767 (FR-18).
 - D_PROT is HARD-LOCKED to MDD SS34, LCSC C8678, SMA/DO-214AC (run-log FR-3). The script
   fails if D17 is not SS34/D_SMA, if any SS14 survives anywhere, or if the JLC BOM line for
   SS34 carries anything but C8678/MDD/SMA.
@@ -72,6 +81,7 @@ KICAD_CLI = Path(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe")
 # `--rev` freely renamed every emitted file). Any other --rev now fails on
 # "missing routed board" unless that revision's sources actually exist.
 DOCS_HARNESS_BOM = ROOT / "docs" / "phase8_revD_harness_bom.csv"
+DOCS_R6_STUFFING = ROOT / "docs" / "phase8_revD_r6_channel_stuffing.csv"
 FW_RELEASE_MANIFEST = ROOT / "firmware" / "rp2040" / "release" / "firmware_manifest.json"
 
 # ---- pinned release counts (fail closed on ANY drift) -------------------------------
@@ -86,6 +96,26 @@ EXPECTED_PLACED = 323            # 391 - 68
 EXPECTED_HAND_SOLDER = 17        # A1, J1-J11 (J12 is DNP), J13-J16, U45 - UNCHANGED
 EXPECTED_JLC_PLACED = 306        # 323 - 17
 EXPECTED_JLC_LINES = 27          # UNCHANGED - the 80 r6 diodes join the 1N4148 line
+
+# ---- r6 per-channel input-protection equality gate (2026-07-25) ---------------------
+# The pre-r6 gate asserted TOTALS only (parts/DNP/placed/CPL). Totals cannot tell
+# "40 series diodes + 40 clamps + 40 DNP caps" from "80 clamps and no series diode",
+# and the r6 safety argument is entirely about WHICH part is where:
+#   - a DNP/absent Dser leaves the channel OPEN-CIRCUIT (spec SS A.3.4), and
+#   - a missing Dclamp is invisible in commissioning (first-article FA-15).
+# So the equality asserts below are extended per PART CLASS, and every one of the 120
+# new parts must appear in the netlist, the board, the CPL and the JLC BOM (or, for the
+# 40 Cflt, in NONE of the assembled outputs and in the DNP exclusion CSV).
+EXPECTED_R6_DSER = 40            # Dser_* series blocking diodes - POPULATED, never DNP
+EXPECTED_R6_DCLAMP = 40          # Dclamp_* anti-parallel clamps - POPULATED
+EXPECTED_R6_CFLT = 40            # Cflt_* logic-side filter caps - ALL DNP by design
+EXPECTED_R6_CFLT_FAST = 8        # 10nF on the RP2040 fast channels (1 ms edge budget)
+EXPECTED_R6_CFLT_SLOW = 32       # 2.2uF on the MCP23017 slow channels
+EXPECTED_1N4148_QTY = 88         # 8 pre-r6 (relay flyback / steering) + 80 r6
+# RP2040 fast channels - mirror of generate_kicad_netlist_revD.FAST_INPUTS. A Cflt
+# large enough to integrate 60 Hz (>=951 nF) on any of these blows the 1 ms edge
+# budget by 183x, so the fast set is called out explicitly in the stuffing table.
+R6_FAST_CHANNELS = ("SA", "SB", "SC", "TA1", "TA2", "TB", "DIELL_L", "DIELL_R")
 
 GERBER_LAYERS = ",".join(
     [
@@ -325,6 +355,122 @@ for _lbl in [
     PART_LOCK[(f"PC817 {_lbl}", "DIP-4_W7.62mm")] = {"alias": ("PC817", "DIP-4_W7.62mm")}
 
 
+# ---- FIELD-STUFFED part locks (DNP on the board, bought and fitted by US) -----------
+# PART_LOCK covers only what JLC assembles. The 40 r6 Cflt_* lands ship EMPTY, so their
+# MPN never reached a lock table - and a part nobody locked is a part the crew guesses
+# at with a meter in one hand. These locks are emitted into the DNP-exclusion CSV so the
+# stuffing decision and the buy identity travel in the SAME row.
+# Identities: run-log FR-17 (2.2uF) and FR-18 (10nF) - footprint-vs-datasheet reviews
+# done at r6, same 0805 land as the existing C13 10nF and the Csnub_* family.
+FIELD_STUFF_LOCK: dict[tuple[str, str], dict[str, str]] = {
+    ("2.2uF X7R DNP", "C_0805_2012Metric"): {
+        "lcsc": "C19110", "mpn": "CL21B225KAFNNNE",
+        "manufacturer": "Samsung Electro-Mechanics",
+        "locked_spec": "2.2uF 25V X7R +/-10% 0805 MLCC",
+        "note": "FR-17. 25 V minimum (the logic side is 3.3 V, but X7R DC-bias "
+                "derating at 0805/2.2uF is severe: worst-effective ~1.65uF is what "
+                "the 951 nF 60 Hz floor is computed against). A 1uF part (C28323) "
+                "was REJECTED: 749 nF effective < 951 nF.",
+    },
+    ("10nF X7R DNP", "C_0805_2012Metric"): {
+        "lcsc": "C17702767", "mpn": "C0805B103K500NT", "manufacturer": "TORCH",
+        "locked_spec": "10nF 50V X7R +/-10% 0805 MLCC",
+        "note": "FR-18. Same MPN as the assembled C13 line - zero new part class. "
+                "10 nF -> 0.493 ms edge; 22 nF is the HARD ceiling on a fast channel.",
+    },
+}
+
+# ---- r6 per-channel stuffing evidence (the ONLY per-channel decision left) -----------
+# Dser_* and Dclamp_* are POPULATED on all 40 channels - uniform, no decision, no
+# per-channel table needed for them (r6 spec SS A.4; the "0 ohm link now, diode later"
+# plan in the recommendation doc SS3 was REJECTED - an R-prefix part would have shifted
+# every resistor refdes above R3, and 0805 and SOD-323 cannot share a land anyway).
+# Cflt_* is the decision, and it is a MEASURE-THEN-STUFF decision on every channel whose
+# signal class is not yet metered. Class strings below are evidence, not guesses:
+#   MEASURED  - a real meter reading exists (recommendation doc SS2, lane 22, 2026-07-18/21)
+#   UNMEASURED- no reading exists; the machine-side prior is recorded
+#   SPARE     - no signal assigned yet
+R6_MEASURED = "MEASURED (lane 22, 2026-07-18/21)"
+R6_UNMEASURED = "UNMEASURED"
+R6_SPARE = "SPARE - unallocated"
+# The measurement that decides Cflt, written once and referenced per row.
+R6_MEASURE_PROC = (
+    "At the machine end, OEM brain powered, THIS BOARD DISCONNECTED: meter the channel "
+    "wire to machine common on DC volts AND AC volts through a full machine cycle, then "
+    "confirm with a scope (a DMM cannot tell 60 Hz AC from a chopped DC train). "
+    "DECIDE: (a) V_AC < 1 Vrms -> DC class, LEAVE Cflt UNFITTED whatever V_DC is - Dser "
+    "+ Dclamp already cover DC up to 75 V V_RRM; (b) V_AC >= 5 Vrms (24 VAC ladder) AND "
+    "this is a SLOW channel AND its release budget is >= 200 ms -> FIT Cflt 2.2uF and "
+    "re-run FA-9 edge timing; (c) V_AC >= 5 Vrms on a FAST channel (SA/SB/SC/TA1/TA2/TB/"
+    "DIELL_L/DIELL_R) -> DO NOT FIT. 60 Hz integration needs >=951 nF = 183 ms de-assert "
+    "against a 1 ms edge budget, 92x DEBOUNCE_CAM_US and 122% of CAM_*_GRACE_MS; that "
+    "channel is SURVIVABLE but NOT USABLE on AC and must be tapped at the switch or "
+    "handled in firmware (r6 spec SS B.4). RECORD the reading either way - FA-15 requires "
+    "the driven-24 VAC channel count N, and the board is budgeted for N = 0."
+)
+R6_CHANNEL_EVIDENCE: dict[str, tuple[str, str, str]] = {}
+for _ch in [f"GS{i}" for i in range(1, 11)]:
+    R6_CHANNEL_EVIDENCE[_ch] = (
+        R6_MEASURED, "11 VDC dry",
+        "DC dry contact, safe bare even pre-r6. Cflt UNFITTED. No measurement pending.")
+R6_CHANNEL_EVIDENCE["BS"] = (
+    R6_MEASURED, "11 VDC dry",
+    "DC dry contact (bin/#9 switch). Cflt UNFITTED. No measurement pending.")
+R6_CHANNEL_EVIDENCE["PBZ"] = (
+    R6_MEASURED, "33 VDC (rectified-24 VAC class)",
+    "THE canonical over-voltage channel: 27-28 V reverse at the rev-D Vw = 5-6 V rail "
+    "vs a PC817 V_R max of 6 V (4.5-4.7x). Dser + Dclamp are what make it landable at "
+    "all. Cflt UNFITTED (DC, not AC). FA-15 reverse proof is MANDATORY on this channel.")
+for _ch in ("DIELL_L", "DIELL_R"):
+    R6_CHANNEL_EVIDENCE[_ch] = (
+        R6_MEASURED, "15.4-16 VDC at rest (DIELL board self-powers)",
+        "Absolute-maximum VIOLATION pre-r6: 9.4-11 V reverse at the rev-D Vw = 5-6 V "
+        "rail (1.6-1.8x the 6 V V_R). Permanent, survives brain removal. Cflt UNFITTED "
+        "(DC). FA-15 reverse proof MANDATORY. NOTE: FAST channel - never fit >22 nF.")
+for _ch in ("SA", "SB", "TA1", "TA2"):
+    R6_CHANNEL_EVIDENCE[_ch] = (
+        R6_UNMEASURED, "cam contact in the machine's 24 VAC relay ladder (prior, not "
+        "reading) - proven by the ~21 ohm coil sneak paths that invalidated cold "
+        "mapping twice",
+        "MEASURE-THEN-STUFF. FAST channel: if it is driven 24 VAC the answer is still "
+        "DO NOT FIT Cflt - r6 makes it electrically SURVIVABLE (28.9 Vpk vs 75 V V_RRM) "
+        "but NOT functionally usable (120 debounced edges/s = 12 per CHATTER_WINDOW_MS "
+        "vs CHATTER_MAX_CAM = 8 -> sustained chatter fault). Fallback per the metering "
+        "guide: tap the cam AT THE SWITCH and skip C2A for that channel.")
+for _ch in ("SC", "TB"):
+    R6_CHANNEL_EVIDENCE[_ch] = (
+        R6_UNMEASURED, "cam class, same 24 VAC ladder prior as SA/SB/TA1/TA2",
+        "MEASURE-THEN-STUFF. FAST channel - see SA/SB/TA1/TA2: AC-driven means tap at "
+        "the switch or change firmware, never a cap.")
+R6_CHANNEL_EVIDENCE["FOUL"] = (
+    R6_UNMEASURED, "Radaray foul-lamp wire - lamp circuits are a rectified/AC prior",
+    "MEASURE-THEN-STUFF. SLOW channel, so 2.2uF IS available if it meters as 24 VAC - "
+    "but foul is an EDGE input (on_foul); a 183 ms de-assert must be checked against the "
+    "foul-detect timing before fitting. Default UNFITTED.")
+R6_CHANNEL_EVIDENCE["GP"] = (
+    R6_UNMEASURED, "gripper-protect, C2A-412DD - class open",
+    "MEASURE-THEN-STUFF. SLOW channel. Default UNFITTED; fit 2.2uF only on a metered "
+    "24 VAC reading with a >=200 ms release budget.")
+R6_CHANNEL_EVIDENCE["PBC"] = (
+    R6_UNMEASURED, "cycle pushbutton, C2A-21EE area (adjacent to the 33 VDC PBZ tap)",
+    "MEASURE-THEN-STUFF. SLOW channel. Physically next to PBZ, so treat a 33 VDC-class "
+    "reading as likely; that is a DC reading and still means Cflt UNFITTED.")
+R6_CHANNEL_EVIDENCE["OS"] = (
+    R6_UNMEASURED, "off-spot, C2A source not yet identified - future FSM use",
+    "MEASURE-THEN-STUFF before landing. SLOW channel. Default UNFITTED.")
+for _ch in ("TENTH", "MAN_T", "MAN_S", "MAN_SWS", "MAN_SWSR"):
+    R6_CHANNEL_EVIDENCE[_ch] = (
+        R6_UNMEASURED, "machine console / manual switch - dry-contact prior, unmetered",
+        "MEASURE-THEN-STUFF before landing (these are future-FSM channels and unlanded "
+        "on the first article). SLOW channel. Default UNFITTED.")
+for _i in range(1, 12):
+    R6_CHANNEL_EVIDENCE[f"AUX{_i}"] = (
+        R6_SPARE, "no signal assigned",
+        "Default UNFITTED. The reason Dclamp is POPULATED rather than DNP: nobody has "
+        "chosen these channels' signal class yet, and a spare landed on an unknown wire "
+        "is exactly the case a stuffing table loses across 32 lanes.")
+
+
 # ---- hand-solder BOM (rev-C pattern, rev-D refs incl. J15/J16 + the U37->U45 shift) --
 HAND_SOLDER_ROWS = [
     {"Ref": "A1", "Qty": 1, "Role": "RP2040 module", "Manufacturer": "Raspberry Pi",
@@ -530,6 +676,24 @@ def parse_netlist(path: Path) -> dict[str, dict[str, str]]:
     return parts
 
 
+def parse_nets(path: Path) -> dict[str, list[tuple[str, str]]]:
+    """net name -> [(refdes, pin), ...] from the SKiDL-emitted KiCad netlist.
+
+    Added at r6: the connector/pin and the exact per-channel part identities in the
+    stuffing table are DERIVED from the netlist, never hand-typed. A hand-typed
+    stuffing table is a table that goes stale the next time a refdes moves.
+    """
+    text = path.read_text(encoding="utf-8")
+    nets: dict[str, list[tuple[str, str]]] = {}
+    for block in re.split(r"\(net\s*\n", text)[1:]:
+        name = re.search(r'\(name "([^"]+)"\)', block)
+        if not name:
+            continue
+        nodes = re.findall(r'\(ref "([^"]+)"\)\s*\n\s*\(pin "([^"]+)"\)', block)
+        nets[name.group(1)] = nodes
+    return nets
+
+
 def locked_part(value: str, footprint: str):
     key = (value, footprint)
     seen = set()
@@ -551,6 +715,133 @@ def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) 
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def assert_r6_input_protection(net_parts, nets, placed, dnp_net, cpl_refs, jlc_refs):
+    """Extend the BOM<->CPL<->netlist equality gate to the 120 r6 parts.
+
+    Returns the per-channel stuffing rows (also written to CSV). Every check below
+    fails CLOSED - this runs inside the export, so a violation means no package.
+    """
+    chans = sorted(p["tag"][len("Dser_"):] for p in net_parts.values()
+                   if p["tag"].startswith("Dser_"))
+    if len(chans) != EXPECTED_R6_DSER:
+        raise SystemExit(f"r6: expected {EXPECTED_R6_DSER} Dser_* channels, got {len(chans)}")
+    by_tag = {p["tag"]: ref for ref, p in net_parts.items()}
+    for family, count in (("Dclamp_", EXPECTED_R6_DCLAMP), ("Cflt_", EXPECTED_R6_CFLT)):
+        got = sum(1 for p in net_parts.values() if p["tag"].startswith(family))
+        if got != count:
+            raise SystemExit(f"r6: expected {count} {family}* parts, got {got}")
+
+    rows, dser_refs, dclamp_refs, cflt_refs = [], [], [], []
+    fast_caps = slow_caps = 0
+    for ch in chans:
+        try:
+            dser = by_tag[f"Dser_{ch}"]
+            dclamp = by_tag[f"Dclamp_{ch}"]
+            cflt = by_tag[f"Cflt_{ch}"]
+            opto = by_tag[f"OPTO_{ch}"]
+            rin = by_tag[f"Rin_{ch}"]
+            rpu = by_tag[f"Rpu_{ch}"]
+        except KeyError as exc:
+            raise SystemExit(f"r6: channel {ch} is missing part {exc}") from None
+        is_fast = ch in R6_FAST_CHANNELS
+        field_net = f"FIELD_{'FAST' if is_fast else 'SLOW'}_{ch}"
+        logic_net = f"{'FAST' if is_fast else 'SLOW'}_{ch}"
+
+        # --- topology: the three provisions are where the safety case says they are ---
+        rin_nodes = set(nets.get(f"FIELD_RIN_{ch}", []))
+        if rin_nodes != {(rin, "2"), (dser, "2")}:
+            raise SystemExit(f"r6: FIELD_RIN_{ch} must be Rin.2 + Dser ANODE(2), got {sorted(rin_nodes)}")
+        led_nodes = set(nets.get(f"FIELD_LED_{ch}", []))
+        if led_nodes != {(dser, "1"), (dclamp, "1"), (opto, "1")}:
+            raise SystemExit(f"r6: FIELD_LED_{ch} must be Dser.K + Dclamp.K + PC817 anode, "
+                             f"got {sorted(led_nodes)}")
+        field_nodes = set(nets.get(field_net, []))
+        if (dclamp, "2") not in field_nodes or (opto, "2") not in field_nodes:
+            raise SystemExit(f"r6: {field_net} must carry the Dclamp ANODE(2) + PC817 cathode, "
+                             f"got {sorted(field_nodes)}")
+        conn = sorted(f"{r}-{pin}" for r, pin in field_nodes if r.startswith("J"))
+        if len(conn) != 1:
+            raise SystemExit(f"r6: {field_net} must land on exactly one connector pin, got {conn}")
+        logic_nodes = set(nets.get(logic_net, []))
+        if (cflt, "1") not in logic_nodes or (rpu, "2") not in logic_nodes:
+            raise SystemExit(f"r6: {logic_net} must carry Cflt.1 + Rpu.2, got {sorted(logic_nodes)}")
+        if (cflt, "2") not in set(nets.get("GND", [])):
+            raise SystemExit(f"r6: Cflt_{ch} pin 2 must return to GND (logic side)")
+
+        # --- population: series NEVER DNP, clamp populated, cap always DNP -----------
+        for ref, who in ((dser, "Dser"), (dclamp, "Dclamp")):
+            p = net_parts[ref]
+            if p["value"] != "1N4148" or not p["footprint"].endswith("D_SOD-323"):
+                raise SystemExit(f"r6: {who}_{ch} ({ref}) must be 1N4148 / D_SOD-323, got {p}")
+            if ref in dnp_net:
+                raise SystemExit(
+                    f"r6 STOP-SHIP: {who}_{ch} ({ref}) is DNP. A DNP series position leaves "
+                    f"the channel OPEN-CIRCUIT; a DNP clamp reverts the LED reverse voltage "
+                    f"to a leakage divider that FA-15 cannot distinguish from a good board.")
+            for member, label in ((placed, "placed"), (cpl_refs, "CPL"), (jlc_refs, "JLC")):
+                if ref not in member:
+                    raise SystemExit(f"r6: {who}_{ch} ({ref}) missing from the {label} set")
+        cap = net_parts[cflt]
+        want = "10nF X7R DNP" if is_fast else "2.2uF X7R DNP"
+        if cap["value"] != want:
+            raise SystemExit(f"r6: Cflt_{ch} ({cflt}) must be {want!r}, got {cap['value']!r}")
+        if cflt not in dnp_net or cflt in placed or cflt in cpl_refs or cflt in jlc_refs:
+            raise SystemExit(f"r6: Cflt_{ch} ({cflt}) must be DNP and absent from CPL/JLC")
+        key = (cap["value"], cap["footprint"].split(":", 1)[-1])
+        if key not in FIELD_STUFF_LOCK:
+            raise SystemExit(f"r6: no FIELD_STUFF_LOCK identity for {key} - a field-stuffed "
+                             f"part with no locked MPN is a part the crew guesses at")
+        fast_caps += is_fast
+        slow_caps += not is_fast
+        dser_refs.append(dser)
+        dclamp_refs.append(dclamp)
+        cflt_refs.append(cflt)
+
+        klass, measured, decision = R6_CHANNEL_EVIDENCE[ch]
+        lock = FIELD_STUFF_LOCK[key]
+        rows.append({
+            "Channel": ch,
+            "Speed class": "FAST (RP2040)" if is_fast else "SLOW (MCP23017)",
+            "Field connector pin": conn[0],
+            "Opto": opto, "Rin (2k2)": rin, "Rpu (47k)": rpu,
+            "Dser ref": dser, "Dser part": "1N4148WS SOD-323 (LCSC C118873)",
+            "Dser stuffing": "POPULATE - ALWAYS (never DNP: DNP = open channel)",
+            "Dclamp ref": dclamp, "Dclamp part": "1N4148WS SOD-323 (LCSC C118873)",
+            "Dclamp stuffing": "POPULATE - ALWAYS (uniform; no per-channel decision)",
+            "Cflt ref": cflt, "Cflt value": cap["value"].replace(" DNP", ""),
+            "Cflt MFR Part #": lock["mpn"], "Cflt LCSC Part #": lock["lcsc"],
+            "Cflt stuffing": "DNP - DO NOT FIT unless the measurement below says so",
+            "Signal-class evidence": klass,
+            "Measured / prior": measured,
+            "Decision + measurement that decides Cflt": decision,
+            "Measurement procedure": (R6_MEASURE_PROC if klass != R6_MEASURED
+                                      else "Already metered - no measurement pending."),
+        })
+
+    if len(set(dser_refs)) != EXPECTED_R6_DSER or len(set(dclamp_refs)) != EXPECTED_R6_DCLAMP:
+        raise SystemExit("r6: Dser/Dclamp refdes are not unique per channel")
+    if set(dser_refs) & set(dclamp_refs):
+        raise SystemExit("r6: a single diode is serving as BOTH series block and clamp")
+    if len(set(cflt_refs)) != EXPECTED_R6_CFLT:
+        raise SystemExit("r6: Cflt refdes are not unique per channel")
+    if (fast_caps, slow_caps) != (EXPECTED_R6_CFLT_FAST, EXPECTED_R6_CFLT_SLOW):
+        raise SystemExit(f"r6: Cflt fast/slow split {fast_caps}/{slow_caps} != pinned "
+                         f"{EXPECTED_R6_CFLT_FAST}/{EXPECTED_R6_CFLT_SLOW}")
+    # No r6 part may touch the safety rail or the wetting rail (standing prohibition X3
+    # / spec SS A.5). The audit proves this on the BOARD; assert it on the shipped netlist.
+    r6_refs = set(dser_refs) | set(dclamp_refs) | set(cflt_refs)
+    for netname in ("FIELD_WET_V", "RELAY_ENABLE_RAIL", "RAIL_GATE",
+                    "SAFE_STOP_RETURN", "SAFE_TBSC_RETURN"):
+        if netname not in nets:
+            # A renamed net would silently DISARM this guard - fail instead.
+            raise SystemExit(f"r6 guard cannot run: net {netname} is absent from the netlist")
+        touching = sorted({r for r, _ in nets[netname]} & r6_refs)
+        if touching:
+            raise SystemExit(f"r6 STOP-SHIP: {touching} land on {netname}")
+    rows.sort(key=lambda r: (r["Speed class"], r["Channel"]))
+    return rows
 
 
 def zip_paths(zip_path: Path, files: list[Path], base: Path) -> None:
@@ -694,6 +985,7 @@ def main() -> int:
 
     # ---- BOM <-> CPL <-> netlist equality (the H6 gate) -----------------------------
     net_parts = parse_netlist(NETLIST_PATH)
+    nets = parse_nets(NETLIST_PATH)
     if len(net_parts) != EXPECTED_NETLIST_PARTS:
         raise SystemExit(f"Netlist part count {len(net_parts)} != pinned {EXPECTED_NETLIST_PARTS}")
 
@@ -762,6 +1054,13 @@ def main() -> int:
             f"placed-only={sorted(placed - cpl_refs)}"
         )
 
+    # ---- r6 per-channel input-protection equality (extends the H6 gate) -------------
+    # NOTE the ordering: jlc_refs is not built yet, so pass the set this gate needs -
+    # every Dser/Dclamp is placed and NOT hand-solder, so placed - HAND_SOLDER_REFS is
+    # exactly the JLC set and is computed identically below.
+    r6_rows = assert_r6_input_protection(
+        net_parts, nets, placed, dnp_net, cpl_refs, placed - HAND_SOLDER_REFS)
+
     # ---- D_PROT hard lock (FR-3) ----------------------------------------------------
     dprot_refs = {r for r, p in net_parts.items() if p["tag"] == "D_PROT"}
     if dprot_refs != {"D17"}:
@@ -787,9 +1086,15 @@ def main() -> int:
     dnp_path = assembly_dir / f"{stem}-dnp-excluded.csv"
     with dnp_path.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["Designator", "Value", "Footprint", "Reason"])
+        # r6: the identity columns are NEW. A DNP row used to say "do not fit" and
+        # nothing else; for the 40 field-stuffable Cflt lands that left the buy
+        # decision undocumented. Rows whose part is not yet chosen carry an explicit
+        # "(identity awaits ...)" marker rather than an empty cell.
+        w.writerow(["Designator", "Value", "Footprint", "Manufacturer", "MFR Part #",
+                    "LCSC Part #", "Reason"])
         for ref in sorted(dnp_net, key=natural_ref_key):
             p = net_parts[ref]
+            lock = FIELD_STUFF_LOCK.get((p["value"], p["footprint"].split(":", 1)[-1]))
             if p["tag"] == "JP_J16_3V3":
                 reason = ("Default-OPEN solder link (R2-4): J16 pin 5 ships NC; bridge "
                           "only for a verified 3.3V module - no part is ever fitted")
@@ -806,7 +1111,15 @@ def main() -> int:
                 reason = "M1 optional channel (never metered; populate only after runbook 3.6)"
             else:
                 reason = "DNP (snubber/MOV sizing awaits the powered characterization session - G7 item 7)"
-            w.writerow([ref, p["value"], p["footprint"].split(":", 1)[-1], reason])
+            if lock:
+                mfr, mpn, lcsc = lock["manufacturer"], lock["mpn"], lock["lcsc"]
+                reason = f"{reason} FIELD-STUFF LOCK: {lock['locked_spec']}. {lock['note']}"
+            elif p["tag"] == "JP_J16_3V3":
+                mfr = mpn = lcsc = "(no part - solder bridge)"
+            else:
+                mfr = mpn = lcsc = "(identity awaits G7 item 7 characterization)"
+            w.writerow([ref, p["value"], p["footprint"].split(":", 1)[-1],
+                        mfr, mpn, lcsc, reason])
 
     # ---- JLC Standard-PCBA split ----------------------------------------------------
     hand_refs = {r for r in placed if r in HAND_SOLDER_REFS}
@@ -881,6 +1194,29 @@ def main() -> int:
         raise SystemExit(
             "Rev-D input pull-up lock failed: R4,R6,...,R82 must map exactly "
             f"to UNI-ROYAL 47k 0805W8F4702T5E LCSC C17713 (got {r47k_line})")
+    # r6 hard lock: the 80 new input-protection diodes must ride the EXISTING onsemi
+    # 1N4148WS line and nothing else. If a second diode line ever appears for them, the
+    # "zero new assembled part classes" claim (and EXPECTED_JLC_LINES == 27) is false.
+    d4148_line = by_lcsc.get("C118873")
+    # D13 (Dfly_M1) is a 1N4148 too but ships DNP with the M1 channel, so it is NOT on
+    # the assembled line - compare against the PLACED 1N4148 set, not every 1N4148.
+    d4148_refs = sorted((r for r, p in net_parts.items()
+                         if p["value"] == "1N4148" and r in placed),
+                        key=natural_ref_key)
+    if (not d4148_line or str(d4148_line["MFR Part #"]) != "1N4148WS"
+            or str(d4148_line["Manufacturer"]) != "onsemi"
+            or "SOD-323" not in str(d4148_line["Comment"])
+            or int(d4148_line["Quantity"]) != EXPECTED_1N4148_QTY
+            or str(d4148_line["Designator"]) != ",".join(d4148_refs)):
+        raise SystemExit(
+            f"r6 lock failed: all {EXPECTED_1N4148_QTY} 1N4148 parts (8 pre-r6 + 80 r6 "
+            f"Dser/Dclamp) must map to ONE onsemi 1N4148WS SOD-323 line, LCSC C118873 "
+            f"(got {d4148_line})")
+    r6_diode_refs = {row["Dser ref"] for row in r6_rows} | {row["Dclamp ref"] for row in r6_rows}
+    missing_r6 = sorted(r6_diode_refs - set(d4148_refs), key=natural_ref_key)
+    if missing_r6 or len(r6_diode_refs) != EXPECTED_R6_DSER + EXPECTED_R6_DCLAMP:
+        raise SystemExit(f"r6 lock failed: {len(r6_diode_refs)} r6 diodes, missing from the "
+                         f"C118873 line: {missing_r6}")
     if any(str(r["LCSC Part #"]) == "MATCH-AT-UPLOAD" for r in jlc_bom):
         raise SystemExit("R2-15: MATCH-AT-UPLOAD rows are forbidden - every JLC line needs a pinned C-number")
     # R2-4 hard locks: buffer + ESD + polyfuse identity.
@@ -956,6 +1292,22 @@ def main() -> int:
         if pn not in harness_pns:
             raise SystemExit(f"Harness BOM missing mandatory PN {pn}")
 
+    # ---- r6 per-channel stuffing BOM (new at r6) ------------------------------------
+    # This is the crew-facing answer to "what goes on channel <n>": all 40 get
+    # Dser + Dclamp POPULATED (no decision), and the only decision left is the DNP
+    # Cflt, which is a MEASURE-THEN-STUFF call with the deciding measurement in the row.
+    stuff_fields = ["Channel", "Speed class", "Field connector pin", "Opto",
+                    "Rin (2k2)", "Rpu (47k)",
+                    "Dser ref", "Dser part", "Dser stuffing",
+                    "Dclamp ref", "Dclamp part", "Dclamp stuffing",
+                    "Cflt ref", "Cflt value", "Cflt MFR Part #", "Cflt LCSC Part #",
+                    "Cflt stuffing", "Signal-class evidence", "Measured / prior",
+                    "Decision + measurement that decides Cflt", "Measurement procedure"]
+    write_csv(assembly_dir / f"{stem}-r6-channel-stuffing.csv", stuff_fields, r6_rows)
+    write_csv(DOCS_R6_STUFFING, stuff_fields, r6_rows)   # tracked doc copy
+    if len(r6_rows) != EXPECTED_R6_DSER:
+        raise SystemExit(f"r6 stuffing table has {len(r6_rows)} rows, expected {EXPECTED_R6_DSER}")
+
     # ---- README + zips + manifest ---------------------------------------------------
     generated_at = datetime.now().isoformat(timespec="seconds")
     readme = out / "README-fab-package.txt"
@@ -979,6 +1331,26 @@ def main() -> int:
         "every placed refdes present in all three.",
         "- D_PROT hard lock: D17 = MDD SS34, LCSC C8678, SMA/DO-214AC (FR-3); no SS14",
         "  anywhere.",
+        f"- r6 input protection asserted PER CHANNEL, not by totals: {EXPECTED_R6_DSER} x Dser_*",
+        f"  + {EXPECTED_R6_DCLAMP} x Dclamp_* (1N4148WS SOD-323, LCSC C118873, onsemi -",
+        f"  ALL {EXPECTED_1N4148_QTY} 1N4148 on ONE line, zero new assembled part classes)",
+        f"  and {EXPECTED_R6_CFLT} x Cflt_* (ALL DNP: {EXPECTED_R6_CFLT_FAST} x 10nF fast /",
+        f"  {EXPECTED_R6_CFLT_SLOW} x 2.2uF slow). Each channel's FIELD_RIN_<n> = Rin.2 +",
+        "  Dser ANODE, FIELD_LED_<n> = Dser.K + Dclamp.K + PC817 anode, field pin = Dclamp",
+        "  ANODE + PC817 cathode. A DNP Dser is STOP-SHIP (open channel); a DNP/absent",
+        "  Dclamp is invisible until FA-15. No r6 part touches FIELD_WET_V, RELAY_ENABLE_",
+        "  RAIL, RAIL_GATE, SAFE_STOP_RETURN or SAFE_TBSC_RETURN.",
+        "- FIELD-STUFF locks (parts WE buy and fit, never JLC): Cflt 2.2uF = Samsung",
+        "  CL21B225KAFNNNE / LCSC C19110 (FR-17; 1uF C28323 REJECTED - 749 nF effective",
+        "  < the 951 nF 60 Hz floor); Cflt 10nF = TORCH C0805B103K500NT / LCSC C17702767",
+        "  (FR-18). Identities travel in assembly/*-dnp-excluded.csv next to the reason.",
+        f"- Per-channel stuffing table: assembly/{stem}-r6-channel-stuffing.csv (tracked",
+        "  copy docs/phase8_revD_r6_channel_stuffing.csv). ALL 40 channels get Dser +",
+        "  Dclamp POPULATED - uniform, no per-channel decision. The ONLY decision is the",
+        "  DNP Cflt, and it is MEASURE-THEN-STUFF: PBZ (33 VDC), DIELL_L/R (15.4-16 V)",
+        "  are metered DC and stay UNFITTED; SA/SB/SC/TA1/TA2/TB (cams), FOUL, GP, PBC,",
+        "  OS and the manual/AUX channels are UNMEASURED and carry the deciding",
+        "  measurement in their row. A 24 VAC FAST channel is never a cap fix.",
         "- Round-2 locks (2026-07-21): Q17-Q20 = onsemi 2N7002LT1G C16338 (R2-3);",
         "  R135/R138/R141 = UNI-ROYAL 10M C26108 (R2-15, identity pinned - verify",
         "  stock at order, OOS at LCSC retail 2026-07-21); U46 = TCA4307DGKR C880333;",
@@ -1095,6 +1467,18 @@ def main() -> int:
         "input_pullup_lock": (
             "R4,R6,...,R82 = 40 x UNI-ROYAL 47k 0805W8F4702T5E, LCSC C17713; "
             "all unrelated 10k networks unchanged"
+        ),
+        "r6_input_protection_lock": (
+            f"{EXPECTED_R6_DSER} Dser_* + {EXPECTED_R6_DCLAMP} Dclamp_* = 1N4148WS "
+            f"SOD-323, onsemi, LCSC C118873, ALL POPULATED (a DNP series position opens "
+            f"the channel); {EXPECTED_1N4148_QTY} 1N4148 total on one JLC line. "
+            f"{EXPECTED_R6_CFLT} Cflt_* ALL DNP "
+            f"({EXPECTED_R6_CFLT_FAST} x 10nF fast / {EXPECTED_R6_CFLT_SLOW} x 2.2uF slow)"
+        ),
+        "r6_field_stuff_lock": (
+            "Cflt 2.2uF = Samsung CL21B225KAFNNNE / LCSC C19110 (FR-17); "
+            "Cflt 10nF = TORCH C0805B103K500NT / LCSC C17702767 (FR-18); "
+            "fitted by us, never by JLC - see assembly/*-r6-channel-stuffing.csv"
         ),
         "input_bias_runtime_gate": (
             "production RP2040 GP6-GP13 PUE=0/PDE=0; U1/U2 MCP23017 "

@@ -46,6 +46,24 @@ FW_RELEASE_MANIFEST = os.path.join(FW_RELEASE_DIR, "firmware_manifest.json")
 STALE_SCRIPTS_ERC = os.path.join(
     REPO, "scripts", "generate_kicad_netlist_revD.erc"
 )
+EXPORT_SCRIPT = os.path.join(REPO, "scripts", "export_fab_revD.py")
+
+
+def _pinned(name):
+    """Read a pinned EXPECTED_* release count out of export_fab_revD.py.
+
+    r6 (2026-07-25) moved the part/DNP counts (271 -> 391, 28 -> 68) and these
+    assertions carried their own THIRD hardcoded copy, so they failed on a
+    correct board. Scraping the single pinned source keeps the test honest
+    without inventing a competing constant: export_fab_revD.py is the release
+    gate that fails closed on drift, this test proves the netlist / pack / CSV /
+    package all agree with it. `import` is not usable here - the export module
+    requires KiCad's bundled `pcbnew`.
+    """
+    with open(EXPORT_SCRIPT, encoding="utf-8") as stream:
+        match = re.search(rf"^{name}\s*=\s*(\d+)", stream.read(), re.M)
+    assert match, f"{name} not found in scripts/export_fab_revD.py"
+    return int(match.group(1))
 
 BAD = b"2x the 100mA module allowance"
 REQUIRED_F1 = (
@@ -166,7 +184,10 @@ def test_first_article_dnp_count_matches_csv_and_current_package():
             row["Ref"] for row in csv.DictReader(stream)
             if row["DNP"] == "DNP"
         }
-    assert len(map_dnp) == 28, f"first-article CSV DNP count is {len(map_dnp)}, not 28"
+    expected_dnp = _pinned("EXPECTED_DNP")
+    assert len(map_dnp) == expected_dnp, (
+        f"first-article CSV DNP count is {len(map_dnp)}, not the pinned "
+        f"{expected_dnp}")
     assert "JP1" in map_dnp, "first-article CSV omits default-open JP1 from DNP"
 
     with open(FIRST_ARTICLE_PACK, encoding="utf-8") as stream:
@@ -301,7 +322,9 @@ def test_revD_netlist_has_no_volatile_skidl_line_numbers():
         r'\(name "SKiDL Line"\) "generate_kicad_netlist_revD\.py:([^"]+)"',
         netlist,
     )
-    assert len(fields) == 271, f"expected 271 SKiDL Line fields, got {len(fields)}"
+    expected_parts = _pinned("EXPECTED_NETLIST_PARTS")
+    assert len(fields) == expected_parts, (
+        f"expected {expected_parts} SKiDL Line fields, got {len(fields)}")
     assert set(fields) == {"0"}, f"volatile SKiDL source lines remain: {set(fields)}"
 
 
