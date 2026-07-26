@@ -1,6 +1,12 @@
 # Harness Wire List Rev 2 — change notes, length classes, and the RFQ amendments
 
-**File:** `docs/WSL-LANE-HARNESS-A_wirelist_rev2.csv` · supersedes `..._rev1.csv` (commit `0537e26`)
+**File:** `docs/WSL-LANE-HARNESS-A_wirelist_rev3.csv` · supersedes `..._rev2.csv` (never issued) and `..._rev1.csv` (commit `0537e26`)
+
+> **REV 3 (2026-07-26) — LENGTHS NOW MEASURED.** The enclosure-to-machine run is
+> **6 ft (1829 mm)**. Rev 2 sized L1 at 2500 mm before that was known, which is short
+> once the ~750–950 mm in-enclosure route is added. Rev 3: **L1 3200 · L2 3700 · L3 4700 ·
+> L1-200 3000**; L0 (800) and the J14 jumper (120) unchanged. **§2 below is CLOSED** —
+> the measurement it asked for has been taken. ~168 m of wire per assembly.
 **Reason:** pre-order audit 2026-07-25 findings **S4** (lead lengths), **S5** (J14 ferrule/torque/strip),
 **M-19** (cam lead destination), **M-20** (J14 label), **M-15** (missing attachments).
 **Status:** ready to issue **once the length classes below are confirmed** (§2).

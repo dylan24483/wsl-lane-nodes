@@ -1,11 +1,17 @@
 # RFQ — Custom Wire Harness Assembly (Lane Controller Field Harness)
 
 **Westside Lanes · Olympia, WA** · Issued 2026-07-25 · Contact: Dylan DeYoung
-**Assembly:** WSL-LANE-HARNESS-A · **Rev 2**
+**Assembly:** WSL-LANE-HARNESS-A · **Rev 3**
 **Quantity:** 1 first article → 2 pilot → balance to **34 total** (32 lanes + 2 spares).
 Option pricing requested at 48 and 64.
 
-> **Rev 2 changes vs Rev 1** (quote against Rev 2 only):
+> **Rev 3 supersedes Rev 2 — quote against Rev 3 only.** Rev 2 was never issued.
+> **Rev 3 change:** the enclosure-to-machine run was measured at **6 ft (1829 mm)**;
+> Rev 2 lead lengths were sized before that and were too short once the in-enclosure
+> route is added. L1 2500→**3200**, L2 3000→**3700**, L3 4000→**4700**, L1-200 2300→**3000**.
+> L0 (800) and the J14 jumper (120) are unchanged.
+>
+> **Rev 2 changes vs Rev 1** (all carried forward into Rev 3):
 > ① **All lead lengths increased** — Rev 1 budgeted the machine run but not the
 > in-enclosure route (§3, §9). ② **J14 ferrules corrected to bare/uninsulated** — an
 > insulated 0.75 mm² collar fouls the adjacent pole at 3.5 mm pitch (§5).
@@ -30,7 +36,7 @@ electrical test, consistency unit-to-unit, and on-time delivery.
 
 A field wiring harness for a replacement control board on bowling pinsetter machines. One
 harness per lane. It connects a controller PCB (mounted in a wall enclosure) to sensors,
-switches, and relay-coil circuits on the machine, roughly 1 m away.
+switches, and relay-coil circuits on the machine. The enclosure-to-machine run is **measured at 6 ft (1.83 m)**; leads are built longer than that to cover the in-enclosure route plus service slack.
 
 **Electrically trivial** — nothing above 33 V, nothing above ~1 A. This is a **labeling- and
 termination-intensive** assembly, not a high-voltage or high-current one. Cost lives in the
@@ -56,12 +62,12 @@ ends should instead ship un-stripped, say so.
 
 ## 3. Wire list
 
-**Attached as a separate CSV** (`WSL-LANE-HARNESS-A_wirelist_rev2.csv`), one row per lead, with
+**Attached as a separate CSV** (`WSL-LANE-HARNESS-A_wirelist_rev3.csv`), one row per lead, with
 columns: `Wire ID · AWG · UL style · Color · End-A connector ref + position · End-A termination ·
 End-B termination · **Length Class** · Finished length · Label text (identical both ends) ·
 Twisted-pair partner · Notes`.
 
-> **Rev 2 adds a `Length Class` column.** Every lead belongs to one of four classes
+> **Rev 2 added a `Length Class` column; Rev 3 revises the class values.** Every lead belongs to one of four classes
 > (**L0 / L1 / L2 / L3**). If we revise lengths again, only the class values change — the
 > per-lead assignments stay put. Please structure your quote so a class-length change is a
 > price delta, not a re-quote.
@@ -70,14 +76,14 @@ Summary for scoping:
 
 | Group | Connector (controller end) | Leads | AWG | Length class | Length |
 |---|---|---|---|---|---|
-| Fast field inputs — cams | J3 — Phoenix MC 1,5/10-ST-3,5 | 5 (positions 1–5; all capped) | 22 | **L3** | 4.0 m |
-| Fast field inputs — DIELL | J3 (positions 7–10; **6 empty**) | 4 | 22 | **L2** | 3.0 m |
-| Slow inputs A | J4 — MC 1,5/14-ST-3,5 | 13 (positions 1–11, 13, 14; **12 empty**) | 22 | **L1** | 2.5 m |
-| Slow inputs B | J5 — MC 1,5/12-ST-3,5 | 4 (positions 1, 2, 3, 12; **4–11 empty**) | 22 | **L1** | 2.5 m (FOUL lead 2.3 m) |
-| Lamp outputs | J13 — MC 1,5/ 6-ST-3,5 | 6 | 22 | **L3** | 4.0 m (see §9) |
-| Safety loop | J14 — MC 1,5/ 4-ST-3,5 | 2 + 1 internal jumper | 18 | **L1** | 2.5 m (jumper 120 mm) |
+| Fast field inputs — cams | J3 — Phoenix MC 1,5/10-ST-3,5 | 5 (positions 1–5; all capped) | 22 | **L3** | 4.7 m |
+| Fast field inputs — DIELL | J3 (positions 7–10; **6 empty**) | 4 | 22 | **L2** | 3.7 m |
+| Slow inputs A | J4 — MC 1,5/14-ST-3,5 | 13 (positions 1–11, 13, 14; **12 empty**) | 22 | **L1** | 3.2 m |
+| Slow inputs B | J5 — MC 1,5/12-ST-3,5 | 4 (positions 1, 2, 3, 12; **4–11 empty**) | 22 | **L1** | 3.2 m (FOUL lead 3.0 m) |
+| Lamp outputs | J13 — MC 1,5/ 6-ST-3,5 | 6 | 22 | **L3** | 4.7 m (see §9) |
+| Safety loop | J14 — MC 1,5/ 4-ST-3,5 | 2 + 1 internal jumper | 18 | **L1** | 3.2 m (jumper 120 mm) |
 | Power in | none — ferruled loose leads | 3 | 18 | **L0** | 0.8 m |
-| Machine outputs | none — ferruled loose leads | 12 | 18 | **L1** | 2.5 m |
+| Machine outputs | none — ferruled loose leads | 12 | 18 | **L1** | 3.2 m |
 | **Total** | | **~49 leads** | | | |
 
 **Length class definitions:** **L0** = stays inside the enclosure · **L1** = enclosure to the
@@ -194,7 +200,7 @@ crack the plug body. Use a calibrated driver.
 
 ## 9. Lengths — build long, we trim on site
 
-**Rev 2 lengths are deliberately generous.** The final enclosure-to-machine routing is not yet
+**Rev 3 lengths are measured-plus-margin.** The enclosure-to-machine run is **6 ft (1829 mm)**, measured. Each L1 lead must also cross the in-enclosure route (~750–950 mm on the far board) plus ~300 mm service slack and drip loop, which is how 3200 mm is derived. Per-lane siting is not yet
 surveyed at every lane pair, so all four classes are sized so that **no lead can come up short**.
 We will trim on site. Build to the wire list; do not optimize lengths down.
 
@@ -206,7 +212,7 @@ We will trim on site. Build to the wire list; do not optimize lengths down.
 > **State which you will do.** The controller-end marker is unaffected.
 > (Correct labeling is priority #1 in §0 — a trimmed-off marker defeats the whole spec.)
 
-Please quote: **(a)** at the Rev 2 lengths as written, and **(b)** the per-assembly cost delta
+Please quote: **(a)** at the Rev 3 lengths as written, and **(b)** the per-assembly cost delta
 per **±0.5 m on class L1** (30 leads), so we can price the classes down once the site survey is
 complete without re-quoting.
 
@@ -259,7 +265,7 @@ carton per 6–8 assemblies with a packing list.
 
 ## 15. Attachments provided with this RFQ
 
-1. `WSL-LANE-HARNESS-A_wirelist_rev2.csv` — the 49-row from-to wire list with label text and
+1. `WSL-LANE-HARNESS-A_wirelist_rev3.csv` — the 49-row from-to wire list with label text and
    length classes. **This is the controlling document. Where it and this RFQ disagree, the CSV wins.**
 2. `phase8_revD_harness_bom.csv` — plug + coding-profile part identities and the band-marking scheme
 3. Phoenix Contact datasheets for the five Tier-1 plugs and the CP-MSTB coding profile
