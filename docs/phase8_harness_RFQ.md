@@ -1,9 +1,17 @@
 # RFQ — Custom Wire Harness Assembly (Lane Controller Field Harness)
 
 **Westside Lanes · Olympia, WA** · Issued 2026-07-25 · Contact: Dylan DeYoung
-**Assembly:** WSL-LANE-HARNESS-A · Rev 1
+**Assembly:** WSL-LANE-HARNESS-A · **Rev 2**
 **Quantity:** 1 first article → 2 pilot → balance to **34 total** (32 lanes + 2 spares).
 Option pricing requested at 48 and 64.
+
+> **Rev 2 changes vs Rev 1** (quote against Rev 2 only):
+> ① **All lead lengths increased** — Rev 1 budgeted the machine run but not the
+> in-enclosure route (§3, §9). ② **J14 ferrules corrected to bare/uninsulated** — an
+> insulated 0.75 mm² collar fouls the adjacent pole at 3.5 mm pitch (§5).
+> ③ **Terminal torque now specified** (§5). ④ **Strip length corrected 8 mm → 7 mm** (§5).
+> ⑤ **Coding profiles added** to Tier 1 (§4). ⑥ **1840489 is customer-free-issued** (§4).
+> ⑦ Two questions we previously asked you are now answered by us (§Questions).
 
 ---
 
@@ -48,35 +56,61 @@ ends should instead ship un-stripped, say so.
 
 ## 3. Wire list
 
-**Attached as a separate CSV** (`WSL-LANE-HARNESS-A_wirelist_rev1.csv`), one row per lead, with
+**Attached as a separate CSV** (`WSL-LANE-HARNESS-A_wirelist_rev2.csv`), one row per lead, with
 columns: `Wire ID · AWG · UL style · Color · End-A connector ref + position · End-A termination ·
-End-B termination · Finished length · Label text (identical both ends) · Twisted-pair partner ·
-Notes`.
+End-B termination · **Length Class** · Finished length · Label text (identical both ends) ·
+Twisted-pair partner · Notes`.
+
+> **Rev 2 adds a `Length Class` column.** Every lead belongs to one of four classes
+> (**L0 / L1 / L2 / L3**). If we revise lengths again, only the class values change — the
+> per-lead assignments stay put. Please structure your quote so a class-length change is a
+> price delta, not a re-quote.
 
 Summary for scoping:
 
 | Group | Connector (controller end) | Leads | AWG | Length |
 |---|---|---|---|---|
-| Fast field inputs | J3 — Phoenix MC 1,5/10-ST-3,5 | 9 (positions 1–5, 7–10; **6 empty**) | 22 | 1.2 m, DIELL leads 1.5 m |
-| Slow inputs A | J4 — MC 1,5/14-ST-3,5 | 13 (positions 1–11, 13, 14; **12 empty**) | 22 | 1.2 m |
-| Slow inputs B | J5 — MC 1,5/12-ST-3,5 | 4 (positions 1, 2, 3, 12; **4–11 empty**) | 22 | 1.2 m (FOUL lead 1.0 m) |
-| Lamp outputs | J13 — MC 1,5/ 6-ST-3,5 | 6 | 22 | **2.5 m** (see §9 note) |
-| Safety loop | J14 — MC 1,5/ 4-ST-3,5 | 2 + 1 internal jumper | 18 | 1.2 m |
-| Power in | none — ferruled loose leads | 3 | 18 | 0.5 m |
-| Machine outputs | none — ferruled loose leads | 12 | 18 | 1.2 m |
-| **Total** | | **~49 leads** | | |
+| Group | Connector (controller end) | Leads | AWG | Length class | Length |
+| Fast field inputs — cams | J3 — Phoenix MC 1,5/10-ST-3,5 | 5 (positions 1–5; all capped) | 22 | **L3** | 4.0 m |
+| Fast field inputs — DIELL | J3 (positions 7–10; **6 empty**) | 4 | 22 | **L2** | 3.0 m |
+| Slow inputs A | J4 — MC 1,5/14-ST-3,5 | 13 (positions 1–11, 13, 14; **12 empty**) | 22 | **L1** | 2.5 m |
+| Slow inputs B | J5 — MC 1,5/12-ST-3,5 | 4 (positions 1, 2, 3, 12; **4–11 empty**) | 22 | **L1** | 2.5 m (FOUL lead 2.3 m) |
+| Lamp outputs | J13 — MC 1,5/ 6-ST-3,5 | 6 | 22 | **L3** | 4.0 m (see §9) |
+| Safety loop | J14 — MC 1,5/ 4-ST-3,5 | 2 + 1 internal jumper | 18 | **L1** | 2.5 m (jumper 120 mm) |
+| Power in | none — ferruled loose leads | 3 | 18 | **L0** | 0.8 m |
+| Machine outputs | none — ferruled loose leads | 12 | 18 | **L1** | 2.5 m |
+| **Total** | | **~49 leads** | | | |
+
+**Length class definitions:** **L0** = stays inside the enclosure · **L1** = enclosure to the
+machine connector · **L2** = enclosure to the photoelectric sensors · **L3** = enclosure to the
+overhead lamp unit / far mechanism.
 
 ## 4. BOM
 
 ### Tier 1 — NO SUBSTITUTIONS (form/fit/function critical)
 
-| Item | Manufacturer | Part number | Qty/assy |
-|---|---|---|---|
-| Plug, 10-pos, 3.5 mm | Phoenix Contact | **1840447** (MC 1,5/10-ST-3,5) | 1 |
-| Plug, 14-pos, 3.5 mm | Phoenix Contact | **1840489** (MC 1,5/14-ST-3,5) | 1 |
-| Plug, 12-pos, 3.5 mm | Phoenix Contact | **1840463** (MC 1,5/12-ST-3,5) | 1 |
-| Plug, 6-pos, 3.5 mm | Phoenix Contact | **1840405** (MC 1,5/ 6-ST-3,5) | 1 |
-| Plug, 4-pos, 3.5 mm | Phoenix Contact | **1840382** (MC 1,5/ 4-ST-3,5) | 1 |
+| Item | Manufacturer | Part number | Qty/assy | Source |
+|---|---|---|---|---|
+| Plug, 10-pos, 3.5 mm | Phoenix Contact | **1840447** (MC 1,5/10-ST-3,5) | 1 | you |
+| Plug, 14-pos, 3.5 mm | Phoenix Contact | **1840489** (MC 1,5/14-ST-3,5) | 1 | ⚠️ **CUSTOMER FREE-ISSUE** |
+| Plug, 12-pos, 3.5 mm | Phoenix Contact | **1840463** (MC 1,5/12-ST-3,5) | 1 | you |
+| Plug, 6-pos, 3.5 mm | Phoenix Contact | **1840405** (MC 1,5/ 6-ST-3,5) | 1 | you |
+| Plug, 4-pos, 3.5 mm | Phoenix Contact | **1840382** (MC 1,5/ 4-ST-3,5) | 1 | you |
+| **Coding profile** | Phoenix Contact | **1734634** (CP-MSTB) | **2** | you |
+
+> **⚠️ 1840489 is FREE-ISSUED — do not source it.** It is discontinued and the authorized
+> distribution channel is dry. We are making a lifetime buy and will ship it to you with the PO.
+> Tell us your required buffer quantity. **Pre-approved fallback** if our stock runs short:
+> **Phoenix FMC 1,5/14-ST-3,5** (push-in rather than screw; mates the identical MCV 1,5-G header,
+> no other change). Use it only if we authorize in writing.
+
+> **Coding profiles (new in Rev 2) — install 2 per assembly:** **J3 at pole 1** and **J13 at
+> pole 1**. Profiles fit the **PLUG**, never a header. This is not cosmetic: the board has two
+> pairs of *identical* connectors (J3/J15 both 10-pos, J13/J16 both 6-pos). An uncoded plug
+> mates either one. A J13 lamp plug pushed into J16 lands LEDs across 5 V and wedges the I²C bus.
+> Also apply the **WHITE identification band** per the marking scheme in the attached harness BOM.
+> **Prove the coding operation on a sacrificial plug before coding production parts** — profile
+> installation is not reversible.
 
 ### Tier 2 — functional equivalents acceptable (tell us what you'd use)
 
@@ -86,19 +120,31 @@ bags.
 
 **Wire colors are functionally meaningful — do not substitute colors.** See §6.
 
-## 5. Ferrule specification — and one DFM question we need your answer on
+## 5. Ferrule, strip, and torque specification
 
-- 22 AWG leads → **0.34 mm²** insulated ferrule, 8 mm barrel.
-- 18 AWG leads → **0.75 mm²** insulated ferrule, 8 mm barrel.
+**Strip length is 7 mm on every landed end.** *(Rev 1 said an 8 mm ferrule barrel — that was
+wrong; 7 mm is the Phoenix MC 1,5 figure.)*
+
+| Leads | Lands in | Pitch | Ferrule |
+|---|---|---|---|
+| 22 AWG → J3, J4, J5, J13 | MC 1,5-ST-3,5 plugs | 3.5 mm | **0.34 mm² INSULATED**, 7 mm |
+| 18 AWG → **J14 only** (JMP1, W33, W34) | MC 1,5/4-ST-3,5 | **3.5 mm** | ⚠️ **BARE STRANDED, or 0.75–1.0 mm² UNINSULATED**, 7 mm |
+| 18 AWG → loose leads for J2 / J6–J11 | MKDS 1,5 blocks | 5.08 mm | **0.75 mm² INSULATED**, 7 mm |
+
+> **⚠️ Why J14 is different — this is the one place Rev 1 was wrong.** The Phoenix MC 1,5 series
+> is rated 0.14–1.5 mm² **bare or with an uninsulated ferrule, but only 0.5 mm² maximum with an
+> insulated ferrule.** A 0.75 mm² insulated collar is roughly 4.0 mm across, against a 3.5 mm
+> pole pitch — and all four J14 poles are populated, so adjacent collars physically interfere.
+> **Do not fit insulated ferrules on any J14 lead.** The 0.75 mm² insulated ferrules on the
+> loose J2/J6–J11 leads are correct and must stay: those blocks are 5.08 mm pitch, rated to
+> 1.5 mm². Please do not "standardize" the three J14 leads to match them.
+
+**Terminal screw torque: 0.22–0.25 N·m** (M2 screw). This is roughly **36 landed screws per
+assembly**. Do not use ~0.5 N·m — it is more than 2× the rating and will strip the screw or
+crack the plug body. Use a calibrated driver.
+
 - Phoenix AI-series or Weidmüller H-series preferred; equivalents acceptable.
 - Crimp to the ferrule manufacturer's die spec; **every ferruled joint must pass a pull test.**
-
-> **DFM QUESTION (please answer in your quote):** the Phoenix MC 1,5 series at 3.5 mm pitch is
-> rated 0.14–1.5 mm². We have hand-built one unit successfully using **insulated** ferrules at
-> both sizes above, but we want your judgment on whether the insulated collar's outer diameter
-> is within the clamping range at 0.75 mm² in a 3.5 mm-pitch terminal, or whether you would
-> recommend **uninsulated** ferrules (or bare stranded) on the 18 AWG leads. We will accept
-> your recommendation — please state it explicitly rather than silently substituting.
 
 ## 6. Wire colors (functional, not cosmetic)
 
@@ -147,11 +193,23 @@ bags.
    the controller end** — they ship ferruled and labeled, loose, to be landed in screw terminals
    at install. Bundle and tie them per group.
 
-## 9. Length note requiring your input
+## 9. Lengths — build long, we trim on site
 
-The six **J13 lamp leads are specified at 2.5 m** as a planning figure; the true run is
-site-measured per lane and may vary 2–3 m. Please quote (a) at a fixed 2.5 m, and (b) tell us
-the cost delta to build those six leads at 3.0 m so we can standardize long and trim on site.
+**Rev 2 lengths are deliberately generous.** The final enclosure-to-machine routing is not yet
+surveyed at every lane pair, so all four classes are sized so that **no lead can come up short**.
+We will trim on site. Build to the wire list; do not optimize lengths down.
+
+> **⚠️ Marker placement requirement (new in Rev 2, and it affects your process).** Because we
+> trim the machine end in the field, a marker printed at the very end of the lead gets cut off.
+> On every **L1 / L2 / L3** lead, either:
+> **(a)** position the machine-end marker **150 mm back from the cut end**, or
+> **(b)** ship the machine-end markers loose, un-shrunk, in a labeled bag per assembly.
+> **State which you will do.** The controller-end marker is unaffected.
+> (Correct labeling is priority #1 in §0 — a trimmed-off marker defeats the whole spec.)
+
+Please quote: **(a)** at the Rev 2 lengths as written, and **(b)** the per-assembly cost delta
+per **±0.5 m on class L1** (30 leads), so we can price the classes down once the site survey is
+complete without re-quoting.
 
 ## 10. Test and workmanship
 
@@ -202,22 +260,35 @@ carton per 6–8 assemblies with a packing list.
 
 ## 15. Attachments provided with this RFQ
 
-1. `WSL-LANE-HARNESS-A_wirelist_rev1.csv` — the 49-row from-to wire list with label text
-2. `WSL-LANE-HARNESS-A_layout_rev1.pdf` — 2D flat layout, dimensioned, with breakout points
-3. Photographs of the hand-built prototype (unit 000) as a golden-sample reference
-4. Phoenix Contact datasheets for the five Tier-1 plugs
+1. `WSL-LANE-HARNESS-A_wirelist_rev2.csv` — the 49-row from-to wire list with label text and
+   length classes. **This is the controlling document. Where it and this RFQ disagree, the CSV wins.**
+2. `phase8_revD_harness_bom.csv` — plug + coding-profile part identities and the band-marking scheme
+3. Phoenix Contact datasheets for the five Tier-1 plugs and the CP-MSTB coding profile
 
-> **On attachment 3:** we have hand-built and installed one working unit. It is available as a
-> reference sample on request and we recommend you ask for it — it collapses most ambiguity in
-> this document and should reduce your risk premium.
+> **Not attached, and deliberately so:** Rev 1 referenced a dimensioned 2D layout PDF and a
+> golden-sample photo set. **Neither exists** — the prototype unit has not been built. Both
+> references are withdrawn rather than left dangling. If a flat layout drawing would materially
+> reduce your quote, say so and we will produce one.
+
+> **Plug-body labels:** the J14 plug body carries `J14 SAFE LOOP - SHORT 1-2` (text is in the
+> wire list). The other four plug bodies need identification text we have **not** yet specified —
+> quote plug-body labeling as a **separate line item** and we will supply the text on PO.
 
 ---
 
 ## Questions we specifically want answered in your quote
 
-1. The §5 ferrule DFM question (insulated vs uninsulated at 0.75 mm² in a 3.5 mm-pitch terminal).
-2. Your maximum legible characters per heat-shrink marker (§7).
-3. The §9 length delta.
-4. Whether you would build the machine ends stripped, un-stripped, or ferruled (§2).
+1. Your maximum legible characters per heat-shrink marker (§7).
+2. The §9 length delta (per ±0.5 m on class L1), and **which marker-placement option you will
+   use** — set back 150 mm, or shipped loose and un-shrunk.
+3. Your required **buffer quantity** for the free-issued 1840489 (§4).
+4. Confirmation that you can install **CP-MSTB coding profiles** (§4), and whether you would
+   rather we ship the plugs pre-coded.
 5. Anything in this package that is over-specified and costing us money for no benefit. We would
    rather hear that than pay for it.
+
+> **Two Rev-1 questions are now answered by us — no response needed:**
+> **Ferrules (old Q1):** resolved in §5. J14 takes bare or uninsulated; everything else is as
+> tabulated. Do not substitute.
+> **Machine-end preparation (old Q4):** build them **stripped 10 mm as specified.** The machine
+> end is crimped into a contact on our side, so stripped is correct.
