@@ -36,7 +36,53 @@ Spares recommended at ~10% (called out per line where it matters).
 > underside (copper isolation gutters), and nothing conductive within **3 mm of the bottom edge**
 > (rev-D SLOW_AUX11 copper runs to 1.28 mm from it).
 
+## A′ · Board-side connectors — HAND-SOLDER, NOT SUPPLIED BY JLC ⚠️
+
+> **These are the parts that go ON the board, not the plugs that mate with it (§B).**
+> JLC's PCBA excludes every `J*` designator as hand-solder — the upload BOM contains **zero**
+> J refdes — so the PCBA PO physically cannot supply them. Until this section existed they were
+> on **no** purchase list and 34 boards would have arrived with no connectors.
+> Source of truth: `kicad/fab_revD_2026-07-25_r7/assembly/wsl-phase8b-revD-hand-solder-bom.csv`.
+
+| # | Ref | Phoenix / MFR PN | Description | Per board | ×34 boards (+~10%) |
+|---|---|---|---|---|---|
+| A9 | J2 | **1715734** | MKDS 1,5/3-5,08 · 3-pos fixed screw block, **5.08 mm** | 1 | **38** |
+| A10 | J6–J11 | **1715721** | MKDS 1,5/2-5,08 · 2-pos fixed screw block, **5.08 mm** | **6** | **224** |
+| A11 | J3, J15 | **1843680** | MCV 1,5/10-G-3,5 · 10-pos vertical header, **3.5 mm** | 2 | **72** |
+| A12 | J4 | **1843729** | MCV 1,5/14-G-3,5 · 14-pos vertical header, **3.5 mm** | 1 | **38** |
+| A13 | J5 | **1843703** | MCV 1,5/12-G-3,5 · 12-pos vertical header, **3.5 mm** | 1 | **38** |
+| A14 | J13, J16 | **1843648** | MCV 1,5/6-G-3,5 · 6-pos vertical header, **3.5 mm** | 2 | **72** |
+| A15 | J14 | **1843622** | MCV 1,5/4-G-3,5 · 4-pos vertical header, **3.5 mm** | 1 | **38** |
+| A16 | J1 | CNC Tech **3020-20-0100-00** | 2×10 IDC/box header, 2.54 mm | 1 | **38 — ⛔ HOLD** |
+
+**A10 is 6 blocks, not 7 — J12 (M1) is DNP.** Do not install a 7th.
+
+⚠️ **A16 (J1) is ON HOLD.** The hand-solder BOM marks it *"Candidate — verify body/keying."*
+Check shroud, key slot and pin-1 orientation against the KiCad footprint before ordering
+(this is verify-before-ordering item 4).
+
+⚠️ **PITCH TRAP:** every MKDS here is **5.08 mm**, every MCV is **3.5 mm**. Refuse any
+3.81 mm substitution — it will not fit the board.
+
+⏱ **ORDER THESE FIRST.** `docs/cowork_cart_handoff.md` records **1843680** (J3+J15) and
+**1843703** (J5) as *backordered at DigiKey at qty 5*; the fleet needs 72 and 38. Buy the whole
+Phoenix family — A9–A15 plus §B6/B7 plus the 1840489 lifetime buy — in **one PO, today**.
+Phoenix lead times have historically swung 8–20 weeks and this family gates the entire build.
+
+➕ **Spare MCV headers matter more than the usual 10%:** FA-8 requires an *irreversible* coding-rib
+cut on 4 headers per board — **136 cuts fleet-wide** — with no sacrificial stock budgeted today.
+
 ## B · Board field plugs (mating halves — one set per board)
+
+> ⚠️ **DECISION OPEN — B1–B5 may be a double-buy.** `docs/phase8_harness_RFQ.md` §2/§4 Tier 1
+> has the harness vendor supply these five plugs **already fitted** to the assembly (185 plugs
+> incl. §12 spares). Ordering B1–B5 here adds **180 more** against a 160-plug installed need.
+> Decide free-issue vs vendor-sourced, then annotate; do not order both.
+> Also note: **loose, uncoded plugs are a universal key** — an uncoded J13 lamp plug mates J16
+> and lands resistorless LEDs across 5 V while wedging I²C. Any spare stock kept must be
+> CP-MSTB 1734634 coded and band-marked per `docs/phase8_revD_harness_bom.csv` before use.
+> **B6/B7 are unaffected** — the RFQ correctly excludes J15/J16.
+> *(Pre-order audit finding H2.)*
 
 | # | Connector | Phoenix PN | Poles | Per lane | Per pair | ×32 house |
 |---|---|---|---|---|---|---|

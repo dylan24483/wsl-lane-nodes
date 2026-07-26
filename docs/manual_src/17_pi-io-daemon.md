@@ -69,7 +69,7 @@ MachineIO(lane_id, bus_id, *, watchdog_kick=None, arm_relays=None,
 | `enable_pin_lamps` | If `True`, also open OUT-B (0x23) for the optional physical pin mask. Default `False` — the camera supplies pin state in the baseline. |
 | `rp2040` | An `RP2040Link` (or `None`). When present, `MachineIO` contains the default-off/unvalidated SC/TB software model and sends `RUN`/`STOP`. Lane 21/22 has no independent TB lead, so the echo is not a field guard or credited diagnostic. |
 
-The constructor imports `smbus2` (falling back to `smbus`) **lazily** so the module — and the `RecordingIO` test path — load on any machine without I²C hardware. It then configures the MCPs (all-inputs for IN-A/IN-B with **internal pulls off**, all-outputs for OUT-A) and logs the bus + addresses. On Rev-D/R5, the external 47 kΩ `Rpu_*` network is the sole input bias.
+The constructor imports `smbus2` (falling back to `smbus`) **lazily** so the module — and the `RecordingIO` test path — load on any machine without I²C hardware. It then configures the MCPs (all-inputs for IN-A/IN-B with **internal pulls off**, all-outputs for OUT-A) and logs the bus + addresses. On Rev-D, the external 47 kΩ `Rpu_*` network is the sole input bias.
 
 > **Pi-only dependency:** `MachineIO` needs `smbus2` (or `smbus`) on the Pi for the MCP23017s. The library import is deferred to construction time, not module import time.
 
@@ -84,7 +84,7 @@ Each board carries three MCP23017 I²C I/O expanders (part **MCP23017-E/SO**, LC
 | `ADDR_OUT_A` | **0x22** | 7 relay drives + 4 status-lamp drives | `0x00` / `0x00` (all outputs) | — | Yes |
 | `ADDR_OUT_B` | **0x23** | Optional physical pin lamps + neon | `0x00` / `0x00` (all outputs) | — | **No** (only opened if `enable_pin_lamps=True`) |
 
-In the MCP23017 IODIR convention used here, **`1` = input, `0` = output**. IN-A and IN-B are therefore `0xFF` on both ports (all inputs), while OUT-A is `0x00` (all outputs). Historical Rev-B software enabled input GPPU, but current Rev-D/R5 commands and reads back **`GPPUA=GPPUB=0x00`** on U1/U2; any mismatch is STOP-SHIP because it invalidates the external-47 kΩ qualification and can mask an open `Rpu_*`. The expander A2/A1/A0 address-strap wiring that produces these addresses lives in the netlist `block_mcp()` calls — `MCP_IN_A` straps `(0,0,0)`→0x20, `MCP_IN_B` straps `(1,0,0)`→0x21, `MCP_OUT_A` straps `(0,1,0)`→0x22 (see Section 7).
+In the MCP23017 IODIR convention used here, **`1` = input, `0` = output**. IN-A and IN-B are therefore `0xFF` on both ports (all inputs), while OUT-A is `0x00` (all outputs). Historical Rev-B software enabled input GPPU, but current Rev-D commands and reads back **`GPPUA=GPPUB=0x00`** on U1/U2; any mismatch is STOP-SHIP because it invalidates the external-47 kΩ qualification and can mask an open `Rpu_*`. The expander A2/A1/A0 address-strap wiring that produces these addresses lives in the netlist `block_mcp()` calls — `MCP_IN_A` straps `(0,0,0)`→0x20, `MCP_IN_B` straps `(1,0,0)`→0x21, `MCP_OUT_A` straps `(0,1,0)`→0x22 (see Section 7).
 
 > **3.3 V, not 5 V.** All three MCP23017s and every opto logic-side pull-up run on the **3.3 V** rail (`VCC_3V3`, the Pico's 3V3 output), specifically so the I²C bus and all logic highs stay Pi-safe (Section 6 — *Rev-B Power Architecture*). Do not move them to 5 V.
 

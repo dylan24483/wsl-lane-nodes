@@ -10,10 +10,10 @@
 
 ### 23.A Appendix A — Full Bill of Materials (rev-B controller board, one lane)
 
-> **HISTORICAL REV-B BOM — NOT A REV-D ORDER SOURCE.** Current Rev-D/R5 uses
+> **HISTORICAL REV-B BOM — NOT A REV-D ORDER SOURCE.** Current Rev-D/r7 uses
 > exactly forty 47 kΩ `Rpu_*` refs (`R4,R6,…,R82`), UNI-ROYAL
 > `0805W8F4702T5E` / LCSC C17713. Unrelated 10 kΩ networks remain unchanged.
-> Use `kicad/fab_revD_2026-07-23_r5/manifest.json` and its package README for
+> Use `kicad/fab_revD_2026-07-25_r7/manifest.json` and its package README for
 > current fabrication data; the Rev-D board remains NO-GO for ordering pending
 > the recorded physical release gates.
 
@@ -57,7 +57,7 @@ Reproduced verbatim from `assembly/wsl-phase8b-revB-jlc-standard-pcba-bom.csv`. 
 | AO3401A P-channel MOSFET, SOT-23 | Q14 | SOT-23 | 1 | **C347476** | AO3401A | UMW | Extended | Relay-enable-rail pass element (`Q_RAIL`). |
 | 4.7k 1% 1/8W 0805 | R1, R2 | R_0805_2012Metric | 2 | **C17673** | 0805W8F4701T5E | UNI-ROYAL | Basic | I²C SDA/SCL pull-ups (`R_I2C_SDA`, `R_I2C_SCL`). |
 | 2.2k 1% 1/8W 0805 | R3, R5, R7 … R65 (32 refs) | R_0805_2012Metric | 32 | **C17520** | 0805W8F2201T5E | UNI-ROYAL | Basic | Opto-LED series resistors `Rin_*` (one per of the 32 input channels). |
-| 10k 1% 1/8W 0805 | R4, R6, R8 … R66, R101–R109 odd (37 refs) | R_0805_2012Metric | 37 | **C17414** | 0805W8F1002T5E | UNI-ROYAL | Basic | **Historical Rev-B:** 32 opto logic-side `Rpu_*` refs plus five unrelated watchdog/AND-gate resistors. Rev-D/R5 changes only `Rpu_*` to 47 kΩ. |
+| 10k 1% 1/8W 0805 | R4, R6, R8 … R66, R101–R109 odd (37 refs) | R_0805_2012Metric | 37 | **C17414** | 0805W8F1002T5E | UNI-ROYAL | Basic | **Historical Rev-B:** 32 opto logic-side `Rpu_*` refs plus five unrelated watchdog/AND-gate resistors. Rev-D changes only `Rpu_*` to 47 kΩ. |
 | 1k 1% 1/8W 0805 | R67, R70, R73 … R104 (12 refs) | R_0805_2012Metric | 12 | **C17513** | 0805W8F1001T5E | UNI-ROYAL | Basic | Relay base resistors `Rb_*` + LED gate resistors `Rgled_*` + watchdog gate resistors. |
 | 100k 1% 1/8W 0805 | R68, R71, R74 … R110 (14 refs) | R_0805_2012Metric | 14 | **C149504** | 0805W8F1003T5E | UNI-ROYAL | Basic | Drive/gate pulldowns `Rpd_*`, `Rpdled_*`, rail-gate + watchdog timing/pulldowns (fail-safe-off). |
 | 330R 1% 1/8W 0805 | R90, R93, R96, R99 | R_0805_2012Metric | 4 | **C17630** | 0805W8F3300T5E | UNI-ROYAL | Basic | Status-LED current-limit `Rled_*`. **Value provisional** — see 23.A.5 note. |
@@ -317,7 +317,7 @@ This maps every source document, script, runbook, and key artifact to what it au
 | `docs/phase8b_pcb_revB_netclass_creepage.md` | The routing contract: 5 net classes, 4-layer stack, domain rooms, plane keepouts, creepage/clearance policy (conservative 250 VAC; relaxable to 24 VAC). |
 | `docs/phase8b_revB_netclass_inventory.md` | All 184 nets mapped to domains; 0 unknown nets. |
 | `docs/phase8b_revB_route_pass1_findings.md` | Routing status + **every Claude/Codex audit verdict** + the FreeRouting-rejection log + the false-green netclass catch. |
-| `docs/phase8b_revB_fab_order_checklist.md` | The bare-PCB order checklist (Gerber preview vs review PDF, etc.). |
+| `docs/phase8b_revB_fab_order_checklist.md` | ⛔ **HISTORICAL REV-B/C ONLY — NOT AN ORDER SOURCE.** Points at `kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/`, which builds a **rev-C** board. For rev-D use `kicad/fab_revD_2026-07-25_r7/` + `docs/phase8_revD_readiness_checklist.md`. |
 | `docs/phase8b_revB_pcba_parts_worklist.md` | PCBA parts work tracking. |
 | `docs/phase8_channel_allocation.md` | ⚠️ **GPIO column is STALE** (says GP0–GP7). Useful for channel *intent*, but for GPIO numbers use `config.h` (GP6–GP13). |
 

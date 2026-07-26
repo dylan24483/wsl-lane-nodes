@@ -81,7 +81,8 @@
 >   channel** to pass loaded-minimum FIELD_WET, ≥70 °C V_CE/capability,
 >   idle-leakage, and ≤100 µs edge measurements before fleet release.
 > - Current immutable output:
->   **`kicad/fab_revD_2026-07-23_r5/`**. It contains the dedicated 47 kΩ
+>   **`kicad/fab_revD_2026-07-25_r7/`** *(was `_r5/` when this line was written;
+>   corrected 2026-07-25 — `_r5/` has bare opto inputs, never upload it)*. It contains the dedicated 47 kΩ
 >   UNI-ROYAL `0805W8F4702T5E` / LCSC C17713 BOM line, the binding pull-zero
 >   runtime gate, and production firmware identity build
 >   `rel-0c746b5747143b8011b01d43`, cfg `05d808411db4bb0d`, UF2 SHA-256

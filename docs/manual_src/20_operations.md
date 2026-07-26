@@ -405,7 +405,7 @@ GP0-GP7) — **ignore it**; the as-built board uses **GP6..GP13**.
 
 Electrical sense (from `opto_input()`): every fast input is opto-isolated and
 **active-low at the Pico** — machine contact closed pulls the GPIO LOW; idle is HIGH
-through external `Rpu_*` to 3V3 (Rev-B 10 kΩ; current Rev-D/R5 **47 kΩ**).
+through external `Rpu_*` to 3V3 (Rev-B 10 kΩ; current Rev-D **47 kΩ**).
 Current firmware disables GP6–GP13 internal pulls. `RP2040_OK`/GP2 drives an NPN
 in the relay-enable AND chain; a 100 k base pull-down makes the rail
 **fail-safe-dead** whenever GP2 is Hi-Z (unpowered / in reset / pre-init). Current
@@ -480,7 +480,7 @@ lamps are not motors and are not forwarded.
 #### 20.6.5 Historical Rev-B JLCPCB Standard-PCBA order
 
 > **HISTORICAL REV-B ONLY — DO NOT ORDER FROM THIS SECTION.** The current
-> Rev-D/R5 immutable package is `kicad/fab_revD_2026-07-23_r5/`, with forty
+> Rev-D/r7 immutable package is `kicad/fab_revD_2026-07-25_r7/`, with forty
 > 47 kΩ `Rpu_*` parts and the binding internal-pulls-off runtime gate. The
 > Rev-D board is **NO-GO and not authorized for upload or purchase** until the
 > recorded sign-offs, JLC preview, first-article, FA-9, powered, and bench gates
@@ -535,7 +535,7 @@ boards arrived (§ 20.6.6).
   (J12/K7/Q7 + M1 support passives) is **not populated**.
 
 **Historical Rev-B locked JLC part map** (the as-built `02_…_BOM_JLC.csv`; this
-is authoritative only for Rev-B and must not be used for a Rev-D/R5 order):
+is authoritative only for Rev-B and must not be used for a Rev-D order):
 
 | Comment (value) | Qty | Designators | LCSC # | MFR part | Footprint |
 |---|---:|---|---|---|---|
@@ -552,7 +552,7 @@ is authoritative only for Rev-B and must not be used for a Rev-D/R5 order):
 | AO3401A P-ch MOSFET | 1 | Q14 | C347476 | AO3401A | SOT-23 |
 | 4.7k 1% 0805 | 2 | R1,R2 | C17673 | 0805W8F4701T5E | 0805 |
 | 2.2k 1% 0805 | 32 | R3..R65 (odd) | C17520 | 0805W8F2201T5E | 0805 |
-| 10k 1% 0805 | 37 | R4..R66 (even) + R101-R109 | C17414 | 0805W8F1002T5E | 0805 (historical Rev-B; its 32 `Rpu_*` refs are 47 kΩ in Rev-D/R5) |
+| 10k 1% 0805 | 37 | R4..R66 (even) + R101-R109 | C17414 | 0805W8F1002T5E | 0805 (historical Rev-B; its 32 `Rpu_*` refs are 47 kΩ in Rev-D) |
 | 1k 1% 0805 | 12 | R67..R104 (subset) | C17513 | 0805W8F1001T5E | 0805 |
 | 100k 1% 0805 | 14 | R68..R110 (subset) | C149504 | 0805W8F1003T5E | 0805 |
 | 330R 1% 0805 | 4 | R90,R93,R96,R99 | C17630 | 0805W8F3300T5E | 0805 |
@@ -702,6 +702,6 @@ procedure is `docs/phase_8a_infrastructure_plan.md`. The shape:
 | Stop auto-scoring now | `systemctl edit lane-node` → `WSL_LANE_SCORING_MODE=manual` → `restart`. No machine impact. |
 | Check the server is up | `curl http://<WSL-SRV>:8766/api/health`. |
 | Open the scoring display | `http://<WSL-SRV>:8766/display?lane=21` (and `?lane=22`). |
-| Verify the current fab package | Use the immutable `kicad/fab_revD_2026-07-23_r5/` manifest and README; do not regenerate or substitute a Rev-B package. |
-| Order the board | **NO-GO. Do not upload or purchase** until every current Rev-D release gate closes; then use only the approved R5 package and its recorded JLC preview. |
+| Verify the current fab package | Use the immutable `kicad/fab_revD_2026-07-25_r7/` manifest and README; do not regenerate or substitute a Rev-B or earlier Rev-D package. Every rev-D package before `_r6/` has **bare opto inputs**. |
+| Order the board | **NO-GO. Do not upload or purchase** until every current Rev-D release gate closes; then use only the approved **r7** package and its recorded JLC preview. |
 | Verify the on-board pin maps before trusting hardware | Run `controller_io.py` as a script (KiCad python not needed) — its `__main__` asserts `OUT_A_MAP`/`IN_A_MAP` match the netlist generator and fails on drift. |

@@ -279,7 +279,7 @@ Key isolation facts (verified against the routed board):
   LED → field pin`; the machine contact closes that pin to `FIELD_GND`. Optos are
   **active-low at the logic pin** (contact closed → opto pulls the GPIO/MCP pin
   LOW; idle HIGH via an external `Rpu_*` to 3V3). The historical Rev-B value was
-  10 kΩ; the current Rev-D/R5 value is **47 kΩ**, with RP2040 internal pulls
+  10 kΩ; the current Rev-D value is **47 kΩ**, with RP2040 internal pulls
   disabled and U1/U2 MCP23017 `GPPUA/GPPUB=0x00` commanded and read back.
   Firmware and `controller_io.py` both assume `INPUT_ACTIVE_LOW`.
   (`opto_input()`; `config.h` electrical-sense note.)

@@ -59,7 +59,7 @@ The eight grounded Pico pins tied to board `GND` (`block_rp2040()`): module pins
 Every fast input is **opto-isolated and active-LOW at the Pico.** From `opto_input()` in the generator and the header comment in `config.h`:
 
 - The field side of each PC817B LED is fed from the isolated **`FIELD_WET_V`** rail through a **2.2 kΩ** series resistor (`Rin_*`). The machine contact closes that channel's field pin to **`FIELD_GND`** at the harness, completing the LED loop.
-- When the machine contact is **closed (signal asserted)**, the opto transistor conducts and pulls the Pico GPIO **LOW**. Idle (contact open) = **HIGH**, held up by external `Rpu_*` to `VCC_3V3`: 10 kΩ on historical Rev-B and **47 kΩ on current Rev-D/R5**.
+- When the machine contact is **closed (signal asserted)**, the opto transistor conducts and pulls the Pico GPIO **LOW**. Idle (contact open) = **HIGH**, held up by external `Rpu_*` to `VCC_3V3`: 10 kΩ on historical Rev-B and **47 kΩ on current Rev-D**.
 - Current Rev-D production firmware keeps GP6–GP13 internal PUE/PDE disabled so the external 47 kΩ is authoritative. A missing `Rpu_*` must be detected as a board fault, not hidden by an internal pull.
 - So: **asserted = GPIO LOW, idle = GPIO HIGH.** The firmware constant for this is the implicit active-low handling in the debounce path; the Pi-side equivalent is `INPUT_ACTIVE_LOW = True` in `controller_io.py`.
 - The logic side runs at **3.3 V**, so both the Pico and the MCP23017 inputs are Pi-safe (no 5 V on any GPIO). This is the optocoupler's whole job here and it satisfies the hard project rule that **Pi/Pico GPIO is 3.3 V only.**
@@ -83,8 +83,8 @@ The board carries **three** MCP23017 16-bit I²C expanders in the baseline build
 
 | Ref | I²C addr | A2 A1 A0 strap | Role | Pins used / 16 | Direction (IODIR) |
 |---|---|---|---|---|---|
-| **IN-A** | `0x20` | 0 0 0 | Grippers GS1–10 + GP/OS/BS/PBZ/PBC/Foul | 16 / 16 (full) | All inputs (`IODIR=0xFF`); Rev-D/R5 internal `GPPU=0x00`, read back |
-| **IN-B** | `0x21` | **1** 0 0 | 10th-frame + manual switches + spares | 5 / 16 | All inputs (`IODIR=0xFF`); Rev-D/R5 internal `GPPU=0x00`, read back |
+| **IN-A** | `0x20` | 0 0 0 | Grippers GS1–10 + GP/OS/BS/PBZ/PBC/Foul | 16 / 16 (full) | All inputs (`IODIR=0xFF`); Rev-D internal `GPPU=0x00`, read back |
+| **IN-B** | `0x21` | **1** 0 0 | 10th-frame + manual switches + spares | 5 / 16 | All inputs (`IODIR=0xFF`); Rev-D internal `GPPU=0x00`, read back |
 | **OUT-A** | `0x22` | 0 **1** 0 | 7 relay coils + 4 status lamps | 11 / 16 | All outputs (`0x00`) |
 | **OUT-B** | `0x23` | (optional) | Physical pin-mask lamps + neon | OPTIONAL | All outputs — *omitted in baseline* |
 
@@ -123,7 +123,7 @@ This is exactly the `_pin_to_portbit()` helper in the `controller_io.py` self-te
 
 ### 12.4 MCP23017 IN-A bit map (I²C `0x20`) — slow inputs
 
-IN-A is **full** (all 16 pins used). It carries the ten gripper switches (the standing-pin mask) plus the gripper-protect, off-spot, bin-switch, two pushbuttons, and the foul signal. All sixteen channels are opto-isolated front-ends identical to the fast inputs ([§12.2.2](#1222-electrical-sense-of-the-fast-inputs-operating-theory)): **active-low at the MCP pin — switch closed pulls the pin LOW.** Current Rev-D/R5 `controller_io.py` reads them with the external 47 kΩ `Rpu_*` as the sole bias, commands `pullup_a=0x00, pullup_b=0x00`, verifies those GPPU bytes by readback, and inverts in software via `INPUT_ACTIVE_LOW = True`.
+IN-A is **full** (all 16 pins used). It carries the ten gripper switches (the standing-pin mask) plus the gripper-protect, off-spot, bin-switch, two pushbuttons, and the foul signal. All sixteen channels are opto-isolated front-ends identical to the fast inputs ([§12.2.2](#1222-electrical-sense-of-the-fast-inputs-operating-theory)): **active-low at the MCP pin — switch closed pulls the pin LOW.** Current Rev-D `controller_io.py` reads them with the external 47 kΩ `Rpu_*` as the sole bias, commands `pullup_a=0x00, pullup_b=0x00`, verifies those GPPU bytes by readback, and inverts in software via `INPUT_ACTIVE_LOW = True`.
 
 Source of truth: `IN_A_MAP` in `controller_io.py`, cross-checked against the `MCP_IN_A` entries of `SLOW_INPUT_PINS` in the generator.
 
@@ -169,7 +169,7 @@ Source of truth: `IN_A_MAP` in `controller_io.py`, cross-checked against the `MC
 
 IN-B's entire B-bank (GPB0–7) is free → expansion headroom. (VERIFY: `controller_io.py` defines no `IN_B_MAP` constant — the IN-B channel→pin assignment lives only in the generator's `SLOW_INPUT_PINS` and this doc. There is no software bit map to drift against yet, so the self-test does not cover IN-B.)
 
-> **Rev-D/R5 diagnostic reservation (supersedes the Rev-B free-bank statement for
+> **Rev-D diagnostic reservation (supersedes the Rev-B free-bank statement for
 > the new board):** GPB0–GPB7 become J15 AUX4–AUX11. These are capacity
 > reservations, not permission to land an unmeasured signal. For pilot lanes
 > 21/22, reserve AUX4 provisionally for an isolated `stop_request`, AUX5 for

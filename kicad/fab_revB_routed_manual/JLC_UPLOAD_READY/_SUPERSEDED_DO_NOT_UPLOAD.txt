@@ -1,0 +1,25 @@
+*** SUPERSEDED — DO NOT UPLOAD ***
+
+00_README_UPLOAD.txt in this directory is a step-by-step JLCPCB order procedure
+for a REV-C board. FOLLOWING IT ORDERS THE WRONG HARDWARE.
+
+Uploading anything from here builds a REV-C board:
+  - 250 x 225 mm (rev-D is 250 x 240 mm)
+  - NO AUX4-11 opto bank
+  - NO J15 / J16
+  - 10k PC817 collector pull-ups (rev-D is 47k)
+  - NO r6 per-channel input protection (no Dser_* series diode, no Dclamp_*)
+    -> landing PBZ (33 VDC) or DIELL_L/R (15.4-16 V) on it puts those rails
+       across a 6 V-rated PC817 LED.
+
+CURRENT PACKAGE FOR ALL ORDERING:
+  kicad/fab_revD_2026-07-25_r7/
+    - wsl-phase8b-revD-gerber-drill.zip                     -> PCB order
+    - assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-bom.csv  -> PCBA
+    - assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-cpl.csv  -> PCBA
+
+Gate checklist:
+  docs/phase8_revD_readiness_checklist.md
+
+Tombstoned 2026-07-25 per pre-order audit finding S3
+(docs/phase8_revD_PREORDER_FINAL_AUDIT_2026-07-25.md).

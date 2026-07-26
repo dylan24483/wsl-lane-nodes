@@ -7,7 +7,7 @@ reconciled:** 2026-07-24
 
 > **SC/TB OPERATIONAL CORRECTION (2026-07-24 — supersedes every older SC/TB/J14 statement in this manual):** powered testing on 2026-07-07 proved the OEM ladder uses **parallel closed-when-safe contacts**; either pressed lever permits a coil and **both levers BACK/open kill both S and T coils**. The 2026-06-27 cold trace proved only that C2A-U is a non-isolatable live-ladder region, TB has no standalone/dry J_SAFE landing, and ~21 Ω coil sneak paths prevent topology inference. **Candidate C is decided:** J_SAFE1-2 receives the controlled, labeled jumper; the OEM ladder is the primary guard; every lane must pass the G3 board-commanded S-and-T coil-drop insertion proof. The firmware SC∧TB echo is default-off, secondary, and unvalidated because there is no independent TB observation.
 >
-> **REV-D/R5 INPUT-BIAS CORRECTION (2026-07-24 — supersedes generic 10 kΩ/GPPU statements in the Rev-B chapters):** the current Rev-D/R5 board has exactly forty PC817 collector pull-ups `Rpu_*` (`R4,R6,…,R82`) at **47 kΩ** (UNI-ROYAL `0805W8F4702T5E`, LCSC C17713). Production firmware disables RP2040 GP6–GP13 PUE/PDE, and the Pi driver commands and reads back U1/U2 MCP23017 `GPPUA=GPPUB=0x00`; any internal pull enabled is **STOP-SHIP** because it invalidates the qualified 47 kΩ-only margin and can mask an open external pull-up. Rev-B's 10 kΩ `Rpu_*` value remains historical; unrelated 10 kΩ networks, including `R_TAPPU_*`, are unchanged. This margin change does not waive per-channel first-article FA-9 at loaded-minimum `FIELD_WET_V` and ≥70 °C.
+> **REV-D INPUT-BIAS CORRECTION (2026-07-24 — supersedes generic 10 kΩ/GPPU statements in the Rev-B chapters):** the current Rev-D board has exactly forty PC817 collector pull-ups `Rpu_*` (`R4,R6,…,R82`) at **47 kΩ** (UNI-ROYAL `0805W8F4702T5E`, LCSC C17713). Production firmware disables RP2040 GP6–GP13 PUE/PDE, and the Pi driver commands and reads back U1/U2 MCP23017 `GPPUA=GPPUB=0x00`; any internal pull enabled is **STOP-SHIP** because it invalidates the qualified 47 kΩ-only margin and can mask an open external pull-up. Rev-B's 10 kΩ `Rpu_*` value remains historical; unrelated 10 kΩ networks, including `R_TAPPU_*`, are unchanged. This margin change does not waive per-channel first-article FA-9 at loaded-minimum `FIELD_WET_V` and ≥70 °C.
 >
 > **STOP / PIT-ENTRY FINDING AND J_SAFE3-4 HOLD (2026-07-24 — supersedes every claim that J_SAFE3-4 is measured, landed, or implemented):** OEM documents describe parallel Stop and C.I.S. devices, but physical inspection found **no C.I.S. device or wiring on pilot lanes 21/22**; their installed chain is Stop-only. Whether either lane has some other automatic pit-entry interlock remains unknown. Before motion, demand-test Stop for actual rear-master/control-power removal; record the C.I.S. test as **N/A — device absent**, never silently waived; inspect the lane and ask the mechanic whether any other device automatically removes power on pit entry. If none exists, installation of a new interlock versus an explicit, documented owner and qualified machine-safety decision is a pre-motion design gate. The board has a valid series source position at J14 pins 3–4, but the production harness leaves both leads **physically OPEN / CUT+LABEL-ONLY**. The field rail therefore **cannot arm**. Never jumper J_SAFE3-4 at the machine or at cutover. The leading interface is an externally mounted, correctly rated, galvanically isolated **energize-to-prove control-power relay** whose N.O. dry contact alone lands on J14.3–4, optionally in series with a separately approved new pit-entry interlock contact. A J14-only pit switch is permission gating, not an upstream final disconnect. Acceptance and periodic proof must force control-power loss and verify the sensing-relay contact is not welded/stuck closed and TP16 drops. The sensed machine voltage and all mains remain outside Rev-D and every board harness.
 >
@@ -615,7 +615,7 @@ Key isolation facts (verified against the routed board):
   LED → field pin`; the machine contact closes that pin to `FIELD_GND`. Optos are
   **active-low at the logic pin** (contact closed → opto pulls the GPIO/MCP pin
   LOW; idle HIGH via an external `Rpu_*` to 3V3). The historical Rev-B value was
-  10 kΩ; the current Rev-D/R5 value is **47 kΩ**, with RP2040 internal pulls
+  10 kΩ; the current Rev-D value is **47 kΩ**, with RP2040 internal pulls
   disabled and U1/U2 MCP23017 `GPPUA/GPPUB=0x00` commanded and read back.
   Firmware and `controller_io.py` both assume `INPUT_ACTIVE_LOW`.
   (`opto_input()`; `config.h` electrical-sense note.)
@@ -942,7 +942,7 @@ This is the *functional* I/O list the sequence above depends on. **Exact connect
 | **Foul** (Radaray) | Foul detected (§3.5). | **MCP23017 IN-A** | `Foul` = MCP IN-A pin 8 (GPA7) |
 | **10th-frame; manual T / S / SWS / SWSR; spares** | 10th-frame indication and the manual table/sweep/sweep-switch/sweep-reverse inputs, plus spares. | **MCP23017 IN-B** | `TENTH, MAN_T, MAN_S, MAN_SWS, MAN_SWSR, AUX1–3` (MCP IN-B pins 21–28) — allocated, not yet read by the current FSM |
 
-> **Polarity (all inputs).** Every input is **opto-isolated and active-LOW at the controller**: a closed machine contact pulls the GPIO/MCP pin **LOW**; idle is **HIGH** through the external `Rpu_*`. This is `INPUT_ACTIVE_LOW = True` in `controller_io.py` and the active-low handling in `firmware/rp2040/main.c` (`gpio_get(...) == 0` = asserted). The front end is a **PC817B** optocoupler per channel with a **2.2k** field series resistor. Rev-B used a 10 kΩ logic pull-up; the current Rev-D/R5 board uses **47 kΩ**, with RP2040 and MCP23017 internal pulls disabled. The standing-pin convention: a **standing** pin sets its mask bit (`read_grippers()` returns bit *n−1* set for GS*n* standing); a mask of **0 = no pins = strike**.
+> **Polarity (all inputs).** Every input is **opto-isolated and active-LOW at the controller**: a closed machine contact pulls the GPIO/MCP pin **LOW**; idle is **HIGH** through the external `Rpu_*`. This is `INPUT_ACTIVE_LOW = True` in `controller_io.py` and the active-low handling in `firmware/rp2040/main.c` (`gpio_get(...) == 0` = asserted). The front end is a **PC817B** optocoupler per channel with a **2.2k** field series resistor. Rev-B used a 10 kΩ logic pull-up; the current Rev-D board uses **47 kΩ**, with RP2040 and MCP23017 internal pulls disabled. The standing-pin convention: a **standing** pin sets its mask bit (`read_grippers()` returns bit *n−1* set for GS*n* standing); a mask of **0 = no pins = strike**.
 
 #### Outputs the controller drives
 
@@ -1157,7 +1157,7 @@ There are **two beams per lane** (left/right, mounted on the kickback), coalesce
 
 (Source: `phase8_io_board_spec.md` §1 row 1 "16 V rest → 0.7 V broken, NPN active-low (characterized)"; `phase8_bench_mule_characterization.md` "DIELL ball-detect … ~16 V rest / 0.7 V broken, NPN active-low"; `docs/lane_visit_checklist.md` Phase 4 LEFT row "AN / 24V / 0V / NPN open-collector".)
 
-**Proven signal chain (bench + at-machine validated):** DIELL → AL-ZARD 8-channel opto board (during the Phase-8a pilot) → Pi GPIO 17 → daemon. On the controller PCB this becomes DIELL → **J_FAST_IN** → on-board PC817B optocoupler → RP2040 GPIO (active-low at the Pico, idle HIGH via external `Rpu_*` to 3V3). The historical Rev-B `Rpu_*` value was 10 kΩ; the current Rev-D/R5 value is **47 kΩ**, and firmware disables the RP2040 internal pulls. The firmware de-bounces at `DEBOUNCE_DIELL_US = 500` (faster than the cams), and applies a `BALL_LOCKOUT_MS = 300` re-trigger lockout so one thrown ball produces exactly one `ball` event.
+**Proven signal chain (bench + at-machine validated):** DIELL → AL-ZARD 8-channel opto board (during the Phase-8a pilot) → Pi GPIO 17 → daemon. On the controller PCB this becomes DIELL → **J_FAST_IN** → on-board PC817B optocoupler → RP2040 GPIO (active-low at the Pico, idle HIGH via external `Rpu_*` to 3V3). The historical Rev-B `Rpu_*` value was 10 kΩ; the current Rev-D value is **47 kΩ**, and firmware disables the RP2040 internal pulls. The firmware de-bounces at `DEBOUNCE_DIELL_US = 500` (faster than the cams), and applies a `BALL_LOCKOUT_MS = 300` re-trigger lockout so one thrown ball produces exactly one `ball` event.
 
 | Beam | RP2040 GPIO | Pico pin | Net | Firmware constant |
 |---|---|---|---|---|
@@ -1653,7 +1653,7 @@ What `VCC_3V3` feeds and **why it must be 3.3 V, not 5 V:**
 
 - **All three MCP23017 I²C expanders** (VDD pin 9 and ~RESET pin 18 of each — see `block_mcp`).
 - **Every PC817 optocoupler logic-side pull-up** — Rev-B `Rpu_*` is 10 kΩ;
-  current Rev-D/R5 `Rpu_*` is **47 kΩ**. The opto phototransistor collector is
+  current Rev-D `Rpu_*` is **47 kΩ**. The opto phototransistor collector is
   held at `VCC_3V3` when idle; RP2040 and MCP23017 internal pulls stay disabled
   so the external Rev-D network is the sole bias.
 - **The single I²C bus pull-ups** (`R_I2C_SDA`, `R_I2C_SCL`, 4.7 kΩ each to `VCC_3V3`).
@@ -1719,7 +1719,7 @@ FIELD_WET_V --- Rin (2.2k) --->|(PC817 LED)|--- field pin (J_FAST/J_SLOW_*) ---[
 When the machine contact **closes**, it completes the loop from `FIELD_WET_V` through the 2.2 kΩ
 series resistor (`Rin_*`) and the PC817 LED to `FIELD_GND`, lighting the opto LED. The opto's
 logic-side phototransistor then pulls its logic net **LOW** (idle is HIGH via the external
-`VCC_3V3` `Rpu_*`: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D/R5**). All inputs are
+`VCC_3V3` `Rpu_*`: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D**). All inputs are
 therefore **active-low at the logic side** — see Section 8, *Input Stage*, and the firmware note
 (`INPUT_ACTIVE_LOW = True`). Rev-D production also requires RP2040 PUE/PDE off and U1/U2
 MCP23017 `GPPUA/GPPUB=0x00` with readback.
@@ -2030,7 +2030,7 @@ generator) and is mirrored in `firmware/rp2040/config.h`. The two agree.
 **Electrical sense of the fast inputs (from `opto_input()` in the generator):** every
 fast input is **opto-isolated and ACTIVE-LOW** at the Pico. A machine contact CLOSED
 (signal asserted) pulls the GPIO **LOW**; the idle state is HIGH via an external
-`Rpu_*` to 3.3 V. Rev-B used 10 kΩ; current Rev-D/R5 uses **47 kΩ**. Firmware
+`Rpu_*` to 3.3 V. Rev-B used 10 kΩ; current Rev-D uses **47 kΩ**. Firmware
 explicitly disables the RP2040 internal pulls so their tolerance cannot reduce
 the qualified opto margin or mask an open external pull-up. See **Section 5** /
 **Section 8 — Field I/O Front-Ends** for the opto front-end and field wetting.
@@ -2139,7 +2139,7 @@ can both use 0x20/0x21/0x22 identically — that is what makes the boards true c
   configured all-inputs (`IODIRA=IODIRB=0xFF`); OUT-A is all-outputs
   (`IODIRA=IODIRB=0x00`).
 - **Pull-ups (GPPU):** historical Rev-B software enabled the two input chips'
-  internal pulls (`GPPUA=GPPUB=0xFF`). The current Rev-D/R5 driver instead
+  internal pulls (`GPPUA=GPPUB=0xFF`). The current Rev-D driver instead
   commands and reads back **`GPPUA=GPPUB=0x00`** on both U1 and U2. The external
   47 kΩ `Rpu_*` network is the sole input bias; any nonzero GPPU readback is
   **STOP-SHIP**. With the active-low opto front-ends, a closed machine contact
@@ -2390,16 +2390,25 @@ Where a section number is uncertain, cross-reference by title.
 > `docs/phase8b_pcb_revB_spec.md`. The stale GPIO column in
 > `docs/phase8_channel_allocation.md` is **not** used here.
 
-> **Current Rev-D/R5 amendment.** This chapter preserves the Rev-B topology and
-> BOM facts where they are explicitly labeled Rev-B. For current Rev-D/R5 work,
+> **Current Rev-D/r7 amendment.** This chapter preserves the Rev-B topology and
+> BOM facts where they are explicitly labeled Rev-B. For current Rev-D/r7 work,
 > `scripts/generate_kicad_netlist_revD.py` and
-> `kicad/fab_revD_2026-07-23_r5/manifest.json` supersede the old resistor value:
+> `kicad/fab_revD_2026-07-25_r7/manifest.json` supersede the old resistor value:
 > exactly forty collector pull-ups `Rpu_*` (`R4,R6,…,R82`) are **47 kΩ**
 > (`0805W8F4702T5E`, LCSC C17713), while unrelated 10 kΩ networks are unchanged.
 > RP2040 GP6–GP13 internal pulls are disabled, and U1/U2 MCP23017
 > `GPPUA/GPPUB` must command and read back `0x00`. This remains subject to
 > per-channel FA-9 qualification; the selected PC817B has no guaranteed minimum
-> CTR at the board's approximately 1.7 mA LED current and hot corner.
+> CTR at the board's LED current and hot corner.
+>
+> ⚠️ **r7 also carries the r6 per-channel input protection, which changes the
+> channel topology described in this chapter.** Every one of the 40 opto channels
+> now has a **series blocking diode `Dser_*` plus an anti-parallel clamp
+> `Dclamp_*`** (both 1N4148WS, both populated), plus a DNP filter cap `Cflt_*`.
+> No package before `_r6/` has them. Consequently the **FA-9 operating point is
+> no longer ~1.7 mA** — it is **1.34 mA at Vw = 5.0 V and ~1.12 mA at the FA-9
+> loaded minimum**. Use those figures. Full detail:
+> `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`.
 
 ---
 
@@ -2444,7 +2453,7 @@ FIELD_WET_V ──► Rin (2k2) ──► PC817B LED anode (pin 1)
 and on the isolated logic side:
 
 ```
-VCC_3V3 ──► Rpu (Rev-B 10k; Rev-D/R5 47k) ──► logic node (Pico GPIO or MCP23017 pin)
+VCC_3V3 ──► Rpu (Rev-B 10k; Rev-D 47k) ──► logic node (Pico GPIO or MCP23017 pin)
                             ▲
 PC817B collector (pin 4) ──┘   (phototransistor pulls the logic node toward GND when lit)
 PC817B emitter (pin 3) ──► GND  (logic ground)
@@ -2461,7 +2470,7 @@ PC817B emitter (pin 3) ──► GND  (logic ground)
    off in the part lock are `R3, R5, R7 … R65`) sets the LED drive current so the
    PC817B turns on cleanly while keeping field-side current low. With a ~5 V
    wetting supply minus the LED forward drop, this is on the order of a couple of
-   milliamps. Rev-B paired that drive with a 10 kΩ collector pull-up. Rev-D/R5
+   milliamps. Rev-B paired that drive with a 10 kΩ collector pull-up. Rev-D
    changes only `Rpu_*` to 47 kΩ to reduce the required sink current; that
    arithmetic does **not** replace the per-channel hot first-article FA-9 test.
 
@@ -2477,7 +2486,7 @@ PC817B emitter (pin 3) ──► GND  (logic ground)
 
 5. **Logic side pulls LOW.** The phototransistor's collector (pin 4) is tied to
    the logic node, which is held HIGH by external `Rpu` to `VCC_3V3`
-   (**10 kΩ on Rev-B; 47 kΩ on current Rev-D/R5**); its emitter (pin 3) goes to
+   (**10 kΩ on Rev-B; 47 kΩ on current Rev-D**); its emitter (pin 3) goes to
    logic `GND`. When the transistor conducts, it pulls the logic node down toward
    `GND`. So **contact closed → LED on → logic node LOW**.
 
@@ -2497,7 +2506,7 @@ generator). Pin roles as wired in `opto_input()`:
 | 1 | LED anode (input +) | Field | `FIELD_LED_<name>` (output of `Rin`, which is fed from `FIELD_WET_V`) |
 | 2 | LED cathode (input −) | Field | `FIELD_<name>` → channel connector pin (machine contact pulls it to `FIELD_GND`) |
 | 3 | Phototransistor emitter | Logic | `GND` (logic ground) |
-| 4 | Phototransistor collector (output) | Logic | logic node = Pico GPIO **or** MCP23017 pin; held HIGH by external `Rpu` to `VCC_3V3` (Rev-B 10 kΩ; current Rev-D/R5 47 kΩ) |
+| 4 | Phototransistor collector (output) | Logic | logic node = Pico GPIO **or** MCP23017 pin; held HIGH by external `Rpu` to `VCC_3V3` (Rev-B 10 kΩ; current Rev-D 47 kΩ) |
 
 > The barrier runs **between pins 1/2 (field) and pins 3/4 (logic)**. Nothing
 > bridges those two pin-pairs on the board except the optocoupler itself.
@@ -2508,11 +2517,11 @@ generator). Pin roles as wired in `opto_input()`:
 |---|---|---|---|
 | `Rin_<name>` | 2.2 kΩ ("2k2"), 0805, 1% | Field-side LED current limit | LCSC C17520, `0805W8F2201T5E`, UNI-ROYAL — 32 off (`R3,R5,…,R65`) |
 | `Rpu_<name>` (Rev-B historical) | 10 kΩ, 0805, 1% | Logic-side pull-up to `VCC_3V3` (defines idle-HIGH / active-LOW) | LCSC C17414, `0805W8F1002T5E`, UNI-ROYAL — 32 opto pull-ups; the old 37-count 10 kΩ BOM line also included five unrelated networks |
-| `Rpu_<name>` (Rev-D/R5 current) | **47 kΩ**, 0805, 1% | Sole external logic-side bias; RP2040 and MCP23017 internal pulls must be off | LCSC **C17713**, `0805W8F4702T5E`, UNI-ROYAL — exactly 40 refs `R4,R6,…,R82` |
+| `Rpu_<name>` (Rev-D current) | **47 kΩ**, 0805, 1% | Sole external logic-side bias; RP2040 and MCP23017 internal pulls must be off | LCSC **C17713**, `0805W8F4702T5E`, UNI-ROYAL — exactly 40 refs `R4,R6,…,R82` |
 | `OPTO_<name>` | PC817B | The opto-isolator | LCSC C5692981, `PC817B`, UMW, DIP-4 — 32 off (`U4…U35`) |
 
 > **CTR note.** The Rev-B part lock recorded the 2k2 LED resistor + 10 kΩ
-> pull-up pairing. Current Rev-D/R5 keeps 2k2 and uses 47 kΩ, but the selected
+> pull-up pairing. Current Rev-D keeps 2k2 and uses 47 kΩ, but the selected
 > UMW PC817B / C5692981 still has no guaranteed minimum CTR at the design's
 > approximately 1.7 mA LED current and hot corner. Do not substitute parts or
 > treat the 47 kΩ arithmetic as fleet qualification: every populated channel
@@ -2603,12 +2612,12 @@ galvanically separated from logic — option 1 of contract §8.3.
 
 Every input channel is **active-low at the logic pin**: the machine contact
 closing pulls the logic node LOW, idle is HIGH (held by external `Rpu_*` to
-`VCC_3V3`: Rev-B 10 kΩ; current Rev-D/R5 **47 kΩ**). Both the firmware and the
+`VCC_3V3`: Rev-B 10 kΩ; current Rev-D **47 kΩ**). Both the firmware and the
 FSM software encode this so a service tech sees consistent behavior end-to-end.
 
 | Layer | File | How active-low is expressed |
 |---|---|---|
-| Hardware | Rev-B and Rev-D `opto_input()` generators | LED in series to `FIELD_GND`; collector pulls logic node down; external `Rpu` holds it HIGH at idle (Rev-B 10 kΩ; Rev-D/R5 47 kΩ) |
+| Hardware | Rev-B and Rev-D `opto_input()` generators | LED in series to `FIELD_GND`; collector pulls logic node down; external `Rpu` holds it HIGH at idle (Rev-B 10 kΩ; Rev-D 47 kΩ) |
 | Firmware (fast inputs) | `firmware/rp2040/config.h`, `main.c` | Active-low; current Rev-D release keeps GP6–GP13 internal PUE/PDE disabled so external 47 kΩ is authoritative |
 | Software (slow inputs) | `lane_node/controller_io.py` | `INPUT_ACTIVE_LOW = True`; `_read_in()` returns asserted when `raw == 0`; U1/U2 `GPPUA/GPPUB=0x00` is commanded and read back |
 
@@ -3594,7 +3603,7 @@ These conventions hold across every table below. They come from `opto_input()`,
   `GND` share **zero** nodes on the board — the isolation barrier is intact.
 - **All opto outputs are ACTIVE-LOW at the controller.** The opto transistor pulls the
   logic pin LOW when its LED is on (contact closed). Idle = HIGH via external `Rpu`
-  to 3V3: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D/R5**. Firmware
+  to 3V3: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D**. Firmware
   disables the RP2040 internal pulls, and `controller_io.py` commands/readbacks
   U1/U2 MCP23017 `GPPUA/GPPUB=0x00`; `INPUT_ACTIVE_LOW = True` still means
   **asserted/closed reads logical 1.**
@@ -3713,7 +3722,7 @@ return for the dry-contact wetting.
 machine contact (a cam microswitch) between that pin and `FIELD_GND` (pins 9/10) completes
 the LED loop when closed, turning the opto on and pulling the Pico GPIO LOW through the
 transistor; idle is held HIGH by external `Rpu` to 3V3 (Rev-B 10 kΩ; current
-Rev-D/R5 **47 kΩ**, with the RP2040 internal pulls off). The RP2040 reads these edges
+Rev-D **47 kΩ**, with the RP2040 internal pulls off). The RP2040 reads these edges
 with a 2 ms cam debounce / 500 µs DIELL debounce (`config.h`), enforces cam-stop and an
 8 s motion max-run backstop, and forwards events to the Pi over the J1 UART. **Because
 the RP2040 owns these and gates `RP2040_OK`, a fault on a fast input drops the motion
@@ -4070,7 +4079,7 @@ The eight grounded Pico pins tied to board `GND` (`block_rp2040()`): module pins
 Every fast input is **opto-isolated and active-LOW at the Pico.** From `opto_input()` in the generator and the header comment in `config.h`:
 
 - The field side of each PC817B LED is fed from the isolated **`FIELD_WET_V`** rail through a **2.2 kΩ** series resistor (`Rin_*`). The machine contact closes that channel's field pin to **`FIELD_GND`** at the harness, completing the LED loop.
-- When the machine contact is **closed (signal asserted)**, the opto transistor conducts and pulls the Pico GPIO **LOW**. Idle (contact open) = **HIGH**, held up by external `Rpu_*` to `VCC_3V3`: 10 kΩ on historical Rev-B and **47 kΩ on current Rev-D/R5**.
+- When the machine contact is **closed (signal asserted)**, the opto transistor conducts and pulls the Pico GPIO **LOW**. Idle (contact open) = **HIGH**, held up by external `Rpu_*` to `VCC_3V3`: 10 kΩ on historical Rev-B and **47 kΩ on current Rev-D**.
 - Current Rev-D production firmware keeps GP6–GP13 internal PUE/PDE disabled so the external 47 kΩ is authoritative. A missing `Rpu_*` must be detected as a board fault, not hidden by an internal pull.
 - So: **asserted = GPIO LOW, idle = GPIO HIGH.** The firmware constant for this is the implicit active-low handling in the debounce path; the Pi-side equivalent is `INPUT_ACTIVE_LOW = True` in `controller_io.py`.
 - The logic side runs at **3.3 V**, so both the Pico and the MCP23017 inputs are Pi-safe (no 5 V on any GPIO). This is the optocoupler's whole job here and it satisfies the hard project rule that **Pi/Pico GPIO is 3.3 V only.**
@@ -4094,8 +4103,8 @@ The board carries **three** MCP23017 16-bit I²C expanders in the baseline build
 
 | Ref | I²C addr | A2 A1 A0 strap | Role | Pins used / 16 | Direction (IODIR) |
 |---|---|---|---|---|---|
-| **IN-A** | `0x20` | 0 0 0 | Grippers GS1–10 + GP/OS/BS/PBZ/PBC/Foul | 16 / 16 (full) | All inputs (`IODIR=0xFF`); Rev-D/R5 internal `GPPU=0x00`, read back |
-| **IN-B** | `0x21` | **1** 0 0 | 10th-frame + manual switches + spares | 5 / 16 | All inputs (`IODIR=0xFF`); Rev-D/R5 internal `GPPU=0x00`, read back |
+| **IN-A** | `0x20` | 0 0 0 | Grippers GS1–10 + GP/OS/BS/PBZ/PBC/Foul | 16 / 16 (full) | All inputs (`IODIR=0xFF`); Rev-D internal `GPPU=0x00`, read back |
+| **IN-B** | `0x21` | **1** 0 0 | 10th-frame + manual switches + spares | 5 / 16 | All inputs (`IODIR=0xFF`); Rev-D internal `GPPU=0x00`, read back |
 | **OUT-A** | `0x22` | 0 **1** 0 | 7 relay coils + 4 status lamps | 11 / 16 | All outputs (`0x00`) |
 | **OUT-B** | `0x23` | (optional) | Physical pin-mask lamps + neon | OPTIONAL | All outputs — *omitted in baseline* |
 
@@ -4134,7 +4143,7 @@ This is exactly the `_pin_to_portbit()` helper in the `controller_io.py` self-te
 
 ### 12.4 MCP23017 IN-A bit map (I²C `0x20`) — slow inputs
 
-IN-A is **full** (all 16 pins used). It carries the ten gripper switches (the standing-pin mask) plus the gripper-protect, off-spot, bin-switch, two pushbuttons, and the foul signal. All sixteen channels are opto-isolated front-ends identical to the fast inputs ([§12.2.2](#1222-electrical-sense-of-the-fast-inputs-operating-theory)): **active-low at the MCP pin — switch closed pulls the pin LOW.** Current Rev-D/R5 `controller_io.py` reads them with the external 47 kΩ `Rpu_*` as the sole bias, commands `pullup_a=0x00, pullup_b=0x00`, verifies those GPPU bytes by readback, and inverts in software via `INPUT_ACTIVE_LOW = True`.
+IN-A is **full** (all 16 pins used). It carries the ten gripper switches (the standing-pin mask) plus the gripper-protect, off-spot, bin-switch, two pushbuttons, and the foul signal. All sixteen channels are opto-isolated front-ends identical to the fast inputs ([§12.2.2](#1222-electrical-sense-of-the-fast-inputs-operating-theory)): **active-low at the MCP pin — switch closed pulls the pin LOW.** Current Rev-D `controller_io.py` reads them with the external 47 kΩ `Rpu_*` as the sole bias, commands `pullup_a=0x00, pullup_b=0x00`, verifies those GPPU bytes by readback, and inverts in software via `INPUT_ACTIVE_LOW = True`.
 
 Source of truth: `IN_A_MAP` in `controller_io.py`, cross-checked against the `MCP_IN_A` entries of `SLOW_INPUT_PINS` in the generator.
 
@@ -4180,7 +4189,7 @@ Source of truth: `IN_A_MAP` in `controller_io.py`, cross-checked against the `MC
 
 IN-B's entire B-bank (GPB0–7) is free → expansion headroom. (VERIFY: `controller_io.py` defines no `IN_B_MAP` constant — the IN-B channel→pin assignment lives only in the generator's `SLOW_INPUT_PINS` and this doc. There is no software bit map to drift against yet, so the self-test does not cover IN-B.)
 
-> **Rev-D/R5 diagnostic reservation (supersedes the Rev-B free-bank statement for
+> **Rev-D diagnostic reservation (supersedes the Rev-B free-bank statement for
 > the new board):** GPB0–GPB7 become J15 AUX4–AUX11. These are capacity
 > reservations, not permission to land an unmeasured signal. For pilot lanes
 > 21/22, reserve AUX4 provisionally for an isolated `stop_request`, AUX5 for
@@ -4994,7 +5003,7 @@ Do not infer from the PCB positions that SC/TB are both field-observable.
 
 **Electrical-form boundary:** do not generalize the earlier dry-contact field result to SC/TB. C2A-U is a non-isolatable live-ladder region and the cold ~21 Ω paths invalidate dry/topology inference. SA/SB/TA1/TA2 still require the powered cavity/class/polarity capture; SC stays unlanded pending a reviewed observe-only design; TB has no independent landing.
 
-**Board side (firmware `config.h` — the authoritative pin map; the stale `phase8_channel_allocation.md` GPIO column must be ignored):** the eight fast inputs are opto-isolated, **active-low at the Pico** (contact closed pulls the GPIO LOW; idle HIGH through external `Rpu_*` to 3V3), and land on **GP6–GP13**. Rev-B used 10 kΩ; current Rev-D/R5 uses **47 kΩ** and disables the RP2040 internal pulls:
+**Board side (firmware `config.h` — the authoritative pin map; the stale `phase8_channel_allocation.md` GPIO column must be ignored):** the eight fast inputs are opto-isolated, **active-low at the Pico** (contact closed pulls the GPIO LOW; idle HIGH through external `Rpu_*` to 3V3), and land on **GP6–GP13**. Rev-B used 10 kΩ; current Rev-D uses **47 kΩ** and disables the RP2040 internal pulls:
 
 | Fast input | Pico GPIO | Pico pin | Netlist FAST pin | Cam role (OEM training manual) | C2A cavity |
 |---|---|---|---|---|---|
@@ -6064,7 +6073,7 @@ MachineIO(lane_id, bus_id, *, watchdog_kick=None, arm_relays=None,
 | `enable_pin_lamps` | If `True`, also open OUT-B (0x23) for the optional physical pin mask. Default `False` — the camera supplies pin state in the baseline. |
 | `rp2040` | An `RP2040Link` (or `None`). When present, `MachineIO` contains the default-off/unvalidated SC/TB software model and sends `RUN`/`STOP`. Lane 21/22 has no independent TB lead, so the echo is not a field guard or credited diagnostic. |
 
-The constructor imports `smbus2` (falling back to `smbus`) **lazily** so the module — and the `RecordingIO` test path — load on any machine without I²C hardware. It then configures the MCPs (all-inputs for IN-A/IN-B with **internal pulls off**, all-outputs for OUT-A) and logs the bus + addresses. On Rev-D/R5, the external 47 kΩ `Rpu_*` network is the sole input bias.
+The constructor imports `smbus2` (falling back to `smbus`) **lazily** so the module — and the `RecordingIO` test path — load on any machine without I²C hardware. It then configures the MCPs (all-inputs for IN-A/IN-B with **internal pulls off**, all-outputs for OUT-A) and logs the bus + addresses. On Rev-D, the external 47 kΩ `Rpu_*` network is the sole input bias.
 
 > **Pi-only dependency:** `MachineIO` needs `smbus2` (or `smbus`) on the Pi for the MCP23017s. The library import is deferred to construction time, not module import time.
 
@@ -6079,7 +6088,7 @@ Each board carries three MCP23017 I²C I/O expanders (part **MCP23017-E/SO**, LC
 | `ADDR_OUT_A` | **0x22** | 7 relay drives + 4 status-lamp drives | `0x00` / `0x00` (all outputs) | — | Yes |
 | `ADDR_OUT_B` | **0x23** | Optional physical pin lamps + neon | `0x00` / `0x00` (all outputs) | — | **No** (only opened if `enable_pin_lamps=True`) |
 
-In the MCP23017 IODIR convention used here, **`1` = input, `0` = output**. IN-A and IN-B are therefore `0xFF` on both ports (all inputs), while OUT-A is `0x00` (all outputs). Historical Rev-B software enabled input GPPU, but current Rev-D/R5 commands and reads back **`GPPUA=GPPUB=0x00`** on U1/U2; any mismatch is STOP-SHIP because it invalidates the external-47 kΩ qualification and can mask an open `Rpu_*`. The expander A2/A1/A0 address-strap wiring that produces these addresses lives in the netlist `block_mcp()` calls — `MCP_IN_A` straps `(0,0,0)`→0x20, `MCP_IN_B` straps `(1,0,0)`→0x21, `MCP_OUT_A` straps `(0,1,0)`→0x22 (see Section 7).
+In the MCP23017 IODIR convention used here, **`1` = input, `0` = output**. IN-A and IN-B are therefore `0xFF` on both ports (all inputs), while OUT-A is `0x00` (all outputs). Historical Rev-B software enabled input GPPU, but current Rev-D commands and reads back **`GPPUA=GPPUB=0x00`** on U1/U2; any mismatch is STOP-SHIP because it invalidates the external-47 kΩ qualification and can mask an open `Rpu_*`. The expander A2/A1/A0 address-strap wiring that produces these addresses lives in the netlist `block_mcp()` calls — `MCP_IN_A` straps `(0,0,0)`→0x20, `MCP_IN_B` straps `(1,0,0)`→0x21, `MCP_OUT_A` straps `(0,1,0)`→0x22 (see Section 7).
 
 > **3.3 V, not 5 V.** All three MCP23017s and every opto logic-side pull-up run on the **3.3 V** rail (`VCC_3V3`, the Pico's 3V3 output), specifically so the I²C bus and all logic highs stay Pi-safe (Section 6 — *Rev-B Power Architecture*). Do not move them to 5 V.
 
@@ -7791,7 +7800,7 @@ GP0-GP7) — **ignore it**; the as-built board uses **GP6..GP13**.
 
 Electrical sense (from `opto_input()`): every fast input is opto-isolated and
 **active-low at the Pico** — machine contact closed pulls the GPIO LOW; idle is HIGH
-through external `Rpu_*` to 3V3 (Rev-B 10 kΩ; current Rev-D/R5 **47 kΩ**).
+through external `Rpu_*` to 3V3 (Rev-B 10 kΩ; current Rev-D **47 kΩ**).
 Current firmware disables GP6–GP13 internal pulls. `RP2040_OK`/GP2 drives an NPN
 in the relay-enable AND chain; a 100 k base pull-down makes the rail
 **fail-safe-dead** whenever GP2 is Hi-Z (unpowered / in reset / pre-init). Current
@@ -7866,7 +7875,7 @@ lamps are not motors and are not forwarded.
 #### 20.6.5 Historical Rev-B JLCPCB Standard-PCBA order
 
 > **HISTORICAL REV-B ONLY — DO NOT ORDER FROM THIS SECTION.** The current
-> Rev-D/R5 immutable package is `kicad/fab_revD_2026-07-23_r5/`, with forty
+> Rev-D/r7 immutable package is `kicad/fab_revD_2026-07-25_r7/`, with forty
 > 47 kΩ `Rpu_*` parts and the binding internal-pulls-off runtime gate. The
 > Rev-D board is **NO-GO and not authorized for upload or purchase** until the
 > recorded sign-offs, JLC preview, first-article, FA-9, powered, and bench gates
@@ -7921,7 +7930,7 @@ boards arrived (§ 20.6.6).
   (J12/K7/Q7 + M1 support passives) is **not populated**.
 
 **Historical Rev-B locked JLC part map** (the as-built `02_…_BOM_JLC.csv`; this
-is authoritative only for Rev-B and must not be used for a Rev-D/R5 order):
+is authoritative only for Rev-B and must not be used for a Rev-D order):
 
 | Comment (value) | Qty | Designators | LCSC # | MFR part | Footprint |
 |---|---:|---|---|---|---|
@@ -7938,7 +7947,7 @@ is authoritative only for Rev-B and must not be used for a Rev-D/R5 order):
 | AO3401A P-ch MOSFET | 1 | Q14 | C347476 | AO3401A | SOT-23 |
 | 4.7k 1% 0805 | 2 | R1,R2 | C17673 | 0805W8F4701T5E | 0805 |
 | 2.2k 1% 0805 | 32 | R3..R65 (odd) | C17520 | 0805W8F2201T5E | 0805 |
-| 10k 1% 0805 | 37 | R4..R66 (even) + R101-R109 | C17414 | 0805W8F1002T5E | 0805 (historical Rev-B; its 32 `Rpu_*` refs are 47 kΩ in Rev-D/R5) |
+| 10k 1% 0805 | 37 | R4..R66 (even) + R101-R109 | C17414 | 0805W8F1002T5E | 0805 (historical Rev-B; its 32 `Rpu_*` refs are 47 kΩ in Rev-D) |
 | 1k 1% 0805 | 12 | R67..R104 (subset) | C17513 | 0805W8F1001T5E | 0805 |
 | 100k 1% 0805 | 14 | R68..R110 (subset) | C149504 | 0805W8F1003T5E | 0805 |
 | 330R 1% 0805 | 4 | R90,R93,R96,R99 | C17630 | 0805W8F3300T5E | 0805 |
@@ -8088,8 +8097,8 @@ procedure is `docs/phase_8a_infrastructure_plan.md`. The shape:
 | Stop auto-scoring now | `systemctl edit lane-node` → `WSL_LANE_SCORING_MODE=manual` → `restart`. No machine impact. |
 | Check the server is up | `curl http://<WSL-SRV>:8766/api/health`. |
 | Open the scoring display | `http://<WSL-SRV>:8766/display?lane=21` (and `?lane=22`). |
-| Verify the current fab package | Use the immutable `kicad/fab_revD_2026-07-23_r5/` manifest and README; do not regenerate or substitute a Rev-B package. |
-| Order the board | **NO-GO. Do not upload or purchase** until every current Rev-D release gate closes; then use only the approved R5 package and its recorded JLC preview. |
+| Verify the current fab package | Use the immutable `kicad/fab_revD_2026-07-25_r7/` manifest and README; do not regenerate or substitute a Rev-B or earlier Rev-D package. Every rev-D package before `_r6/` has **bare opto inputs**. |
+| Order the board | **NO-GO. Do not upload or purchase** until every current Rev-D release gate closes; then use only the approved **r7** package and its recorded JLC preview. |
 | Verify the on-board pin maps before trusting hardware | Run `controller_io.py` as a script (KiCad python not needed) — its `__main__` asserts `OUT_A_MAP`/`IN_A_MAP` match the netlist generator and fails on drift. |
 
 ## 21. Bring-up, Bench Validation & Cutover
@@ -8194,7 +8203,7 @@ Do these **in order**. Each step gates the next. Keep a bench log. Use the test 
 | 5. **Arm drop** | De-assert the Pi `ARM_PERMIT` GPIO (J1 pin 8). | Rail (TP16) drops. TP13 (`ARM_PERMIT`) reads low. | Check Q15 (AND ARM) and its base network (Rb 10k / Rpd 100k). |
 | 6. **J14 source-position drops (off-machine bench only)** | With the machine disconnected and only dummy loads, open J_SAFE1-2, then the controlled bench-only J_SAFE3-4 jumper. On lanes 21/22, 1-2 is the Candidate-C jumper — **not** a TB/SC field loop. Remove the 3-4 bench jumper before machine connection. | Rail (TP16) drops when either board source position opens. This validates PCB/source wiring only; it proves neither the OEM collision guard nor upstream Stop-to-breaker operation. | Check the controlled 1-2 jumper and Q14. Current production 3-4 leads are OPEN/CUT+LABEL-ONLY. Prove TB/SC separately at G3. After an engineered interface exists, demand Stop end-to-end; record C.I.S. as **N/A — device absent**; separately test any identified/new pit-entry interlock. |
 | 7. **Each relay with a dummy load** | Re-establish all rail conditions. Command each motion relay **(S, T, SP, BE, M, M2)** in turn through OUT-A (U3). Put a **dummy load** (a lamp or resistor sized to the expected ~24 VAC coil-circuit current) across the relay's J6-J11 contact pair. | Each relay clicks, its COM-NO contact closes the dummy load, and the load drops the instant you drop the rail. Probe coil-drive, COM, NO per the test-pad rule (§9, spec §3.2). **M1 (K7/J12) is DNP — not tested.** | Check the relay driver (Q1-Q6), `RELAY_ENABLE_RAIL` reaching the coil, the flyback diode. |
-| 8. **Input front-ends** | Exercise each opto input. For **fast** inputs (SA/SB/SC/TA1/TA2/TB/DIELL-L/DIELL-R) wet the J3 (`J_FAST_IN`) field pin to `FIELD_GND`; for **slow** inputs (GS1-10, GP/OS/BS/PBZ/PBC/Foul on J4, and 10th/manual/AUX on J5) do the same. | The corresponding RP2040 fast-input edge (cam/ball event over UART) or MCP23017 bit flips. Optos are **active-low** at the logic pin: a closed field contact pulls the input LOW (§8, §12). On Rev-D, also prove RP2040 pulls are off and U1/U2 `GPPUA/GPPUB=0x00` read back exactly. | Check the PC817, the input resistor (`Rin` 2k2), the current Rev-D/R5 logic pull-up (`Rpu_*` **47 kΩ** to 3V3), and `FIELD_WET_V`. An internal pull enabled or a missing external `Rpu_*` is STOP-SHIP. |
+| 8. **Input front-ends** | Exercise each opto input. For **fast** inputs (SA/SB/SC/TA1/TA2/TB/DIELL-L/DIELL-R) wet the J3 (`J_FAST_IN`) field pin to `FIELD_GND`; for **slow** inputs (GS1-10, GP/OS/BS/PBZ/PBC/Foul on J4, and 10th/manual/AUX on J5) do the same. | The corresponding RP2040 fast-input edge (cam/ball event over UART) or MCP23017 bit flips. Optos are **active-low** at the logic pin: a closed field contact pulls the input LOW (§8, §12). On Rev-D, also prove RP2040 pulls are off and U1/U2 `GPPUA/GPPUB=0x00` read back exactly. | Check the PC817, the input resistor (`Rin` 2k2), the current Rev-D logic pull-up (`Rpu_*` **47 kΩ** to 3V3), and `FIELD_WET_V`. An internal pull enabled or a missing external `Rpu_*` is STOP-SHIP. |
 | 9. **Cam-stop rail drop** | Drive a cam-stop condition on the RP2040 and confirm it pulls the rail. | `RP2040_OK` (GP2/TP14) goes low → rail (TP16) drops. **See the firmware caveat below.** | This is condition #4 — it shares the GP2 path with #3. |
 | 10. **(only then) machine-harness test** | Everything above passed. The board is cleared to be wired to a machine — which is the cutover (§21.3), **not** part of bench bring-up. | — | — |
 
@@ -8907,7 +8916,7 @@ software belt-and-suspenders so the FSM/desk see it.
 step 2): hand-actuate each cam / break each DIELL beam and confirm the matching
 `{"ev":"cam","id":...}` / `{"ev":"ball","src":...}` line (correct `id`). All fast
 inputs are **active-low** at the Pico (machine contact closed ⇒ GPIO LOW; on-board
-external `Rpu_*` holds idle at 3.3 V: Rev-B 10 kΩ, current Rev-D/R5 **47 kΩ**).
+external `Rpu_*` holds idle at 3.3 V: Rev-B 10 kΩ, current Rev-D **47 kΩ**).
 On Rev-D, verify GP6–GP13 PUE/PDE are off; an internal pull can hide an open
 external `Rpu_*` and invalidates the qualified input margin. The GP↔signal map
 (`config.h` / §12):
@@ -9135,10 +9144,10 @@ loop:
 
 ### 23.A Appendix A — Full Bill of Materials (rev-B controller board, one lane)
 
-> **HISTORICAL REV-B BOM — NOT A REV-D ORDER SOURCE.** Current Rev-D/R5 uses
+> **HISTORICAL REV-B BOM — NOT A REV-D ORDER SOURCE.** Current Rev-D/r7 uses
 > exactly forty 47 kΩ `Rpu_*` refs (`R4,R6,…,R82`), UNI-ROYAL
 > `0805W8F4702T5E` / LCSC C17713. Unrelated 10 kΩ networks remain unchanged.
-> Use `kicad/fab_revD_2026-07-23_r5/manifest.json` and its package README for
+> Use `kicad/fab_revD_2026-07-25_r7/manifest.json` and its package README for
 > current fabrication data; the Rev-D board remains NO-GO for ordering pending
 > the recorded physical release gates.
 
@@ -9182,7 +9191,7 @@ Reproduced verbatim from `assembly/wsl-phase8b-revB-jlc-standard-pcba-bom.csv`. 
 | AO3401A P-channel MOSFET, SOT-23 | Q14 | SOT-23 | 1 | **C347476** | AO3401A | UMW | Extended | Relay-enable-rail pass element (`Q_RAIL`). |
 | 4.7k 1% 1/8W 0805 | R1, R2 | R_0805_2012Metric | 2 | **C17673** | 0805W8F4701T5E | UNI-ROYAL | Basic | I²C SDA/SCL pull-ups (`R_I2C_SDA`, `R_I2C_SCL`). |
 | 2.2k 1% 1/8W 0805 | R3, R5, R7 … R65 (32 refs) | R_0805_2012Metric | 32 | **C17520** | 0805W8F2201T5E | UNI-ROYAL | Basic | Opto-LED series resistors `Rin_*` (one per of the 32 input channels). |
-| 10k 1% 1/8W 0805 | R4, R6, R8 … R66, R101–R109 odd (37 refs) | R_0805_2012Metric | 37 | **C17414** | 0805W8F1002T5E | UNI-ROYAL | Basic | **Historical Rev-B:** 32 opto logic-side `Rpu_*` refs plus five unrelated watchdog/AND-gate resistors. Rev-D/R5 changes only `Rpu_*` to 47 kΩ. |
+| 10k 1% 1/8W 0805 | R4, R6, R8 … R66, R101–R109 odd (37 refs) | R_0805_2012Metric | 37 | **C17414** | 0805W8F1002T5E | UNI-ROYAL | Basic | **Historical Rev-B:** 32 opto logic-side `Rpu_*` refs plus five unrelated watchdog/AND-gate resistors. Rev-D changes only `Rpu_*` to 47 kΩ. |
 | 1k 1% 1/8W 0805 | R67, R70, R73 … R104 (12 refs) | R_0805_2012Metric | 12 | **C17513** | 0805W8F1001T5E | UNI-ROYAL | Basic | Relay base resistors `Rb_*` + LED gate resistors `Rgled_*` + watchdog gate resistors. |
 | 100k 1% 1/8W 0805 | R68, R71, R74 … R110 (14 refs) | R_0805_2012Metric | 14 | **C149504** | 0805W8F1003T5E | UNI-ROYAL | Basic | Drive/gate pulldowns `Rpd_*`, `Rpdled_*`, rail-gate + watchdog timing/pulldowns (fail-safe-off). |
 | 330R 1% 1/8W 0805 | R90, R93, R96, R99 | R_0805_2012Metric | 4 | **C17630** | 0805W8F3300T5E | UNI-ROYAL | Basic | Status-LED current-limit `Rled_*`. **Value provisional** — see 23.A.5 note. |
@@ -9442,7 +9451,7 @@ This maps every source document, script, runbook, and key artifact to what it au
 | `docs/phase8b_pcb_revB_netclass_creepage.md` | The routing contract: 5 net classes, 4-layer stack, domain rooms, plane keepouts, creepage/clearance policy (conservative 250 VAC; relaxable to 24 VAC). |
 | `docs/phase8b_revB_netclass_inventory.md` | All 184 nets mapped to domains; 0 unknown nets. |
 | `docs/phase8b_revB_route_pass1_findings.md` | Routing status + **every Claude/Codex audit verdict** + the FreeRouting-rejection log + the false-green netclass catch. |
-| `docs/phase8b_revB_fab_order_checklist.md` | The bare-PCB order checklist (Gerber preview vs review PDF, etc.). |
+| `docs/phase8b_revB_fab_order_checklist.md` | ⛔ **HISTORICAL REV-B/C ONLY — NOT AN ORDER SOURCE.** Points at `kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/`, which builds a **rev-C** board. For rev-D use `kicad/fab_revD_2026-07-25_r7/` + `docs/phase8_revD_readiness_checklist.md`. |
 | `docs/phase8b_revB_pcba_parts_worklist.md` | PCBA parts work tracking. |
 | `docs/phase8_channel_allocation.md` | ⚠️ **GPIO column is STALE** (says GP0–GP7). Useful for channel *intent*, but for GPIO numbers use `config.h` (GP6–GP13). |
 

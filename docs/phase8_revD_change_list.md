@@ -35,8 +35,10 @@
 > and PC817 pull-up statements below.** Exactly the 40 `Rpu_*` parts
 > (`R4,R6,…,R82`) are **47 kΩ**; unrelated 10 kΩ networks are unchanged.
 > The board stays 271 parts / 223 nets with unchanged copper and netclasses.
-> Current immutable package: **`kicad/fab_revD_2026-07-23_r5/`**, 271 / 28 DNP /
-> 243 placed / 226 JLC / **27 JLC lines** / 17 hand-solder. The dedicated
+> Current immutable package: **`kicad/fab_revD_2026-07-25_r7/`**, 391 / 68 DNP /
+> 323 placed / 306 JLC / **27 JLC lines** / 17 hand-solder — the r6
+> input-protection build. *(The superseded `_r5/` figures were 271 / 28 / 243 /
+> 226 / 27 / 17; `_r5/` has bare opto inputs and must never be uploaded.)* The dedicated
 > pull-up line is UNI-ROYAL `0805W8F4702T5E`, LCSC C17713. Electrical basis
 > and binding per-channel physical gate: remediation spec §R4 + FA-9. The
 > external 47 kΩ network is authoritative only with RP2040 GP6–GP13 PUE/PDE

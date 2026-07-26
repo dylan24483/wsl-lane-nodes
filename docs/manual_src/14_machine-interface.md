@@ -183,7 +183,7 @@ Do not infer from the PCB positions that SC/TB are both field-observable.
 
 **Electrical-form boundary:** do not generalize the earlier dry-contact field result to SC/TB. C2A-U is a non-isolatable live-ladder region and the cold ~21 Ω paths invalidate dry/topology inference. SA/SB/TA1/TA2 still require the powered cavity/class/polarity capture; SC stays unlanded pending a reviewed observe-only design; TB has no independent landing.
 
-**Board side (firmware `config.h` — the authoritative pin map; the stale `phase8_channel_allocation.md` GPIO column must be ignored):** the eight fast inputs are opto-isolated, **active-low at the Pico** (contact closed pulls the GPIO LOW; idle HIGH through external `Rpu_*` to 3V3), and land on **GP6–GP13**. Rev-B used 10 kΩ; current Rev-D/R5 uses **47 kΩ** and disables the RP2040 internal pulls:
+**Board side (firmware `config.h` — the authoritative pin map; the stale `phase8_channel_allocation.md` GPIO column must be ignored):** the eight fast inputs are opto-isolated, **active-low at the Pico** (contact closed pulls the GPIO LOW; idle HIGH through external `Rpu_*` to 3V3), and land on **GP6–GP13**. Rev-B used 10 kΩ; current Rev-D uses **47 kΩ** and disables the RP2040 internal pulls:
 
 | Fast input | Pico GPIO | Pico pin | Netlist FAST pin | Cam role (OEM training manual) | C2A cavity |
 |---|---|---|---|---|---|

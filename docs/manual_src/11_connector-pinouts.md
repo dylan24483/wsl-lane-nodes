@@ -107,7 +107,7 @@ These conventions hold across every table below. They come from `opto_input()`,
   `GND` share **zero** nodes on the board — the isolation barrier is intact.
 - **All opto outputs are ACTIVE-LOW at the controller.** The opto transistor pulls the
   logic pin LOW when its LED is on (contact closed). Idle = HIGH via external `Rpu`
-  to 3V3: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D/R5**. Firmware
+  to 3V3: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D**. Firmware
   disables the RP2040 internal pulls, and `controller_io.py` commands/readbacks
   U1/U2 MCP23017 `GPPUA/GPPUB=0x00`; `INPUT_ACTIVE_LOW = True` still means
   **asserted/closed reads logical 1.**
@@ -226,7 +226,7 @@ return for the dry-contact wetting.
 machine contact (a cam microswitch) between that pin and `FIELD_GND` (pins 9/10) completes
 the LED loop when closed, turning the opto on and pulling the Pico GPIO LOW through the
 transistor; idle is held HIGH by external `Rpu` to 3V3 (Rev-B 10 kΩ; current
-Rev-D/R5 **47 kΩ**, with the RP2040 internal pulls off). The RP2040 reads these edges
+Rev-D **47 kΩ**, with the RP2040 internal pulls off). The RP2040 reads these edges
 with a 2 ms cam debounce / 500 µs DIELL debounce (`config.h`), enforces cam-stop and an
 8 s motion max-run backstop, and forwards events to the Pi over the J1 UART. **Because
 the RP2040 owns these and gates `RP2040_OK`, a fault on a fast input drops the motion

@@ -1,5 +1,18 @@
 # Phase 8b Rev-B Fab Order Checklist
 
+> ⛔ **HISTORICAL — REV-B/C ONLY. DO NOT ORDER FROM THIS DOCUMENT.**
+> Despite its name, this is **not** the current fab order checklist. It points at
+> `kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/`, which builds a **rev-C** board:
+> 250 × 225 mm, no AUX4–11 bank, no J15/J16, 10 kΩ pull-ups, and **no r6 per-channel
+> input protection** — landing PBZ (33 VDC) or DIELL_L/R (15.4–16 V) on it puts those
+> rails across a 6 V-rated PC817 LED.
+>
+> **Current package:** `kicad/fab_revD_2026-07-25_r7/`
+> **Current gate checklist:** `docs/phase8_revD_readiness_checklist.md`
+>
+> *Banner added 2026-07-25 per pre-order audit finding S3
+> (`docs/phase8_revD_PREORDER_FINAL_AUDIT_2026-07-25.md`).*
+
 Use this with the generated Rev-B package. This checklist is intentionally
 order-facing: it maps the board artifacts to the JLCPCB order flow and flags
 the preview checks that must happen before payment.

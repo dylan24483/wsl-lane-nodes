@@ -177,7 +177,7 @@ There are **two beams per lane** (left/right, mounted on the kickback), coalesce
 
 (Source: `phase8_io_board_spec.md` §1 row 1 "16 V rest → 0.7 V broken, NPN active-low (characterized)"; `phase8_bench_mule_characterization.md` "DIELL ball-detect … ~16 V rest / 0.7 V broken, NPN active-low"; `docs/lane_visit_checklist.md` Phase 4 LEFT row "AN / 24V / 0V / NPN open-collector".)
 
-**Proven signal chain (bench + at-machine validated):** DIELL → AL-ZARD 8-channel opto board (during the Phase-8a pilot) → Pi GPIO 17 → daemon. On the controller PCB this becomes DIELL → **J_FAST_IN** → on-board PC817B optocoupler → RP2040 GPIO (active-low at the Pico, idle HIGH via external `Rpu_*` to 3V3). The historical Rev-B `Rpu_*` value was 10 kΩ; the current Rev-D/R5 value is **47 kΩ**, and firmware disables the RP2040 internal pulls. The firmware de-bounces at `DEBOUNCE_DIELL_US = 500` (faster than the cams), and applies a `BALL_LOCKOUT_MS = 300` re-trigger lockout so one thrown ball produces exactly one `ball` event.
+**Proven signal chain (bench + at-machine validated):** DIELL → AL-ZARD 8-channel opto board (during the Phase-8a pilot) → Pi GPIO 17 → daemon. On the controller PCB this becomes DIELL → **J_FAST_IN** → on-board PC817B optocoupler → RP2040 GPIO (active-low at the Pico, idle HIGH via external `Rpu_*` to 3V3). The historical Rev-B `Rpu_*` value was 10 kΩ; the current Rev-D value is **47 kΩ**, and firmware disables the RP2040 internal pulls. The firmware de-bounces at `DEBOUNCE_DIELL_US = 500` (faster than the cams), and applies a `BALL_LOCKOUT_MS = 300` re-trigger lockout so one thrown ball produces exactly one `ball` event.
 
 | Beam | RP2040 GPIO | Pico pin | Net | Firmware constant |
 |---|---|---|---|---|

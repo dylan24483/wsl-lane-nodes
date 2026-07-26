@@ -167,7 +167,7 @@ Every mode below is customer-report-only today. **One shared exit photoeye per p
 
 ## 2. Rev-D delta — what actually has to change on the board
 
-**Framing rule (scope §4): do NOT respin the released Rev-D geometry for diagnostics alone.** Everything pilot-critical fits the AUX-input / external-module path. Rev-D/R5 now exists as geometry evidence, but fabrication, assembly, first-article qualification, and pilot evidence remain open; none of the list below is permission for an unreviewed copper change.
+**Framing rule (scope §4): do NOT respin the released Rev-D geometry for diagnostics alone.** Everything pilot-critical fits the AUX-input / external-module path. Rev-D now exists as geometry evidence, but fabrication, assembly, first-article qualification, and pilot evidence remain open; none of the list below is permission for an unreviewed copper change.
 
 **The motor-current fact, stated plainly:** motor current physically cannot route to the board on ANY revision. The board's G5LE relays switch ~24 VAC control circuits; the machine's contactors switch the 115 VAC motors (phase8b spec §1 "Motor power: Never routed through the PCB"). Current sensors clamp at machine contactor wiring regardless of board design — a rev-D analog front-end could only move the *digitizer* on-board, never the current path. That caps the on-board-analog case at "convenience integration of a signal that already works via AUX dry contact or USB ADC."
 

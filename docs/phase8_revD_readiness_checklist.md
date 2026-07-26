@@ -14,9 +14,13 @@ Status legend: `[ ]` open · `[~]` blocked on physical verify / owner decision �
 > GPPUA/GPPUB must command and read back `0x00`. Any mismatch is STOP-SHIP.
 > `R_TAPPU_*` remains a separate, intentionally unchanged 10 kΩ tap-drain
 > network. The current immutable package is
-> **`kicad/fab_revD_2026-07-23_r5/`**; every older rev-D package is superseded
-> for ordering. This is still an **EXPERIMENTAL FIRST-ARTICLE**: UMW C5692981
-> does not guarantee minimum CTR at ~1.7 mA/hot, so the revised FA-9 requires
+> **`kicad/fab_revD_2026-07-25_r7/`**; every older rev-D package — including
+> `_r5/` and `_r6/` — is superseded
+> for ordering. ⚠️ **The FA-9 operating point below is PRE-r6 and superseded:**
+> r6 inserted a series blocking diode in every channel, so the point is
+> **1.34 mA at Vw = 5.0 V / ~1.12 mA at the FA-9 loaded minimum**, not ~1.7 mA.
+> This is still an **EXPERIMENTAL FIRST-ARTICLE**: UMW C5692981
+> does not guarantee minimum CTR at that current, so the revised FA-9 requires
 > every populated channel to pass loaded-minimum FIELD_WET, ≥70 °C,
 > idle-leakage, capability, and transition-time measurements before fleet
 > release. Current electrical basis: remediation spec §R4.
@@ -53,12 +57,13 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > Board figures anywhere below are superseded: **271 parts / 223 nets, netclasses
 > 103/4/13/82/21, 24 test pads (TP17-24 tap probe pads), ERC baseline 1+39
 > (WVR-ERC-2, pin-pair order-insensitive since round 3)**; release DRC =
-> `kicad/fab_revD_2026-07-23_r5/reports/DRC-revD-fab-export.rpt`; as-current fab package =
-> **`kicad/fab_revD_2026-07-23_r5/`** (47 kΩ PC817 pull-ups plus the J16
+> `kicad/fab_revD_2026-07-25_r7/reports/DRC-revD-fab-export.rpt`; as-current fab package =
+> **`kicad/fab_revD_2026-07-25_r7/`** (47 kΩ PC817 pull-ups plus the J16
 > protection stack with ESD VP moved
 > UPSTREAM of the polyfuse — round-3 finding 2, REV_ID straps rev-D=0b01,
 > Q17-Q20 = onsemi 2N7002LT1G C16338, 10M = C26108, gbrjob Revision "D").
-> `fab_revD_2026-07-21/`, `..._r2/`, `..._r3/`, and `..._r4/` are superseded — never
+> `fab_revD_2026-07-21/`, `..._r2/`, `..._r3/`, `..._r4/`, `..._r5/`, and
+> `kicad/fab_revD_2026-07-25_r6/` are superseded — never
 > upload from them. Full record:
 > run-log "ROUND-2 BOARD/BOM/EXPORT BATCH" + "ROUND-3 FIX BATCH" +
 > "FINALIZE (ROUND 2)" entries.

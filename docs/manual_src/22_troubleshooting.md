@@ -426,7 +426,7 @@ software belt-and-suspenders so the FSM/desk see it.
 step 2): hand-actuate each cam / break each DIELL beam and confirm the matching
 `{"ev":"cam","id":...}` / `{"ev":"ball","src":...}` line (correct `id`). All fast
 inputs are **active-low** at the Pico (machine contact closed ⇒ GPIO LOW; on-board
-external `Rpu_*` holds idle at 3.3 V: Rev-B 10 kΩ, current Rev-D/R5 **47 kΩ**).
+external `Rpu_*` holds idle at 3.3 V: Rev-B 10 kΩ, current Rev-D **47 kΩ**).
 On Rev-D, verify GP6–GP13 PUE/PDE are off; an internal pull can hide an open
 external `Rpu_*` and invalidates the qualified input margin. The GP↔signal map
 (`config.h` / §12):

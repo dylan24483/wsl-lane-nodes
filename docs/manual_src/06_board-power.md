@@ -140,7 +140,7 @@ What `VCC_3V3` feeds and **why it must be 3.3 V, not 5 V:**
 
 - **All three MCP23017 I²C expanders** (VDD pin 9 and ~RESET pin 18 of each — see `block_mcp`).
 - **Every PC817 optocoupler logic-side pull-up** — Rev-B `Rpu_*` is 10 kΩ;
-  current Rev-D/R5 `Rpu_*` is **47 kΩ**. The opto phototransistor collector is
+  current Rev-D `Rpu_*` is **47 kΩ**. The opto phototransistor collector is
   held at `VCC_3V3` when idle; RP2040 and MCP23017 internal pulls stay disabled
   so the external Rev-D network is the sole bias.
 - **The single I²C bus pull-ups** (`R_I2C_SDA`, `R_I2C_SCL`, 4.7 kΩ each to `VCC_3V3`).
@@ -206,7 +206,7 @@ FIELD_WET_V --- Rin (2.2k) --->|(PC817 LED)|--- field pin (J_FAST/J_SLOW_*) ---[
 When the machine contact **closes**, it completes the loop from `FIELD_WET_V` through the 2.2 kΩ
 series resistor (`Rin_*`) and the PC817 LED to `FIELD_GND`, lighting the opto LED. The opto's
 logic-side phototransistor then pulls its logic net **LOW** (idle is HIGH via the external
-`VCC_3V3` `Rpu_*`: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D/R5**). All inputs are
+`VCC_3V3` `Rpu_*`: 10 kΩ on historical Rev-B, **47 kΩ on current Rev-D**). All inputs are
 therefore **active-low at the logic side** — see Section 8, *Input Stage*, and the firmware note
 (`INPUT_ACTIVE_LOW = True`). Rev-D production also requires RP2040 PUE/PDE off and U1/U2
 MCP23017 `GPPUA/GPPUB=0x00` with readback.
