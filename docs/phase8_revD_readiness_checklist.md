@@ -18,6 +18,53 @@ on the G15 line to close that gate formally.
 | 3 | **Winford `BRK2x10-DIN` approved** as the C7 board breakout. | Dylan | Replaces an unnamed generic module; unblocks the panel layout |
 | 4 | **Machine C1 = female → we supply MALE/pins. Machine C2A = male → we supply FEMALE/sockets.** | Dylan (measured) | Closes the interposer gender question — see §G4/G5 in the backplate BOM |
 | 5 | **Enclosure-to-machine run = 6 ft (1829 mm)**, measured. | Dylan | Harness wire list re-issued as **Rev 3** (L1 3200 / L2 3700 / L3 4700) |
+| 6 | **WAVE 1 assembly move approved** — J2, J6–J11, J14 to JLC. | Dylan | Fab package **r9**; hand-solder 17 → 9; 646 THT joints eliminated |
+| 7 | **FA-4 RISK ACCEPTED** — JLC may place A1 (Pico) without a first article proving USB access. | Dylan, 2026-07-26 | See below. **Conditional on the Pico C-number being confirmed as bare RP2040** |
+| 8 | **Pico C-number resolution delegated to Claude.** | Dylan | **UNRESOLVED from public data — escalated to JLC support.** See below |
+
+### Item 7 — FA-4 risk acceptance (recorded verbatim)
+
+Under decision 1 (fleet quantity) there is no first article, so JLC placing A1 commits 34 Picos
+before anyone physically confirms a micro-B cable seats with the J1 ribbon mated.
+
+**Accepted by Dylan on 2026-07-26: *"Agreed. Risk accepted."*** Basis:
+
+- **Geometry measured clear on rev-D.** A1 sits at (100, 33) rot 0 with the micro-USB facing the
+  board's own y=0 edge and **5.70 mm of empty board** in front of it. J1 moved to (135.5, 10) —
+  **25.4 mm** of lateral separation, with J2 physically interposed. Nothing occupies x 88–114
+  below y 5.7. The rev-C jam condition does not exist on this board.
+- **Pre-flashing buys exactly one flash cycle, then expires.** The cam-arming flags
+  (`CAM_*_STOP_ENABLED`, `CAM_*_TRIP`, `INTERLOCK_ECHO_ENABLED`, `MOTION_NO_RUN_ENABLED`) are
+  compile-time, and the cutover image does not exist yet. **Post-assembly USB reflash is already
+  mandatory fleet-wide**, so hand-soldering A1 postpones the problem by one flash and leaves the
+  identical exposure.
+- **Two independent recovery paths survive reflow:** the shaved right-angle micro-B cable
+  (proven on a rev-B board whose geometry was strictly worse), and the Pico's own SWCLK/GND/SWDIO
+  castellated pads at the end opposite the USB, nearest neighbour 14 mm away.
+- **Cost of refusing:** 34 hand-soldered 40-pad castellated modules — the highest-risk soldering
+  operation on the board — to protect a mitigation that expires at the Phase-0 reflash anyway.
+
+⚠️ **This acceptance is CONDITIONAL and does not authorise placing A1 yet.** It is void unless
+JLC confirms the exact part is a **bare RP2040 Pico with no pre-soldered headers**. See item 8.
+
+### Item 8 — Pico C-number: NOT RESOLVED, escalated
+
+Delegated to Claude and **deliberately not guessed.** Both candidates are ambiguous on JLC's
+public pages:
+
+| Candidate | Reads right | Reads wrong |
+|---|---|---|
+| **C9900019762** | MPN `SC0915` (correct bare-Pico order code); package `LCC-43` matches the Pico's 40 edge + 3 debug pads | manufacturer field says "JLCPCB Assembly", not Raspberry Pi; no published stock or price |
+| **C7203002** | manufacturer is Raspberry Pi; Standard PCBA | MPN string is just "Pico" — does **not** distinguish Pico / Pico H (headers fitted) / **Pico 2 (RP2350)** |
+
+JLC's library also carries **Pico 2 / RP2350** entries, and this project's firmware is
+**RP2040-only** (`build_options.pico_board = "pico"`, UF2 `d5570efd…`). Pinning the wrong
+variant would put unusable silicon on 34 boards, discovered only at flash time.
+
+**Resolution: question 2 of `docs/phase8_jlc_support_email_2026-07-26.md`.** Until JLC confirms
+in writing, **A1 stays hand-solder** and no Pico C-number enters `PART_LOCK`. When it is
+confirmed, add a G12 **silkscreen photo gate** — a photograph showing the module reads
+"Raspberry Pi Pico" (RP2040) — before payment.
 
 ### Item 2 — the 24 VAC population decision, reasoning
 
