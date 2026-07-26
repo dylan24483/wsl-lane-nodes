@@ -1,10 +1,32 @@
 # Rev-D Recommendation: Per-Channel Input-Protection Provisions (DNP)
 
-> # ⛔ SUPERSEDED 2026-07-25 — DECIDED AND BUILT AS r6
+> # ✅ IMPLEMENTED 2026-07-25 AS r6 — this file is now EVIDENCE ONLY, not a design
 >
 > **Dylan reopened copper on 2026-07-25 and the provisions LANDED.** The implementable
-> authority is **`docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`**; the built
-> package is **`kicad/fab_revD_2026-07-25_r6/`**.
+> authority is **`docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`**; the released
+> package is **`kicad/fab_revD_2026-07-25_r7/`** (release build of the r6 design — same
+> copper as `_r6/`, which is tombstoned so exactly one package is current). The per-channel
+> stuffing table is **`docs/phase8_revD_r6_channel_stuffing.csv`**.
+>
+> **The four corrections the round-5 audit made to THIS document, all carried into the
+> build** (they are the reason the built topology differs from §3–§5 below):
+>
+> 1. **The three provisions are NOT alternatives.** A clamp ALONE conducts on the reverse
+>    half-cycle and backfeeds `Rin` into the SHARED `FIELD_WET_V` rail, which the
+>    unregulated TMA-0505S cannot sink — one over-voltage channel drags `Vw` for all 40
+>    (self-consistent solve: `Vw` → 10.77 V at 9.79 mA on PBZ). Any non-dry channel needs
+>    **series block + clamp TOGETHER**. Folded into §4 below and built that way.
+> 2. **The series diode's CTR cost is real but negligible: 22× → ≈17–18× margin.** The
+>    rev-D 47 kΩ collector pull-up had ALREADY paid for the diode, so **no `Rin` retune is
+>    required** and `Rin` stays 2k2. (Option A′ 1k8 was evaluated and rejected.) Folded
+>    into §4.1.
+> 3. **A series diode ALONE leaves the LED reverse voltage set by a LEAKAGE DIVIDER** —
+>    correct by an unspecified parameter ratio rather than by construction. The
+>    anti-parallel clamp is what makes it deterministic at ≈ 0.35 V, and **FA-15** is the
+>    per-board proof. Folded into §4.
+> 4. **A DNP-EMPTY series position leaves the channel OPEN-CIRCUIT.** Folded into §3 —
+>    but see the implementation note there: the "0 Ω link now, diode later" resolution in
+>    §3 was itself **rejected at build time** and replaced by an always-populated diode.
 >
 > This file remains as the **measured field evidence** that motivated the change (lane-22
 > PBZ 33 VDC, DIELL_L/R 15.4–16 V, the cam ladder). **Its §3/§4 topology proposals and its
@@ -124,7 +146,19 @@ the first-article pack's input front-end warning.
 
 | Provision | Default | Purpose | Notes |
 |---|---|---|---|
-| **Series position** — 0 Ω jumper *or* blocking diode (1N4148/1N4007 class) | **POPULATED (0 Ω)** | With the diode fitted, blocks DC over-voltage: reverse appears across the diode, not the LED | Costs ~0.6–0.7 V of forward drive — see §4. **Never DNP.** |
+| **Series position** — 0 Ω jumper *or* blocking diode (1N4148/1N4007 class) | **POPULATED (0 Ω)** | With the diode fitted, blocks DC over-voltage: reverse appears across the diode, not the LED | Costs ~0.6–0.7 V of forward drive — see §4. **Never DNP.** ⛔ **NOT WHAT WAS BUILT** — see the note below the table. |
+
+> **⛔ IMPLEMENTATION NOTE (2026-07-25): the 0 Ω-link default in the row above was
+> REJECTED at build time and must not be resurrected.** Two independent reasons:
+> (1) a 0 Ω is an **`R`-prefix** part — 40 of them shift every resistor refdes above `R3`
+> by 40, destroying `EXPECTED_OPTO_PULLUPS = {R4, R6, …, R82}` in `audit_revD_board.py`
+> plus seven manual chapters; and (2) **0805 (pads ±0.913 mm) and SOD-323 (pads
+> ±1.05 mm) cannot share a land**, so the "0 Ω now, diode later" swap does not survive
+> contact with a real footprint. What shipped is an **always-populated 1N4148WS on a
+> SOD-323 land on all 40 channels** — zero new part class (LCSC C118873 was already on the
+> BOM, qty 8 → 88), zero new BOM line, zero refdes churn (new parts `D18`–`D97` /
+> `C17`–`C56`, appended last). The **clamp is populated too**, so there is no per-channel
+> diode/clamp stuffing decision at all; the only DNP position is the filter cap.
 | **Anti-parallel clamp diode** across the LED | DNP | Clamps LED reverse to ~0.7 V with **zero** forward-current penalty; also the classic cheap **AC-sense** front-end (opto pulses at line rate) | **Does not block DC — it conducts.** Must not be fitted alone on a non-dry channel; see §4. |
 | **Filter cap** on the slow-input logic side | DNP | Integrates an AC channel's pulse train into a steady level so MCP reads don't chatter | Fast (RP2040) channels may prefer edge counting instead |
 

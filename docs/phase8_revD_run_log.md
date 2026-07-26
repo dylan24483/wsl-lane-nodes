@@ -2015,3 +2015,140 @@ rev-C sacred snapshot **189/189, failures 0, EXIT=0** (plus the tracked
 `release_evidence` archive gate); **Safety_Rail == 13**; DRC **0 / 0 / 0**;
 ERC **1 waived error + 39 warnings**; `.kicad_pcb` byte-identical.
 **Firmware NOT touched, NOT flashed.**
+
+---
+
+## 2026-07-25 — r6 RELEASE BUILD (fab package **r7**), stuffing BOM, FA-16
+
+Same day, after the r6 review batch. **No copper changed in this pass** — the routed board
+is byte-identical (`source_board_sha256` `695cd7b1…3de7`, `source_netlist_sha256`
+`c93b06fa…1fd7`, identical in the r6 and r7 manifests). This pass hardens the **release
+gate** and produces the crew-facing paperwork the r6 build did not have.
+
+### Naming — why the released package is `_r7` and not `_r6`
+
+`export_fab_revD.py` **refuses to run if the output directory exists** (the rev-B/rev-C
+`rmtree` incident must be structurally impossible), and an existing package is immutable.
+`kicad/fab_revD_2026-07-25_r6/` was already exported and committed. The gate/paperwork
+changes below alter emitted files (`-dnp-excluded.csv` gains identity columns, the README
+gains lock text, and a new stuffing CSV appears), so a re-export was required and it had to
+go to a NEW directory.
+
+**`r6` is the name of the DESIGN ITERATION; `r<n>` on a directory is the EXPORT BUILD** —
+exactly as r1/r2/r3 were three builds of one design on 2026-07-21 and r4/r5 two on
+2026-07-23. `_r6/` now carries a `_SUPERSEDED_DO_NOT_UPLOAD.txt` stating plainly that it is
+**not electrically superseded** and that r7 is the same copper, so exactly one package is
+current (the `tests/test_fab_package_notes.py` invariant) without implying a defect that
+does not exist. **Build from `kicad/fab_revD_2026-07-25_r7/`.**
+
+### 1. The equality gate now asserts the r6 topology PER CHANNEL, not by totals
+
+The pre-existing H6 gate asserted **counts** (391 parts / 68 DNP / 323 placed / 306
+JLC-placed / 27 lines / 17 hand-solder). Those counts are **equally satisfied by a board
+with 80 clamps and no series diode** — precisely the configuration the r6 safety case
+rejects (a clamp alone backfeeds `Rin` into the shared `FIELD_WET_V` rail). New
+`assert_r6_input_protection()` proves, for each of the 40 channels independently:
+
+- `FIELD_RIN_<n>` = exactly `Rin.2` + the `Dser` **ANODE (pin 2)**;
+- `FIELD_LED_<n>` = exactly `Dser.K` + `Dclamp.K` + PC817 anode (three nodes);
+- the field-pin net carries the `Dclamp` **ANODE** + PC817 cathode (proves *anti*-parallel);
+- the logic net carries `Cflt.1` + `Rpu.2`, and `Cflt.2` returns to `GND`;
+- every `Dser`/`Dclamp` is `1N4148` / `D_SOD-323`, **NOT DNP**, and present in
+  **placed AND CPL AND JLC**; a DNP `Dser` raises an explicit STOP-SHIP message naming the
+  open-circuit consequence rather than a count mismatch;
+- every `Cflt` **is** DNP and absent from placed/CPL/JLC, split **8 × 10 nF fast /
+  32 × 2.2 µF slow**, and has a `FIELD_STUFF_LOCK` identity;
+- refdes uniqueness, and that **no single diode serves as both** series block and clamp;
+- **no r6 part on `FIELD_WET_V`, `RELAY_ENABLE_RAIL`, `RAIL_GATE`, `SAFE_STOP_RETURN` or
+  `SAFE_TBSC_RETURN`** — and the guard **fails if one of those net names is absent**, so a
+  rename cannot silently disarm it.
+
+### 2. One diode line, hard-locked — and the bug that gate caught on itself
+
+All placed `1N4148` must map to a single onsemi **1N4148WS / `D_SOD-323` / LCSC C118873**
+line, **quantity exactly 88**, designator string exact, all 80 r6 refs present. This turns
+"zero new JLC-assembled part classes" (`EXPECTED_JLC_LINES` = 27) from a comment into a
+checked claim. **The first version of this assert FAILED**: it compared against every 1N4148
+in the netlist and found 89, because `D13` (`Dfly_M1`) is a 1N4148 that ships **DNP** with
+the M1 channel. Corrected to compare against the **placed** set. Recorded because it is the
+same class as the pre-existing `EXPECTED_DNP` traps: a count that is right for one reason
+and wrong for another.
+
+### 3. FIELD-STUFFED MPN locks — the gap `PART_LOCK` structurally could not cover
+
+`PART_LOCK` only ever described parts **JLC** fits. The 40 `Cflt_*` lands ship empty and are
+fitted **by us**, so their bought identity lived nowhere. New `FIELD_STUFF_LOCK`:
+
+| Value | MPN | LCSC | Review |
+|---|---|---|---|
+| 2.2 µF 25 V X7R 0805 | Samsung **CL21B225KAFNNNE** | **C19110** | FR-17 |
+| 10 nF 50 V X7R 0805 | TORCH **C0805B103K500NT** | **C17702767** | FR-18 (already an assembled line — C13) |
+
+1 µF (C28323) is **rejected on the record**: 749 nF worst-effective < the 951 nF 60 Hz floor.
+These identities are now emitted **into `assembly/*-dnp-excluded.csv`, in the same row as the
+"do not fit" reason** — decision and buy identity travel together. Rows whose part genuinely
+is not chosen yet read `(identity awaits G7 item 7 characterization)`, never an empty cell.
+
+### 4. Per-channel STUFFING BOM (new artifact)
+
+`assembly/wsl-phase8b-revD-r6-channel-stuffing.csv` (tracked copy
+`docs/phase8_revD_r6_channel_stuffing.csv`), **40 rows, every field DERIVED from the
+netlist** — connector pin, all five refdes, evidence class, measured value or machine-side
+prior, and the measurement that decides the one open question.
+
+- **`Dser` + `Dclamp`: POPULATE on all 40, uniform, no per-channel decision.** That is the
+  answer to "which channels get diode+clamp" — *all of them*. The 0 Ω-default plan the
+  recommendation doc proposed was rejected at build time (R-prefix refdes churn; 0805 and
+  SOD-323 cannot share a land).
+- **`Cflt`: DNP, measure-then-stuff.** MEASURED and decided: GS1–GS10 + BS (11 VDC dry),
+  **PBZ** (33 VDC), **DIELL_L/DIELL_R** (15.4–16 V) — all DC, all stay unfitted.
+  UNMEASURED: cams **SA/SB/SC/TA1/TA2/TB**, **FOUL**, **GP**, **PBC**, **OS**, TENTH + the
+  four `MAN_*`, and AUX1–AUX11 (spares).
+- **Deciding measurement, carried in the row:** meter the wire to machine common on **DC and
+  AC** with the OEM brain powered and this board disconnected, scope-confirm, then:
+  `V_AC < 1 Vrms` ⇒ DC class, leave unfitted; `≥ 5 Vrms` on a **SLOW** channel with a
+  ≥ 200 ms release budget ⇒ fit 2.2 µF and re-run FA-9 edge timing; `≥ 5 Vrms` on a **FAST**
+  channel ⇒ **never a cap** (≥ 951 nF ⇒ 183 ms de-assert vs a 1 ms edge budget) — tap at the
+  switch or change firmware. Record N either way.
+
+### 5. FA-16 — unpowered per-channel orientation + continuity census (new first-article gate)
+
+FA-15 proves the clamp on the few channels a live machine can drive reverse-biased. **FA-16
+proves all 120 r6 parts on all 40 channels with no machine and no power**, and it is the only
+gate that catches a **reversed `Dser`** before that channel is silently dead. Two-direction
+DMM diode-test probe per channel: **(A)** `FIELD_RIN_<n>` → field pin ≈ **1.75–1.95 V**
+(`Dser` Vf + LED Vf in series); **(B)** reversed ≈ **0.60–0.75 V** (`Dclamp` alone, the only
+thing that may conduct that way). OL on (A) = `Dser` reversed/open; OL on (B) = `Dclamp`
+missing/open/reversed. Meter caveat recorded: the (A) reading needs diode-test compliance
+**> 2.0 V** or a good board reads OL. The generated pack carries the **40-row census table**,
+built with the same fail-on-blank discipline as the R2-5 TP table (a missing refdes or a
+blank connector pin **refuses to generate the pack**).
+
+### 6. Two stale test constants — fixed by removing the third copy of the number
+
+`tests/test_fab_package_notes.py` carried its own hardcoded `28` DNP and `271` SKiDL-line
+counts and had been **failing on a correct board** since r6 landed. Both now scrape the
+single pinned source (`EXPECTED_DNP` / `EXPECTED_NETLIST_PARTS` in `export_fab_revD.py`)
+instead of inventing a competing constant.
+
+### Gate chain — all green
+
+| Gate | Result |
+|---|---|
+| Generator (`py -3`) | ERC waiver **1 waived error + 39 warnings**, part registry **391**; netlist sha256 `c93b06fa…1fd7` (unchanged) |
+| Netlist diff vs rev-C | **RESULT CLEAN**; DEEP_TOUCH 107/107, DEEP_MOVE 32/32, UNCHANGED_NETS 77 |
+| Netclasses | Logic_Signal 103 / Logic_Power 4 / **Safety_Rail 13** / Field_Sense 122 / Machine_Output 21 = **263** |
+| `route_revD.py --check-only` | 2281 actions, **SELF-CHECK 0 problems** |
+| `kicad-cli pcb drc` (fresh) | **0 violations / 0 unconnected**, exit 0 |
+| `audit_revD_board.py` routed | **ALL PASS**, incl. every r6 assertion 40/40 and Safety_Rail == 13 |
+| Export | **ALL EXPORT GATES PASS** → `kicad/fab_revD_2026-07-25_r7/`, 46 manifest members, counts 391/68/323/306/27/17 |
+| Board outline | **250.0 × 240.0 mm**, `INPUT_PITCH` 5.700 mm — **no dimension moved** (enclosure spec annotated) |
+| `verify_revC_snapshot.py --compare-checkout` | archive **189/189**, checkout **173/173**, failures **0**, EXIT=0 |
+| Lane suite | `pytest tests/ -q` → **777 passed** |
+| Firmware | `pytest firmware/rp2040/test/` → **9 passed + 4 subtests**. **NOT touched, NOT flashed.** |
+
+Package artifacts: `wsl-phase8b-revD-fab-package.zip` (2,805,837 B, sha256 `cffc8c5d…`),
+`-gerber-drill.zip` (469,434 B, `bac711c8…`), `-jlc-standard-pcba-upload.zip` (469,039 B,
+`58077bcb…`). Full per-file sha256 manifest in the package's `manifest.json`.
+
+**Release report: `docs/phase8_revD_r6_release_report_2026-07-25.md`.**

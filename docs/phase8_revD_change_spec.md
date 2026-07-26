@@ -17,10 +17,18 @@
 > IS the rev-C generator; `kicad/fab_revB_routed_manual/` IS the rev-C-as-ordered package
 > (see its `PROVENANCE.md`).
 >
+> **⚠️ CURRENT PACKAGE IS NO LONGER r5 — see §K.** Copper was REOPENED on 2026-07-25
+> (Dylan's call: the first article should be fleet-intent, not frozen-and-bodged) and the
+> r6 per-channel input protection landed on all 40 opto channels. The current package is
+> **`kicad/fab_revD_2026-07-25_r7/`** (release build of the r6 design — same copper as
+> `_r6/`, which is tombstoned so exactly one package is current). Everything below about
+> the 47 kΩ pull-ups still holds; what changed is that `Rin`'s output is no longer the LED
+> anode node. **§K is the authority for the r6 delta in this document.**
+>
 > **IMPLEMENTED CURRENT DELTA (2026-07-23):** exactly the 40 PC817 collector
 > pull-ups `Rpu_*` (`R4,R6,…,R82`) are **47 kΩ**, not 10 kΩ. All unrelated
-> 10 kΩ networks remain unchanged. Current package:
-> `kicad/fab_revD_2026-07-23_r5/`. The binding electrical analysis and
+> 10 kΩ networks remain unchanged. (Package pointer at the time: `_r5/` —
+> superseded, see above.) The binding electrical analysis and
 > every-channel FA-9 acceptance are in
 > `phase8_revD_remediation_spec_2026-07-21.md` §R4; that section supersedes
 > older 10 kΩ PC817 arithmetic in historical review records. Its calculations
@@ -749,3 +757,95 @@ stub trap). pcbnew steps run under KiCad 10's bundled python
 | F | catalog §2 "Do NOT" (external analog, permanently) + §3 item 4; generator J_PI wiring 401–412 (J1 fully consumed); 0x23 comment line 529 |
 | G | catalog "Nice-to-have" OUT-B row (zero diagnostics yield); constraint 10 (shrink) |
 | H/I | `apply_netclasses_revB.py` / `audit_revB_board.py` (counts + fail-closed pattern); change list §10–12 (process gates); `phase8b_pcb_revB_spec.md` (netclass history, 184-net baseline) |
+
+---
+
+## K. r6 — per-channel input protection on all 40 opto channels (**IMPLEMENTED 2026-07-25**)
+
+**Decision record.** Copper for rev-D was frozen after r5. On **2026-07-25 Dylan reopened
+it**, with the reasoning recorded verbatim in the run log: he wants the first-article order
+to be **as close to fleet-intent as possible rather than freezing and bodging**, and the
+schedule risk on this program is **bench time, not design time** — rev-C's bench campaign
+is done (6/6 relays, GS map 10/10, all six rail conditions drop TP16 independently, NE555
+≈10 s, max-run ≈9 s, lamps 4/4), so a copper iteration costs days of CAD, not weeks of
+bring-up. The fab order still goes out this week.
+
+**Full authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`.** This section
+is the change-spec-level summary and the pointer; it does not restate the derivations.
+
+### K.1 What changed
+
+`opto_input()` was one hardcoded topology for all 40 channels, and it had **no series
+blocking diode, no reverse clamp, and no filter position**:
+
+```
+before:  FIELD_WET_V -> Rin (2k2) -> [PC817 LED] -> field pin           (2-node FIELD_LED_<n>)
+after:   FIELD_WET_V -> Rin (2k2) -> FIELD_RIN_<n> -> [Dser] -> FIELD_LED_<n>
+                                     -> [PC817 LED] -> field pin
+                                     with [Dclamp] anti-parallel across the LED,
+                                     and a DNP logic-side Cflt (opto collector -> GND)
+```
+
+- **`Dser_<n>`** — 1N4148WS SOD-323, series block, **ALWAYS POPULATED**. Anode on
+  `FIELD_RIN_<n>`, cathode on `FIELD_LED_<n>`.
+- **`Dclamp_<n>`** — 1N4148WS SOD-323, **anti-parallel across the LED**, populated.
+- **`Cflt_<n>`** — 0805 X7R, **DNP by design**, logic side. 10 nF on the 8 RP2040 fast
+  channels, 2.2 µF on the 32 MCP23017 slow channels.
+- Refdes: `D18`–`D97` (diodes) and `C17`–`C56` (caps), all appended by
+  `block_input_protection()` which runs **last**, so **no pre-existing refdes moves** —
+  `EXPECTED_OPTO_PULLUPS = {R4, R6, …, R82}` and seven manual chapters stay valid.
+
+### K.2 Why both provisions, and why neither is DNP
+
+- **A clamp alone is not sufficient.** On the reverse half-cycle it conducts and backfeeds
+  `Rin` into the **shared** `FIELD_WET_V` rail, which the unregulated TMA-0505S cannot
+  sink: the self-consistent solve pulls `Vw` to **10.77 V at 9.79 mA** on a 33 VDC PBZ
+  channel — one over-voltage channel corrupting the wetting rail for **all 40**.
+- **A series diode alone is not sufficient.** It leaves the LED's reverse voltage set by a
+  **leakage divider** (diode ≈ nA vs LED I_R 10 µA @ 4 V) — correct by an unspecified
+  parameter ratio rather than by construction. The clamp is what pins it at ≈ 0.35 V.
+- **The series position is never DNP-empty** — that leaves the channel **open-circuit**.
+  The "0 Ω link now, diode later" plan from the recommendation doc was **rejected twice
+  over**: a 0 Ω is an `R`-prefix part (40 of them shift every resistor above R3 and break
+  the pull-up gate), and 0805 (pads ±0.913 mm) and SOD-323 (pads ±1.05 mm) **cannot share
+  a land**, so the swap does not survive contact with a real footprint.
+- **The clamp is populated, not DNP.** With `Dser` fitted it carries leakage only (≤ 15 µA),
+  so it is a *voltage-defining* element, not a current path; it costs $0.32/board, needs no
+  `PART_LOCK` change, and it removes the per-channel stuffing table that the recommendation
+  itself objected would be "easy to lose across 32 lanes".
+
+### K.3 What it cost
+
+| | before r6 | after r6 |
+|---|---|---|
+| Netlist parts / DNP / placed / JLC-placed | 271 / 28 / 243 / 226 | **391 / 68 / 323 / 306** |
+| Named nets | 223 | **263** (+40 `FIELD_RIN_*`) |
+| `Field_Sense` netclass | 82 | **122** |
+| **`Safety_Rail` netclass** | **13** | **13 — UNCHANGED (stop-ship if it ever drifts)** |
+| JLC assembled part **lines** | 27 | **27** — the 80 diodes join the existing 1N4148WS line (qty 8 → 88) |
+| CTR margin at the MCP V_IL sink | 22.3× | **≈ 17× worst-case** (the 47 kΩ pull-up had already paid for the diode) |
+| `FIELD_WET_V` load | 74.5 mA (37 %) | **58.1 mA (29 %)** — *lower*; current was never the constraint |
+| Board outline | 250 × 240 mm | **250 × 240 mm — unchanged**, `INPUT_PITCH` 5.700 mm unchanged, the 0.02 mm opto-row slack never touched |
+
+`Rin` **stays 2k2** (Option A′ 1k8 was considered and rejected — the pull-up already bought
+the margin). Firmware was **not touched and not flashed**.
+
+### K.4 The one thing r6 does NOT fix
+
+A cam channel driven by the machine's 24 VAC ladder becomes **electrically survivable**
+(28.9 V peak vs the 1N4148WS 75 V V_RRM) but **not functionally usable**: both half-cycles
+(7.9 / 8.7 ms) clear `DEBOUNCE_CAM_US` = 2 ms, so 120 debounced edges/s = **12 per
+`CHATTER_WINDOW_MS`** against `CHATTER_MAX_CAM` = 8 → a continuous chatter fault. Worse,
+the four AC-suspect cams (SA/SB/TA1/TA2) are **fast** channels, so the 2.2 µF integration
+route is unavailable to exactly the channels most likely to need it (≥ 951 nF ⇒ 183 ms
+de-assert vs a 1 ms edge budget). Closing that needs a **firmware** change (out of scope)
+or the metering-guide fallback: **tap those cams at the switches**.
+
+### K.5 Release artefacts
+
+- Package **`kicad/fab_revD_2026-07-25_r7/`** (r6 design, second export build; `_r6/`
+  tombstoned — identical `source_board_sha256`).
+- Per-channel stuffing table `docs/phase8_revD_r6_channel_stuffing.csv`.
+- First-article gates **FA-15** (driven reverse-bias, 0.35 V ± 0.1 V) and **FA-16**
+  (unpowered 40/40 orientation + continuity census).
+- Readiness gate **G17**. Footprint reviews **FR-16 / FR-17 / FR-18** in the run log.

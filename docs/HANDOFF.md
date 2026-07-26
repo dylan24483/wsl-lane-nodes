@@ -87,9 +87,11 @@
 >   `rel-0c746b5747143b8011b01d43`, cfg `05d808411db4bb0d`, UF2 SHA-256
 >   `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`.
 >   ~~It supersedes `_r4/` and every older package. Use only r5.~~
->   **SUPERSEDED 2026-07-25 by `kicad/fab_revD_2026-07-25_r6/` — see the r6
->   addendum below. `_r5/` now carries a `_SUPERSEDED_DO_NOT_UPLOAD.txt`
->   tombstone like `_r1`…`_r4`. DO NOT UPLOAD r5: it has BARE opto inputs.**
+>   **SUPERSEDED 2026-07-25 by `kicad/fab_revD_2026-07-25_r7/` (the release build
+>   of the r6 input-protection design) — see the r6 addendum below. `_r5/` and
+>   `_r6/` now carry `_SUPERSEDED_DO_NOT_UPLOAD.txt` tombstones like `_r1`…`_r4`.
+>   DO NOT UPLOAD r5: it has BARE opto inputs. r6 is electrically identical to
+>   r7 and is tombstoned only so exactly one package is current.**
 > - J16 substitution wording is fail-closed: a substitute F1 must have
 >   **minimum Ihold at 85 °C ≥90 mA**. Never accept "same trip current" as
 >   equivalent; PPTC trip is time/temperature dependent, not a hard clamp.
@@ -151,8 +153,15 @@
 >   channels, scope TP4; (c) field-pin ↔ field-pin clearance measures
 >   **0.4807 mm** against an IPC-2221B 0.6 mm requirement (pre-existing geometry,
 >   dispositioned open for the fleet revision).
-> - **Current immutable output: `kicad/fab_revD_2026-07-25_r6/`.**
->   `_r1`…`_r5` all carry `_SUPERSEDED_DO_NOT_UPLOAD.txt`.
+> - **Current immutable output: `kicad/fab_revD_2026-07-25_r7/`** (release build of the
+>   r6 design). `_r1`…`_r6` all carry `_SUPERSEDED_DO_NOT_UPLOAD.txt`.
+>   **r7 is the SAME COPPER as r6** — identical `source_board_sha256`
+>   `695cd7b1…3de7` and `source_netlist_sha256` `c93b06fa…1fd7` in both manifests.
+>   "r6" names the design iteration; r7 is its second export build, the way
+>   r1/r2/r3 were three builds of one design on 2026-07-21. r7 adds the
+>   **per-channel** r6 equality gate (totals cannot tell 40 series diodes + 40
+>   clamps from 80 clamps), the C118873 qty-88 one-line hard lock, MPN locks for
+>   the field-stuffed `Cflt` parts, and the per-channel stuffing CSV.
 > - Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`
 >   (+ its 2026-07-25 review corrections to §C.2, §D.5, §F.1, §F.4, §J).
 

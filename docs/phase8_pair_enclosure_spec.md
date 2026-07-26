@@ -15,6 +15,17 @@ The lane-21 **pilot** box is a separate, already-specced single-board article (S
 SCE-24EL2008LP + HDR-60-5 on the lane-21 wall outlet — its ~578×428 mm panel class takes a
 single 250×240 board trivially, OG-1 re-check 2026-07-20); this doc is the **fleet** article.
 
+> **✅ r6 (2026-07-25) MOVED NO DIMENSION — verified, not assumed.** The r6 input-protection
+> spin added **120 parts** (40 `Dser` + 40 `Dclamp` + 40 DNP `Cflt`) inside the existing
+> outline, in a free corridor at x ≈ 59.7–72.9 mm. Re-measured on the routed board after the
+> change: **`BOARD_W` = 250.0 mm, `BOARD_H` = 240.0 mm** (`place_components_revD.py:104,113`;
+> exported board stats read `Width 250.0000 mm / Height 240.0000 mm`), `INPUT_PITCH` still
+> exactly **5.700 mm** across all 40 opto rows, and the 0.0200 mm inter-courtyard slack in the
+> opto column — the dimension that forced 225 → 240 in the first place — was never touched.
+> **Every number in this document therefore stands unchanged.** The MK pattern, the panel
+> stack, the row-39 bottom-edge keep-clear and the ≥ 310 × 670 mm panel requirement are all
+> unaffected.
+>
 > **Rev-D deltas at a glance (2026-07-21):** board zone 225 → **240 mm** (×2); panel stack
 > 640 → **670 mm**; MK mounting pattern 242×217 → **242×232 mm** (bottom holes moved to
 > y=236); **row-39 bottom-edge copper constraint** (§1.2) is BINDING on the backplate/lip

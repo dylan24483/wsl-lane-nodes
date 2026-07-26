@@ -182,7 +182,9 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
     1N4007 interposer for them is **SUPERSEDED — do not build it.** Prove the clamp per
     board with **FA-15** first (LED reverse must read **0.35 V ± 0.1 V**).
   - Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`;
-    package `kicad/fab_revD_2026-07-25_r6/`.
+    **current package `kicad/fab_revD_2026-07-25_r7/`** (release build of the r6 design —
+    same copper, `_r6/` tombstoned so exactly one package is current). Per-channel
+    stuffing table: `docs/phase8_revD_r6_channel_stuffing.csv`.
   **STILL OPEN (r6 does NOT close these) — the powered at-machine metering session is still
   required** (**meter tapped-lead live voltages BEFORE reconnecting any board** — standing
   queue item):
@@ -276,16 +278,20 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   stub placement severed a zone neck at (160, 83–84) and was caught and re-placed north)
   and the Safety_Rail==13 stop-ship invariant.
 
-### G11 — Fab export to a NEW dated directory  `[x]`  (re-run 2026-07-23, input-margin hardening)
-- `scripts/export_fab_revD.py` RUN → **`kicad/fab_revD_2026-07-23_r5/`** (hashed
-  as-ordered package, `manifest.json` with sha256 per file + source board/netlist hashes).
-  REV and output-dir are parameters; the script **refuses to run if the output dir exists**
-  (verified live — second run refused; no rmtree anywhere).
+### G11 — Fab export to a NEW dated directory  `[x]`  (re-run 2026-07-25, r6 release build = package **r7**)
+- `scripts/export_fab_revD.py` RUN → **`kicad/fab_revD_2026-07-25_r7/`** (hashed
+  as-ordered package, `manifest.json` with sha256 per file + source board/netlist hashes;
+  46 members). REV and output-dir are parameters; the script **refuses to run if the output
+  dir exists** (verified live — second run refused; no rmtree anywhere). `_r1`…`_r6` all
+  carry `_SUPERSEDED_DO_NOT_UPLOAD.txt`; `_r6/` is the **same copper** as r7 (identical
+  `source_board_sha256` `695cd7b1…3de7`) and is tombstoned only so exactly one package is
+  current. *(Historical: the 2026-07-23 run produced `_r5/`, counts 271/28/243/226.)*
 - In-process re-gates before exporting: kicad-cli DRC **0/0/0** with the live remediation
   `.kicad_dru`; `audit_revD_board.py` routed mode **ALL PASS**.
 - **BOM↔CPL↔netlist equality ASSERTED** (not sampled): every placed refdes present in all
-  three with matching value+footprint; pinned counts **271 parts / 28 DNP / 243 placed /
-  226 JLC-placed / 27 JLC lines / 17 hand-solder**.
+  three with matching value+footprint; pinned counts **391 parts / 68 DNP / 323 placed /
+  306 JLC-placed / 27 JLC lines / 17 hand-solder**. Since r7 the equality is also asserted
+  **per part class, per channel** for the 120 r6 parts — see **G17**.
 - **PC817 pull-up scope hard-locked:** `R4,R6,…,R82` are exactly 40 × 47 kΩ,
   UNI-ROYAL `0805W8F4702T5E`, LCSC **C17713**. The exporter rejects a missing
   channel, an unrelated 47 kΩ part, or a merge back into the 10 kΩ BOM line.
@@ -386,6 +392,66 @@ transport budget was a category error. Note also that a genuinely late kick is a
 handled **in hardware**: the NE555 simply does not get its pulse and drops the rail. The
 software bound is defense in depth and must not be the thing that stops the lane on
 scheduler jitter alone.
+
+### G17 — r6 input protection: release-gate integrity + the stuffing decision  `[~]`  **(new 2026-07-25)**
+
+r6 put 120 parts on 40 channels and the whole safety case is *which* part is *where*.
+This gate collects the checks that make that verifiable rather than assumed, and records
+the one stuffing decision the crew is allowed to make.
+
+- `[x]` **Per-channel equality gate in the export, not just totals.** The pre-r6 gate
+  asserted counts (391 / 68 / 323 / 306). Totals cannot distinguish *40 series diodes +
+  40 clamps* from *80 clamps and no series diode* — the exact failure the design rejects.
+  `export_fab_revD.assert_r6_input_protection()` now proves, per channel:
+  `FIELD_RIN_<n>` = `Rin.2` + `Dser` **anode**; `FIELD_LED_<n>` = `Dser.K` + `Dclamp.K` +
+  PC817 anode; the field pin carries the `Dclamp` **anode** + PC817 cathode; every
+  `Dser`/`Dclamp` POPULATED and present in placed **and** CPL **and** JLC; every `Cflt`
+  DNP and absent from all three; 8 × 10 nF fast / 32 × 2.2 µF slow; and **no r6 part on
+  `FIELD_WET_V`, `RELAY_ENABLE_RAIL`, `RAIL_GATE`, `SAFE_STOP_RETURN` or
+  `SAFE_TBSC_RETURN`** (standing prohibition X3). A DNP `Dser` is an explicit STOP-SHIP
+  message, not a count mismatch.
+- `[x]` **One diode line, hard-locked.** All 88 placed `1N4148` (8 pre-r6 + 80 r6) must map
+  to a single onsemi 1N4148WS / `D_SOD-323` / LCSC **C118873** line with the exact
+  designator string. This is what makes "zero new JLC-assembled part classes"
+  (`EXPECTED_JLC_LINES` = 27) a checked claim instead of a comment. `D13` (`Dfly_M1`) is a
+  1N4148 too but is DNP, so it is compared against the **placed** set — that asymmetry is
+  deliberate and is the one bug this gate already caught on itself.
+- `[x]` **Field-stuffed MPNs locked.** `PART_LOCK` only ever covered parts *JLC* fits, so
+  the 40 `Cflt` lands had no bought identity at all. `FIELD_STUFF_LOCK` now pins
+  2.2 µF = Samsung **CL21B225KAFNNNE** / LCSC **C19110** (FR-17) and 10 nF = TORCH
+  **C0805B103K500NT** / LCSC **C17702767** (FR-18), and those identities are emitted into
+  `assembly/*-dnp-excluded.csv` **in the same row as the "do not fit" reason**. 1 µF
+  (C28323) is REJECTED on the record: 749 nF effective < the 951 nF 60 Hz floor.
+- `[x]` **The stuffing decision is written down and is one line long.** All 40 channels take
+  `Dser` + `Dclamp` **POPULATED — uniform, no per-channel decision, no per-lane record to
+  lose across 32 lanes.** The *only* decision is the DNP `Cflt`, and it is
+  **measure-then-stuff**: `docs/phase8_revD_r6_channel_stuffing.csv` (also in the package)
+  carries, per channel, the connector pin, all five refdes, the evidence class
+  (MEASURED / UNMEASURED / SPARE), the measured value or the machine-side prior, and the
+  exact measurement that decides it.
+  - **MEASURED, decided:** GS1–GS10 + BS (11 VDC dry) · **PBZ** (33 VDC) ·
+    **DIELL_L / DIELL_R** (15.4–16 V). All DC ⇒ **`Cflt` stays UNFITTED**; `Dser` +
+    `Dclamp` are what make PBZ and DIELL landable at all.
+  - **UNMEASURED, measure-then-stuff:** cams **SA/SB/SC/TA1/TA2/TB** · **FOUL** · **GP** ·
+    **PBC** · **OS** · TENTH + the four MAN_* · AUX1–AUX11 (spares).
+  - **The decision rule, in full:** V_AC < 1 V rms ⇒ DC class, leave unfitted whatever
+    V_DC reads. V_AC ≥ 5 V rms on a **SLOW** channel with a ≥ 200 ms release budget ⇒ fit
+    2.2 µF and re-run FA-9 edge timing. V_AC ≥ 5 V rms on a **FAST** channel ⇒ **never fit
+    a cap**: 60 Hz integration needs ≥ 951 nF ⇒ 183 ms de-assert against a 1 ms edge
+    budget. That channel is *survivable, not usable* — tap it at the switch or change
+    firmware (r6 spec §B.4).
+- `[ ]` **FA-16 unpowered orientation + continuity census, 40/40, volts recorded.** New
+  first-article gate (pack §4). Two-direction DMM probe per channel: forward
+  ≈ 1.75–1.95 V (`Dser` + LED in series) and reverse ≈ 0.60–0.75 V (`Dclamp` alone). Run
+  **before FA-1**, on the bare board. This is the only gate that catches a **reversed
+  `Dser`** before the channel is silently dead, and it catches a **missing `Dclamp`**
+  without needing a live machine.
+- `[ ]` **FA-15 driven reverse-bias proof** on every channel that can go reverse-biased
+  (PBZ at 33 VDC is canonical): LED node must read **0.35 V ± 0.1 V** reverse — and
+  **> 1 V means the clamp is missing/open/reversed, STOP.** Record millivolts, not "PASS".
+- `[ ]` **Record N**, the count of channels metered as *driven* 24 VAC. The `FIELD_WET_V`
+  budget assumes **N = 0**; **N ≥ 1 reopens it** (16.8 mA peak/channel, zero bulk
+  capacitance, ≤ 11 coincident channels before the TMA-0505S runs out). Scope TP4.
 
 ---
 

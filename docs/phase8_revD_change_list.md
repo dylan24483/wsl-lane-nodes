@@ -447,8 +447,13 @@ Deferred with DC1.
   (C17–C56) are DNP. **PBZ and DIELL_L/DIELL_R may now be landed directly on board inputs**
   (prove per board with **FA-15**: LED reverse = 0.35 V ± 0.1 V), and the **harness 1N4007
   interposer is SUPERSEDED — do not build it.**
-  Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`; package
-  `kicad/fab_revD_2026-07-25_r6/`.
+  Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`; **current package
+  `kicad/fab_revD_2026-07-25_r7/`** — the release build of the r6 design (same copper,
+  identical `source_board_sha256`; `_r6/` is tombstoned so exactly one package is current).
+  **Per-channel stuffing table: `docs/phase8_revD_r6_channel_stuffing.csv`** (also inside
+  the package). It states in one place what the crew asks: all 40 channels take
+  `Dser` + `Dclamp` **populated, uniform, no decision**; the DNP `Cflt` is the only
+  decision and is **measure-then-stuff** with the deciding measurement in the row.
 
   > **RETRACTION.** Between 2026-07-21 and 2026-07-25 this entry read *"all 40 `FIELD_LED_*`
   > nets carry exactly two nodes… no series-diode footprint, no anti-parallel clamp
