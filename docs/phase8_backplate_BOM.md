@@ -100,7 +100,8 @@ which brought up I²C successfully. Full record: readiness checklist DECISION RE
 
 ⏱ **ORDER THESE FIRST.** `docs/cowork_cart_handoff.md` records **1843680** (J3+J15) and
 **1843703** (J5) as *backordered at DigiKey at qty 5*; the fleet needs 72 and 38. Buy the whole
-Phoenix family — A9–A15 plus §B6/B7 plus the 1840489 lifetime buy — in **one PO, today**.
+Phoenix family — **A11–A14, A16, A17** plus §B6/B7 plus the 1840489 lifetime buy — in
+**one PO, today**. *(A9/A10/A15 are no longer on this list — JLC supplies them, see A′.1.)*
 Phoenix lead times have historically swung 8–20 weeks and this family gates the entire build.
 
 ➕ **Spare MCV headers matter more than the usual 10%:** FA-8 requires an *irreversible* coding-rib
@@ -167,10 +168,27 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 |---|---|---|---|---|---|---|
 | D1 | PoE splitter | PoE Texas **GBT-12V60W** | 1 | **16** (+2) | $90 | 802.3bt → 12 V 60 W + gigabit passthrough. Panel-mount |
 | D2 | DC-DC converter | Mean Well **DDR-60G-5** | 1 | **16** (+2) | $33 | 9–36 V in → 5 V / 10.8 A, DIN |
-| D3 | Fuse terminal blocks | Konnect-It **KN-F10** | **4** | **64** | $3.12 | F1 · F2 · F3 · F4 |
+| D3 | Fuse terminal blocks | Konnect-It **KN-F10** | **6** | **96** | $3.12 | F1 · F2 · F3 · F4 · **F5 camera** · **F6 sensors** |
+| D7 | **Isolated 12 V DC-DC** ⚠️ | ≥5 W isolated, 12 V in / 12 V out | 1 | **16** (+2) | ~$15 | **NEW 2026-07-26.** Feeds F6 only. Its 0 V is `FIELD_GND` — see the warning below |
 | D4 | Fuses 5×20 mm | 3 A · 2 A fast ×2 · 4 A time-delay | 4 | **64** (+32 spare) | ~$0.40 | **F2/F3 (2 A fast) ARE the H-23 fix** |
 | D5 | Ground terminal blocks | Konnect-It **KN-G10** | 2 | **32** | ~$3.10 | 5 V return distribution |
 | D6 | Terminal block markers | printed strip | 1 set | **16** | ~$3 | label F1–F4 and the ground blocks |
+
+
+> **⚠️ TWO GROUND DOMAINS — do not merge them.** The 2026-07-26 decision to deprecate the OEM
+> DIELL interface board means we now power the ball sensors and the camera ourselves, and they
+> are **not** on the same supply:
+> - **F6 → sensors** runs off the **isolated** DC-DC (D7). The sensors sink their output to
+>   `FIELD_GND`, so their 0 V *is* `FIELD_GND`. Powering them from the ordinary 12 V rail would
+>   bond `FIELD_GND` to logic ground and **defeat the TMA-0505S field isolation the whole input
+>   design rests on.**
+> - **F5 → camera** runs off the ordinary (non-isolated) 12 V. The camera's video return reaches
+>   logic ground through the capture dongle anyway, so an isolated supply would only re-bond it
+>   by a longer path.
+>
+> Harness leads are colour-coded so the two cannot be confused: **Violet/Grey = isolated sensor
+> pair**, **Brown/Pink = camera pair**, used on no other lead (wire list Rev 4, W50–W53).
+> Full rationale: `docs/phase8_diell_board_deprecation_2026-07-26.md`.
 
 ## E · DIN infrastructure and enclosure
 
@@ -235,6 +253,20 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 | G6 | PoE head-end | — | — | **18 injectors** (TL-POE170S ~$50) or 2× 16-port bt switch | |
 | G7 | Cat6 runs | — | 1/pair | **16 runs** | one per enclosure; carries power AND data |
 | G8 | J14 Stop/CIS interface | 1 | 2 | **32** | ⛔ **DECISION OPEN** — control-power sensing relay ± pit interlock, ~$25/lane |
+| G9 | **Ball-detect sensors** (replaces OEM DIELL) | 2 | 4 | **64** (+8) | ~$40–65 ea. M18 retroreflective NPN-NO, 10–30 VDC, IP67. **NEW 2026-07-26** — see below |
+
+
+> **🔄 OEM DIELL INTERFACE BOARD DEPRECATED (2026-07-26).** Confirmed at the machine that the
+> board feeds and outputs **only** the DIELL sensors and the camera — nothing else — so it can be
+> deleted outright rather than replaced. That retires **32 boards** with no sourcing story (and
+> 42 VAC out of the ball-detect path) plus **64 sensors** with no North American distribution.
+> A commodity NPN-NO sensor sinks the J3 field pin to `FIELD_GND` directly, which is
+> electrically the same event the channel was designed for — no interface board needed.
+> ⛔ **Retroreflective or through-beam only — never diffuse.** A bowling ball is dark and glossy.
+> First article: Datasensing/Micro Detectors **`SSC/AN-0C`**, the documented successor, ~$64 at
+> Rankin USA. Full spec, the two-ground-domain rule, and the BOM deltas:
+> **`docs/phase8_diell_board_deprecation_2026-07-26.md`**.
+> *(This also CLOSES audit finding M-21 — the camera's 12 V died with T-VISION.)*
 
 ---
 

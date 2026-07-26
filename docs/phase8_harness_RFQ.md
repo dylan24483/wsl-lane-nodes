@@ -1,12 +1,18 @@
 # RFQ — Custom Wire Harness Assembly (Lane Controller Field Harness)
 
 **Westside Lanes · Olympia, WA** · Issued 2026-07-25 · Contact: Dylan DeYoung
-**Assembly:** WSL-LANE-HARNESS-A · **Rev 3**
+**Assembly:** WSL-LANE-HARNESS-A · **Rev 4**
 **Quantity:** 1 first article → 2 pilot → balance to **34 total** (32 lanes + 2 spares).
 Option pricing requested at 48 and 64.
 
-> **Rev 3 supersedes Rev 2 — quote against Rev 3 only.** Rev 2 was never issued.
-> **Rev 3 change:** the enclosure-to-machine run was measured at **6 ft (1829 mm)**;
+> **Rev 4 supersedes Rev 3 — quote against Rev 4 only.** Neither Rev 2 nor Rev 3 was issued.
+> **Rev 4 change:** **four new leads (W50–W53), two power pairs.** We are removing a legacy
+> interface board from the machine and powering its sensors and a camera ourselves.
+> ⚠️ **The two pairs are electrically SEPARATE domains and must never be cross-connected** —
+> see §6 and the wire-list notes. New colours **Violet/Grey** (isolated pair) and
+> **Brown/Pink** (camera pair) are used for no other lead. Lead count 49 → 53.
+>
+> **Rev 3 change:** the enclosure-to-machine run was measured at **6 ft (1829 mm)**.
 > Rev 2 lead lengths were sized before that and were too short once the in-enclosure
 > route is added. L1 2500→**3200**, L2 3000→**3700**, L3 4000→**4700**, L1-200 2300→**3000**.
 > L0 (800) and the J14 jumper (120) are unchanged.
@@ -62,7 +68,7 @@ ends should instead ship un-stripped, say so.
 
 ## 3. Wire list
 
-**Attached as a separate CSV** (`WSL-LANE-HARNESS-A_wirelist_rev3.csv`), one row per lead, with
+**Attached as a separate CSV** (`WSL-LANE-HARNESS-A_wirelist_rev4.csv`), one row per lead, with
 columns: `Wire ID · AWG · UL style · Color · End-A connector ref + position · End-A termination ·
 End-B termination · **Length Class** · Finished length · Label text (identical both ends) ·
 Twisted-pair partner · Notes`.
@@ -84,7 +90,9 @@ Summary for scoping:
 | Safety loop | J14 — MC 1,5/ 4-ST-3,5 | 2 + 1 internal jumper | 18 | **L1** | 3.2 m (jumper 120 mm) |
 | Power in | none — ferruled loose leads | 3 | 18 | **L0** | 0.8 m |
 | Machine outputs | none — ferruled loose leads | 12 | 18 | **L1** | 3.2 m |
-| **Total** | | **~49 leads** | | | |
+| **Sensor power (isolated)** ⚠️ | none — ferruled loose leads | **2** | 18 | **L2** | 3.7 m |
+| **Camera power** ⚠️ | none — ferruled loose leads | **2** | 18 | **L3** | 4.7 m |
+| **Total** | | **~53 leads** | | | |
 
 **Length class definitions:** **L0** = stays inside the enclosure · **L1** = enclosure to the
 machine connector · **L2** = enclosure to the photoelectric sensors · **L3** = enclosure to the
@@ -163,6 +171,15 @@ crack the plug body. Use a calibrated driver.
 | **Red (18 AWG)** | relay normally-open output, and +5 V power |
 | **Black (18 AWG)** | relay common, and power return |
 | **Yellow (18 AWG)** | safety-loop circuit |
+| **Violet** | **isolated +12 V** — sensor supply. ⚠️ separate electrical domain |
+| **Grey** | **isolated 0 V** — sensor return. ⚠️ separate electrical domain |
+| **Brown** | camera +12 V (non-isolated) |
+| **Pink** | camera 0 V (non-isolated) |
+
+> ⚠️ **The Violet/Grey pair and the Brown/Pink pair are two SEPARATE electrical domains and
+> must never be joined, spliced, or share a ferrule.** They are deliberately given four unique
+> colours, used on no other lead, so the distinction survives installation. Please keep them in
+> **separate bundles** and do not lace them together.
 
 ## 7. Labeling — the cost driver, specified precisely
 
@@ -265,7 +282,7 @@ carton per 6–8 assemblies with a packing list.
 
 ## 15. Attachments provided with this RFQ
 
-1. `WSL-LANE-HARNESS-A_wirelist_rev3.csv` — the 49-row from-to wire list with label text and
+1. `WSL-LANE-HARNESS-A_wirelist_rev4.csv` — the 49-row from-to wire list with label text and
    length classes. **This is the controlling document. Where it and this RFQ disagree, the CSV wins.**
 2. `phase8_revD_harness_bom.csv` — plug + coding-profile part identities and the band-marking scheme
 3. Phoenix Contact datasheets for the five Tier-1 plugs and the CP-MSTB coding profile

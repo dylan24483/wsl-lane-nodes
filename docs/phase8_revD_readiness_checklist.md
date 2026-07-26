@@ -18,6 +18,7 @@ on the G15 line to close that gate formally.
 | 3 | **Winford `BRK2x10-DIN` approved** as the C7 board breakout. | Dylan | Replaces an unnamed generic module; unblocks the panel layout |
 | 4 | **Machine C1 = female → we supply MALE/pins. Machine C2A = male → we supply FEMALE/sockets.** | Dylan (measured) | Closes the interposer gender question — see §G4/G5 in the backplate BOM |
 | 5 | **Enclosure-to-machine run = 6 ft (1829 mm)**, measured. | Dylan | Harness wire list re-issued as **Rev 3** (L1 3200 / L2 3700 / L3 4700) |
+| 10 | **OEM DIELL interface board DEPRECATED.** Confirmed at the machine that it feeds/outputs only the DIELL sensors and the camera — nothing else. We power both ourselves. | Dylan, 2026-07-26 | Retires 32 boards + 64 no-NA-distribution sensors + 42 VAC from the ball path. Harness **Rev 4** (+W50–W53); D3 4→6; new isolated 12 V DC-DC. **Closes audit M-21.** Full record: `phase8_diell_board_deprecation_2026-07-26.md` |
 | 6 | **WAVE 1 assembly move approved** — J2, J6–J11, J14 to JLC. | Dylan | Fab package **r9**; hand-solder 17 → 9; 646 THT joints eliminated |
 | 7 | **FA-4 RISK ACCEPTED** — JLC may place A1 (Pico) without a first article proving USB access. | Dylan, 2026-07-26 | See below. **Conditional on the Pico C-number being confirmed as bare RP2040** |
 | 8 | **Pico C-number resolution delegated to Claude.** | Dylan | **UNRESOLVED from public data — escalated to JLC support.** See below |
