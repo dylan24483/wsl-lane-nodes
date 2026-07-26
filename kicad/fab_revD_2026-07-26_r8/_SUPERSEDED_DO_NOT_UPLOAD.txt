@@ -1,0 +1,22 @@
+*** SUPERSEDED — DO NOT UPLOAD ***
+
+Superseded by kicad/fab_revD_2026-07-26_r9/ on 2026-07-26.
+
+Reason: WAVE 1 ASSEMBLY SPLIT CHANGE. r8 has JLC placing 306 parts with 17
+hand-soldered. r9 moves J2, J6-J11 and J14 to JLC: 314 placed / 30 BOM lines /
+9 hand-soldered.
+
+Uploading r8 is not dangerous - it builds a correct board - but you would then
+hand-solder 8 connectors per board (646 joints fleet-wide) that JLC would have
+placed for about $15 total.
+
+r8 ALSO carries a stale README literal naming the retired 10M part UNI-ROYAL
+C26108. Its BOM/CPL are correct (FOJAN C2933281) so an r8 upload orders the
+right part, but the README contradicts its own CSVs. Fixed in r9.
+
+THE BOARD GEOMETRY IS UNCHANGED between r8 and r9. Same 391 parts / 68 DNP /
+323 placed, same DRC 0/0/0, same 250 x 240 mm outline. No re-route, no netlist
+regeneration. Only the assembly split moved.
+
+CURRENT PACKAGE FOR ALL ORDERING:
+  kicad/fab_revD_2026-07-26_r9/

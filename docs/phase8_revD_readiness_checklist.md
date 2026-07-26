@@ -59,7 +59,7 @@ i.e. a new spin. Re-open it deliberately, never by field improvisation.
 > GPPUA/GPPUB must command and read back `0x00`. Any mismatch is STOP-SHIP.
 > `R_TAPPU_*` remains a separate, intentionally unchanged 10 kΩ tap-drain
 > network. The current immutable package is
-> **`kicad/fab_revD_2026-07-26_r8/`**; every older rev-D package — including
+> **`kicad/fab_revD_2026-07-26_r9/`**; every older rev-D package — including
 > `_r5/` and `_r6/` — is superseded
 > for ordering. ⚠️ **The FA-9 operating point below is PRE-r6 and superseded:**
 > r6 inserted a series blocking diode in every channel, so the point is
@@ -102,8 +102,8 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > Board figures anywhere below are superseded: **271 parts / 223 nets, netclasses
 > 103/4/13/82/21, 24 test pads (TP17-24 tap probe pads), ERC baseline 1+39
 > (WVR-ERC-2, pin-pair order-insensitive since round 3)**; release DRC =
-> `kicad/fab_revD_2026-07-26_r8/reports/DRC-revD-fab-export.rpt`; as-current fab package =
-> **`kicad/fab_revD_2026-07-26_r8/`** (47 kΩ PC817 pull-ups plus the J16
+> `kicad/fab_revD_2026-07-26_r9/reports/DRC-revD-fab-export.rpt`; as-current fab package =
+> **`kicad/fab_revD_2026-07-26_r9/`** (47 kΩ PC817 pull-ups plus the J16
 > protection stack with ESD VP moved
 > UPSTREAM of the polyfuse — round-3 finding 2, REV_ID straps rev-D=0b01,
 > Q17-Q20 = onsemi 2N7002LT1G C16338, 10M = C2933281 (r8 re-pin), gbrjob Revision "D").
@@ -232,7 +232,7 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
     1N4007 interposer for them is **SUPERSEDED — do not build it.** Prove the clamp per
     board with **FA-15** first (LED reverse must read **0.35 V ± 0.1 V**).
   - Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`;
-    **current package `kicad/fab_revD_2026-07-26_r8/`** (release build of the r6 design —
+    **current package `kicad/fab_revD_2026-07-26_r9/`** (release build of the r6 design —
     same copper, `_r6/` tombstoned so exactly one package is current). Per-channel
     stuffing table: `docs/phase8_revD_r6_channel_stuffing.csv`.
   **STILL OPEN (r6 does NOT close these) — the powered at-machine metering session is still
@@ -329,7 +329,7 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   and the Safety_Rail==13 stop-ship invariant.
 
 ### G11 — Fab export to a NEW dated directory  `[x]`  (re-run 2026-07-25, r6 release build = package **r7**)
-- `scripts/export_fab_revD.py` RUN → **`kicad/fab_revD_2026-07-26_r8/`** (hashed
+- `scripts/export_fab_revD.py` RUN → **`kicad/fab_revD_2026-07-26_r9/`** (hashed
   as-ordered package, `manifest.json` with sha256 per file + source board/netlist hashes;
   46 members). REV and output-dir are parameters; the script **refuses to run if the output
   dir exists** (verified live — second run refused; no rmtree anywhere). `_r1`…`_r6` all
@@ -373,7 +373,7 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 | J15 / J16 pads (1.4 mm drill, FR-9) | **PASS** — drill report T8 = **1.400 mm, 62 holes** |
 | "KEYED: NOT …" silk | **PASS** — all four present: `NOT J3`, `NOT J15`, `NOT J13 LAMP`, `NOT J16` |
 | Board audit, routed + netlist mode | **ALL PASS** both modes, exit 0 |
-| Review plots exist | `kicad/fab_revD_2026-07-26_r8/review/wsl-phase8b-revD-review-layers.pdf` (3.5 MB) |
+| Review plots exist | `kicad/fab_revD_2026-07-26_r9/review/wsl-phase8b-revD-review-layers.pdf` (3.5 MB) |
 
 **PART B — JLC upload preview: `[ ]` STILL OPEN. Cannot be closed before the upload session —
 it requires JLC's rendered preview, which does not exist until the files are uploaded.**

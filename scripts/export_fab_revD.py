@@ -94,9 +94,12 @@ FW_RELEASE_MANIFEST = ROOT / "firmware" / "rp2040" / "release" / "firmware_manif
 EXPECTED_NETLIST_PARTS = 391     # 271 + 120 r6
 EXPECTED_DNP = 68                # 28 + 40 Cflt (Dser/Dclamp are POPULATED)
 EXPECTED_PLACED = 323            # 391 - 68
-EXPECTED_HAND_SOLDER = 17        # A1, J1-J11 (J12 is DNP), J13-J16, U45 - UNCHANGED
-EXPECTED_JLC_PLACED = 306        # 323 - 17
-EXPECTED_JLC_LINES = 27          # UNCHANGED - the 80 r6 diodes join the 1N4148 line
+EXPECTED_HAND_SOLDER = 9         # r9 wave 1: A1, J1, J3, J4, J5, J13, J15, J16, U45
+                                 # (J2, J6-J11, J14 moved to JLC - see PART_LOCK wave-1 block)
+EXPECTED_JLC_PLACED = 314        # 323 - 9  (r9 wave 1: +8 placements)
+EXPECTED_JLC_LINES = 30          # 27 + 3 (r9 wave 1: MKDS-3, MKDS-2, MCV-4).
+                                 # J6-J11 collapse to ONE line via PART_LOCK aliases;
+                                 # without them the six J_MOTION_* values would emit 35.
 
 # ---- r6 per-channel input-protection equality gate (2026-07-25) ---------------------
 # The pre-r6 gate asserted TOTALS only (parts/DNP/placed/CPL). Totals cannot tell
@@ -140,11 +143,12 @@ PDF_LAYERS = ",".join(
 # Board refs installed AFTER JLC assembly (hand solder). J12 is DNP (M1 channel) and is
 # NOT in this set - it lives in the DNP list.
 HAND_SOLDER_REFS = {
-    "A1",                                    # Raspberry Pi Pico module
-    "J1", "J2", "J3", "J4", "J5",
-    "J6", "J7", "J8", "J9", "J10", "J11",
-    "J13", "J14", "J15", "J16",
+    "A1",                                    # Raspberry Pi Pico module (C-number pending)
+    "J1",                                    # CANDIDATE identity - keying never verified
+    "J3", "J4", "J5",                        # MCV headers - unresolved in JLC library
+    "J13", "J15", "J16",                     # MCV headers - unresolved in JLC library
     "U45",                                   # TRACO TMA-0505S (rev-C U37 - refdes shifted)
+    # r9 wave 1 REMOVED (now JLC-placed): J2, J6, J7, J8, J9, J10, J11, J14
 }
 
 # M1-optional tags (mirror of place_components_revD.is_m1_optional_tag - the DNP rule).
@@ -324,6 +328,55 @@ PART_LOCK: dict[tuple[str, str], dict[str, str]] = {
                 "C2933281 FOJAN at r8 (2026-07-26) after C26108 went OOS; "
                 "JLC assembly stock confirmed at order time.",
     },
+    # ---- WAVE 1 (r9, 2026-07-26): three connector types moved from hand-solder to JLC ----
+    # Library-native, in stock, unique PN, uncoded and unkeyed. JLC marks all three
+    # "Wave Soldering / Economic and Standard" - the same THT path this board already
+    # uses for its 40 PC817 optos and 6 G5LE relays, so no service-tier change.
+    # NOT moved in wave 1: J3/J4/J5/J13/J15/J16 (unresolved in the JLC library - needs a
+    # Global Sourcing quote), A1 (Pico C-number pending), U45 (TRACO, ~30 pcs vs 34 need),
+    # J1 (identity is CANDIDATE, keying never verified - stays hand until it is).
+    ("J_PWR 5V", "TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal"): {
+        "lcsc": "C480520", "mpn": "1715734", "manufacturer": "Phoenix Contact",
+        "class": "Extended",
+        "locked_spec": "Phoenix MKDS 1,5/3-5,08 3-pos screw terminal, 5.08mm, THT",
+        "note": "J2 board 5V power terminal. Verified 2026-07-26: JLC partdetail C480520 "
+                "= Phoenix 1715734, 1x3P 5.08mm 250V 17.5A, Wave Soldering, Economic+"
+                "Standard; LCSC 1,173 in stock @ $0.4365/100+. Fleet need 34 (+spares).",
+    },
+    # J6-J11 are six DIFFERENT netlist values on ONE identical footprint and part. Alias
+    # them to a single canonical entry or the BOM emits six lines for one component -
+    # six feeder loads and six feeder fees for the same reel.
+    ("J_MOTION_T 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"):
+        {"alias": ("J_MOTION_S 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal")},
+    ("J_MOTION_SP 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"):
+        {"alias": ("J_MOTION_S 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal")},
+    ("J_MOTION_BE 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"):
+        {"alias": ("J_MOTION_S 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal")},
+    ("J_MOTION_M 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"):
+        {"alias": ("J_MOTION_S 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal")},
+    ("J_MOTION_M2 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"):
+        {"alias": ("J_MOTION_S 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal")},
+    ("J_MOTION_S 5.08mm", "TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal"): {
+        "lcsc": "C480516", "mpn": "1715721", "manufacturer": "Phoenix Contact",
+        "class": "Extended",
+        "locked_spec": "Phoenix MKDS 1,5/2-5,08 2-pos screw terminal, 5.08mm, THT",
+        "note": "J6-J11 machine relay-output terminals, 6/board. Verified 2026-07-26: JLC "
+                "partdetail C480516 = Phoenix 1715721, 1x2P 5.08mm 250V 17.5A, Wave "
+                "Soldering, Economic+Standard; LCSC 1,591 in stock @ $0.3437/100+. Fleet "
+                "need 204 (+spares). NOTE C5183929 is the SAME Phoenix MPN but held only "
+                "~239 pcs - too thin for 204; C480516 is the line to use.",
+    },
+    ("J_SAFETY", "PhoenixContact_MCV_1,5_4-G-3.5_1x04_P3.50mm_Vertical_D1.4"): {
+        "lcsc": "C480549", "mpn": "1843622", "manufacturer": "Phoenix Contact",
+        "class": "Extended",
+        "locked_spec": "Phoenix MCV 1,5/4-G-3,5 4-pos vertical header, 3.5mm, THT",
+        "note": "J14 safety-loop header. Verified 2026-07-26: JLC partdetail C480549 = "
+                "Phoenix 1843622, 1x4P 3.5mm 160V 8A, Wave Soldering, Economic+Standard; "
+                "LCSC 2,481 in stock @ $1.11/1+. Fleet need 34 (+spares). NOT one of the "
+                "FA-8 coded pairs - no coding rib is cut on J14, so JLC placing it does "
+                "not touch the keying scheme. Board drill is the project-local _D1.4 "
+                "footprint (1.4mm, 0.30mm annular vs JLC's 0.15mm floor = 2x margin).",
+    },
     ("MCP23017 MCP_IN_A", "SOIC-28W_7.5x17.9mm_P1.27mm"): {"alias": ("MCP23017", "SOIC-28W_7.5x17.9mm_P1.27mm")},
     ("MCP23017 MCP_IN_B", "SOIC-28W_7.5x17.9mm_P1.27mm"): {"alias": ("MCP23017", "SOIC-28W_7.5x17.9mm_P1.27mm")},
     ("MCP23017 MCP_OUT_A", "SOIC-28W_7.5x17.9mm_P1.27mm"): {"alias": ("MCP23017", "SOIC-28W_7.5x17.9mm_P1.27mm")},
@@ -493,11 +546,6 @@ HAND_SOLDER_ROWS = [
      "Description": "20-position 2x10 2.54mm vertical through-hole box/IDC header candidate",
      "Source": "DigiKey 1175-1612-ND candidate", "Status": "Candidate - verify body/keying",
      "Notes": "Verify shroud, key slot, pin-1 orientation vs KiCad footprint before ordering."},
-    {"Ref": "J2", "Qty": 1, "Role": "5V power terminal", "Manufacturer": "Phoenix Contact",
-     "MFR Part #": "1715734",
-     "Description": "MKDS 1,5/ 3-5,08, 3-position fixed screw terminal block, 5.08mm pitch",
-     "Source": "Phoenix / DigiKey / Mouser equivalent", "Status": "Locked - footprint verify at order",
-     "Notes": "Fixed screw terminal; no off-board plug."},
     {"Ref": "J3", "Qty": 1, "Role": "FAST field input header", "Manufacturer": "Phoenix Contact",
      "MFR Part #": "1843680",
      "Description": "MCV 1,5/10-G-3,5, 10-position vertical PCB header, 3.5mm pitch",
@@ -514,22 +562,11 @@ HAND_SOLDER_ROWS = [
      "Description": "MCV 1,5/12-G-3,5, 12-position vertical PCB header, 3.5mm pitch",
      "Source": "Phoenix Contact", "Status": "Locked",
      "Notes": "Mating plug 1840463 on the harness BOM."},
-    {"Ref": "J6,J7,J8,J9,J10,J11", "Qty": 6, "Role": "Machine output terminals",
-     "Manufacturer": "Phoenix Contact", "MFR Part #": "1715721",
-     "Description": "MKDS 1,5/ 2-5,08, 2-position fixed screw terminal block, 5.08mm pitch",
-     "Source": "Phoenix / LCSC C5183929 / DigiKey / Mouser equivalent",
-     "Status": "Locked - footprint verify at order",
-     "Notes": "J12 (M1) is DNP - do not install a 7th block."},
     {"Ref": "J13", "Qty": 1, "Role": "LED lamp header", "Manufacturer": "Phoenix Contact",
      "MFR Part #": "1843648",
      "Description": "MCV 1,5/ 6-G-3,5, 6-position vertical PCB header, 3.5mm pitch",
      "Source": "Phoenix Contact", "Status": "Locked",
      "Notes": "Mating plug 1840405 on the harness BOM. CODED: keep-out profile pairing vs J16."},
-    {"Ref": "J14", "Qty": 1, "Role": "Safety loop header", "Manufacturer": "Phoenix Contact",
-     "MFR Part #": "1843622",
-     "Description": "MCV 1,5/ 4-G-3,5, 4-position vertical PCB header, 3.5mm pitch",
-     "Source": "Phoenix Contact", "Status": "Locked",
-     "Notes": "Mating plug 1840382 on the harness BOM (carries the Candidate-C TBSC jumper)."},
     {"Ref": "J15", "Qty": 1, "Role": "SLOW C field input header (AUX4-11, NEW in rev-D)",
      "Manufacturer": "Phoenix Contact", "MFR Part #": "1843680",
      "Description": "MCV 1,5/10-G-3,5, 10-position vertical PCB header, 3.5mm pitch",
@@ -1399,9 +1436,28 @@ def main() -> int:
         "  ENIG, confirm preview reads 250 x 240 mm - REV-D IS 240 mm TALL).",
         f"- assembly/{stem}-jlc-standard-pcba-upload-bom.csv + -cpl.csv -> Standard PCBA.",
         "",
-        "Hand-solder after JLC: A1, J1-J11, J13, J14, J15, J16, U45.",
+        "Hand-solder after JLC (9 refdes - r9 WAVE 1 reduced this from 17):",
+        "  A1, J1, J3, J4, J5, J13, J15, J16, U45.",
         "  U45 is the TMA-0505S (rev-C called it U37 - 46 refdes shifted; use",
         "  docs/phase8_revD_first_article_pack.md, never rev-C bench notes).",
+        "  J1 stays hand because its identity is CANDIDATE (CNC Tech 3020-20-0100-00,",
+        "  body/keying never verified against the KiCad footprint) - not for any",
+        "  process reason. A1/U45 and the six MCV headers await part sourcing.",
+        "",
+        "r9 WAVE 1: J2, J6-J11 and J14 are now JLC-PLACED (8 placements/board, 19 THT",
+        "  joints/board, 646 fleet-wide). All three are library-native Phoenix Contact,",
+        "  marked Wave Soldering / Economic and Standard - the SAME through-hole path",
+        "  this board already uses for its 40 PC817 optos and 6 G5LE relays. No service",
+        "  tier changes: JLC offers only Economic and Standard, and this order is already",
+        "  Standard. Verified 2026-07-26 by JLC part-detail page, not by MPN search",
+        "  (searching JLC by bare numeric Phoenix MPN returns FALSE NEGATIVES - e.g.",
+        "  searchTxt=1843622 gives '0 Found' while partdetail/C480549 shows it in stock):",
+        "    J2      = C480520  Phoenix 1715734  MKDS 1,5/3-5,08   1,173 stock",
+        "    J6-J11  = C480516  Phoenix 1715721  MKDS 1,5/2-5,08   1,591 stock",
+        "              (NOT C5183929 - same MPN, only ~239 pcs vs a 204 fleet need)",
+        "    J14     = C480549  Phoenix 1843622  MCV 1,5/4-G-3,5   2,481 stock",
+        "  J14 is NOT one of the FA-8 coded pairs, so no coding rib is cut on it and",
+        "  JLC placing it cannot disturb the J3/J15 + J13/J16 keying scheme.",
         "",
         "Harness order (ship WITH the boards - gate G13/OG-3):",
         f"- assembly/{stem}-harness-bom.csv (tracked copy: docs/phase8_revD_harness_bom.csv).",

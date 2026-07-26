@@ -1,7 +1,7 @@
 # Phase 8 — Complete Backplate Parts List (per lane · per pair · 32-lane house)
 
 **Rev 1 · 2026-07-25.** Everything that mounts to, or connects on, the enclosure backplate.
-Board revision: **rev-D r6** (`2fd8c5e`, fab pkg `fab_revD_2026-07-26_r8`), 250 × 240 mm.
+Board revision: **rev-D r6** (`2fd8c5e`, fab pkg `fab_revD_2026-07-26_r9`), 250 × 240 mm.
 Layout: `Downloads/pair_enclosure_backplate_complete.html` Rev 2 (items ①–⑬).
 
 **House arithmetic:** 32 lanes = **32 boards** · **16 pairs** = 16 enclosures / 16 Pis.
@@ -42,20 +42,49 @@ Spares recommended at ~10% (called out per line where it matters).
 > JLC's PCBA excludes every `J*` designator as hand-solder — the upload BOM contains **zero**
 > J refdes — so the PCBA PO physically cannot supply them. Until this section existed they were
 > on **no** purchase list and 34 boards would have arrived with no connectors.
-> Source of truth: `kicad/fab_revD_2026-07-26_r8/assembly/wsl-phase8b-revD-hand-solder-bom.csv`.
+> Source of truth: `kicad/fab_revD_2026-07-26_r9/assembly/wsl-phase8b-revD-hand-solder-bom.csv`.
+
+> **🔄 UPDATED 2026-07-26 — WAVE 1: three of these are now SUPPLIED AND FITTED BY JLC.**
+> Fab package `r9` moves **J2, J6–J11 and J14** into the JLC assembly BOM (hand-solder count
+> 17 → 9). **DO NOT BUY THEM — that would be a double-buy**, the same trap §B carries.
+> JLC sources them from its own library at ~$15 fleet-wide in labour.
+
+### A′.1 — DO NOT BUY · supplied and fitted by JLC (fab pkg r9)
+
+| # | Ref | Phoenix PN | JLC part | Per board | Stock at LCSC |
+|---|---|---|---|---|---|
+| ~~A9~~ | J2 | 1715734 | **C480520** | 1 | 1,173 |
+| ~~A10~~ | J6–J11 | 1715721 | **C480516** | 6 | 1,591 |
+| ~~A15~~ | J14 | 1843622 | **C480549** | 1 | 2,481 |
+
+⚠️ **On C480516 vs C5183929:** both are Phoenix 1715721, but `C5183929` (the number this repo
+cited before) held only ~239 pcs against a **204-piece** fleet need. `C480516` is the line to
+use. If JLC ever proposes swapping back, refuse.
+
+### A′.2 — STILL OWNER-BUY · hand-soldered after JLC
 
 | # | Ref | Phoenix / MFR PN | Description | Per board | ×34 boards (+~10%) |
 |---|---|---|---|---|---|
-| A9 | J2 | **1715734** | MKDS 1,5/3-5,08 · 3-pos fixed screw block, **5.08 mm** | 1 | **38** |
-| A10 | J6–J11 | **1715721** | MKDS 1,5/2-5,08 · 2-pos fixed screw block, **5.08 mm** | **6** | **224** |
 | A11 | J3, J15 | **1843680** | MCV 1,5/10-G-3,5 · 10-pos vertical header, **3.5 mm** | 2 | **72** |
 | A12 | J4 | **1843729** | MCV 1,5/14-G-3,5 · 14-pos vertical header, **3.5 mm** | 1 | **38** |
 | A13 | J5 | **1843703** | MCV 1,5/12-G-3,5 · 12-pos vertical header, **3.5 mm** | 1 | **38** |
 | A14 | J13, J16 | **1843648** | MCV 1,5/6-G-3,5 · 6-pos vertical header, **3.5 mm** | 2 | **72** |
-| A15 | J14 | **1843622** | MCV 1,5/4-G-3,5 · 4-pos vertical header, **3.5 mm** | 1 | **38** |
 | A16 | J1 | CNC Tech **3020-20-0100-00** | 2×10 IDC/box header, 2.54 mm | 1 | **38 — ⛔ HOLD** |
+| A17 | — | **sacrificial MCV headers** | 2 × 1843680 + 2 × 1843648 + spares | — | **~10** |
 
-**A10 is 6 blocks, not 7 — J12 (M1) is DNP.** Do not install a 7th.
+**A′.2 is a WAVE-2 CANDIDATE.** These four MCV part numbers are unresolved in JLC's library —
+not absent, *unresolved*: searching JLC by bare numeric Phoenix MPN returns **false negatives**
+(`searchTxt=1843622` → "0 Found" while `partdetail/C480549` shows it in stock). A free Global
+Sourcing quote resolves them. If JLC can source the **exact** PN, they move to JLC too. ⛔ **A
+substitution is never acceptable** — it re-opens FR-2/FR-9, forces a re-route, and invalidates
+all five mating plugs plus the CP-MSTB coding scheme and the harness RFQ's 185 fitted plugs.
+
+**A17 is new and required either way:** FA-8 step 1 demands the coding-rib cut be proven on a
+sacrificial part first, and with JLC (or a vendor) holding production headers there are no loose
+ones. The rib is cut **post-solder on the board's own header** — Phoenix designs MCV with the
+coding features facing away from the PCB — so JLC placing headers does not break FA-8.
+
+**J6–J11 is 6 blocks, not 7 — J12 (M1) is DNP.** Do not install a 7th.
 
 ⚠️ **A16 (J1) is ON HOLD.** The hand-solder BOM marks it *"Candidate — verify body/keying."*
 Check shroud, key slot and pin-1 orientation against the KiCad footprint before ordering
