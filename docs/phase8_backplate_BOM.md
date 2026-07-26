@@ -143,6 +143,32 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 | C5 | **Pi GPIO breakout** | **CZH-LABS F-1019** | 1 | **16** (+2) | $35.00 | ✅ **STACKS DIRECTLY ON THE PI** — see note |
 | C6 | ~~40-way ribbon, Pi ↔ F-1019~~ | — | — | **DELETED** | — | ✅ **NOT REQUIRED** — C5 has a GPIO receptacle, no cable |
 
+> **✅ C7 DIMENSIONED + PINOUT DOCUMENTED (2026-07-26) — reverted to the Electronics-Salon
+> `D-220`.** Manufacturer drawing and board photo obtained, so the Winford substitute is no
+> longer needed (it existed only because C7 had no manufacturer PN and no published dimensions).
+>
+> | | |
+> |---|---|
+> | **Along rail (L)** | **79.352 mm** |
+> | **Across rail (H)** | **87 mm** |
+> | **Depth (D)** | **54 mm** |
+> | Module code | `D-220` (the IDC-20 variant of the D-217…D-227 family) |
+> | Mapping | **1:1 straight-through** — IDC header pin *n* → terminal *n*, per the manufacturer's own wiring diagram |
+> | Silk | Standard IDC convention: odd `1…19` on one row, even `2…20` on the other |
+>
+> ⭐ **This is the number that was blocking the panel layout.** With C5 now stacking on the Pi
+> (not a panel module) and C7 measured at 79.352 × 87 mm, the panel stack can finally be re-run
+> against real envelopes instead of the drawing's ~28 mm placeholders — which is what gates the
+> E4 enclosure PO (~$8–10k). See M-06/M-07 in the pre-order audit.
+>
+> ⚠️ **Keep ONE continuity check at first article — and this is not generic distrust of the silk.**
+> The manufacturer documents 1:1 and the numbering follows standard IDC convention, so the map is
+> almost certainly right. The reason to beep it once, for the whole fleet, is the *specific*
+> consequence here: **J1 terminal 1 = `VCC_5V` and terminal 3 = `I2C_SDA`, and they are adjacent
+> on the same row.** A single-position slip puts 5 V onto the Pi's SDA line. Two minutes, once,
+> against a Pi-killer. Record the result on the F7 wire-map card.
+> *(Standing rule unchanged: never land terminal 1 `VCC_5V` or terminal 11 `VCC_3V3` on the Pi.)*
+
 > **✅ C5 FORM FACTOR CONFIRMED IN HAND (2026-07-25, part opened).** The F-1019 is **not** a
 > remote DIN/panel module fed by a ribbon — it carries a **40-pin receptacle that seats directly
 > on the Pi's GPIO header** and sits above the board, HAT-style. Three consequences:
@@ -158,7 +184,7 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 > **(b) DRP2 compatibility** — confirm the Pi still seats in the DINrPlate with C5 fitted.
 > **(c) Access with C5 fitted** — microSD slot, USB-C power in (C9), and whether the screw
 > terminals are reachable with the assembly on the rail.
-| C7 | **Board breakout** | **Winford `BRK2x10-DIN`** ✅ | **2** | **32** (+4) | $22–27 | one per board, panel-mounted beside its own J1. **APPROVED 2026-07-26** |
+| C7 | **Board breakout** | **Electronics-Salon `D-220`** (IDC20 2×10) ✅ | **2** | **32** (+4) | $22–27 | one per board, DIN-mounted beside its own J1. **DIMENSIONED 2026-07-26** — see below |
 | C8 | 20-way ribbon, J1 ↔ breakout | 2×10 IDC socket-to-socket, **~150 mm** | **2** | **32** (+6) | ~$5 | ⚠ **SHORT is the requirement** — I²C integrity |
 | C9 | Pi power pigtail | USB-C to bare/ferruled, ~300 mm | 1 | **16** | ~$8 | from fuse F4; keeps the Pi's own input protection in circuit |
 
@@ -287,12 +313,17 @@ benchmark is still the highest-leverage cost lever in this list, and the hard re
 
 ## Verify-before-ordering
 
-1. **IDC20 module footprint** — measure in hand; the 780 mm panel figure is provisional and its
-   source drawing draws DIN devices at ~28 mm against a real ~90 mm across-rail. *(F-1019 half of
-   this item is CLOSED — it stacks on the Pi and is not a panel module.)*
+1. ✅ **CLOSED 2026-07-26 — both halves.** C7 is the Electronics-Salon **D-220**, measured
+   **79.352 mm along rail × 87 mm across rail × 54 mm deep**; C5 (F-1019) stacks on the Pi and is
+   not a panel module at all. **The panel stack must now be RE-RUN** against these real envelopes —
+   the source drawing used ~28 mm placeholders against a real ~87–90 mm, which is what produced the
+   provisional 780 mm figure. Re-running it is what releases the E4 enclosure PO.
 2. ~~Does the F-1019 ship with its 40-way ribbon?~~ ✅ **CLOSED — moot, it plugs straight onto the
    GPIO header.** Replaced by the three C5 checks: heatsink clearance, DRP2 fit, port access.
-3. **IDC20 terminal→pin mapping** — beep it once, record on the wire-map card. Do not trust silkscreen.
+3. **IDC20 terminal→pin mapping** — manufacturer documents **1:1 straight-through** (IDC pin *n*
+   → terminal *n*). Still beep it **once** at first article and record on the wire-map card:
+   terminal 1 = `VCC_5V` sits adjacent to terminal 3 = `I2C_SDA` on the same row, so a
+   one-position slip puts 5 V on the Pi's SDA. Two minutes for the whole fleet.
 4. **Ribbon keying / pin-1** on the 20-way (line C8) against the real J1 — the standing unverified item.
 5. **Plywood yield** — ~3 panels per 4×8 sheet at 686 × 838; confirm against the box's actual stud pattern.
 6. **Colour availability** for the second 1840447 and 1840405 (lines B6/B7) so J3/J15 and J13/J16 can't be swapped.
