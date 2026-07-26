@@ -260,7 +260,7 @@ stage deliberately has none** (push-pull source, never high-Z); do not report it
 | J16 | J_EXTI2C | J_EXT_I2C | (128.0, 206.0) | LOGIC |  |
 | JP1 | JP_J16_3V3 | 3V3 LINK OPEN DNP | (144.6, 218.9) | LOGIC | DNP |
 
-## 4. First-article procedures (FA-1 … FA-15)
+## 4. First-article procedures (FA-1 … FA-16)
 
 Run in order. Record every measurement in `phase8_revD_run_log.md` (new FA section,
 per board serial). One channel of each NEW I/O type must pass before trusting the board.
@@ -720,6 +720,78 @@ trail. **FA-15 is the only measurement that distinguishes those two states.**
 5. Record the measured millivolts per channel, the field voltage used, and the board
    serial. A bare "PASS" is not acceptable closure.
 
+### FA-16 — r6 per-channel orientation + continuity census (**UNPOWERED, before FA-1**)
+
+> **Run this FIRST, on the bare assembled board, before any power is applied.** FA-15
+> proves the clamp on the handful of channels that can be driven reverse-biased by a
+> live machine. FA-16 proves **all 120 r6 parts on all 40 channels** with no machine, no
+> harness and no risk — and it is the only gate that catches a **reversed `Dser`** before
+> that channel is quietly dead in commissioning.
+
+**Why a census and not a sample.** r6 added **80 diodes in two different orientations**
+(`Dser` anode-west toward `Rin`, `Dclamp` cathode-north on the LED node) on 0.60 × 0.45 mm
+SOD-323 lands. A reel loaded backwards, a rotated placement, or one tombstone produces
+**four distinguishable faults**, and only a two-direction probe separates them:
+
+| Probe (DMM diode test, board unpowered, no harness) | Good board | Fault it exposes |
+|---|---|---|
+| **(A)** red on the channel's `Rin` **board-side** pad (`FIELD_RIN_<n>`), black on the field pin at the connector | **≈ 1.75–1.95 V** (`Dser` Vf ≈ 0.7 V **+** PC817 LED Vf ≈ 1.15 V in series) | **OL** → `Dser` REVERSED, open, or tombstoned; or the LED is open. **≈ 0.7 V** → the LED is shorted or `Dser` is missing and `Dclamp` is conducting. |
+| **(B)** reverse the leads (red on the field pin, black on `FIELD_RIN_<n>`) | **≈ 0.60–0.75 V** — this is `Dclamp` conducting forward, and it is the ONLY thing that should conduct this way | **OL** → `Dclamp` MISSING, open, or REVERSED (the silent failure FA-15 exists for — catch it here instead). **≈ 0 V** → `Dclamp` shorted. |
+| **(C)** visual/AOI: the 40 `Cflt_*` lands | **EMPTY** (all 40 ship DNP) | A fitted `Cflt` on a fast channel silently breaks FA-9's ≤ 100 µs edge criterion. |
+
+**Meter requirement:** the (A) reading needs a diode-test source compliance **above ~2.0 V**
+(two junctions in series). Many pocket DMMs stop at 1.5–2.0 V and will read **OL on a
+perfect board**. Verify your meter first on a known-good channel, or substitute a bench
+supply: 5 V through a 2.2 kΩ series resistor into `FIELD_RIN_<n>`, field pin to
+`FIELD_GND`, and confirm ≈ 1.5–2.0 mA flows and the opto's collector goes LOW.
+
+**Acceptance: 40/40 channels pass BOTH (A) and (B).** Record the two readings per channel
+in the census below — a bare "PASS" is not acceptable closure, for the same reason as
+FA-15: the failure mode this gate exists to catch reads as a working board everywhere else.
+
+| Ch | Speed | Field pin | Opto | Rin | Dser | Dclamp | Cflt (DNP) |
+|---|---|---|---|---|---|---|---|
+| DIELL_L | FAST | J3-7 | U10 | R15 | D30 | D31 | C23 (10nF X7R, DNP) |
+| DIELL_R | FAST | J3-8 | U11 | R17 | D32 | D33 | C24 (10nF X7R, DNP) |
+| SA | FAST | J3-1 | U4 | R3 | D18 | D19 | C17 (10nF X7R, DNP) |
+| SB | FAST | J3-2 | U5 | R5 | D20 | D21 | C18 (10nF X7R, DNP) |
+| SC | FAST | J3-3 | U6 | R7 | D22 | D23 | C19 (10nF X7R, DNP) |
+| TA1 | FAST | J3-4 | U7 | R9 | D24 | D25 | C20 (10nF X7R, DNP) |
+| TA2 | FAST | J3-5 | U8 | R11 | D26 | D27 | C21 (10nF X7R, DNP) |
+| TB | FAST | J3-6 | U9 | R13 | D28 | D29 | C22 (10nF X7R, DNP) |
+| AUX1 | SLOW | J5-9 | U33 | R61 | D76 | D77 | C46 (2.2uF X7R, DNP) |
+| AUX10 | SLOW | J15-7 | U42 | R79 | D94 | D95 | C55 (2.2uF X7R, DNP) |
+| AUX11 | SLOW | J15-8 | U43 | R81 | D96 | D97 | C56 (2.2uF X7R, DNP) |
+| AUX2 | SLOW | J5-10 | U34 | R63 | D78 | D79 | C47 (2.2uF X7R, DNP) |
+| AUX3 | SLOW | J5-11 | U35 | R65 | D80 | D81 | C48 (2.2uF X7R, DNP) |
+| AUX4 | SLOW | J15-1 | U36 | R67 | D82 | D83 | C49 (2.2uF X7R, DNP) |
+| AUX5 | SLOW | J15-2 | U37 | R69 | D84 | D85 | C50 (2.2uF X7R, DNP) |
+| AUX6 | SLOW | J15-3 | U38 | R71 | D86 | D87 | C51 (2.2uF X7R, DNP) |
+| AUX7 | SLOW | J15-4 | U39 | R73 | D88 | D89 | C52 (2.2uF X7R, DNP) |
+| AUX8 | SLOW | J15-5 | U40 | R75 | D90 | D91 | C53 (2.2uF X7R, DNP) |
+| AUX9 | SLOW | J15-6 | U41 | R77 | D92 | D93 | C54 (2.2uF X7R, DNP) |
+| BS | SLOW | J4-13 | U24 | R43 | D58 | D59 | C37 (2.2uF X7R, DNP) |
+| FOUL | SLOW | J5-3 | U27 | R49 | D64 | D65 | C40 (2.2uF X7R, DNP) |
+| GP | SLOW | J4-11 | U22 | R39 | D54 | D55 | C35 (2.2uF X7R, DNP) |
+| GS1 | SLOW | J4-1 | U12 | R19 | D34 | D35 | C25 (2.2uF X7R, DNP) |
+| GS10 | SLOW | J4-10 | U21 | R37 | D52 | D53 | C34 (2.2uF X7R, DNP) |
+| GS2 | SLOW | J4-2 | U13 | R21 | D36 | D37 | C26 (2.2uF X7R, DNP) |
+| GS3 | SLOW | J4-3 | U14 | R23 | D38 | D39 | C27 (2.2uF X7R, DNP) |
+| GS4 | SLOW | J4-4 | U15 | R25 | D40 | D41 | C28 (2.2uF X7R, DNP) |
+| GS5 | SLOW | J4-5 | U16 | R27 | D42 | D43 | C29 (2.2uF X7R, DNP) |
+| GS6 | SLOW | J4-6 | U17 | R29 | D44 | D45 | C30 (2.2uF X7R, DNP) |
+| GS7 | SLOW | J4-7 | U18 | R31 | D46 | D47 | C31 (2.2uF X7R, DNP) |
+| GS8 | SLOW | J4-8 | U19 | R33 | D48 | D49 | C32 (2.2uF X7R, DNP) |
+| GS9 | SLOW | J4-9 | U20 | R35 | D50 | D51 | C33 (2.2uF X7R, DNP) |
+| MAN_S | SLOW | J5-6 | U30 | R55 | D70 | D71 | C43 (2.2uF X7R, DNP) |
+| MAN_SWS | SLOW | J5-7 | U31 | R57 | D72 | D73 | C44 (2.2uF X7R, DNP) |
+| MAN_SWSR | SLOW | J5-8 | U32 | R59 | D74 | D75 | C45 (2.2uF X7R, DNP) |
+| MAN_T | SLOW | J5-5 | U29 | R53 | D68 | D69 | C42 (2.2uF X7R, DNP) |
+| OS | SLOW | J4-12 | U23 | R41 | D56 | D57 | C36 (2.2uF X7R, DNP) |
+| PBC | SLOW | J5-2 | U26 | R47 | D62 | D63 | C39 (2.2uF X7R, DNP) |
+| PBZ | SLOW | J5-1 | U25 | R45 | D60 | D61 | C38 (2.2uF X7R, DNP) |
+| TENTH | SLOW | J5-4 | U28 | R51 | D66 | D67 | C41 (2.2uF X7R, DNP) |
+
 ## 5. Sign-off
 
 | Item | Result | Initials / date |
@@ -751,4 +823,7 @@ trail. **FA-15 is the only measurement that distinguishes those two states.**
 | **FA-15 (r6) LED reverse = 0.35 V ± 0.1 V per over-voltage channel — mV recorded, not "PASS"** | | |
 | **FA-15 (r6) cam-channel AC/DC + RMS + frequency metered on SA/SB/SC/TA1/TA2/TB** | | |
 | **FA-15 (r6) driven-24 VAC channel count N recorded (board budgeted for N = 0; N ≥ 1 reopens the `FIELD_WET_V` budget)** | | |
+| **FA-16 (r6) probe (A) forward 1.75–1.95 V — 40/40 channels, volts recorded per channel** | | |
+| **FA-16 (r6) probe (B) reverse 0.60–0.75 V — 40/40 channels, volts recorded (this is the `Dclamp`-present proof)** | | |
+| **FA-16 (r6) all 40 `Cflt_*` lands EMPTY; meter diode-test compliance verified > 2.0 V** | | |
 | Signed commissioning binding — lane, Pico UID, board/harness rev+serial, record ID, signer, tested/due UTC (≤365 d), exact controller-originated live identity observed UTC/age (≤90 s) | | |

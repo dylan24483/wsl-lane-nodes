@@ -173,6 +173,61 @@ def is_dnp(tag: str, value: str) -> bool:
     return tag.endswith("_M1") or tag in M1_OPTIONAL_TAGS or "DNP" in value.upper()
 
 
+def parse_nets() -> dict[str, list[tuple[str, str]]]:
+    """net name -> [(refdes, pin), ...] from the netlist (r6 census source)."""
+    text = NETLIST.read_text(encoding="utf-8")
+    nets: dict[str, list[tuple[str, str]]] = {}
+    for block in re.split(r"\(net\s*\n", text)[1:]:
+        name = re.search(r'\(name "([^"]+)"\)', block)
+        if not name:
+            continue
+        nets[name.group(1)] = re.findall(
+            r'\(ref "([^"]+)"\)\s*\n\s*\(pin "([^"]+)"\)', block)
+    return nets
+
+
+# r6 fast channels (RP2040 GP6-GP13) - mirror of generate_kicad_netlist_revD.FAST_INPUTS.
+R6_FAST_CHANNELS = ("SA", "SB", "SC", "TA1", "TA2", "TB", "DIELL_L", "DIELL_R")
+
+
+def r6_census(parts, nets) -> list[list[str]]:
+    """Per-channel FA-16 census: connector pin + the three r6 refdes per channel.
+
+    FAIL-ON-BLANK (same hazard class as the R2-5 blank-net TP table): a census row
+    with a missing refdes or a blank connector pin sends a technician probing the
+    wrong pad on a 120-placement change. Refuse to generate the pack instead.
+    """
+    by_tag = {p["tag"]: ref for ref, p in parts.items()}
+    channels = sorted(t[len("Dser_"):] for t in by_tag if t.startswith("Dser_"))
+    if len(channels) != 40:
+        raise SystemExit(f"r6 census: expected 40 Dser_* channels, got {len(channels)}")
+    rows = []
+    for ch in channels:
+        fast = ch in R6_FAST_CHANNELS
+        field_net = f"FIELD_{'FAST' if fast else 'SLOW'}_{ch}"
+        cells = {
+            "opto": by_tag.get(f"OPTO_{ch}", ""),
+            "rin": by_tag.get(f"Rin_{ch}", ""),
+            "dser": by_tag.get(f"Dser_{ch}", ""),
+            "dclamp": by_tag.get(f"Dclamp_{ch}", ""),
+            "cflt": by_tag.get(f"Cflt_{ch}", ""),
+        }
+        pins = sorted(f"{r}-{pin}" for r, pin in nets.get(field_net, [])
+                      if r.startswith("J"))
+        blanks = [k for k, v in cells.items() if not v]
+        if blanks or len(pins) != 1:
+            raise SystemExit(
+                f"r6 census FAILED for channel {ch}: missing {blanks}, "
+                f"connector pins {pins} (expected exactly one). A blank census row "
+                f"must never ship - fix the netlist/tag lookup.")
+        cval = parts[cells["cflt"]]["value"].replace(" DNP", "")
+        rows.append([ch, "FAST" if fast else "SLOW", pins[0], cells["opto"],
+                     cells["rin"], cells["dser"], cells["dclamp"],
+                     f"{cells['cflt']} ({cval}, DNP)"])
+    rows.sort(key=lambda r: (r[1], r[0]))
+    return rows
+
+
 def md_table(headers: list[str], rows: list[list[str]]) -> str:
     lines = ["| " + " | ".join(headers) + " |",
              "|" + "|".join("---" for _ in headers) + "|"]
@@ -183,6 +238,7 @@ def md_table(headers: list[str], rows: list[list[str]]) -> str:
 
 def main() -> int:
     parts = parse_netlist()
+    nets = parse_nets()
     board = parse_board()
     shifts = parse_shifts()
     dnp_refs = {
@@ -254,6 +310,8 @@ def main() -> int:
         b = board[oref]
         gpb_rows.append([f"J15-{i - 3}", f"AUX{i}", f"GPB{i - 4}", oref,
                          f"({b['x']:.1f}, {b['y']:.1f})"])
+
+    r6_rows = r6_census(parts, nets)
 
     today = date.today().isoformat()
     net_hash = sha256(NETLIST)
@@ -381,7 +439,7 @@ stage deliberately has none** (push-pull source, never high-Z); do not report it
 
 {md_table(hdr, rows_for(lambda r, p: r.startswith("J") or r == "A1"))}
 
-## 4. First-article procedures (FA-1 … FA-15)
+## 4. First-article procedures (FA-1 … FA-16)
 
 Run in order. Record every measurement in `phase8_revD_run_log.md` (new FA section,
 per board serial). One channel of each NEW I/O type must pass before trusting the board.
@@ -832,6 +890,38 @@ trail. **FA-15 is the only measurement that distinguishes those two states.**
 5. Record the measured millivolts per channel, the field voltage used, and the board
    serial. A bare "PASS" is not acceptable closure.
 
+### FA-16 — r6 per-channel orientation + continuity census (**UNPOWERED, before FA-1**)
+
+> **Run this FIRST, on the bare assembled board, before any power is applied.** FA-15
+> proves the clamp on the handful of channels that can be driven reverse-biased by a
+> live machine. FA-16 proves **all 120 r6 parts on all 40 channels** with no machine, no
+> harness and no risk — and it is the only gate that catches a **reversed `Dser`** before
+> that channel is quietly dead in commissioning.
+
+**Why a census and not a sample.** r6 added **80 diodes in two different orientations**
+(`Dser` anode-west toward `Rin`, `Dclamp` cathode-north on the LED node) on 0.60 × 0.45 mm
+SOD-323 lands. A reel loaded backwards, a rotated placement, or one tombstone produces
+**four distinguishable faults**, and only a two-direction probe separates them:
+
+| Probe (DMM diode test, board unpowered, no harness) | Good board | Fault it exposes |
+|---|---|---|
+| **(A)** red on the channel's `Rin` **board-side** pad (`FIELD_RIN_<n>`), black on the field pin at the connector | **≈ 1.75–1.95 V** (`Dser` Vf ≈ 0.7 V **+** PC817 LED Vf ≈ 1.15 V in series) | **OL** → `Dser` REVERSED, open, or tombstoned; or the LED is open. **≈ 0.7 V** → the LED is shorted or `Dser` is missing and `Dclamp` is conducting. |
+| **(B)** reverse the leads (red on the field pin, black on `FIELD_RIN_<n>`) | **≈ 0.60–0.75 V** — this is `Dclamp` conducting forward, and it is the ONLY thing that should conduct this way | **OL** → `Dclamp` MISSING, open, or REVERSED (the silent failure FA-15 exists for — catch it here instead). **≈ 0 V** → `Dclamp` shorted. |
+| **(C)** visual/AOI: the 40 `Cflt_*` lands | **EMPTY** (all 40 ship DNP) | A fitted `Cflt` on a fast channel silently breaks FA-9's ≤ 100 µs edge criterion. |
+
+**Meter requirement:** the (A) reading needs a diode-test source compliance **above ~2.0 V**
+(two junctions in series). Many pocket DMMs stop at 1.5–2.0 V and will read **OL on a
+perfect board**. Verify your meter first on a known-good channel, or substitute a bench
+supply: 5 V through a 2.2 kΩ series resistor into `FIELD_RIN_<n>`, field pin to
+`FIELD_GND`, and confirm ≈ 1.5–2.0 mA flows and the opto's collector goes LOW.
+
+**Acceptance: 40/40 channels pass BOTH (A) and (B).** Record the two readings per channel
+in the census below — a bare "PASS" is not acceptable closure, for the same reason as
+FA-15: the failure mode this gate exists to catch reads as a working board everywhere else.
+
+{md_table(["Ch", "Speed", "Field pin", "Opto", "Rin", "Dser", "Dclamp", "Cflt (DNP)"],
+          r6_rows)}
+
 ## 5. Sign-off
 
 | Item | Result | Initials / date |
@@ -863,6 +953,9 @@ trail. **FA-15 is the only measurement that distinguishes those two states.**
 | **FA-15 (r6) LED reverse = 0.35 V ± 0.1 V per over-voltage channel — mV recorded, not "PASS"** | | |
 | **FA-15 (r6) cam-channel AC/DC + RMS + frequency metered on SA/SB/SC/TA1/TA2/TB** | | |
 | **FA-15 (r6) driven-24 VAC channel count N recorded (board budgeted for N = 0; N ≥ 1 reopens the `FIELD_WET_V` budget)** | | |
+| **FA-16 (r6) probe (A) forward 1.75–1.95 V — 40/40 channels, volts recorded per channel** | | |
+| **FA-16 (r6) probe (B) reverse 0.60–0.75 V — 40/40 channels, volts recorded (this is the `Dclamp`-present proof)** | | |
+| **FA-16 (r6) all 40 `Cflt_*` lands EMPTY; meter diode-test compliance verified > 2.0 V** | | |
 | Signed commissioning binding — lane, Pico UID, board/harness rev+serial, record ID, signer, tested/due UTC (≤365 d), exact controller-originated live identity observed UTC/age (≤90 s) | | |
 """
 
