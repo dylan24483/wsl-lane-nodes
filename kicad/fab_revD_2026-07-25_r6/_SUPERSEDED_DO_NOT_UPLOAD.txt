@@ -1,0 +1,45 @@
+SUPERSEDED - DO NOT ORDER OR UPLOAD FROM THIS DIRECTORY
+
+Use only:
+  kicad/fab_revD_2026-07-25_r7/
+
+WHY THIS ONE IS DIFFERENT FROM THE OTHER TOMBSTONES: r6 is NOT electrically
+superseded. r7 is the SAME COPPER, byte-for-byte:
+
+  source_board_sha256   695cd7b10768737a5a4dab2ca1b8b52e642bc42d9a14d47879e8cf58d57b3de7
+  source_netlist_sha256 c93b06fabf178e400e40647857ad92224a13d15cbbb6d5ee9f53ac432c661fd7
+
+...identical in the r6 and r7 manifests. Nothing about the board changed
+between them. "r6" remains the name of the DESIGN ITERATION (the per-channel
+input-protection change); r7 is simply the second EXPORT BUILD of it, the same
+way r1/r2/r3 were three builds on 2026-07-21 and r4/r5 were two on 2026-07-23.
+
+WHAT r7 ADDS (release-gate and paperwork only):
+
+- The BOM <-> CPL <-> netlist equality gate is extended PER PART CLASS. r6's
+  gate asserted totals only (391 parts / 68 DNP / 323 placed / 306 JLC), and
+  totals cannot tell "40 series diodes + 40 clamps" from "80 clamps and no
+  series diode" - which is the entire r6 safety argument. r7 asserts all 40
+  channels individually: FIELD_RIN_<n> = Rin.2 + Dser ANODE, FIELD_LED_<n> =
+  Dser.K + Dclamp.K + PC817 anode, field pin = Dclamp ANODE + PC817 cathode,
+  every Dser/Dclamp POPULATED and present in placed/CPL/JLC, every Cflt DNP and
+  absent from all three, 8 x 10nF fast / 32 x 2.2uF slow, and no r6 part on
+  FIELD_WET_V / RELAY_ENABLE_RAIL / RAIL_GATE / SAFE_STOP_RETURN /
+  SAFE_TBSC_RETURN.
+- The 80 new diodes are HARD-LOCKED to the existing onsemi 1N4148WS line
+  (LCSC C118873, D_SOD-323, qty 88 exactly, designator string exact). If a
+  second diode line ever appears the export now fails instead of quietly
+  breaking "zero new assembled part classes".
+- The FIELD-STUFFED parts got MPN locks they never had, because JLC does not
+  fit them and PART_LOCK only covered what JLC fits: Cflt 2.2uF = Samsung
+  CL21B225KAFNNNE / LCSC C19110 (FR-17), Cflt 10nF = TORCH C0805B103K500NT /
+  LCSC C17702767 (FR-18). Those identities now travel inside
+  assembly/*-dnp-excluded.csv, in the same row as the "do not fit" reason.
+- NEW FILE assembly/*-r6-channel-stuffing.csv (tracked copy
+  docs/phase8_revD_r6_channel_stuffing.csv): the per-channel stuffing table.
+  All 40 channels are POPULATED uniformly; the only decision left is the DNP
+  Cflt, and each row carries the measurement that decides it.
+
+The r6 gerbers, drill, CPL and part-lock CSVs are electrically correct and
+remain valid historical evidence. Build from r7 so the ordered package is the
+one whose gate proved the per-channel topology.
