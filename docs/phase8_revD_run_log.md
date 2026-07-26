@@ -2152,3 +2152,20 @@ Package artifacts: `wsl-phase8b-revD-fab-package.zip` (2,805,837 B, sha256 `cffc
 `58077bcb…`). Full per-file sha256 manifest in the package's `manifest.json`.
 
 **Release report: `docs/phase8_revD_r6_release_report_2026-07-25.md`.**
+
+### External mirror (M7 backup posture)
+
+New mirror `C:\Users\Dylan DeYoung\WSL_Backups\2026-07-25_phase8_revD_r6_release\` —
+**84 files, 15,342,015 B**, `MANIFEST.json` with sha256 per file (re-verified **84/84,
+0 failures**), plus `…_r6_release.zip` (**6,831,391 B**, sha256
+`bbaa0663037ebc5bc3de1929b5983a42913122658f6248017cc899acb9292817`) and its `.sha256`
+sidecar (recomputed and compared — match). Contents: the whole `fab_r7` package, the routed
+board + `.kicad_dru` / `.kicad_pro` / `.kicad_prl` + the rev-C→rev-D netlist diff, the
+emitted netlist + `.erc`, the 12 rev-D scripts and the fab-package regression test, the 14
+governing docs (r6 spec, the release report, the stuffing CSV, readiness, change list,
+change spec, first-article pack + refdes map, harness BOM, the recommendation, the enclosure
+spec, HANDOFF, the round-5 audit), and the firmware **release manifest** (identity only —
+firmware NOT touched, NOT flashed). Source git HEAD recorded in the manifest.
+
+**Still OPEN (owner, unchanged):** `WSL_Backups` sits on the **same physical volume** as the
+repo. The off-disk copy remains a manual Dylan item.
