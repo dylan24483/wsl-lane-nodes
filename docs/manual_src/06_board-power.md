@@ -214,10 +214,38 @@ MCP23017 `GPPUA/GPPUB=0x00` with readback.
 #### 6.4.4 Why 200 mA / 1 W is ample
 
 Only the optos of inputs that are *closed at that instant* draw wetting current, and each PC817 LED
-draws on the order of ~1–2 mA through its 2.2 kΩ series resistor at this rail voltage. Even with many
-contacts closed simultaneously the total is well under 100 mA, comfortably inside the TMA-0505S
-200 mA / 1 W envelope. The single brick serves **all** dry-contact channels on the board (the 10
-gripper inputs plus GP/OS/BS/PBZ/PBC and the manual/aux channels — see Section 8).
+draws **1.34 mA** through its 2.2 kΩ series resistor and the r6 series diode at `Vw` = 5 V. Even
+with **all 40 dry contacts closed simultaneously** the total is **58.1 mA + 4.55 mA bleed =
+62.7 mA — 31 % of** the TMA-0505S 200 mA / 1 W envelope. The single brick serves **all**
+dry-contact channels on the board (the 10 gripper inputs plus GP/OS/BS/PBZ/PBC and the manual/aux
+channels — see Section 8).
+
+> ### ⚠️ THAT BOUND HOLDS ONLY FOR DRY-CONTACT CHANNELS — corrected 2026-07-25 (r6 review)
+>
+> This subsection previously said the total is *"well under 100 mA"* with many contacts closed,
+> and modelled every channel at the dry-contact current. **A channel DRIVEN by 24 VAC is a
+> different load case entirely.** On the negative half-cycle the field pin swings to −33.94 V and
+> the rail sources
+> `I_F,pk = (5 + 33.94 − 1.15 − 0.90)/2200 = **16.8 mA**` — **12.5× the dry figure** — with a
+> full-cycle average of ≈ 5.4 mA. Two properties make that bite:
+>
+> 1. **A driven channel draws whenever the machine is energised** — it is not a "contact closed"
+>    coincidence — and cam-family channels share the machine's 24 VAC ladder, so they are **in
+>    phase** and their peaks add.
+> 2. **`FIELD_WET_V` has ZERO bulk capacitance.** The net has exactly **43 nodes**: 40 × `Rin`
+>    pin 1, the two bleed resistors R122/R123, and `U45` pin 6 (TMA `+Vout`). **No capacitor of
+>    any value.** The unregulated converter must deliver each 8.3 ms peak instantaneously.
+>
+> **`200 mA / 16.8 mA = 11.9` — at ~12 coincident driven channels the brick is at its
+> instantaneous rating.** The failure is silent and total: `Vw` collapses every negative
+> half-cycle and **all 40 inputs read inactive together, 120 times a second**, including the
+> cam-confirmation channels the FSM uses to prove motion.
+>
+> **The board is budgeted for N = 0 driven AC channels** (r6 spec §B.4 establishes that a
+> driven AC cam channel is not functionally usable without a firmware change, so none ships).
+> **Record N at commissioning; N ≥ 1 reopens this budget.** Measure `Vw` at TP4 **on a scope** —
+> a DMM average hides exactly this failure. Adding bulk capacitance to the isolated field rail is
+> an open **fleet-revision owner decision** (r6 spec §K.7), not a change absorbed by this spin.
 
 > **Two input front-end flavors (population-selectable per channel).** Each input channel can be
 > populated for either:

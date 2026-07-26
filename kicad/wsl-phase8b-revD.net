@@ -259,6 +259,78 @@
       (component_classes)
       (tstamps "24a9d6d6-a231-590c-98bc-b54d8d59aa68"))
     (comp
+      (ref "C17")
+      (value "10nF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_SA")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "c69d115f-95b7-57b0-b08b-cd3f4464218d"))
+    (comp
+      (ref "C18")
+      (value "10nF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_SB")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "fd15981f-dc1a-50f8-8c2b-8323c4f6f078"))
+    (comp
+      (ref "C19")
+      (value "10nF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_SC")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "f2a0da28-98d0-506f-a529-fb70f3e35b30"))
+    (comp
       (ref "C2")
       (value "0.1uF")
       (description "Unpolarized capacitor")
@@ -282,6 +354,246 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "1cf26da7-d3be-5790-86b4-35851af4d826"))
+    (comp
+      (ref "C20")
+      (value "10nF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_TA1")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "814ce9aa-b99c-5ffe-a493-9783f7eb4643"))
+    (comp
+      (ref "C21")
+      (value "10nF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_TA2")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "3252fcb8-065c-57ac-9053-b4bc969637b0"))
+    (comp
+      (ref "C22")
+      (value "10nF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_TB")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "19eb86f8-d8ed-55a4-adef-1324a3fa9965"))
+    (comp
+      (ref "C23")
+      (value "10nF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_DIELL_L")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "73f6de07-9a04-56ee-bfa8-f2974e8ebd35"))
+    (comp
+      (ref "C24")
+      (value "10nF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_DIELL_R")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "aeb83d94-f426-52b7-9c67-388d96af8896"))
+    (comp
+      (ref "C25")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS1")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "b8793f14-e4e1-5af3-8d3b-34516fae8432"))
+    (comp
+      (ref "C26")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS2")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "31b37d4b-2c94-59c3-8c27-9daa4d265ad8"))
+    (comp
+      (ref "C27")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS3")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "382b5067-7699-5d63-bcf9-067d5bebf7d5"))
+    (comp
+      (ref "C28")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS4")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "cc1ecd2f-5b7d-5333-90bc-db66110659a8"))
+    (comp
+      (ref "C29")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS5")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "c7c93980-4f09-5f96-aa48-c8bc2c52aa52"))
     (comp
       (ref "C3")
       (value "0.1uF")
@@ -307,6 +619,246 @@
       (component_classes)
       (tstamps "6c367f0e-957c-5dbd-a9ea-875c1559117e"))
     (comp
+      (ref "C30")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS6")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1f2007e1-8510-5fd2-92c4-3589418ecb17"))
+    (comp
+      (ref "C31")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS7")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1cdbe829-0b1f-51ab-9b3f-e26f33c1dc9b"))
+    (comp
+      (ref "C32")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS8")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "c243772d-9cb8-5366-9f29-7c2920a0b521"))
+    (comp
+      (ref "C33")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS9")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "7b4140d0-5334-5170-bb6f-2fb70d23808c"))
+    (comp
+      (ref "C34")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GS10")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "55915c64-3333-51c7-ab17-9b68eabdadd1"))
+    (comp
+      (ref "C35")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_GP")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "6bc1662e-8cd9-562b-8a02-7667c9ac4a46"))
+    (comp
+      (ref "C36")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_OS")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "9773143d-3aec-5052-b05e-e20664b62a87"))
+    (comp
+      (ref "C37")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_BS")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "9fb7b05b-0cc1-5809-8a79-e19354a401a3"))
+    (comp
+      (ref "C38")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_PBZ")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "13513bc1-351c-56d1-a4d8-c3297dc5735b"))
+    (comp
+      (ref "C39")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_PBC")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "0b30a25d-13e4-58db-a552-69f513b0e3cf"))
+    (comp
       (ref "C4")
       (value "10nF X2 DNP")
       (description "Unpolarized capacitor")
@@ -331,6 +883,246 @@
       (component_classes)
       (tstamps "6b47c1e8-38f9-5cdd-a394-d8ef010eed25"))
     (comp
+      (ref "C40")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_FOUL")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "5f0cc590-d108-5d30-ae3f-052165735e69"))
+    (comp
+      (ref "C41")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_TENTH")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "a81c1350-cb55-5618-8173-73a6d2611d5d"))
+    (comp
+      (ref "C42")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_MAN_T")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "44a5a098-5737-5a14-9715-9ba8f00f0090"))
+    (comp
+      (ref "C43")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_MAN_S")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "fa012d05-c011-5d37-9cc4-6b98bc857873"))
+    (comp
+      (ref "C44")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_MAN_SWS")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "4245951b-4814-5c7b-a240-d61f141df430"))
+    (comp
+      (ref "C45")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_MAN_SWSR")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "b07f7593-a1c0-5d3b-b0e9-9866f0285a56"))
+    (comp
+      (ref "C46")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX1")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "e67b3487-3f54-5d5f-ab12-d8b70b281cda"))
+    (comp
+      (ref "C47")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX2")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1741aaba-8c8b-5a87-ab5b-aa0763e664ce"))
+    (comp
+      (ref "C48")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX3")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "b435bc7a-adab-5a36-b820-10da618d1151"))
+    (comp
+      (ref "C49")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX4")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "491858f7-83c4-5bdc-857c-478df069fc64"))
+    (comp
       (ref "C5")
       (value "10nF X2 DNP")
       (description "Unpolarized capacitor")
@@ -354,6 +1146,174 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "c7d873ce-4060-5345-8d43-ae6b234deb8b"))
+    (comp
+      (ref "C50")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX5")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "a6da8212-370e-569f-b5ae-1581645b1403"))
+    (comp
+      (ref "C51")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX6")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "d1456ff6-d7f4-5122-90c8-bfe3b5f559bd"))
+    (comp
+      (ref "C52")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX7")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "dc340acb-a607-548e-aed8-671ae89f4436"))
+    (comp
+      (ref "C53")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX8")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "59b693dd-9014-55b2-b268-f6c9d245659e"))
+    (comp
+      (ref "C54")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX9")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "66872295-7d2b-503b-8a94-99dedc56ac8e"))
+    (comp
+      (ref "C55")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX10")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "057d9f31-7b81-535a-97e8-4619d27370ac"))
+    (comp
+      (ref "C56")
+      (value "2.2uF X7R DNP")
+      (description "Unpolarized capacitor")
+      (footprint "Capacitor_SMD:C_0805_2012Metric")
+      (fields
+        (field
+          (name "Description") "Unpolarized capacitor")
+        (field
+          (name "Footprint") "Capacitor_SMD:C_0805_2012Metric")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Cflt_AUX11")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "C"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "88a72e9b-2866-5430-b626-a3d42f4c0bab"))
     (comp
       (ref "C6")
       (value "10nF X2 DNP")
@@ -667,6 +1627,54 @@
       (component_classes)
       (tstamps "292940f2-9baa-571c-aa60-822154da9926"))
     (comp
+      (ref "D18")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_SA")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "5d003e1d-6ace-511b-b601-66342895b766"))
+    (comp
+      (ref "D19")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_SA")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "adcc7a5c-3bfc-56d5-97cc-51eea75cc964"))
+    (comp
       (ref "D2")
       (value "MOV DNP")
       (description "Diode")
@@ -690,6 +1698,246 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "2a863185-752a-5b76-820e-f7e12eba5fce"))
+    (comp
+      (ref "D20")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_SB")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "505820db-cbfd-57e3-bc0b-d5cca0938962"))
+    (comp
+      (ref "D21")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_SB")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "d127c6be-ee9e-5979-9c6f-c2eb6e4a2c8e"))
+    (comp
+      (ref "D22")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_SC")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "a496635d-fbbf-5910-8ef7-5e2534314f1e"))
+    (comp
+      (ref "D23")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_SC")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "e11e9815-9b8f-5163-806f-acab2eb12365"))
+    (comp
+      (ref "D24")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_TA1")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "d3672360-b3fb-5b44-b9fa-04ff40606f05"))
+    (comp
+      (ref "D25")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_TA1")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "59d6f182-e1fb-54f5-bf4b-c41d794a23c7"))
+    (comp
+      (ref "D26")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_TA2")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "33ea81db-dee5-5e2b-89ff-f312b331695d"))
+    (comp
+      (ref "D27")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_TA2")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "fab97e46-1a33-5825-94a5-1b3cdce9108d"))
+    (comp
+      (ref "D28")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_TB")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "abf9f226-e7eb-5134-9038-59a1b69bc03b"))
+    (comp
+      (ref "D29")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_TB")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "5c82de58-7b97-585e-ac8e-bc4fcb0375c1"))
     (comp
       (ref "D3")
       (value "1N4148")
@@ -715,6 +1963,246 @@
       (component_classes)
       (tstamps "6f166251-43db-5575-9fdb-1e9442cff503"))
     (comp
+      (ref "D30")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_DIELL_L")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "59856737-f883-5f57-98b7-9411d7319e82"))
+    (comp
+      (ref "D31")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_DIELL_L")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "abf1b2e8-24e7-520b-8f0b-93bb4ae99ca1"))
+    (comp
+      (ref "D32")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_DIELL_R")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "b69ff9d2-606a-500a-a8df-124e282f86a7"))
+    (comp
+      (ref "D33")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_DIELL_R")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "7c8b612e-51eb-5b4a-8466-579c331b5844"))
+    (comp
+      (ref "D34")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS1")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "f0536faa-b4ee-5c45-9fdb-bf8e7e186c92"))
+    (comp
+      (ref "D35")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS1")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "9d06cce6-bd09-5d07-b558-28cee2db3c44"))
+    (comp
+      (ref "D36")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS2")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "312f3fbf-cb91-5ea5-a44c-8f5db24eddf1"))
+    (comp
+      (ref "D37")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS2")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "d02f0e87-c984-5e39-ada0-ce900133de2b"))
+    (comp
+      (ref "D38")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS3")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1a5e1d69-6560-5a20-8778-0aa71a893649"))
+    (comp
+      (ref "D39")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS3")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "374cc1d1-630d-59cb-b5fc-b8d534244d82"))
+    (comp
       (ref "D4")
       (value "MOV DNP")
       (description "Diode")
@@ -738,6 +2226,246 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "372aa4fb-7e64-5ae2-8050-25eca3b94ba6"))
+    (comp
+      (ref "D40")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS4")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "b31a8b5e-cc2d-5bc3-91aa-44d8feede04b"))
+    (comp
+      (ref "D41")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS4")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1eeb58b8-343c-5966-9d46-67651b58def1"))
+    (comp
+      (ref "D42")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS5")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "14f4fd04-5534-5b5e-9a58-d003f353037b"))
+    (comp
+      (ref "D43")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS5")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "39c7dcb2-4760-5ac2-a758-cd5ecfc72636"))
+    (comp
+      (ref "D44")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS6")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ac4a85d9-cffa-5cda-94f3-0f1bee4dc9c4"))
+    (comp
+      (ref "D45")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS6")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "e858b47e-d1f5-5bda-9fd7-352d6332031d"))
+    (comp
+      (ref "D46")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS7")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "a3d8e768-935e-5bfc-ae7d-02e0b45abafb"))
+    (comp
+      (ref "D47")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS7")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "21d0f732-32a0-5f77-9d76-f134918db1af"))
+    (comp
+      (ref "D48")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS8")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ede8eee4-c6ac-553d-a060-6bca0a2e9a25"))
+    (comp
+      (ref "D49")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS8")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "21c00d67-1dd7-54f3-b982-7f8f2fd85f47"))
     (comp
       (ref "D5")
       (value "1N4148")
@@ -763,6 +2491,246 @@
       (component_classes)
       (tstamps "1898fcde-72b8-5cc2-8f14-b1f666e47b22"))
     (comp
+      (ref "D50")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS9")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "3d1a1909-1076-5f63-a44e-85bf8e0672a6"))
+    (comp
+      (ref "D51")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS9")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "b4f43800-b449-59a6-a500-0171d86dec2a"))
+    (comp
+      (ref "D52")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GS10")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "fca90961-e148-57ee-81b6-81a571b540c2"))
+    (comp
+      (ref "D53")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GS10")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "1b2adde6-705a-569b-b6bc-c1f388fe5df2"))
+    (comp
+      (ref "D54")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_GP")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "d11c3ba0-7961-5479-b4ce-9405ccb9d4b1"))
+    (comp
+      (ref "D55")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_GP")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "f90f84c1-82af-539d-a952-8389bcfb80e2"))
+    (comp
+      (ref "D56")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_OS")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "3cf004a9-78e4-5c34-8032-54a3e70fcc76"))
+    (comp
+      (ref "D57")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_OS")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "8fc2431a-51d5-5982-91a5-6ec3b90bd3bf"))
+    (comp
+      (ref "D58")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_BS")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "f4a106a5-3b7d-5a01-b494-438419d40099"))
+    (comp
+      (ref "D59")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_BS")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ba756814-4a3f-557e-a042-a3b0033d342c"))
+    (comp
       (ref "D6")
       (value "MOV DNP")
       (description "Diode")
@@ -786,6 +2754,246 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "cbb13203-9f03-5d9f-a286-6947aae980a2"))
+    (comp
+      (ref "D60")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_PBZ")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "bfbd8ea1-3bc7-5960-be6f-182dc82d2c34"))
+    (comp
+      (ref "D61")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_PBZ")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "4b99b4a9-1d1f-594e-ae5e-8895b4a63d98"))
+    (comp
+      (ref "D62")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_PBC")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "6e6c69b9-9eba-53dc-8134-c1ff1a237e96"))
+    (comp
+      (ref "D63")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_PBC")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "87cbda4d-42b9-5963-ad8f-865b97b3a215"))
+    (comp
+      (ref "D64")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_FOUL")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "33e11c91-f2b2-501c-9e3c-d7dd81846c6f"))
+    (comp
+      (ref "D65")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_FOUL")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "f5309678-6d60-5200-a00e-b05b7c9361e0"))
+    (comp
+      (ref "D66")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_TENTH")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "b1383e60-db8f-5dd0-b79e-c51c82cd12ee"))
+    (comp
+      (ref "D67")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_TENTH")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "4285a59a-27a6-5b8c-a225-45186ea06117"))
+    (comp
+      (ref "D68")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_MAN_T")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "e9f78ac2-faa6-5258-bfbc-a1b0d57480ab"))
+    (comp
+      (ref "D69")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_MAN_T")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "29243a74-5a99-5b98-bb2b-9390f8af2b3a"))
     (comp
       (ref "D7")
       (value "1N4148")
@@ -811,6 +3019,246 @@
       (component_classes)
       (tstamps "82196da3-9e52-592c-b92e-dd2ee9e950d1"))
     (comp
+      (ref "D70")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_MAN_S")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "7cdaafcd-0b48-55af-9266-2f2d33806cfd"))
+    (comp
+      (ref "D71")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_MAN_S")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "c015a8e6-0e03-5532-ba0b-b8e0a507b012"))
+    (comp
+      (ref "D72")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_MAN_SWS")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "3687100c-52bf-53ad-a3a7-16b6d4720655"))
+    (comp
+      (ref "D73")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_MAN_SWS")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ad0e75bd-4d6f-5b86-83d6-588c370e8a72"))
+    (comp
+      (ref "D74")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_MAN_SWSR")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "234e0273-1614-5459-aee4-5502ac0a29cd"))
+    (comp
+      (ref "D75")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_MAN_SWSR")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "597db7c5-8c9e-51d6-b42d-9d15bdc10675"))
+    (comp
+      (ref "D76")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX1")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "11729f8d-f5ba-5281-9c4d-352a6a687f9e"))
+    (comp
+      (ref "D77")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX1")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "16f8f04f-f5be-582c-9ac1-0009de2d6f47"))
+    (comp
+      (ref "D78")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX2")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "2c1aa742-1988-5422-9fea-cac50c19c56c"))
+    (comp
+      (ref "D79")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX2")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "98dce9fb-c27a-5fc7-b462-31023a0294fc"))
+    (comp
       (ref "D8")
       (value "MOV DNP")
       (description "Diode")
@@ -835,6 +3283,246 @@
       (component_classes)
       (tstamps "a17ee49d-33cf-5fb3-9589-06a730dc4344"))
     (comp
+      (ref "D80")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX3")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "3d5ca8ee-7fff-576a-b650-bd65b73b9df6"))
+    (comp
+      (ref "D81")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX3")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "96769bb2-d4dd-54b3-9466-7eb67002812d"))
+    (comp
+      (ref "D82")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX4")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "d83ea28a-dcb3-5c81-8d18-5dd4aeeb84c1"))
+    (comp
+      (ref "D83")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX4")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "370985d6-83ed-5402-a045-00add171c752"))
+    (comp
+      (ref "D84")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX5")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "f506823e-c118-5485-a561-556f6bb832a9"))
+    (comp
+      (ref "D85")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX5")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ad938e68-f246-55a9-9abd-a692e732a0b5"))
+    (comp
+      (ref "D86")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX6")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "63dba581-918e-516e-a39d-74c5cfb91186"))
+    (comp
+      (ref "D87")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX6")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "34213e91-eb74-5aed-ace1-9308022b6698"))
+    (comp
+      (ref "D88")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX7")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "2d6878e4-5cd8-580d-8a81-4fc254e82133"))
+    (comp
+      (ref "D89")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX7")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ae66fb38-3e7a-5c5b-8a43-8b96e9b662dd"))
+    (comp
       (ref "D9")
       (value "1N4148")
       (description "Diode")
@@ -858,6 +3546,198 @@
         (tstamps "/"))
       (component_classes)
       (tstamps "54d67c41-047e-5ad5-8726-ea19863fb8ed"))
+    (comp
+      (ref "D90")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX8")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "b52c1c4b-6823-542d-a15a-22cc9479b3df"))
+    (comp
+      (ref "D91")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX8")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "7c4359c2-ea03-516b-8b56-151f85442bdd"))
+    (comp
+      (ref "D92")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX9")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "6305e47f-08f6-56b8-9790-12b290b9f505"))
+    (comp
+      (ref "D93")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX9")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "28f3f23b-3a8e-5fbc-b903-445d93664b6c"))
+    (comp
+      (ref "D94")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX10")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "cc9b4945-581f-564f-a8f8-b2bd7147edd6"))
+    (comp
+      (ref "D95")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX10")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "ae03f21f-2272-5cf0-a409-a0dc11f01df9"))
+    (comp
+      (ref "D96")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dser_AUX11")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "4014c555-ed15-5af5-b3b0-8e0734dd9267"))
+    (comp
+      (ref "D97")
+      (value "1N4148")
+      (description "Diode")
+      (footprint "Diode_SMD:D_SOD-323")
+      (fields
+        (field
+          (name "Description") "Diode")
+        (field
+          (name "Footprint") "Diode_SMD:D_SOD-323")
+        (field
+          (name "Datasheet"))
+        (field
+          (name "SKiDL Tag") "Dclamp_AUX11")
+        (field
+          (name "SKiDL Line") "generate_kicad_netlist_revD.py:0"))
+      (libsource
+        (lib "Device")
+        (part "D"))
+      (sheetpath
+        (names "/")
+        (tstamps "/"))
+      (component_classes)
+      (tstamps "0332f64a-5b89-549c-adee-6aaed3411fd9"))
     (comp
       (ref "F1")
       (value "1206L020YR 200mA")
@@ -6992,6 +9872,10 @@
         (pin "16")
         (pintype "BIDIRECTIONAL"))
       (node
+        (ref "C23")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
         (ref "R16")
         (pin "2")
         (pintype "PASSIVE"))
@@ -7007,6 +9891,10 @@
         (ref "A1")
         (pin "17")
         (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "C24")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R18")
         (pin "2")
@@ -7024,6 +9912,10 @@
         (pin "9")
         (pintype "BIDIRECTIONAL"))
       (node
+        (ref "C17")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
         (ref "R4")
         (pin "2")
         (pintype "PASSIVE"))
@@ -7039,6 +9931,10 @@
         (ref "A1")
         (pin "10")
         (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "C18")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R6")
         (pin "2")
@@ -7056,6 +9952,10 @@
         (pin "11")
         (pintype "BIDIRECTIONAL"))
       (node
+        (ref "C19")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
         (ref "R8")
         (pin "2")
         (pintype "PASSIVE"))
@@ -7071,6 +9971,10 @@
         (ref "A1")
         (pin "12")
         (pintype "BIDIRECTIONAL"))
+      (node
+        (ref "C20")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R10")
         (pin "2")
@@ -7088,6 +9992,10 @@
         (pin "14")
         (pintype "BIDIRECTIONAL"))
       (node
+        (ref "C21")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
         (ref "R12")
         (pin "2")
         (pintype "PASSIVE"))
@@ -7104,6 +10012,10 @@
         (pin "15")
         (pintype "BIDIRECTIONAL"))
       (node
+        (ref "C22")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
         (ref "R14")
         (pin "2")
         (pintype "PASSIVE"))
@@ -7115,6 +10027,10 @@
       (code 39)
       (name "FIELD_FAST_DIELL_L")
       (class "Default")
+      (node
+        (ref "D31")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J3")
         (pin "7")
@@ -7128,6 +10044,10 @@
       (name "FIELD_FAST_DIELL_R")
       (class "Default")
       (node
+        (ref "D33")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
         (ref "J3")
         (pin "8")
         (pintype "PASSIVE"))
@@ -7139,6 +10059,10 @@
       (code 41)
       (name "FIELD_FAST_SA")
       (class "Default")
+      (node
+        (ref "D19")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J3")
         (pin "1")
@@ -7152,6 +10076,10 @@
       (name "FIELD_FAST_SB")
       (class "Default")
       (node
+        (ref "D21")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
         (ref "J3")
         (pin "2")
         (pintype "PASSIVE"))
@@ -7163,6 +10091,10 @@
       (code 43)
       (name "FIELD_FAST_SC")
       (class "Default")
+      (node
+        (ref "D23")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J3")
         (pin "3")
@@ -7176,6 +10108,10 @@
       (name "FIELD_FAST_TA1")
       (class "Default")
       (node
+        (ref "D25")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
         (ref "J3")
         (pin "4")
         (pintype "PASSIVE"))
@@ -7188,6 +10124,10 @@
       (name "FIELD_FAST_TA2")
       (class "Default")
       (node
+        (ref "D27")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
         (ref "J3")
         (pin "5")
         (pintype "PASSIVE"))
@@ -7199,6 +10139,10 @@
       (code 46)
       (name "FIELD_FAST_TB")
       (class "Default")
+      (node
+        (ref "D29")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J3")
         (pin "6")
@@ -7252,8 +10196,12 @@
       (name "FIELD_LED_AUX1")
       (class "Default")
       (node
-        (ref "R61")
-        (pin "2")
+        (ref "D76")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D77")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U33")
@@ -7264,8 +10212,12 @@
       (name "FIELD_LED_AUX10")
       (class "Default")
       (node
-        (ref "R79")
-        (pin "2")
+        (ref "D94")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D95")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U42")
@@ -7276,8 +10228,12 @@
       (name "FIELD_LED_AUX11")
       (class "Default")
       (node
-        (ref "R81")
-        (pin "2")
+        (ref "D96")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D97")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U43")
@@ -7288,8 +10244,12 @@
       (name "FIELD_LED_AUX2")
       (class "Default")
       (node
-        (ref "R63")
-        (pin "2")
+        (ref "D78")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D79")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U34")
@@ -7300,8 +10260,12 @@
       (name "FIELD_LED_AUX3")
       (class "Default")
       (node
-        (ref "R65")
-        (pin "2")
+        (ref "D80")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D81")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U35")
@@ -7312,8 +10276,12 @@
       (name "FIELD_LED_AUX4")
       (class "Default")
       (node
-        (ref "R67")
-        (pin "2")
+        (ref "D82")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D83")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U36")
@@ -7324,8 +10292,12 @@
       (name "FIELD_LED_AUX5")
       (class "Default")
       (node
-        (ref "R69")
-        (pin "2")
+        (ref "D84")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D85")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U37")
@@ -7336,8 +10308,12 @@
       (name "FIELD_LED_AUX6")
       (class "Default")
       (node
-        (ref "R71")
-        (pin "2")
+        (ref "D86")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D87")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U38")
@@ -7348,8 +10324,12 @@
       (name "FIELD_LED_AUX7")
       (class "Default")
       (node
-        (ref "R73")
-        (pin "2")
+        (ref "D88")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D89")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U39")
@@ -7360,8 +10340,12 @@
       (name "FIELD_LED_AUX8")
       (class "Default")
       (node
-        (ref "R75")
-        (pin "2")
+        (ref "D90")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D91")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U40")
@@ -7372,8 +10356,12 @@
       (name "FIELD_LED_AUX9")
       (class "Default")
       (node
-        (ref "R77")
-        (pin "2")
+        (ref "D92")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D93")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U41")
@@ -7384,8 +10372,12 @@
       (name "FIELD_LED_BS")
       (class "Default")
       (node
-        (ref "R43")
-        (pin "2")
+        (ref "D58")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D59")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U24")
@@ -7396,8 +10388,12 @@
       (name "FIELD_LED_DIELL_L")
       (class "Default")
       (node
-        (ref "R15")
-        (pin "2")
+        (ref "D30")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D31")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U10")
@@ -7408,8 +10404,12 @@
       (name "FIELD_LED_DIELL_R")
       (class "Default")
       (node
-        (ref "R17")
-        (pin "2")
+        (ref "D32")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D33")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U11")
@@ -7420,8 +10420,12 @@
       (name "FIELD_LED_FOUL")
       (class "Default")
       (node
-        (ref "R49")
-        (pin "2")
+        (ref "D64")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D65")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U27")
@@ -7432,8 +10436,12 @@
       (name "FIELD_LED_GP")
       (class "Default")
       (node
-        (ref "R39")
-        (pin "2")
+        (ref "D54")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D55")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U22")
@@ -7444,8 +10452,12 @@
       (name "FIELD_LED_GS1")
       (class "Default")
       (node
-        (ref "R19")
-        (pin "2")
+        (ref "D34")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D35")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U12")
@@ -7456,8 +10468,12 @@
       (name "FIELD_LED_GS10")
       (class "Default")
       (node
-        (ref "R37")
-        (pin "2")
+        (ref "D52")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D53")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U21")
@@ -7468,8 +10484,12 @@
       (name "FIELD_LED_GS2")
       (class "Default")
       (node
-        (ref "R21")
-        (pin "2")
+        (ref "D36")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D37")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U13")
@@ -7480,8 +10500,12 @@
       (name "FIELD_LED_GS3")
       (class "Default")
       (node
-        (ref "R23")
-        (pin "2")
+        (ref "D38")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D39")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U14")
@@ -7492,8 +10516,12 @@
       (name "FIELD_LED_GS4")
       (class "Default")
       (node
-        (ref "R25")
-        (pin "2")
+        (ref "D40")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D41")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U15")
@@ -7504,8 +10532,12 @@
       (name "FIELD_LED_GS5")
       (class "Default")
       (node
-        (ref "R27")
-        (pin "2")
+        (ref "D42")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D43")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U16")
@@ -7516,8 +10548,12 @@
       (name "FIELD_LED_GS6")
       (class "Default")
       (node
-        (ref "R29")
-        (pin "2")
+        (ref "D44")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D45")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U17")
@@ -7528,8 +10564,12 @@
       (name "FIELD_LED_GS7")
       (class "Default")
       (node
-        (ref "R31")
-        (pin "2")
+        (ref "D46")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D47")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U18")
@@ -7540,8 +10580,12 @@
       (name "FIELD_LED_GS8")
       (class "Default")
       (node
-        (ref "R33")
-        (pin "2")
+        (ref "D48")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D49")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U19")
@@ -7552,8 +10596,12 @@
       (name "FIELD_LED_GS9")
       (class "Default")
       (node
-        (ref "R35")
-        (pin "2")
+        (ref "D50")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D51")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U20")
@@ -7564,8 +10612,12 @@
       (name "FIELD_LED_MAN_S")
       (class "Default")
       (node
-        (ref "R55")
-        (pin "2")
+        (ref "D70")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D71")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U30")
@@ -7576,8 +10628,12 @@
       (name "FIELD_LED_MAN_SWS")
       (class "Default")
       (node
-        (ref "R57")
-        (pin "2")
+        (ref "D72")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D73")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U31")
@@ -7588,8 +10644,12 @@
       (name "FIELD_LED_MAN_SWSR")
       (class "Default")
       (node
-        (ref "R59")
-        (pin "2")
+        (ref "D74")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D75")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U32")
@@ -7600,8 +10660,12 @@
       (name "FIELD_LED_MAN_T")
       (class "Default")
       (node
-        (ref "R53")
-        (pin "2")
+        (ref "D68")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D69")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U29")
@@ -7612,8 +10676,12 @@
       (name "FIELD_LED_OS")
       (class "Default")
       (node
-        (ref "R41")
-        (pin "2")
+        (ref "D56")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D57")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U23")
@@ -7624,8 +10692,12 @@
       (name "FIELD_LED_PBC")
       (class "Default")
       (node
-        (ref "R47")
-        (pin "2")
+        (ref "D62")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D63")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U26")
@@ -7636,8 +10708,12 @@
       (name "FIELD_LED_PBZ")
       (class "Default")
       (node
-        (ref "R45")
-        (pin "2")
+        (ref "D60")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D61")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U25")
@@ -7648,8 +10724,12 @@
       (name "FIELD_LED_SA")
       (class "Default")
       (node
-        (ref "R3")
-        (pin "2")
+        (ref "D18")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D19")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U4")
@@ -7660,8 +10740,12 @@
       (name "FIELD_LED_SB")
       (class "Default")
       (node
-        (ref "R5")
-        (pin "2")
+        (ref "D20")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D21")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U5")
@@ -7672,8 +10756,12 @@
       (name "FIELD_LED_SC")
       (class "Default")
       (node
-        (ref "R7")
-        (pin "2")
+        (ref "D22")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D23")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U6")
@@ -7684,8 +10772,12 @@
       (name "FIELD_LED_TA1")
       (class "Default")
       (node
-        (ref "R9")
-        (pin "2")
+        (ref "D24")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D25")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U7")
@@ -7696,8 +10788,12 @@
       (name "FIELD_LED_TA2")
       (class "Default")
       (node
-        (ref "R11")
-        (pin "2")
+        (ref "D26")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D27")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U8")
@@ -7708,8 +10804,12 @@
       (name "FIELD_LED_TB")
       (class "Default")
       (node
-        (ref "R13")
-        (pin "2")
+        (ref "D28")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D29")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U9")
@@ -7720,8 +10820,12 @@
       (name "FIELD_LED_TENTH")
       (class "Default")
       (node
-        (ref "R51")
-        (pin "2")
+        (ref "D66")
+        (pin "1")
+        (pintype "PASSIVE"))
+      (node
+        (ref "D67")
+        (pin "1")
         (pintype "PASSIVE"))
       (node
         (ref "U28")
@@ -7729,8 +10833,492 @@
         (pintype "PASSIVE")))
     (net
       (code 88)
+      (name "FIELD_RIN_AUX1")
+      (class "Default")
+      (node
+        (ref "D76")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R61")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 89)
+      (name "FIELD_RIN_AUX10")
+      (class "Default")
+      (node
+        (ref "D94")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R79")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 90)
+      (name "FIELD_RIN_AUX11")
+      (class "Default")
+      (node
+        (ref "D96")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R81")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 91)
+      (name "FIELD_RIN_AUX2")
+      (class "Default")
+      (node
+        (ref "D78")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R63")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 92)
+      (name "FIELD_RIN_AUX3")
+      (class "Default")
+      (node
+        (ref "D80")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R65")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 93)
+      (name "FIELD_RIN_AUX4")
+      (class "Default")
+      (node
+        (ref "D82")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R67")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 94)
+      (name "FIELD_RIN_AUX5")
+      (class "Default")
+      (node
+        (ref "D84")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R69")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 95)
+      (name "FIELD_RIN_AUX6")
+      (class "Default")
+      (node
+        (ref "D86")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R71")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 96)
+      (name "FIELD_RIN_AUX7")
+      (class "Default")
+      (node
+        (ref "D88")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R73")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 97)
+      (name "FIELD_RIN_AUX8")
+      (class "Default")
+      (node
+        (ref "D90")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R75")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 98)
+      (name "FIELD_RIN_AUX9")
+      (class "Default")
+      (node
+        (ref "D92")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R77")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 99)
+      (name "FIELD_RIN_BS")
+      (class "Default")
+      (node
+        (ref "D58")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R43")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 100)
+      (name "FIELD_RIN_DIELL_L")
+      (class "Default")
+      (node
+        (ref "D30")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R15")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 101)
+      (name "FIELD_RIN_DIELL_R")
+      (class "Default")
+      (node
+        (ref "D32")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R17")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 102)
+      (name "FIELD_RIN_FOUL")
+      (class "Default")
+      (node
+        (ref "D64")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R49")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 103)
+      (name "FIELD_RIN_GP")
+      (class "Default")
+      (node
+        (ref "D54")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R39")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 104)
+      (name "FIELD_RIN_GS1")
+      (class "Default")
+      (node
+        (ref "D34")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R19")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 105)
+      (name "FIELD_RIN_GS10")
+      (class "Default")
+      (node
+        (ref "D52")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R37")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 106)
+      (name "FIELD_RIN_GS2")
+      (class "Default")
+      (node
+        (ref "D36")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R21")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 107)
+      (name "FIELD_RIN_GS3")
+      (class "Default")
+      (node
+        (ref "D38")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R23")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 108)
+      (name "FIELD_RIN_GS4")
+      (class "Default")
+      (node
+        (ref "D40")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R25")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 109)
+      (name "FIELD_RIN_GS5")
+      (class "Default")
+      (node
+        (ref "D42")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R27")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 110)
+      (name "FIELD_RIN_GS6")
+      (class "Default")
+      (node
+        (ref "D44")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R29")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 111)
+      (name "FIELD_RIN_GS7")
+      (class "Default")
+      (node
+        (ref "D46")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R31")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 112)
+      (name "FIELD_RIN_GS8")
+      (class "Default")
+      (node
+        (ref "D48")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R33")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 113)
+      (name "FIELD_RIN_GS9")
+      (class "Default")
+      (node
+        (ref "D50")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R35")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 114)
+      (name "FIELD_RIN_MAN_S")
+      (class "Default")
+      (node
+        (ref "D70")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R55")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 115)
+      (name "FIELD_RIN_MAN_SWS")
+      (class "Default")
+      (node
+        (ref "D72")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R57")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 116)
+      (name "FIELD_RIN_MAN_SWSR")
+      (class "Default")
+      (node
+        (ref "D74")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R59")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 117)
+      (name "FIELD_RIN_MAN_T")
+      (class "Default")
+      (node
+        (ref "D68")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R53")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 118)
+      (name "FIELD_RIN_OS")
+      (class "Default")
+      (node
+        (ref "D56")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R41")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 119)
+      (name "FIELD_RIN_PBC")
+      (class "Default")
+      (node
+        (ref "D62")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R47")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 120)
+      (name "FIELD_RIN_PBZ")
+      (class "Default")
+      (node
+        (ref "D60")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R45")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 121)
+      (name "FIELD_RIN_SA")
+      (class "Default")
+      (node
+        (ref "D18")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R3")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 122)
+      (name "FIELD_RIN_SB")
+      (class "Default")
+      (node
+        (ref "D20")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R5")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 123)
+      (name "FIELD_RIN_SC")
+      (class "Default")
+      (node
+        (ref "D22")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R7")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 124)
+      (name "FIELD_RIN_TA1")
+      (class "Default")
+      (node
+        (ref "D24")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R9")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 125)
+      (name "FIELD_RIN_TA2")
+      (class "Default")
+      (node
+        (ref "D26")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R11")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 126)
+      (name "FIELD_RIN_TB")
+      (class "Default")
+      (node
+        (ref "D28")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R13")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 127)
+      (name "FIELD_RIN_TENTH")
+      (class "Default")
+      (node
+        (ref "D66")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "R51")
+        (pin "2")
+        (pintype "PASSIVE")))
+    (net
+      (code 128)
       (name "FIELD_SLOW_AUX1")
       (class "Default")
+      (node
+        (ref "D77")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "9")
@@ -7740,9 +11328,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 89)
+      (code 129)
       (name "FIELD_SLOW_AUX10")
       (class "Default")
+      (node
+        (ref "D95")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J15")
         (pin "7")
@@ -7752,9 +11344,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 90)
+      (code 130)
       (name "FIELD_SLOW_AUX11")
       (class "Default")
+      (node
+        (ref "D97")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J15")
         (pin "8")
@@ -7764,9 +11360,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 91)
+      (code 131)
       (name "FIELD_SLOW_AUX2")
       (class "Default")
+      (node
+        (ref "D79")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "10")
@@ -7776,9 +11376,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 92)
+      (code 132)
       (name "FIELD_SLOW_AUX3")
       (class "Default")
+      (node
+        (ref "D81")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "11")
@@ -7788,9 +11392,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 93)
+      (code 133)
       (name "FIELD_SLOW_AUX4")
       (class "Default")
+      (node
+        (ref "D83")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J15")
         (pin "1")
@@ -7800,9 +11408,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 94)
+      (code 134)
       (name "FIELD_SLOW_AUX5")
       (class "Default")
+      (node
+        (ref "D85")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J15")
         (pin "2")
@@ -7812,9 +11424,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 95)
+      (code 135)
       (name "FIELD_SLOW_AUX6")
       (class "Default")
+      (node
+        (ref "D87")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J15")
         (pin "3")
@@ -7824,9 +11440,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 96)
+      (code 136)
       (name "FIELD_SLOW_AUX7")
       (class "Default")
+      (node
+        (ref "D89")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J15")
         (pin "4")
@@ -7836,9 +11456,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 97)
+      (code 137)
       (name "FIELD_SLOW_AUX8")
       (class "Default")
+      (node
+        (ref "D91")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J15")
         (pin "5")
@@ -7848,9 +11472,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 98)
+      (code 138)
       (name "FIELD_SLOW_AUX9")
       (class "Default")
+      (node
+        (ref "D93")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J15")
         (pin "6")
@@ -7860,9 +11488,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 99)
+      (code 139)
       (name "FIELD_SLOW_BS")
       (class "Default")
+      (node
+        (ref "D59")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "13")
@@ -7872,9 +11504,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 100)
+      (code 140)
       (name "FIELD_SLOW_FOUL")
       (class "Default")
+      (node
+        (ref "D65")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "3")
@@ -7884,9 +11520,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 101)
+      (code 141)
       (name "FIELD_SLOW_GP")
       (class "Default")
+      (node
+        (ref "D55")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "11")
@@ -7896,9 +11536,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 102)
+      (code 142)
       (name "FIELD_SLOW_GS1")
       (class "Default")
+      (node
+        (ref "D35")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "1")
@@ -7908,9 +11552,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 103)
+      (code 143)
       (name "FIELD_SLOW_GS10")
       (class "Default")
+      (node
+        (ref "D53")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "10")
@@ -7920,9 +11568,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 104)
+      (code 144)
       (name "FIELD_SLOW_GS2")
       (class "Default")
+      (node
+        (ref "D37")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "2")
@@ -7932,9 +11584,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 105)
+      (code 145)
       (name "FIELD_SLOW_GS3")
       (class "Default")
+      (node
+        (ref "D39")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "3")
@@ -7944,9 +11600,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 106)
+      (code 146)
       (name "FIELD_SLOW_GS4")
       (class "Default")
+      (node
+        (ref "D41")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "4")
@@ -7956,9 +11616,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 107)
+      (code 147)
       (name "FIELD_SLOW_GS5")
       (class "Default")
+      (node
+        (ref "D43")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "5")
@@ -7968,9 +11632,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 108)
+      (code 148)
       (name "FIELD_SLOW_GS6")
       (class "Default")
+      (node
+        (ref "D45")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "6")
@@ -7980,9 +11648,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 109)
+      (code 149)
       (name "FIELD_SLOW_GS7")
       (class "Default")
+      (node
+        (ref "D47")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "7")
@@ -7992,9 +11664,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 110)
+      (code 150)
       (name "FIELD_SLOW_GS8")
       (class "Default")
+      (node
+        (ref "D49")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "8")
@@ -8004,9 +11680,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 111)
+      (code 151)
       (name "FIELD_SLOW_GS9")
       (class "Default")
+      (node
+        (ref "D51")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "9")
@@ -8016,9 +11696,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 112)
+      (code 152)
       (name "FIELD_SLOW_MAN_S")
       (class "Default")
+      (node
+        (ref "D71")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "6")
@@ -8028,9 +11712,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 113)
+      (code 153)
       (name "FIELD_SLOW_MAN_SWS")
       (class "Default")
+      (node
+        (ref "D73")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "7")
@@ -8040,9 +11728,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 114)
+      (code 154)
       (name "FIELD_SLOW_MAN_SWSR")
       (class "Default")
+      (node
+        (ref "D75")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "8")
@@ -8052,9 +11744,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 115)
+      (code 155)
       (name "FIELD_SLOW_MAN_T")
       (class "Default")
+      (node
+        (ref "D69")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "5")
@@ -8064,9 +11760,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 116)
+      (code 156)
       (name "FIELD_SLOW_OS")
       (class "Default")
+      (node
+        (ref "D57")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J4")
         (pin "12")
@@ -8076,9 +11776,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 117)
+      (code 157)
       (name "FIELD_SLOW_PBC")
       (class "Default")
+      (node
+        (ref "D63")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "2")
@@ -8088,9 +11792,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 118)
+      (code 158)
       (name "FIELD_SLOW_PBZ")
       (class "Default")
+      (node
+        (ref "D61")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "1")
@@ -8100,9 +11808,13 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 119)
+      (code 159)
       (name "FIELD_SLOW_TENTH")
       (class "Default")
+      (node
+        (ref "D67")
+        (pin "2")
+        (pintype "PASSIVE"))
       (node
         (ref "J5")
         (pin "4")
@@ -8112,7 +11824,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 120)
+      (code 160)
       (name "FIELD_WET_V")
       (class "Default")
       (node
@@ -8288,7 +12000,7 @@
         (pin "6")
         (pintype "POWER-OUT")))
     (net
-      (code 121)
+      (code 161)
       (name "GND")
       (class "Default")
       (node
@@ -8352,11 +12064,171 @@
         (pin "2")
         (pintype "PASSIVE"))
       (node
+        (ref "C17")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C18")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C19")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
         (ref "C2")
         (pin "2")
         (pintype "PASSIVE"))
       (node
+        (ref "C20")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C21")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C22")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C23")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C24")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C25")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C26")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C27")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C28")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C29")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
         (ref "C3")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C30")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C31")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C32")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C33")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C34")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C35")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C36")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C37")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C38")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C39")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C40")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C41")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C42")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C43")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C44")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C45")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C46")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C47")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C48")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C49")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C50")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C51")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C52")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C53")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C54")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C55")
+        (pin "2")
+        (pintype "PASSIVE"))
+      (node
+        (ref "C56")
         (pin "2")
         (pintype "PASSIVE"))
       (node
@@ -8752,7 +12624,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 122)
+      (code 162)
       (name "I2C_SCL")
       (class "Default")
       (node
@@ -8780,7 +12652,7 @@
         (pin "3")
         (pintype "BIDIRECTIONAL")))
     (net
-      (code 123)
+      (code 163)
       (name "I2C_SDA")
       (class "Default")
       (node
@@ -8808,7 +12680,7 @@
         (pin "6")
         (pintype "BIDIRECTIONAL")))
     (net
-      (code 124)
+      (code 164)
       (name "J16_3V3")
       (class "Default")
       (node
@@ -8824,7 +12696,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 125)
+      (code 165)
       (name "J16_5V")
       (class "Default")
       (node
@@ -8840,7 +12712,7 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 126)
+      (code 166)
       (name "J16_SCL")
       (class "Default")
       (node
@@ -8860,7 +12732,7 @@
         (pin "6")
         (pintype "PASSIVE")))
     (net
-      (code 127)
+      (code 167)
       (name "J16_SDA")
       (class "Default")
       (node
@@ -8880,7 +12752,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 128)
+      (code 168)
       (name "LED_GATE_L_FIRST")
       (class "Default")
       (node
@@ -8896,7 +12768,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 129)
+      (code 169)
       (name "LED_GATE_L_FOUL")
       (class "Default")
       (node
@@ -8912,7 +12784,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 130)
+      (code 170)
       (name "LED_GATE_L_SECOND")
       (class "Default")
       (node
@@ -8928,7 +12800,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 131)
+      (code 171)
       (name "LED_GATE_L_STRIKE")
       (class "Default")
       (node
@@ -8944,7 +12816,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 132)
+      (code 172)
       (name "LED_L_FIRST_RETURN")
       (class "Default")
       (node
@@ -8956,7 +12828,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 133)
+      (code 173)
       (name "LED_L_FOUL_RETURN")
       (class "Default")
       (node
@@ -8968,7 +12840,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 134)
+      (code 174)
       (name "LED_L_SECOND_RETURN")
       (class "Default")
       (node
@@ -8980,7 +12852,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 135)
+      (code 175)
       (name "LED_L_STRIKE_RETURN")
       (class "Default")
       (node
@@ -8992,7 +12864,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 136)
+      (code 176)
       (name "LED_SINK_L_FIRST")
       (class "Default")
       (node
@@ -9004,7 +12876,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 137)
+      (code 177)
       (name "LED_SINK_L_FOUL")
       (class "Default")
       (node
@@ -9016,7 +12888,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 138)
+      (code 178)
       (name "LED_SINK_L_SECOND")
       (class "Default")
       (node
@@ -9028,7 +12900,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 139)
+      (code 179)
       (name "LED_SINK_L_STRIKE")
       (class "Default")
       (node
@@ -9040,7 +12912,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 140)
+      (code 180)
       (name "MCP_INT_A")
       (class "Default")
       (node
@@ -9052,7 +12924,7 @@
         (pin "20")
         (pintype "TRISTATE")))
     (net
-      (code 141)
+      (code 181)
       (name "MCP_INT_B")
       (class "Default")
       (node
@@ -9064,7 +12936,7 @@
         (pin "20")
         (pintype "TRISTATE")))
     (net
-      (code 142)
+      (code 182)
       (name "NE555_CTRL")
       (class "Default")
       (node
@@ -9076,7 +12948,7 @@
         (pin "5")
         (pintype "PASSIVE")))
     (net
-      (code 143)
+      (code 183)
       (name "NE555_OUT")
       (class "Default")
       (node
@@ -9092,7 +12964,7 @@
         (pin "3")
         (pintype "OUTPUT")))
     (net
-      (code 144)
+      (code 184)
       (name "NE555_TRIG")
       (class "Default")
       (node
@@ -9108,7 +12980,7 @@
         (pin "2")
         (pintype "INPUT")))
     (net
-      (code 145)
+      (code 185)
       (name "OUT_BE_A")
       (class "Default")
       (node
@@ -9128,7 +13000,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 146)
+      (code 186)
       (name "OUT_BE_B")
       (class "Default")
       (node
@@ -9148,7 +13020,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 147)
+      (code 187)
       (name "OUT_M1_A")
       (class "Default")
       (node
@@ -9168,7 +13040,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 148)
+      (code 188)
       (name "OUT_M1_B")
       (class "Default")
       (node
@@ -9188,7 +13060,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 149)
+      (code 189)
       (name "OUT_M2_A")
       (class "Default")
       (node
@@ -9208,7 +13080,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 150)
+      (code 190)
       (name "OUT_M2_B")
       (class "Default")
       (node
@@ -9228,7 +13100,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 151)
+      (code 191)
       (name "OUT_M_A")
       (class "Default")
       (node
@@ -9248,7 +13120,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 152)
+      (code 192)
       (name "OUT_M_B")
       (class "Default")
       (node
@@ -9268,7 +13140,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 153)
+      (code 193)
       (name "OUT_SP_A")
       (class "Default")
       (node
@@ -9288,7 +13160,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 154)
+      (code 194)
       (name "OUT_SP_B")
       (class "Default")
       (node
@@ -9308,7 +13180,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 155)
+      (code 195)
       (name "OUT_S_A")
       (class "Default")
       (node
@@ -9328,7 +13200,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 156)
+      (code 196)
       (name "OUT_S_B")
       (class "Default")
       (node
@@ -9348,7 +13220,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 157)
+      (code 197)
       (name "OUT_T_A")
       (class "Default")
       (node
@@ -9368,7 +13240,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 158)
+      (code 198)
       (name "OUT_T_B")
       (class "Default")
       (node
@@ -9388,7 +13260,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 159)
+      (code 199)
       (name "PI_UART_RX")
       (class "Default")
       (node
@@ -9400,7 +13272,7 @@
         (pin "6")
         (pintype "PASSIVE")))
     (net
-      (code 160)
+      (code 200)
       (name "PI_UART_TX")
       (class "Default")
       (node
@@ -9412,7 +13284,7 @@
         (pin "5")
         (pintype "PASSIVE")))
     (net
-      (code 161)
+      (code 201)
       (name "RAIL_GATE")
       (class "Default")
       (node
@@ -9428,7 +13300,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 162)
+      (code 202)
       (name "RELAY_ENABLE_RAIL")
       (class "Default")
       (node
@@ -9492,7 +13364,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 163)
+      (code 203)
       (name "REV_ID0")
       (class "Default")
       (node
@@ -9504,7 +13376,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 164)
+      (code 204)
       (name "REV_ID1")
       (class "Default")
       (node
@@ -9516,7 +13388,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 165)
+      (code 205)
       (name "RP2040_OK")
       (class "Default")
       (node
@@ -9536,7 +13408,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 166)
+      (code 206)
       (name "SAFE_STOP_RETURN")
       (class "Default")
       (node
@@ -9552,7 +13424,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 167)
+      (code 207)
       (name "SAFE_TBSC_RETURN")
       (class "Default")
       (node
@@ -9564,9 +13436,13 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 168)
+      (code 208)
       (name "SLOW_AUX1")
       (class "Default")
+      (node
+        (ref "C46")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R62")
         (pin "2")
@@ -9580,9 +13456,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 169)
+      (code 209)
       (name "SLOW_AUX10")
       (class "Default")
+      (node
+        (ref "C55")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R80")
         (pin "2")
@@ -9596,9 +13476,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 170)
+      (code 210)
       (name "SLOW_AUX11")
       (class "Default")
+      (node
+        (ref "C56")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R82")
         (pin "2")
@@ -9612,9 +13496,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 171)
+      (code 211)
       (name "SLOW_AUX2")
       (class "Default")
+      (node
+        (ref "C47")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R64")
         (pin "2")
@@ -9628,9 +13516,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 172)
+      (code 212)
       (name "SLOW_AUX3")
       (class "Default")
+      (node
+        (ref "C48")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R66")
         (pin "2")
@@ -9644,9 +13536,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 173)
+      (code 213)
       (name "SLOW_AUX4")
       (class "Default")
+      (node
+        (ref "C49")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R68")
         (pin "2")
@@ -9660,9 +13556,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 174)
+      (code 214)
       (name "SLOW_AUX5")
       (class "Default")
+      (node
+        (ref "C50")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R70")
         (pin "2")
@@ -9676,9 +13576,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 175)
+      (code 215)
       (name "SLOW_AUX6")
       (class "Default")
+      (node
+        (ref "C51")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R72")
         (pin "2")
@@ -9692,9 +13596,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 176)
+      (code 216)
       (name "SLOW_AUX7")
       (class "Default")
+      (node
+        (ref "C52")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R74")
         (pin "2")
@@ -9708,9 +13616,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 177)
+      (code 217)
       (name "SLOW_AUX8")
       (class "Default")
+      (node
+        (ref "C53")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R76")
         (pin "2")
@@ -9724,9 +13636,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 178)
+      (code 218)
       (name "SLOW_AUX9")
       (class "Default")
+      (node
+        (ref "C54")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R78")
         (pin "2")
@@ -9740,9 +13656,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 179)
+      (code 219)
       (name "SLOW_BS")
       (class "Default")
+      (node
+        (ref "C37")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R44")
         (pin "2")
@@ -9756,9 +13676,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 180)
+      (code 220)
       (name "SLOW_FOUL")
       (class "Default")
+      (node
+        (ref "C40")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R50")
         (pin "2")
@@ -9772,9 +13696,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 181)
+      (code 221)
       (name "SLOW_GP")
       (class "Default")
+      (node
+        (ref "C35")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R40")
         (pin "2")
@@ -9788,9 +13716,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 182)
+      (code 222)
       (name "SLOW_GS1")
       (class "Default")
+      (node
+        (ref "C25")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R20")
         (pin "2")
@@ -9804,9 +13736,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 183)
+      (code 223)
       (name "SLOW_GS10")
       (class "Default")
+      (node
+        (ref "C34")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R38")
         (pin "2")
@@ -9820,9 +13756,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 184)
+      (code 224)
       (name "SLOW_GS2")
       (class "Default")
+      (node
+        (ref "C26")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R22")
         (pin "2")
@@ -9836,9 +13776,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 185)
+      (code 225)
       (name "SLOW_GS3")
       (class "Default")
+      (node
+        (ref "C27")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R24")
         (pin "2")
@@ -9852,9 +13796,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 186)
+      (code 226)
       (name "SLOW_GS4")
       (class "Default")
+      (node
+        (ref "C28")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R26")
         (pin "2")
@@ -9868,9 +13816,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 187)
+      (code 227)
       (name "SLOW_GS5")
       (class "Default")
+      (node
+        (ref "C29")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R28")
         (pin "2")
@@ -9884,9 +13836,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 188)
+      (code 228)
       (name "SLOW_GS6")
       (class "Default")
+      (node
+        (ref "C30")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R30")
         (pin "2")
@@ -9900,9 +13856,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 189)
+      (code 229)
       (name "SLOW_GS7")
       (class "Default")
+      (node
+        (ref "C31")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R32")
         (pin "2")
@@ -9916,9 +13876,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 190)
+      (code 230)
       (name "SLOW_GS8")
       (class "Default")
+      (node
+        (ref "C32")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R34")
         (pin "2")
@@ -9932,9 +13896,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 191)
+      (code 231)
       (name "SLOW_GS9")
       (class "Default")
+      (node
+        (ref "C33")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R36")
         (pin "2")
@@ -9948,9 +13916,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 192)
+      (code 232)
       (name "SLOW_MAN_S")
       (class "Default")
+      (node
+        (ref "C43")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R56")
         (pin "2")
@@ -9964,9 +13936,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 193)
+      (code 233)
       (name "SLOW_MAN_SWS")
       (class "Default")
+      (node
+        (ref "C44")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R58")
         (pin "2")
@@ -9980,9 +13956,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 194)
+      (code 234)
       (name "SLOW_MAN_SWSR")
       (class "Default")
+      (node
+        (ref "C45")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R60")
         (pin "2")
@@ -9996,9 +13976,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 195)
+      (code 235)
       (name "SLOW_MAN_T")
       (class "Default")
+      (node
+        (ref "C42")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R54")
         (pin "2")
@@ -10012,9 +13996,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 196)
+      (code 236)
       (name "SLOW_OS")
       (class "Default")
+      (node
+        (ref "C36")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R42")
         (pin "2")
@@ -10028,9 +14016,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 197)
+      (code 237)
       (name "SLOW_PBC")
       (class "Default")
+      (node
+        (ref "C39")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R48")
         (pin "2")
@@ -10044,9 +14036,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 198)
+      (code 238)
       (name "SLOW_PBZ")
       (class "Default")
+      (node
+        (ref "C38")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R46")
         (pin "2")
@@ -10060,9 +14056,13 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 199)
+      (code 239)
       (name "SLOW_TENTH")
       (class "Default")
+      (node
+        (ref "C41")
+        (pin "1")
+        (pintype "PASSIVE"))
       (node
         (ref "R52")
         (pin "2")
@@ -10076,7 +14076,7 @@
         (pin "4")
         (pintype "PASSIVE")))
     (net
-      (code 200)
+      (code 240)
       (name "SNUB_BE")
       (class "Default")
       (node
@@ -10088,7 +14088,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 201)
+      (code 241)
       (name "SNUB_M")
       (class "Default")
       (node
@@ -10100,7 +14100,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 202)
+      (code 242)
       (name "SNUB_M1")
       (class "Default")
       (node
@@ -10112,7 +14112,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 203)
+      (code 243)
       (name "SNUB_M2")
       (class "Default")
       (node
@@ -10124,7 +14124,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 204)
+      (code 244)
       (name "SNUB_S")
       (class "Default")
       (node
@@ -10136,7 +14136,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 205)
+      (code 245)
       (name "SNUB_SP")
       (class "Default")
       (node
@@ -10148,7 +14148,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 206)
+      (code 246)
       (name "SNUB_T")
       (class "Default")
       (node
@@ -10160,7 +14160,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 207)
+      (code 247)
       (name "TAP_ARM_PERMIT")
       (class "Default")
       (node
@@ -10176,7 +14176,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 208)
+      (code 248)
       (name "TAP_GATE_555")
       (class "Default")
       (node
@@ -10188,7 +14188,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 209)
+      (code 249)
       (name "TAP_GATE_ARM")
       (class "Default")
       (node
@@ -10204,7 +14204,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 210)
+      (code 250)
       (name "TAP_GATE_KICK")
       (class "Default")
       (node
@@ -10220,7 +14220,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 211)
+      (code 251)
       (name "TAP_GATE_RPOK")
       (class "Default")
       (node
@@ -10236,7 +14236,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 212)
+      (code 252)
       (name "TAP_NE555_OUT")
       (class "Default")
       (node
@@ -10252,7 +14252,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 213)
+      (code 253)
       (name "TAP_RP2040_OK")
       (class "Default")
       (node
@@ -10268,7 +14268,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 214)
+      (code 254)
       (name "TAP_WDOG_KICK")
       (class "Default")
       (node
@@ -10284,7 +14284,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 215)
+      (code 255)
       (name "VCC_3V3")
       (class "Default")
       (node
@@ -10556,7 +14556,7 @@
         (pin "8")
         (pintype "POWER-IN")))
     (net
-      (code 216)
+      (code 256)
       (name "VCC_5V")
       (class "Default")
       (node
@@ -10616,7 +14616,7 @@
         (pin "5")
         (pintype "PASSIVE")))
     (net
-      (code 217)
+      (code 257)
       (name "VCC_5V_RAW")
       (class "Default")
       (node
@@ -10628,7 +14628,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 218)
+      (code 258)
       (name "WDOG_KICK")
       (class "Default")
       (node
@@ -10644,7 +14644,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 219)
+      (code 259)
       (name "WDOG_KICK_DRAIN")
       (class "Default")
       (node
@@ -10660,7 +14660,7 @@
         (pin "3")
         (pintype "PASSIVE")))
     (net
-      (code 220)
+      (code 260)
       (name "WDOG_KICK_GATE")
       (class "Default")
       (node
@@ -10676,7 +14676,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 221)
+      (code 261)
       (name "WDOG_OK_GATE")
       (class "Default")
       (node
@@ -10692,7 +14692,7 @@
         (pin "1")
         (pintype "PASSIVE")))
     (net
-      (code 222)
+      (code 262)
       (name "WDOG_OK_PULLDOWN")
       (class "Default")
       (node
@@ -10704,7 +14704,7 @@
         (pin "2")
         (pintype "PASSIVE")))
     (net
-      (code 223)
+      (code 263)
       (name "WDOG_TIMING_NODE")
       (class "Default")
       (node

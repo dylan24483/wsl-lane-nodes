@@ -1,0 +1,30 @@
+SUPERSEDED - DO NOT ORDER OR UPLOAD FROM THIS DIRECTORY
+
+This r5 package was the immutable output of the round-5 input-bias / firmware
+integration pass. It is now superseded by the r6 INPUT-PROTECTION COPPER CHANGE
+(Dylan reopened copper on 2026-07-25 so the first article would be fleet-intent
+rather than frozen-and-bodged).
+
+What r5 is MISSING - this is why it must not be built:
+
+- r5 has BARE OPTO INPUTS. All 40 FIELD_LED_* nets have exactly TWO nodes
+  (Rin pin 2 -> PC817 pin 1). There is no series blocking diode, no
+  anti-parallel clamp, and no logic-side filter cap on any input channel.
+- Against the PC817 LED's 6 V absolute-maximum reverse rating, the measured
+  lane-22 field classes give PBZ = 33 VDC (up to 27-28 V reverse, 4.5-4.7x the
+  limit) and DIELL_L / DIELL_R = 15.4-16 V (1.6-1.8x OVER once rev-D's own
+  1.1k FIELD_WET_V bleed pulls Vw to the 5-6 V target). The unmeasured cam
+  channels sit in the machine's 24 VAC ladder.
+- A board built from r5 therefore CANNOT have PBZ, DIELL_L or DIELL_R landed
+  directly on its inputs.
+
+r6 adds, on all 40 channels: Dser_* (1N4148WS series block) + Dclamp_*
+(1N4148WS anti-parallel clamp), both POPULATED, and Cflt_* (0805, DNP).
+Same BOM line as the existing 1N4148WS (qty 8 -> 88); zero new
+JLC-assembled part classes.
+
+Use only:
+  kicad/fab_revD_2026-07-25_r6/
+
+The original r5 manifest and zip hashes remain historical evidence. This
+marker is intentionally outside those immutable archives.

@@ -36,23 +36,59 @@ V33_X = 84.3       # VCC_3V3 pullup backbone (B.Cu)
 V33_TRUNK_X = 113.1  # VCC_3V3 logic trunk (IN2)
 V5_TRUNK_X = 151.5   # VCC_5V trunk (B.Cu)
 RAIL_X = 160.0       # RELAY_ENABLE_RAIL spine (B.Cu)
+# r6 (2026-07-25): the field-return dogleg moved 71.2 -> 68.5, i.e. from EAST
+# of the anti-parallel clamp lane (69.005-70.995) to WEST of it, into the free
+# Lane M routing channel. 9 of 40 rows solve a return y that is NOT the opto's
+# pad-2 y (SA, TA2, GS1, GS4, PBC, FOUL, AUX4, AUX5, AUX7); at 71.2 their
+# horizontal run would have passed BETWEEN the clamp's two pads, under the
+# SOD-323 body. At 68.5 the dogleg happens before the clamp and the final
+# horizontal at y+2.54 lands squarely on the clamp's anode pad.
+# The move also restores >= 0.6 mm to every FIELD_LED vertical at x=72.0
+# (was 0.5 mm edge-to-edge against the 71.2 dogleg) — see the new
+# "FIELD_LED high-voltage node spacing (r6)" DRU rule.
+RET_JOG_X = 68.5
 
 
 # --------------------------------------------------------------- field side
 def route_field_led_series(r) -> int:
+    """Rin -> Dser -> PC817 LED anode, plus the anti-parallel clamp branch.
+
+    r6 (2026-07-25, docs/phase8_revD_r6_input_protection_spec_2026-07-25.md
+    §D.4). Per row this is TWO nets instead of one; the FIELD_LED main run is
+    geometrically the SAME poly as before r6, only starting 4.14 mm further
+    east (58.913 -> 63.05, i.e. at Dser's cathode pad instead of Rin's pad 2):
+
+      FIELD_RIN_<n>  (58.913, y-1.8) -> (60.95, y-1.8)      Rin.2 -> Dser.2 (A)
+      FIELD_LED_<n>  (63.05, y-1.8) -> (72.0, y-1.8) -> (72.0, y) -> (74.0, y)
+                     branch (70.0, y-1.8) -> (70.0, y+0.44)  -> Dclamp.1 (K)
+
+    Dclamp pad 2 (A) sits at (70.0, y+2.54) — exactly the opto pad-2 y — so it
+    lands ON the existing field-return run and route_field_input_returns()
+    needs no per-row stub (its jog x moved 71.2 -> 68.5 so the 9 rows whose
+    solved return y is NOT y+2.54 keep their dogleg WEST of the clamp lane).
+
+    The rev-C-era `name == "SB"` B.Cu duck-under is DELETED: with the series
+    diode inserted at (62.0, 19.95) the row-1 FIELD_LED run no longer passes
+    under the wet-bleed pair at all.
+    """
     added = 0
     for i, name in enumerate(INPUT_ORDER):
+        rin_net = f"FIELD_RIN_{name}"
         net = f"FIELD_LED_{name}"
         y = row_y(i)
         if name == "SB":
-            # Row 1 passes the wet-bleed pair (R122/R123): duck under on B.Cu.
-            added += r.poly(net, [(58.913, 16.9), (60.3, 16.9)], F_CU)
-            r.via(net, (60.3, 16.9)); added += 1
-            added += r.poly(net, [(60.3, 16.9), (70.8, 16.9)], B_CU)
-            r.via(net, (70.8, 16.9)); added += 1
-            added += r.poly(net, [(70.8, 16.9), (72.0, 16.9), (72.0, 18.7), (74.0, 18.7)], F_CU)
+            # Row 1: Lane S is blocked at y-1.8 by the item-A wet-bleed pair
+            # (R122/R123, x 62.005-67.995, y 14.275-17.725), so Dser_SB sits
+            # at y=19.95 and both nets dogleg around them. The FIELD_LED run
+            # turns north at x=69.0 — west of the clamp's pads (69.775+) and
+            # 1.15 mm east of R123's pad edge (67.7).
+            added += r.poly(rin_net, [(58.913, 16.9), (60.95, 16.9), (60.95, 19.95)], F_CU)
+            added += r.poly(net, [(63.05, 19.95), (69.0, 19.95), (69.0, 18.7), (74.0, 18.7)], F_CU)
+            added += r.poly(net, [(70.0, 18.7), (70.0, 19.14)], F_CU)
             continue
-        added += r.poly(net, [(58.913, y - 1.8), (72.0, y - 1.8), (72.0, y), (74.0, y)], F_CU)
+        added += r.poly(rin_net, [(58.913, y - 1.8), (60.95, y - 1.8)], F_CU)
+        added += r.poly(net, [(63.05, y - 1.8), (72.0, y - 1.8), (72.0, y), (74.0, y)], F_CU)
+        added += r.poly(net, [(70.0, y - 1.8), (70.0, y + 0.44)], F_CU)
     return added
 
 
@@ -68,10 +104,21 @@ def route_field_input_returns(r) -> int:
         prefix = "FIELD_FAST_" if name in FAST_INPUTS else "FIELD_SLOW_"
         net = prefix + name
         pads = r.pads_by_net().get(net, [])
-        if len(pads) != 2:
-            continue
-        conn = min(pads, key=lambda p: item_pos(p)[0])
-        opto = max(pads, key=lambda p: item_pos(p)[0])
+        # r6 (2026-07-25): this net now carries THREE pads — the field
+        # connector pin, the PC817 LED cathode, and the anti-parallel clamp's
+        # anode. Select the two the dogleg actually joins BY ROLE, not by
+        # count: the clamp pad already sits on the opto-pad-2 y and is picked
+        # up by the run itself. (The old `len(pads) != 2: continue` silently
+        # skipped every row once the clamp landed — fail loudly instead.)
+        conn = [p for p in pads if p.GetParentFootprint().GetReference().startswith("J")]
+        opto = [p for p in pads if p.GetParentFootprint().GetReference().startswith("U")]
+        clamp = [p for p in pads if p.GetParentFootprint().GetReference().startswith("D")]
+        if not (len(pads) == 3 and len(conn) == 1 and len(opto) == 1 and len(clamp) == 1):
+            raise SystemExit(
+                f"{net}: expected connector + PC817 + r6 clamp pads, got "
+                + ", ".join(f"{p.GetParentFootprint().GetReference()}.{p.GetNumber()}"
+                            for p in pads))
+        conn, opto = conn[0], opto[0]
         chx = 20.4 if name == "SB" else 12.0 + i * 1.05
         geo.append((name, net, item_pos(conn), item_pos(opto), chx))
 
@@ -113,7 +160,7 @@ def route_field_input_returns(r) -> int:
             r.via(net, (chx, cy)); added += 1
             added += r.poly(net, [(chx, cy), (chx, 13.0), (53.9, 13.0)], B_CU)
             r.via(net, (53.9, 13.0)); added += 1
-            added += r.poly(net, [(53.9, 13.0), (71.2, 13.0), (71.2, oy), (ox, oy)], F_CU)
+            added += r.poly(net, [(53.9, 13.0), (RET_JOG_X, 13.0), (RET_JOG_X, oy), (ox, oy)], F_CU)
             continue
         vy = vy_map[name]
         added += r.poly(net, [(cx, cy), (chx, cy)], F_CU)
@@ -123,7 +170,7 @@ def route_field_input_returns(r) -> int:
         if abs(vy - oy) < 1e-6:
             added += r.poly(net, [(chx, vy), (ox, oy)], F_CU)
         else:
-            added += r.poly(net, [(chx, vy), (71.2, vy), (71.2, oy), (ox, oy)], F_CU)
+            added += r.poly(net, [(chx, vy), (RET_JOG_X, vy), (RET_JOG_X, oy), (ox, oy)], F_CU)
     return added
 
 
@@ -135,6 +182,17 @@ def route_opto_pullups(r) -> int:
         y = row_y(i)
         added += r.poly(net, [(81.62, y), (83.5, y), (83.5, y + 3.3),
                               (86.912, y + 3.3), (86.912, y + 1.8)], F_CU)
+        # r6: DNP logic-side filter cap. Its pad 1 sits at (86.912, y+4.60),
+        # i.e. on this same column x, so the feed is one 1.30 mm stub off the
+        # existing y+3.3 leg. Pad 2 is GND and takes the F.Cu GND zone.
+        if name == "AUX11":
+            # Row 39: y+4.60 = 239.90 is off the 240 mm board edge, so the cap
+            # was moved east of Rpu to (90.0, 237.10) — feed it sideways along
+            # the row instead (the existing via to In1 at (87.7, 237.1) is on
+            # this same net and the run simply continues past it).
+            added += r.poly(net, [(86.912, y + 1.8), (89.05, y + 1.8)], F_CU)
+        else:
+            added += r.poly(net, [(86.912, y + 3.3), (86.912, y + 4.60)], F_CU)
     return added
 
 
@@ -148,10 +206,18 @@ def route_field_power(r) -> int:
     for y in wet_ys:
         added += r.poly("FIELD_WET_V", [(57.087, y), (WET_X, y)], F_CU)
         r.via("FIELD_WET_V", (WET_X, y)); added += 1
-    # bleed pair WET pads (south) join on a shared F.Cu tee at y=19.9
-    added += r.poly("FIELD_WET_V", [(63.0, 16.913), (63.0, 19.9), (WET_X, 19.9)], F_CU)
-    added += r.poly("FIELD_WET_V", [(67.0, 16.913), (67.0, 19.9), (63.0, 19.9)], F_CU)
-    r.via("FIELD_WET_V", (WET_X, 19.9)); added += 1
+    # Bleed pair WET pads (south). r6 (2026-07-25): the rev-D tee ran on F.Cu
+    # from (63.0, 16.913) SOUTH to y=19.9 and then west to the backbone —
+    # straight through the only y-window in Lane S where Dser_SB can sit
+    # (18.72-20.61, bounded by R122's courtyard above and Dser_SC's below).
+    # The tee moves to B.Cu instead: a short F.Cu link joins the two WET pads
+    # between the parts, one via at x=65.0 drops it, and it runs west at the
+    # row's own y to the FIELD_WET_V B.Cu backbone at x=55.3 (which already
+    # spans y 11.2-235.3, so this lands on existing same-net copper).
+    # This is FIELD_WET_V copper only — R122/R123 themselves do not move.
+    added += r.poly("FIELD_WET_V", [(63.0, 16.913), (67.0, 16.913)], F_CU)
+    r.via("FIELD_WET_V", (65.0, 16.913)); added += 1
+    added += r.poly("FIELD_WET_V", [(65.0, 16.913), (WET_X, 16.913), (WET_X, 16.9)], B_CU)
     # TP4
     added += r.poly("FIELD_WET_V", [(22.0, 229.0), (22.0, 234.5), (WET_X, 234.5)], F_CU)
     r.via("FIELD_WET_V", (WET_X, 234.5)); added += 1
@@ -476,11 +542,19 @@ def route_header_safety(r) -> int:
     added += r.poly("ARM_PERMIT", [(139.5, 234.6), (136.0, 234.6), (136.0, 236.0)], F_CU)
 
     # RP2040_OK: A1.4 + J1.13 + R135.1 + R127.1 + TP14 on IN2 trunk x=168.4
-    added += r.poly("RP2040_OK", [(90.31, 16.49), (88.9, 16.49), (88.9, 17.8), (86.4, 17.8)], F_CU)
-    r.via("RP2040_OK", (86.4, 17.8)); added += 1
-    added += r.poly("RP2040_OK", [(86.4, 17.8), (86.4, 80.0)], IN2_CU)
-    r.via("RP2040_OK", (86.4, 80.0)); added += 1
-    added += r.poly("RP2040_OK", [(86.4, 80.0), (162.2, 80.0)], IN1_CU)
+    # r6 (2026-07-25): the old F.Cu detour to x=86.4 put a via at (86.4, 17.8)
+    # and (86.4, 80.0), both of which land inside the new Cflt_<n> pad-1 land
+    # in the Rpu column (rows 0/SA and 11/GS4). Drop straight off the Pico pad
+    # instead: the IN2 trunk moves 86.4 -> 88.9, clearing the Rpu-column via
+    # column (x 87.4-88.0) by 0.775 mm and staying west of the A1 pad field
+    # (pads are 3.2 x 1.6 at x=90.31 => 88.71-91.91; the via at pad 4's own y
+    # is on the same net). Two F.Cu segments and two via x-coordinates change;
+    # no net, class or endpoint moves.
+    added += r.poly("RP2040_OK", [(90.31, 16.49), (88.9, 16.49)], F_CU)
+    r.via("RP2040_OK", (88.9, 16.49)); added += 1
+    added += r.poly("RP2040_OK", [(88.9, 16.49), (88.9, 80.0)], IN2_CU)
+    r.via("RP2040_OK", (88.9, 80.0)); added += 1
+    added += r.poly("RP2040_OK", [(88.9, 80.0), (162.2, 80.0)], IN1_CU)
     r.via("RP2040_OK", (162.2, 80.0)); added += 1
     added += r.poly("RP2040_OK", [(162.2, 80.0), (168.4, 80.0)], B_CU)
     r.via("RP2040_OK", (168.4, 80.0)); added += 1

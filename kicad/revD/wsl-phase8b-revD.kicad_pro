@@ -740,6 +740,166 @@
       },
       {
         "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX1"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX10"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX11"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX2"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX3"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX4"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX5"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX6"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX7"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX8"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_AUX9"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_BS"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_DIELL_L"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_DIELL_R"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_FOUL"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GP"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS1"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS10"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS2"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS3"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS4"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS5"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS6"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS7"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS8"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_GS9"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_MAN_S"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_MAN_SWS"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_MAN_SWSR"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_MAN_T"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_OS"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_PBC"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_PBZ"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_SA"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_SB"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_SC"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_TA1"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_TA2"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_TB"
+      },
+      {
+        "netclass": "Field_Sense",
+        "pattern": "FIELD_RIN_TENTH"
+      },
+      {
+        "netclass": "Field_Sense",
         "pattern": "FIELD_SLOW_AUX1"
       },
       {

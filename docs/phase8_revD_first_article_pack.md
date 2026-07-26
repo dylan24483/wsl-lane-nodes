@@ -7,44 +7,55 @@
 > name WRONG parts on a rev-D board (46 refdes shifted) and MUST NOT be used here.
 >
 > Sources (sha256 at generation):
-> - `kicad/wsl-phase8b-revD.net` — `4a33bfab891c73c0…`
-> - `kicad/revD/wsl-phase8b-revD.kicad_pcb` — `93972c28d07c8d37…`
+> - `kicad/wsl-phase8b-revD.net` — `c93b06fabf178e40…`
+> - `kicad/revD/wsl-phase8b-revD.kicad_pcb` — `695cd7b10768737a…`
 > - `kicad/revD/netlist_diff_revC_to_revD.txt` (REFDES_SHIFT cross-reference)
 > - `firmware/rp2040/config.h` FW_VERSION — `phase8b-rp2040 v1.2.3` (every firmware reference below)
 > - `firmware/rp2040/release/firmware_manifest.json` — `ea8ea4ceb273df98…`
 >   (FA-11 release `id.build=rel-0c746b5747143b8011b01d43`, `id.cfg=05d808411db4bb0d`)
 >
 > Companion: `docs/phase8_revD_first_article_refdes_map.csv` — the complete
-> 271-row refdes → function → value → location map (same generation run).
+> 391-row refdes → function → value → location map (same generation run).
 > Procedure authority: `phase8_revD_remediation_spec_2026-07-21.md` §R1.9/§R3/§R4 and
 > `phase8_revD_readiness_checklist.md` §2 — this pack is their per-board execution form.
 
 > **⚗️ EXPERIMENTAL FIRST-ARTICLE (R3-8).** These boards are a prototype validation run,
 > not a fleet release. The input front-end uses the Rev-D 47 kΩ hardening, but
-> the selected PC817 lot is not guaranteed at ~1.7 mA/hot (spec §R4);
-> fleet-release status is contingent on the
+> the selected PC817 lot is not guaranteed at this board's I_F/hot corner (spec §R4)
+> — **r6 moved that operating point to 1.34 mA (`Vw` = 5 V) / ≈1.12 mA (TP4 loaded min);
+> the retired pre-r6 figure was ~1.7 mA**. Fleet-release status is contingent on the
 > upgraded **FA-9 numeric V_CE / I_C-capability aging-reserve qualification** and the
 > at-temperature **FA-7 step 4 (OG-4)** passing on every populated channel of the real
 > boards. Do not scale to fleet quantity or field-deploy a lane on these boards until
 > FA-9 + OG-4 pass and the readiness-checklist G15 EXPERIMENTAL-ORDER acceptance line is
 > signed.
 
-> **⛔ INPUT FRONT-END IS BARE — DO NOT LAND OVER-VOLTAGE CHANNELS.** Every one of the
-> **40** input channels is the single hardcoded topology
-> `FIELD_WET_V → Rin (2k2) → PC817 LED → field pin`. Verified against the emitted netlist:
-> all 40 `FIELD_LED_*` nets have **exactly two nodes** — there is **no series blocking
-> diode, no anti-parallel clamp, and no logic-side filter cap footprint on any channel**,
-> so this is **not** a stuffing option on these boards.
-> Against the PC817 **6 V LED reverse maximum**, the measured lane-22 field classes give:
-> **PBZ = 33 VDC** (≈22 V reverse against an ~11 V wetting rail, 3.7× the limit) and
-> **DIELL_L / DIELL_R = 15.4–16 V** at rest, self-powered and persisting with the OEM
-> brain removed. **Do NOT land PBZ, DIELL_L, or DIELL_R directly on a first-article board
-> input.** Either leave those channels unlanded, or fit the documented harness mitigation
-> (series 1N4007 in the harness lead, cathode toward the machine) and record it per lane.
-> The cam channels (SA · SB · TA1 · TA2) are **UNMEASURED** and sit in the machine's
-> 24 VAC relay ladder — treat them as AC-exposed until metered.
-> Authority: `docs/phase8_revD_input_frontend_recommendation.md`;
-> change-list item 6 is **REQUIRES COPPER, deferred to the fleet revision**.
+> **✅ INPUT FRONT-END IS PROTECTED IN COPPER (r6, 2026-07-25) — the "BARE, do not land
+> PBZ/DIELL" warning that stood here is RETRACTED.** All 40 channels now carry
+> `FIELD_WET_V → Rin (2k2) → **Dser** (1N4148WS, series block) → PC817 LED → field pin`,
+> with an **anti-parallel `Dclamp`** (1N4148WS) across the LED and a **DNP** logic-side
+> `Cflt`. Verified against the emitted netlist: every `FIELD_LED_<n>` now has **three**
+> nodes (`Dser.1` + `Dclamp.1` + `PC817.1`). `Dser` and `Dclamp` are **POPULATED on all 40
+> channels by default** — there is no per-channel stuffing decision.
+> Consequences for this pack:
+> - **PBZ (33 VDC) and DIELL_L / DIELL_R (15.4–16 V) MAY now be landed directly on board
+>   inputs.** The clamp pins LED reverse voltage at **≈ 0.35 V** against the PC817 6 V
+>   absolute maximum (17× inside spec), by a specified V-I curve rather than a leakage
+>   ratio. **Prove it per board with FA-15 before relying on it.**
+> - **The harness 1N4007 interposer for PBZ/DIELL_L/DIELL_R is SUPERSEDED** and must not
+>   be built. Keep it only as a per-lane *verification* note, never as a build step.
+> - The cam channels (SA · SB · TA1 · TA2) are still **UNMEASURED** and sit in the
+>   machine's 24 VAC relay ladder. r6 makes them **electrically survivable, NOT
+>   functionally usable**: a 60 Hz pulse train produces 12 debounced edges per 100 ms
+>   against `CHATTER_MAX_CAM` = 8, so a cam channel on sustained 24 VAC **faults
+>   continuously**. That needs a **firmware** change, not a cap — do not read the copper
+>   fix as closing it. Meter DC-or-AC / RMS / frequency on SA, SB, SC, TA1, TA2, TB at the
+>   powered characterization session.
+> - **`FIELD_WET_V` has no bulk capacitance** and a driven 24 VAC channel draws 16.8 mA
+>   peak from it (vs 1.34 mA dry). The board is budgeted for **zero** driven AC channels;
+>   record the count if any are landed.
+> Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`;
+> change-list item 6 is **CLOSED IN COPPER (r6)**.
 
 ## 0. Hard rules before power
 
@@ -56,7 +67,7 @@
    at the same time as J2.
 3. J14 bench jumper on 3-4 (legacy Stop/CIS source position) is a
    **bench-only tool — remove before cutover.**
-4. DNP refs (28, listed in the CSV) must be EMPTY: 7 × Rsnub (100R), 7 × Csnub
+4. DNP refs (68, listed in the CSV) must be EMPTY: 7 × Rsnub (100R), 7 × Csnub
    (10nF X2), 7 × MOV, the 6-part M1 channel (K7, J12, D13, Q7, R101, R102),
    and **JP1 (default-open ARM bypass)**.
    A populated snubber/MOV at first article means the board was built off-spec
@@ -249,7 +260,7 @@ stage deliberately has none** (push-pull source, never high-Z); do not report it
 | J16 | J_EXTI2C | J_EXT_I2C | (128.0, 206.0) | LOGIC |  |
 | JP1 | JP_J16_3V3 | 3V3 LINK OPEN DNP | (144.6, 218.9) | LOGIC | DNP |
 
-## 4. First-article procedures (FA-1 … FA-14)
+## 4. First-article procedures (FA-1 … FA-15)
 
 Run in order. Record every measurement in `phase8_revD_run_log.md` (new FA section,
 per board serial). One channel of each NEW I/O type must pass before trusting the board.
@@ -433,10 +444,43 @@ The header side of the code is made by removing the coding rib at the matching p
 > **Rev-D pull-up change (2026-07-23):** all 40 `Rpu_*` collector pull-ups are now
 > **47 kΩ**. The UMW PC817B selected as C5692981 guarantees its CTR rank only at the
 > manufacturer's stated test current/temperature; it does **not** guarantee minimum CTR
-> at this board's ~1.7 mA I_F and hot corner. The resistor change materially lowers the
+> at this board's operating I_F and hot corner. The resistor change materially lowers the
 > required sink current, but it does not erase that lot uncertainty. Every populated
 > channel therefore remains subject to loaded-minimum-voltage and hot numeric
 > qualification. Record every number; a bare "PASS" is not acceptable closure.
+>
+> ### ⚠️ r6 (2026-07-25) MOVED THIS GATE'S OPERATING POINT — do not use the old 1.7 mA
+>
+> r6 inserts a **series blocking diode (`Dser_*`, 1N4148WS) in every one of the 40
+> channels**. The pre-r6 figure of "~1.7 mA I_F" **no longer exists on this board**:
+>
+> | Condition | I_F | Note |
+> |---|---|---|
+> | pre-r6 (no series diode), `Vw` = 5 V | 1.750 mA | **HISTORICAL — do not test to this** |
+> | r6, `Vw` = 5.0 V nominal | **1.340 mA** | step 2 census condition |
+> | r6, TP4 at the step-3 loaded minimum ≈ 4.5 V | **≈ 1.12 mA** | steps 3–5 condition |
+>
+> That is **21 %–34 % below** the retired figure. The `PART_LOCK` note tying the PC817B
+> 130 % CTR floor to the "R4 disposition" also referred to the pre-r6 point; the CTR
+> derate applies at the r6 currents above. Derivation:
+> `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md` §C.
+>
+> ### ⚠️ THE ≤ 100 µs EDGE CRITERION ASSUMES EVERY `Cflt_*` IS UNFITTED
+>
+> r6 also lands 40 **DNP** logic-side filter caps (`Cflt_*`, C17–C56). **They ship
+> unfitted and the first article has none — FA-9 step 5 is measured in exactly that
+> state.** The fab package's own DNP instruction
+> (`assembly/…-dnp-excluded.csv`) authorises fitting 10 nF on the RP2040 fast channels
+> (47 k × 10 nF × ln(3.3/1.155) = **493 µs**) and up to 2.2 µF on the MCP slow channels
+> (**≈ 180 ms**) on a channel *measured* to carry a 60 Hz pulse train. Those values are
+> deliberately far beyond 100 µs.
+>
+> **Ordering rule (binding):** a channel that later takes a `Cflt` is **re-qualified
+> against the debounce budget** — `DEBOUNCE_CAM_US` 2000 µs / `DEBOUNCE_DIELL_US` 500 µs
+> on fast channels, and the 200 ms slow-channel release budget — **NOT against ≤ 100 µs**.
+> Fitting a `Cflt` and then re-running FA-9 step 5 unchanged produces a channel that can
+> never pass, on the cam and DIELL channels that gate the FSM. Record which channels (if
+> any) carry a `Cflt` alongside the FA-9 numbers.
 >
 > **Binding pull-configuration dependency:** the arithmetic below assumes each external
 > 47 kΩ `Rpu_*` is the channel's only pull-up. The production RP2040 build must leave
@@ -462,7 +506,8 @@ The header side of the code is made by removing the coding rib at the matching p
 - Using the MCP23017's 50 pF GPIO capacitance figure as a first-order node load,
   `47 kΩ × 50 pF` = **2.35 µs**. Actual optocoupler, trace, and probe
   capacitance add to it. The measured worst transition must remain **≤ 100 µs**,
-  at least 5× faster than the 500 µs fastest-input debounce.
+  at least 5× faster than the 500 µs fastest-input debounce. **This limit is valid
+  only with `Cflt_*` UNFITTED — see the r6 ordering rule above.**
 - **Why V_CE(on) alone is not the reserve:** once capability exceeds the
   70.2 µA rail limit, V_CE pins low regardless of extra capability. Measure
   non-rail-limited collector capability **I_C(cap)** with an adjustable
@@ -479,7 +524,8 @@ The header side of the code is made by removing the coding rib at the matching p
    **U1/0x20 and U2/0x21** and require all four bytes = **`0x00`**. Any nonzero
    value is a STOP-SHIP: do not apply the 47 kΩ sink/leakage/RC limits until fixed.
 2. **V_CE(sat) census at nominal wetting (R4 trigger condition 1):** with the field
-   contact closed at nominal ~1.7 mA I_F, measure and RECORD **in-circuit V_CE(on) on every
+   contact closed at the **r6 nominal 1.34 mA I_F** (`Vw` = 5.0 V; NOT the retired
+   pre-r6 ~1.7 mA), measure and RECORD **in-circuit V_CE(on) on every
    populated channel** (not a 3-channel sample any more). Flag any channel with
    **V_CE(on) > 0.30 V** — it blocks release and reopens the input-front-end disposition.
 3. **Loaded-minimum FIELD_WET leg (R2-7, cold):** load the wetting rail to fleet worst case
@@ -640,6 +686,40 @@ measured electrical form, and fail-safe isolated interface are recorded.
    Mains and PE test current stay completely outside Rev-D and every Pi/RP2040/
    MCP/J14/J15 circuit.
 
+### FA-15 — r6 LED reverse-voltage proof (anti-parallel clamp populated + correct)
+
+> **ID NOTE:** the r6 spec §F.4 originally allocated this gate "FA-10". **FA-10 is already
+> the MCV header mechanical gate.** This gate is **FA-15** — the next free ID. Do not
+> renumber it back.
+
+**Why this gate exists and no other gate replaces it.** The two clamp failure modes are
+**not symmetric**. A **reversed or shorted** `Dclamp` shunts the PC817 LED (`Vf` 0.7 V <
+LED 1.15 V) and the channel reads **dead** — commissioning catches that 100 %. An
+**OPEN or unplaced** clamp (tombstoned 0.60 × 0.45 mm SOD-323, wrong reel, AOI miss on 80
+new placements) leaves the channel **fully functional in every commissioning test** while
+the PC817 LED sits at up to **27.7 V reverse** against its **6 V** absolute-max `V_R` on
+PBZ, and 10–15 V on DIELL_L/R. Protection silently degrades to the leakage-ratio case the
+design explicitly rejects, and the LED dies weeks later in service with no diagnostic
+trail. **FA-15 is the only measurement that distinguishes those two states.**
+
+**Procedure (per board; every populated channel that can go reverse-biased):**
+1. With the machine energised and the channel landed, drive the field pin **positive**
+   relative to `FIELD_GND` (PBZ at its measured 33 VDC is the canonical case; DIELL_L/R at
+   15.4–16 V; for a bench proof inject ≥ 15 VDC through the harness lead).
+2. Measure across the PC817 LED — `FIELD_LED_<n>` (clamp/`Dser` cathode node) to the
+   field-pin net — with a high-impedance DMM.
+3. **PASS ⟺ 0.35 V ± 0.1 V reverse** (i.e. **0.25 V … 0.45 V**). This is the clamp's
+   forward drop at ~15 µA of `Dser` + LED reverse leakage, and it is set by a **specified
+   V-I curve**, not by a leakage ratio.
+4. **Interpretation of a failure — record which, do not just fail:**
+   - **> 1 V** → clamp **missing, open, or reversed**. STOP: the LED is unprotected.
+   - **≈ 0 V with the channel dead in the forward direction** → clamp **shorted or fitted
+     reversed-and-conducting**.
+   - **At the 150 °C leakage extreme** the predicted value rises to ≈ 0.42 V; a hot-leg
+     reading inside 0.25–0.50 V is acceptable if the cold leg passed.
+5. Record the measured millivolts per channel, the field voltage used, and the board
+   serial. A bare "PASS" is not acceptable closure.
+
 ## 5. Sign-off
 
 | Item | Result | Initials / date |
@@ -656,7 +736,7 @@ measured electrical form, and fail-safe isolated interface are recorded.
 | FA-8 sacrificial pair + 4-way refusal | | |
 | FA-9 V_CE(sat) numeric census — every populated channel (R4) | | |
 | FA-9 per-channel I_C(cap) + aging-reserve PASS @ min FIELD_WET + ≥ 70 °C (R2-7 / R3-8) | | |
-| FA-9 per-channel hot idle-HIGH/leakage + ≤100 µs edge-time PASS | | |
+| FA-9 per-channel hot idle-HIGH/leakage + ≤100 µs edge-time PASS (**with every `Cflt_*` UNFITTED**) | | |
 | FA-10 MCV insertion/solder fill | | |
 | FA-11 verified manifest + UF2 SHA + exact `id.build`/`id.cfg`/`fi1=0` posture | | |
 | FA-12 J16 SDA/SCL short recovery (U46, R2-4) | | |
@@ -668,4 +748,7 @@ measured electrical form, and fail-safe isolated interface are recorded.
 | FA-13 monitor open-wire/proof-control tests + periodic-test owner | | |
 | FA-14 protective-earth continuity/bonding — tester ID, calibration due, result, limit (`protective_earth_continuity`) | | |
 | FA-14 hot/neutral polarity — tester ID, calibration due, result (`hot_neutral_polarity`) | | |
+| **FA-15 (r6) LED reverse = 0.35 V ± 0.1 V per over-voltage channel — mV recorded, not "PASS"** | | |
+| **FA-15 (r6) cam-channel AC/DC + RMS + frequency metered on SA/SB/SC/TA1/TA2/TB** | | |
+| **FA-15 (r6) driven-24 VAC channel count N recorded (board budgeted for N = 0; N ≥ 1 reopens the `FIELD_WET_V` budget)** | | |
 | Signed commissioning binding — lane, Pico UID, board/harness rev+serial, record ID, signer, tested/due UTC (≤365 d), exact controller-originated live identity observed UTC/age (≤90 s) | | |

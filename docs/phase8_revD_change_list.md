@@ -435,23 +435,33 @@ at-machine characterization session — the board only provides the integration 
 Same external-module path (catalog sensor-shortlist item 6 — "never the Pi header directly").
 Deferred with DC1.
 
-### DC3. Rev-C verify-items 6–7 carried OPEN (honest — rev-C's own gate-scope lesson)
-- **Item 6 — per-channel input front-end: dry-contact vs 24 VAC-rectified sense.** Rev-D
-  carries the dry-contact default on all 40 channels (field-validated input-side on machine
-  22). Still blocked on the powered at-machine metering (meter tapped-lead live voltages
-  BEFORE reconnecting any board).
-  **CORRECTED 2026-07-25 — this line previously read "May change per-channel population/BOM,
-  not copper." That was FACTUALLY WRONG and is retracted.** Verified against the emitted
-  netlist `kicad/wsl-phase8b-revD.net`: all **40** `FIELD_LED_*` nets carry **exactly two
-  nodes** (`Rin` pin 2 → PC817 pin 1). There is **no series-diode footprint, no anti-parallel
-  clamp footprint, and no logic-side filter-cap footprint on any of the 40 channels.**
-  Population cannot add a part that has no pads, so any non-dry-contact outcome for item 6
-  **REQUIRES COPPER** and is **deferred to the fleet revision** — it cannot be absorbed by a
-  BOM/stuffing change on this spin.
-  Consequence for the first article: **PBZ (33 VDC measured) and DIELL_L / DIELL_R
-  (15.4–16 V measured) must NOT be landed directly on a bare board input.** Use the harness
-  interim mitigation (series 1N4007 in the harness lead, cathode toward the machine) or leave
-  those channels unlanded. See `phase8_revD_input_frontend_recommendation.md`.
+### DC3. Rev-C verify-item 6 — **CLOSED IN COPPER (r6, 2026-07-25)**; item 7 still OPEN
+- **Item 6 — per-channel input front-end: dry-contact vs 24 VAC-rectified sense.**
+  **CLOSED IN COPPER.** Dylan reopened copper on 2026-07-25 so the first article would be
+  fleet-intent rather than frozen-and-bodged; the r6 fab iteration landed per-channel
+  protection on **all 40** channels:
+  `FIELD_WET_V → Rin (2k2) → **Dser** (1N4148WS series block) → PC817 LED → field pin`,
+  with an **anti-parallel `Dclamp`** (1N4148WS) across the LED and a **DNP** logic-side
+  `Cflt` (0805). Every `FIELD_LED_<n>` now carries **three** nodes. `Dser_*`/`Dclamp_*`
+  (D18–D97) are **POPULATED by default** — no per-channel stuffing decision; `Cflt_*`
+  (C17–C56) are DNP. **PBZ and DIELL_L/DIELL_R may now be landed directly on board inputs**
+  (prove per board with **FA-15**: LED reverse = 0.35 V ± 0.1 V), and the **harness 1N4007
+  interposer is SUPERSEDED — do not build it.**
+  Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`; package
+  `kicad/fab_revD_2026-07-25_r6/`.
+
+  > **RETRACTION.** Between 2026-07-21 and 2026-07-25 this entry read *"all 40 `FIELD_LED_*`
+  > nets carry exactly two nodes… no series-diode footprint, no anti-parallel clamp
+  > footprint, and no logic-side filter-cap footprint on any of the 40 channels… REQUIRES
+  > COPPER and is deferred to the fleet revision… PBZ and DIELL_L/DIELL_R must NOT be landed
+  > directly on a bare board input."* That text was **correct when written and is now false
+  > in every clause.** It is retained here only so an older copy can be recognised.
+
+  **What item 6 does NOT close (still gates the powered at-machine metering session — meter
+  tapped-lead live voltages BEFORE reconnecting any board):** the cam-channel AC/DC class
+  (r6 makes a 24 VAC cam channel *survivable*, not *usable* — it trips `CHATTER_MAX_CAM`
+  continuously and needs a **firmware** change), and the `FIELD_WET_V` headroom under any
+  driven AC channel (zero bulk capacitance; 16.8 mA peak/channel; budgeted for **N = 0**).
 - **Item 7 — relay arc suppression sizing.** Snubber positions remain DNP, unchanged from
   rev-C; size from the measured inductive load in the powered session before populating.
 - Item 8 (5 V budget) is resolved on paper by spec §H.4 + the SS34 swap; bench PSU sizing

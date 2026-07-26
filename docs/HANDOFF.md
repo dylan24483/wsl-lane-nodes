@@ -86,7 +86,10 @@
 >   runtime gate, and production firmware identity build
 >   `rel-0c746b5747143b8011b01d43`, cfg `05d808411db4bb0d`, UF2 SHA-256
 >   `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`.
->   It supersedes `_r4/` and every older package. Use only r5.
+>   ~~It supersedes `_r4/` and every older package. Use only r5.~~
+>   **SUPERSEDED 2026-07-25 by `kicad/fab_revD_2026-07-25_r6/` — see the r6
+>   addendum below. `_r5/` now carries a `_SUPERSEDED_DO_NOT_UPLOAD.txt`
+>   tombstone like `_r1`…`_r4`. DO NOT UPLOAD r5: it has BARE opto inputs.**
 > - J16 substitution wording is fail-closed: a substitute F1 must have
 >   **minimum Ihold at 85 °C ≥90 mA**. Never accept "same trip current" as
 >   equivalent; PPTC trip is time/temperature dependent, not a hard clamp.
@@ -116,6 +119,42 @@
 > - The software transport now preserves exact, restart-stable alert/recovery
 >   identities in bounded write-ahead ledgers. Local tests do not close any
 >   powered, first-article, deployment, or installation gate.
+
+> **⚡ ADDENDUM 2026-07-25 — r6 INPUT-PROTECTION COPPER (CURRENT FAB RECORD;
+> supersedes every fab-package pointer above, including "Use only r5"):**
+> - **Dylan reopened copper on 2026-07-25** so the first article is as close to
+>   fleet-intent as possible rather than frozen-and-bodged. Board revision stays
+>   **D** (never fabricated); this is fab iteration **r6**.
+> - **All 40 opto input channels now carry per-channel protection:**
+>   `FIELD_WET_V → Rin (2k2) → Dser (1N4148WS series block) → PC817 LED → field
+>   pin`, with an **anti-parallel `Dclamp`** (1N4148WS) across the LED and a
+>   **DNP** logic-side `Cflt` (0805). `Dser_*`/`Dclamp_*` = **D18–D97,
+>   POPULATED**; `Cflt_*` = **C17–C56, DNP**. New nets: 40 × `FIELD_RIN_<n>`.
+> - **Counts moved:** parts 271 → **391**, nets 223 → **263**, Field_Sense
+>   82 → **122**, DNP 28 → **68**, placed 243 → **323**, JLC-placed 226 → **306**.
+>   **Safety_Rail stays EXACTLY 13** — r6 adds zero safety copper.
+>   `EXPECTED_JLC_LINES` stays **27**: the 80 diodes join the existing 1N4148WS
+>   line (qty 8 → 88), so there is **no new JLC-assembled part class**.
+> - **PBZ and DIELL_L/DIELL_R MAY now be landed directly on board inputs**
+>   (clamp pins LED reverse at ≈0.35 V vs the 6 V max). **The harness 1N4007
+>   interposer for them is SUPERSEDED — do not build it.** Prove per board with
+>   the new **FA-15** gate (LED reverse = 0.35 V ± 0.1 V). The pack is now
+>   **FA-1…FA-15**; FA-10 remains the MCV mechanical gate.
+> - **FA-9's operating point MOVED:** the series diode drops I_F from ~1.7 mA to
+>   **1.34 mA** (Vw = 5 V) / **≈1.12 mA** at the loaded minimum. FA-9's ≤100 µs
+>   edge criterion is valid **only with every `Cflt_*` unfitted**.
+> - **NOT closed by r6 — still needs the powered session:** (a) cam-channel
+>   AC/DC class — a driven 24 VAC cam channel is **survivable but NOT usable**
+>   (trips `CHATTER_MAX_CAM` continuously; needs **firmware**, not a cap);
+>   (b) `FIELD_WET_V` has **zero bulk capacitance** and a driven AC channel draws
+>   **16.8 mA peak** vs 1.34 mA dry — board is budgeted for **N = 0** driven AC
+>   channels, scope TP4; (c) field-pin ↔ field-pin clearance measures
+>   **0.4807 mm** against an IPC-2221B 0.6 mm requirement (pre-existing geometry,
+>   dispositioned open for the fleet revision).
+> - **Current immutable output: `kicad/fab_revD_2026-07-25_r6/`.**
+>   `_r1`…`_r5` all carry `_SUPERSEDED_DO_NOT_UPLOAD.txt`.
+> - Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`
+>   (+ its 2026-07-25 review corrections to §C.2, §D.5, §F.1, §F.4, §J).
 
 ---
 

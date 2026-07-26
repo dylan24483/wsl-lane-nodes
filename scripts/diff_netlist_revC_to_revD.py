@@ -13,8 +13,10 @@ Fails (exit 1) if anything OUTSIDE the documented rev-D contract changed:
     ALLOWED_CHANGED_PARTS whitelist: D_PROT SS14->SS34, MCV drill updates,
     and the 32 carried Rpu_* 10k->47k input-margin changes)
   - any rev-C net removed
-  - any rev-C net changed other than the 11 documented touch-point nets
-  - any touch-point net LOSING a rev-C node (additions only)
+  - any rev-C net changed other than the documented touch-point nets
+  - any touch-point net LOSING a rev-C node, EXCEPT the r6 sanctioned MOVES
+    (EXPECTED_TOUCHED_NET_MOVES) — and a "move" only passes if the node is
+    proven to have landed on its named destination net in rev-D
   - any added part/net not in the spec's expected-additions list
 
 M1 DEEP CHECK (Codex NO-GO audit 2026-07-21): name/count validation alone
@@ -61,6 +63,40 @@ ALLOWED_TOUCHED_NETS = {
     "RP2040_OK",      # E(R1): R_TAPIN_RPOK series input
 }
 
+# --------------------------------------------------------------------------
+# r6 input protection (2026-07-25, docs/phase8_revD_r6_input_protection_
+# spec_2026-07-25.md). 40 channels x (Dser + Dclamp + Cflt) = 120 parts and
+# 40 new FIELD_RIN_<n> nets. AUX4-AUX11 are rev-D-INTERNAL (item C) so their
+# FIELD_LED_/FIELD_SLOW_/SLOW_ nets stay ADDED_NETs and only gain nodes in
+# the added-net tables below; the 32 rev-C channels' three nets become
+# touch-points.
+# --------------------------------------------------------------------------
+R6_FAST = ["SA", "SB", "SC", "TA1", "TA2", "TB", "DIELL_L", "DIELL_R"]
+R6_SLOW = ([f"GS{i}" for i in range(1, 11)]
+           + ["GP", "OS", "BS", "PBZ", "PBC", "FOUL", "TENTH", "MAN_T",
+              "MAN_S", "MAN_SWS", "MAN_SWSR", "AUX1", "AUX2", "AUX3"]
+           + [f"AUX{i}" for i in range(4, 12)])
+R6_CHANNELS = R6_FAST + R6_SLOW
+assert len(R6_CHANNELS) == 40
+# The 32 channels that already existed in rev-C (everything but item C's
+# AUX4-AUX11 bank).
+R6_REVC_CHANNELS = [n for n in R6_CHANNELS if n not in {f"AUX{i}" for i in range(4, 12)}]
+assert len(R6_REVC_CHANNELS) == 32
+
+
+def _r6_field_net(name):
+    return ("FIELD_FAST_" if name in R6_FAST else "FIELD_SLOW_") + name
+
+
+def _r6_logic_net(name):
+    return ("FAST_" if name in R6_FAST else "SLOW_") + name
+
+
+for _n in R6_REVC_CHANNELS:
+    ALLOWED_TOUCHED_NETS.add(f"FIELD_LED_{_n}")   # r6: -Rin.2, +Dser.1 +Dclamp.1
+    ALLOWED_TOUCHED_NETS.add(_r6_field_net(_n))   # r6: +Dclamp.2 (anti-parallel)
+    ALLOWED_TOUCHED_NETS.add(_r6_logic_net(_n))   # r6: +Cflt.1 (DNP filter cap)
+
 # Item E per remediation spec R1.7 (2026-07-21): the five resistive tap parts
 # (R_TAP_555/R_TAP_555_DIV/R_TAP_KICK/R_TAP_ARM/R_TAP_RPOK) were rev-D-INTERNAL
 # (never existed in rev-C) and are replaced wholesale by the unidirectional
@@ -82,6 +118,8 @@ EXPECTED_ADDED_TAGS = (
     + ["F_J16_5V", "JP_J16_3V3", "U_I2C_BUF", "C_I2C_BUF",
        "R_J16_SDA_PU", "R_J16_SCL_PU", "D_ESD_J16",
        "R_REVID0", "R_REVID1"]
+    # r6 (2026-07-25): 120 input-protection parts, 3 per channel x 40.
+    + [f"{p}_{n}" for n in R6_CHANNELS for p in ("Dser", "Dclamp", "Cflt")]
 )
 
 EXPECTED_ADDED_NETS = (
@@ -91,6 +129,7 @@ EXPECTED_ADDED_NETS = (
     + [f"TAP_GATE_{s}" for s in _TAP_SUFFIXES]                         # E (R1)
     + ["J16_5V", "J16_3V3", "J16_SDA", "J16_SCL"]                      # R2-4
     + ["REV_ID0", "REV_ID1"]                                           # R2-6
+    + [f"FIELD_RIN_{n}" for n in R6_CHANNELS]                          # r6
 )
 
 # ---------------------------------------------------------------------------
@@ -139,6 +178,16 @@ EXPECTED_ADDED_PART_SPECS.update({
     "R_REVID0": ("10k", _FP_R),
     "R_REVID1": ("10k", _FP_R),
 })
+# r6 (2026-07-25). Dser/Dclamp are POPULATED (no "DNP" in the value string) —
+# spec §A.4 NORMATIVE; a DNP-EMPTY series position would leave the channel
+# OPEN-CIRCUIT, and with Dser fitted the clamp is a voltage-defining element
+# carrying leakage only. Cflt is DNP by design, per-class value.
+_FP_SOD323 = "Diode_SMD:D_SOD-323"      # existing on-board class (1N4148WS, C118873)
+for _n in R6_CHANNELS:
+    EXPECTED_ADDED_PART_SPECS[f"Dser_{_n}"] = ("1N4148", _FP_SOD323)
+    EXPECTED_ADDED_PART_SPECS[f"Dclamp_{_n}"] = ("1N4148", _FP_SOD323)
+    EXPECTED_ADDED_PART_SPECS[f"Cflt_{_n}"] = (
+        ("10nF X7R DNP" if _n in R6_FAST else "2.2uF X7R DNP"), _FP_C)
 assert sorted(EXPECTED_ADDED_PART_SPECS) == sorted(EXPECTED_ADDED_TAGS), \
     "EXPECTED_ADDED_PART_SPECS and EXPECTED_ADDED_TAGS moved out of lockstep"
 
@@ -151,12 +200,20 @@ EXPECTED_ADDED_NET_NODES = {
                        ("R_ADC5_BOT", "1"), ("R_ADC5_TOP", "2")},      # D
 }
 for _i in range(4, 12):                                                # C: AUX bank
+    # r6 (2026-07-25): Rin_AUXn pin 2 moved off FIELD_LED to the new
+    # FIELD_RIN_AUXn; the LED-anode node now carries Dser.1 + Dclamp.1.
     EXPECTED_ADDED_NET_NODES[f"FIELD_LED_AUX{_i}"] = {
-        (f"OPTO_AUX{_i}", "1"), (f"Rin_AUX{_i}", "2")}
+        (f"OPTO_AUX{_i}", "1"), (f"Dser_AUX{_i}", "1"), (f"Dclamp_AUX{_i}", "1")}
     EXPECTED_ADDED_NET_NODES[f"FIELD_SLOW_AUX{_i}"] = {
-        ("J_SLOWC", str(_i - 3)), (f"OPTO_AUX{_i}", "2")}
+        ("J_SLOWC", str(_i - 3)), (f"OPTO_AUX{_i}", "2"), (f"Dclamp_AUX{_i}", "2")}
     EXPECTED_ADDED_NET_NODES[f"SLOW_AUX{_i}"] = {
-        ("MCP_IN_B", str(_i - 3)), (f"OPTO_AUX{_i}", "4"), (f"Rpu_AUX{_i}", "2")}
+        ("MCP_IN_B", str(_i - 3)), (f"OPTO_AUX{_i}", "4"), (f"Rpu_AUX{_i}", "2"),
+        (f"Cflt_AUX{_i}", "1")}
+for _n in R6_CHANNELS:                                                 # r6
+    # The ONLY new nets r6 creates: the series node between Rin and the
+    # blocking diode. Exactly 2 pads, by construction (spec §A.1).
+    EXPECTED_ADDED_NET_NODES[f"FIELD_RIN_{_n}"] = {
+        (f"Rin_{_n}", "2"), (f"Dser_{_n}", "2")}
 for _s, (_tapnet, _pico_pin) in _TAP_RAIL.items():                     # E (R1)
     # open-drain output node: Q drain (SOT-23 pin 3) + 10k pull-up + Pico GPIO
     EXPECTED_ADDED_NET_NODES[_tapnet] = {
@@ -202,7 +259,9 @@ EXPECTED_TOUCHED_NET_ADDITIONS = {
             # R2-4/R2-6: buffer GND, bypass, ESD VN, REV_ID1 strap.
             # Round-3: D_ESD_J16.4 (ex-spare IO3) moved to J16_5V.
             | {("U_I2C_BUF", "4"), ("C_I2C_BUF", "2"),
-               ("D_ESD_J16", "2"), ("R_REVID1", "1")}),
+               ("D_ESD_J16", "2"), ("R_REVID1", "1")}
+            # r6: 40 x DNP logic-side filter cap, low side.
+            | {(f"Cflt_{n}", "2") for n in R6_CHANNELS}),
     "VCC_3V3": ({(f"R_TAPPU_{s}", "1") for s in _TAP_SUFFIXES}
                 | {(f"Rpu_AUX{i}", "1") for i in range(4, 12)}
                 # R2-4: J16 pin 5 moved behind the solder link; the rail's
@@ -218,8 +277,30 @@ EXPECTED_TOUCHED_NET_ADDITIONS = {
     "ARM_PERMIT": {("R_TAPIN_ARM", "1")},
     "RP2040_OK": {("R_TAPIN_RPOK", "1")},
 }
+for _n in R6_REVC_CHANNELS:                                            # r6
+    EXPECTED_TOUCHED_NET_ADDITIONS[f"FIELD_LED_{_n}"] = {
+        (f"Dser_{_n}", "1"), (f"Dclamp_{_n}", "1")}
+    EXPECTED_TOUCHED_NET_ADDITIONS[_r6_field_net(_n)] = {(f"Dclamp_{_n}", "2")}
+    EXPECTED_TOUCHED_NET_ADDITIONS[_r6_logic_net(_n)] = {(f"Cflt_{_n}", "1")}
 assert set(EXPECTED_TOUCHED_NET_ADDITIONS) == ALLOWED_TOUCHED_NETS, \
     "EXPECTED_TOUCHED_NET_ADDITIONS and ALLOWED_TOUCHED_NETS moved out of lockstep"
+
+# --------------------------------------------------------------------------
+# EXPECTED_TOUCHED_NET_MOVES — the ONLY sanctioned way a rev-C net may LOSE a
+# node. Everything else stays additions-only and a loss is still a PROBLEM.
+#
+# r6 inserts a SERIES element into every input channel, so Rin_<n> pin 2 no
+# longer sits on the LED-anode node: it moves to the new FIELD_RIN_<n>. That
+# is the whole point of the change, but it is a genuine topology edit, so it
+# is whitelisted per-net AND PROVEN: the script asserts the node actually
+# reappears on the named destination net in rev-D. A node that merely
+# vanished would still fail.
+# net -> {(tag, pin): destination_net}
+# --------------------------------------------------------------------------
+EXPECTED_TOUCHED_NET_MOVES = {
+    f"FIELD_LED_{_n}": {(f"Rin_{_n}", "2"): f"FIELD_RIN_{_n}"}
+    for _n in R6_REVC_CHANNELS
+}
 
 # Documented rev-C part value/footprint changes (still reported as
 # CHANGED_PART lines, but not PROBLEMs).
@@ -368,6 +449,7 @@ def main():
 
     unchanged = 0
     deep_touch_ok = 0
+    deep_move_ok = 0
     for n in sorted(set(c_nets) & set(d_nets)):
         plus = sorted(d_nets[n] - c_nets[n])
         minus = sorted(c_nets[n] - d_nets[n])
@@ -380,7 +462,20 @@ def main():
         if n not in ALLOWED_TOUCHED_NETS:
             problems.append(f"undocumented rev-C net touched: {n} (+{plus} -{minus})")
         if minus:
-            problems.append(f"touch-point net LOST rev-C nodes: {n} -{minus}")
+            # ---- M1 deep check 4: sanctioned node MOVES only (r6). ----
+            moves = EXPECTED_TOUCHED_NET_MOVES.get(n, {})
+            if sorted(moves) != sorted(minus):
+                problems.append(f"touch-point net LOST rev-C nodes: {n} -{minus} "
+                                f"(sanctioned moves: {sorted(moves)})")
+            else:
+                for node, dest in sorted(moves.items()):
+                    if node not in d_nets.get(dest, set()):
+                        problems.append(
+                            f"moved node {node[0]}.{node[1]} left {n} but did NOT "
+                            f"land on {dest} — node lost, not moved")
+                    else:
+                        lines.append(f"MOVED_NODE\t{node[0]}.{node[1]}\t{n}\t->\t{dest}")
+                        deep_move_ok += 1
         # ---- M1 deep check 3: exact ADDED nodes on each touched net ----
         exp_plus = EXPECTED_TOUCHED_NET_ADDITIONS.get(n)
         if exp_plus is not None:
@@ -398,6 +493,10 @@ def main():
             problems.append(f"touch-point net {n} expected additions "
                             f"{sorted(exp_plus)} but was untouched")
     lines.append(f"DEEP_TOUCH_CHECK\t{deep_touch_ok}/{len(EXPECTED_TOUCHED_NET_ADDITIONS)} touched nets match exact additions")
+    _expected_moves = sum(len(m) for m in EXPECTED_TOUCHED_NET_MOVES.values())
+    lines.append(f"DEEP_MOVE_CHECK\t{deep_move_ok}/{_expected_moves} sanctioned node moves verified on their destination net")
+    if deep_move_ok != _expected_moves:
+        problems.append(f"sanctioned node moves verified {deep_move_ok} != expected {_expected_moves}")
 
     touched = [l.split("\t")[1] for l in lines if l.startswith("CHANGED_NET")]
     untouched_allowed = sorted(ALLOWED_TOUCHED_NETS - set(touched))

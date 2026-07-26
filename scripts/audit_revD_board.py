@@ -7,9 +7,12 @@ auditor is SACRED and untouched). Contract: docs/phase8_revD_change_spec.md
 Expected rev-D class counts (spec delta table + remediation spec R1.7 +
 round-2 remediation R2-4/R2-6 — extend apply_netclasses_revD.py in
 LOCKSTEP with these):
-    Logic_Signal 103 / Logic_Power 4 / Safety_Rail 13 / Field_Sense 82 /
-    Machine_Output 21  = 223 nets total, 271 parts.
-    (2026-07-21 R1: -5 resistive tap parts, +15 unidirectional tap-stage
+    Logic_Signal 103 / Logic_Power 4 / Safety_Rail 13 / Field_Sense 122 /
+    Machine_Output 21  = 263 nets total, 391 parts.
+    (2026-07-25 r6 input protection: Field_Sense 82 -> 122 (+40 FIELD_RIN_<n>),
+    nets 223 -> 263, parts 271 -> 391 (+40 Dser, +40 Dclamp, +40 Cflt).
+    Safety_Rail STAYS 13 - r6 adds zero safety copper.
+    2026-07-21 R1: -5 resistive tap parts, +15 unidirectional tap-stage
     parts, +4 TAP_GATE_* nets -> Logic_Signal 93->97.
     2026-07-21 round 2 (Codex R2-4/R2-6): +9 parts (J16 protection stack +
     REV_ID straps), +6 Logic_Signal nets (J16_5V/J16_3V3/J16_SDA/J16_SCL/
@@ -36,18 +39,32 @@ FIELD_GND distinct with zero shared nodes (only the TMA-0505S straddles them),
 SAFE_* + RAIL_GATE present, M1 channel still DNP.
 New rev-D checks: EXACT SAFE_-net pad membership (no new pads beyond rev-C —
 guards spec §E scope), ADC_VCC5_SENSE on Pico GP26 (pin 31), TAP_ nets on
-Pico pins 21/22/24/25, J15/J16 identity, 271-part / 223-net totals, the
+Pico pins 21/22/24/25, J15/J16 identity, 391-part / 263-net totals, the
 round-2 J16 protection-stack membership (J16 never directly on a rail/bus)
 and the REV_ID strap encoding (rev-D = 0b01).
+New r6 checks: audit_r6_input_protection() proves the per-channel series-block
++ anti-parallel-clamp topology on NET SHAPE (see its docstring).
+
+The totals above track EXPECTED / EXPECTED_NETS / EXPECTED_PARTS below. If a
+count drifts, the CONSTANTS are the contract and this prose is a description of
+them - do not "correct" a constant to match a stale docstring.
 """
 import sys
 import collections
 import re
 
+# r6 input protection (2026-07-25,
+# docs/phase8_revD_r6_input_protection_spec_2026-07-25.md §E.1/§E.2):
+#   +40 Field_Sense nets  (FIELD_RIN_<n>, the series node between Rin and the
+#                          blocking diode; matches the existing FIELD_ prefix
+#                          rule, so classify_net() needed NO change)
+#   +120 parts            (40 x Dser + 40 x Dclamp + 40 x Cflt)
+#   +0 Logic_Signal, +0 Logic_Power, +0 Machine_Output
+#   +0 Safety_Rail        <- r6 adds ZERO safety copper. STOP-SHIP if it moves.
 EXPECTED = {"Logic_Signal": 103, "Logic_Power": 4, "Safety_Rail": 13,
-            "Field_Sense": 82, "Machine_Output": 21}
-EXPECTED_NETS = 223
-EXPECTED_PARTS = 271
+            "Field_Sense": 122, "Machine_Output": 21}
+EXPECTED_NETS = 263
+EXPECTED_PARTS = 391
 # Board-level extras added by place_components_revD.py, NOT in the netlist
 # (same pattern as rev-C: the routed-manual board has 236 = 216 + 16 TP + 4 MK).
 # Round-2 remediation R2-5: +8 tap probe/fault-injection pads (TP17-TP24,
@@ -55,6 +72,26 @@ EXPECTED_PARTS = 271
 EXPECTED_TESTPADS = 24
 EXPECTED_MOUNTING = 4
 EXPECTED_OPTO_PULLUPS = {f"R{n}" for n in range(4, 83, 2)}
+
+# ---- r6 input protection (2026-07-25) ----------------------------------
+# 40 channels, in opto instantiation order (8 RP2040 fast, then 32 MCP slow).
+R6_FAST = ["SA", "SB", "SC", "TA1", "TA2", "TB", "DIELL_L", "DIELL_R"]
+R6_SLOW = ([f"GS{i}" for i in range(1, 11)]
+           + ["GP", "OS", "BS", "PBZ", "PBC", "FOUL", "TENTH", "MAN_T",
+              "MAN_S", "MAN_SWS", "MAN_SWSR"]
+           + [f"AUX{i}" for i in range(1, 12)])
+R6_CHANNELS = R6_FAST + R6_SLOW
+assert len(R6_CHANNELS) == 40
+# Refdes stability contract (spec §E.3): the 120 r6 parts are instantiated
+# LAST, so they take D18-D97 / C17-C56 and move NOTHING. In particular there
+# are ZERO new R-prefix parts, which is what keeps EXPECTED_OPTO_PULLUPS and
+# the manual's designator tables valid — and is the reason the series element
+# is a diode on a SOD-323 land, not a 0 ohm 0805 link.
+R6_FIRST_NEW_D = 18
+R6_LAST_NEW_D = 97
+R6_FIRST_NEW_C = 17
+R6_LAST_NEW_C = 56
+R6_LAST_R = 145
 
 # --pre-route: placement-stage board (no routing yet). Route-stage checks
 # (copper zone fills) are reported as WARN-expected instead of FAIL; every
@@ -289,6 +326,111 @@ def audit_common(net_pads, pico_ref, comp_info=None, board_mode=False):
     need(r144_rail == [("R144", "1")] and r145_rail == [("R145", "1")],
          "REV_ID encoding is rev-D = 0b01 (R144 pulls HIGH, R145 pulls LOW)")
 
+    audit_r6_input_protection(net_pads, board_mode=board_mode)
+
+
+def audit_r6_input_protection(net_pads, board_mode=False):
+    """r6 (2026-07-25) per-channel input protection — TOPOLOGY, not counts.
+
+    Spec: docs/phase8_revD_r6_input_protection_spec_2026-07-25.md §A.1.
+    Refdes are unstable identities here (SAFE_* membership guards use them
+    because those nets are frozen; these are new), so every assertion below is
+    made on NET SHAPE + pad numbers, which is what actually encodes the
+    electrical intent:
+
+      FIELD_RIN_<n>  = Rin pad 2 + Dser pad 2 (ANODE)                 2 pads
+      FIELD_LED_<n>  = Dser pad 1 (K) + Dclamp pad 1 (K) + PC817 pad 1 3 pads
+      FIELD_<n>      = connector pin + PC817 pad 2 + Dclamp pad 2 (A)  3 pads
+      FAST_/SLOW_<n> gains exactly one Cflt pad 1
+
+    The ANTI-PARALLEL property is proved, not assumed: of the two diodes on
+    FIELD_LED_<n>, exactly one must also appear on FIELD_RIN_<n> (that is
+    Dser, in series) and exactly one must also appear on the field-pin net
+    (that is Dclamp, across the LED). Swap either diode's orientation, drop a
+    clamp, or wire the clamp in parallel-aiding and this fails.
+    """
+    ok_rin = ok_led = ok_field = ok_logic = ok_antiparallel = 0
+    bad = []
+    for name in R6_CHANNELS:
+        fast = name in R6_FAST
+        n_rin = f"FIELD_RIN_{name}"
+        n_led = f"FIELD_LED_{name}"
+        n_fld = ("FIELD_FAST_" if fast else "FIELD_SLOW_") + name
+        n_log = ("FAST_" if fast else "SLOW_") + name
+
+        rin = sorted((r, str(p)) for r, p in net_pads.get(n_rin, []))
+        led = sorted((r, str(p)) for r, p in net_pads.get(n_led, []))
+        fld = sorted((r, str(p)) for r, p in net_pads.get(n_fld, []))
+        log = sorted((r, str(p)) for r, p in net_pads.get(n_log, []))
+
+        # FIELD_RIN_<n>: exactly one resistor pad 2 and one diode pad 2.
+        if (len(rin) == 2
+                and sorted(f"{r[0]}{p}" for r, p in rin) == ["D2", "R2"]):
+            ok_rin += 1
+        else:
+            bad.append(f"{n_rin} = {rin} (want Rin.2 + Dser.2)")
+
+        # FIELD_LED_<n>: two diode cathodes + the PC817 LED anode.
+        if (len(led) == 3
+                and sorted(f"{r[0]}{p}" for r, p in led) == ["D1", "D1", "U1"]):
+            ok_led += 1
+        else:
+            bad.append(f"{n_led} = {led} (want Dser.1 + Dclamp.1 + PC817.1)")
+
+        # FIELD_<n>: connector pin + PC817 LED cathode + clamp anode.
+        if (len(fld) == 3
+                and len([1 for r, p in fld if r.startswith("J")]) == 1
+                and [1 for r, p in fld if r.startswith("U") and p == "2"] == [1]
+                and [1 for r, p in fld if r.startswith("D") and p == "2"] == [1]):
+            ok_field += 1
+        else:
+            bad.append(f"{n_fld} = {fld} (want J.n + PC817.2 + Dclamp.2)")
+
+        # Logic side gains exactly one filter-cap pad 1.
+        # NOTE: len() is tested FIRST and the pad is indexed only after. The
+        # earlier form `cpads == [(cpads[0][0], "1")] and len(cpads) == 1`
+        # built the right-hand list before the length guard ran, so an empty
+        # cpads raised IndexError and ABORTED audit_r6_input_protection()
+        # mid-function - the anti-parallel proof, the FIELD_WET_V check and the
+        # four safety-net checks below then never executed, hiding their result
+        # on exactly the run that had a defect. Fail closed, but fail REPORTING.
+        cpads = [(r, p) for r, p in log if r.startswith("C")]
+        if len(cpads) == 1 and cpads[0][1] == "1":
+            ok_logic += 1
+        else:
+            bad.append(f"{n_log} carries {cpads} (want exactly one Cflt.1)")
+
+        # ---- the anti-parallel proof ----
+        led_d = {r for r, p in led if r.startswith("D")}
+        rin_d = {r for r, p in rin if r.startswith("D")}
+        fld_d = {r for r, p in fld if r.startswith("D")}
+        series = led_d & rin_d
+        clamp = led_d & fld_d
+        if len(led_d) == 2 and len(series) == 1 and len(clamp) == 1 and series != clamp:
+            ok_antiparallel += 1
+        else:
+            bad.append(f"{name}: series={sorted(series)} clamp={sorted(clamp)} "
+                       f"on FIELD_LED diodes {sorted(led_d)}")
+
+    need(ok_rin == 40, f"r6: 40 FIELD_RIN_<n> series nodes = Rin.2 + Dser.2 (got {ok_rin})")
+    need(ok_led == 40, f"r6: 40 FIELD_LED_<n> = Dser.K + Dclamp.K + PC817 LED anode (got {ok_led})")
+    need(ok_field == 40, f"r6: 40 field-pin nets gain the clamp ANODE (got {ok_field})")
+    need(ok_logic == 40, f"r6: 40 logic nets carry exactly one Cflt.1 (got {ok_logic})")
+    need(ok_antiparallel == 40,
+         "r6: on every channel the series diode bridges FIELD_RIN->FIELD_LED and a "
+         f"DIFFERENT diode bridges FIELD_LED->field pin (anti-parallel) (got {ok_antiparallel})")
+    if bad:
+        for b in bad[:20]:
+            print(f"    r6 detail: {b}")
+
+    # r6 adds ZERO nodes to the wetting rail and ZERO to any safety net.
+    wet_d = [(r, p) for r, p in net_pads.get("FIELD_WET_V", []) if r.startswith(("D", "C"))]
+    need(not wet_d, f"r6 adds no diode/cap directly on FIELD_WET_V (got {wet_d})")
+    for sname in ("RELAY_ENABLE_RAIL", "RAIL_GATE", "SAFE_STOP_RETURN", "SAFE_TBSC_RETURN"):
+        newp = [(r, p) for r, p in net_pads.get(sname, [])
+                if r.startswith("D") and r[1:].isdigit() and int(r[1:]) >= R6_FIRST_NEW_D]
+        need(not newp, f"r6 puts no new part on {sname} (got {newp})")
+
 
 def audit_netlist(path):
     text = open(path, encoding="utf-8").read()
@@ -337,6 +479,61 @@ def audit_netlist(path):
          f"exactly 40 Rpu_* refs are R4,R6,...,R82 (got {sorted(rpu)})")
     need(not wrong_rpu, f"every Rpu_* value is 47k (wrong: {wrong_rpu})")
     need(not other_47k, f"no unrelated component was changed to 47k (got {other_47k})")
+
+    # ---- r6 part families + REFDES STABILITY (spec §E.3) ----
+    dser = {t: r for r, (v, fp, t) in comp_info.items() if t.startswith("Dser_")}
+    dclamp = {t: r for r, (v, fp, t) in comp_info.items() if t.startswith("Dclamp_")}
+    cflt = {t: r for r, (v, fp, t) in comp_info.items() if t.startswith("Cflt_")}
+    need(sorted(dser) == sorted(f"Dser_{n}" for n in R6_CHANNELS),
+         f"r6: exactly 40 Dser_* series blocks, one per channel (got {len(dser)})")
+    need(sorted(dclamp) == sorted(f"Dclamp_{n}" for n in R6_CHANNELS),
+         f"r6: exactly 40 Dclamp_* anti-parallel clamps (got {len(dclamp)})")
+    need(sorted(cflt) == sorted(f"Cflt_{n}" for n in R6_CHANNELS),
+         f"r6: exactly 40 Cflt_* logic-side filter caps (got {len(cflt)})")
+    wrong_d = sorted((comp_info[r][2], comp_info[r][0], comp_info[r][1])
+                     for r in list(dser.values()) + list(dclamp.values())
+                     if comp_info[r][0] != "1N4148"
+                     or comp_info[r][1] != "Diode_SMD:D_SOD-323")
+    need(not wrong_d,
+         "r6: every Dser_*/Dclamp_* is 1N4148 on Diode_SMD:D_SOD-323 — the EXISTING "
+         f"BOM line (LCSC C118873), no new fab part class (wrong: {wrong_d})")
+    # A DNP-EMPTY series position leaves the channel OPEN-CIRCUIT (spec §A.3.4):
+    # the series diode is NEVER allowed to be DNP.
+    dnp_series = sorted(comp_info[r][2] for r in dser.values() if "DNP" in comp_info[r][0].upper())
+    need(not dnp_series,
+         f"r6 STOP-SHIP: no Dser_* may be DNP — an empty series position opens the "
+         f"channel (got {dnp_series})")
+    wrong_c = sorted((comp_info[r][2], comp_info[r][0], comp_info[r][1])
+                     for t, r in cflt.items()
+                     if comp_info[r][1] != "Capacitor_SMD:C_0805_2012Metric"
+                     or comp_info[r][0] != ("10nF X7R DNP"
+                                            if t[5:] in R6_FAST else "2.2uF X7R DNP"))
+    need(not wrong_c,
+         "r6: Cflt_* are DNP 0805 X7R — 10nF on the 8 RP2040 fast channels (1 ms edge "
+         "budget, NEVER >22nF on GP6-GP13), 2.2uF on the 32 MCP slow channels "
+         f"(wrong: {wrong_c})")
+
+    def _nums(prefix):
+        return sorted(int(r[len(prefix):]) for r in comp_info
+                      if re.fullmatch(prefix + r"\d+", r))
+    dn, cn, rn = _nums("D"), _nums("C"), _nums("R")
+    need(dn == list(range(1, R6_LAST_NEW_D + 1)) and cn == list(range(1, R6_LAST_NEW_C + 1)),
+         f"r6 refdes stability: D1-D{R6_LAST_NEW_D} and C1-C{R6_LAST_NEW_C} contiguous "
+         f"(got D:{len(dn)} max {dn[-1]}, C:{len(cn)} max {cn[-1]})")
+    need(rn == list(range(1, R6_LAST_R + 1)),
+         f"r6 refdes stability: ZERO new R-prefix parts — R1-R{R6_LAST_R} unchanged, which "
+         f"is what keeps EXPECTED_OPTO_PULLUPS valid (got max R{rn[-1]}, count {len(rn)})")
+    pre_r6_d = {comp_info[f"D{n}"][2] for n in range(1, R6_FIRST_NEW_D)}
+    need(pre_r6_d == {"Dfly_S", "MOV_S", "Dfly_T", "MOV_T", "Dfly_SP", "MOV_SP",
+                      "Dfly_BE", "MOV_BE", "Dfly_M", "MOV_M", "Dfly_M2", "MOV_M2",
+                      "Dfly_M1", "MOV_M1", "D_WDOG_TIMING", "D_WDOG_TRIG", "D_PROT"},
+         f"r6 refdes stability: D1-D17 still carry their pre-r6 tags (got {sorted(pre_r6_d)})")
+    new_d_tags = {comp_info[f"D{n}"][2] for n in range(R6_FIRST_NEW_D, R6_LAST_NEW_D + 1)}
+    need(new_d_tags == set(dser) | set(dclamp),
+         "r6 refdes stability: D18-D97 are exactly the 80 new input-protection diodes")
+    new_c_tags = {comp_info[f"C{n}"][2] for n in range(R6_FIRST_NEW_C, R6_LAST_NEW_C + 1)}
+    need(new_c_tags == set(cflt),
+         "r6 refdes stability: C17-C56 are exactly the 40 new filter caps")
 
     # ---- M1 channel + arc suppression still DNP (by value marker) ----
     dnp = sorted(r for r, (v, fp, t) in comp_info.items() if "DNP" in v)

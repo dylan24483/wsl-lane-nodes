@@ -75,12 +75,17 @@ DOCS_HARNESS_BOM = ROOT / "docs" / "phase8_revD_harness_bom.csv"
 FW_RELEASE_MANIFEST = ROOT / "firmware" / "rp2040" / "release" / "firmware_manifest.json"
 
 # ---- pinned release counts (fail closed on ANY drift) -------------------------------
-EXPECTED_NETLIST_PARTS = 271     # R1.7 (262) + round-2 R2-4/R2-6 (+9)
-EXPECTED_DNP = 28                # 22 value-DNP + 5 M1-optional + JP1 (default-OPEN link)
-EXPECTED_PLACED = 243            # 271 - 28
-EXPECTED_HAND_SOLDER = 17        # A1, J1-J11 (J12 is DNP), J13-J16, U45
-EXPECTED_JLC_PLACED = 226        # 243 - 17
-EXPECTED_JLC_LINES = 27          # prior 26 + dedicated 47k PC817 collector-pull-up line
+# r6 input protection (2026-07-25, docs/phase8_revD_r6_input_protection_
+# spec_2026-07-25.md SS A.4/E.2): +120 parts = 40 Dser + 40 Dclamp (BOTH
+# POPULATED, joining the EXISTING 1N4148/SOD-323 line, qty 8 -> 88) + 40 Cflt
+# (ALL DNP by design). Hence +120 parts, +40 DNP, +80 placed, +80 JLC-placed,
+# and EXPECTED_JLC_LINES stays 27 - r6 adds ZERO new assembled part classes.
+EXPECTED_NETLIST_PARTS = 391     # 271 + 120 r6
+EXPECTED_DNP = 68                # 28 + 40 Cflt (Dser/Dclamp are POPULATED)
+EXPECTED_PLACED = 323            # 391 - 68
+EXPECTED_HAND_SOLDER = 17        # A1, J1-J11 (J12 is DNP), J13-J16, U45 - UNCHANGED
+EXPECTED_JLC_PLACED = 306        # 323 - 17
+EXPECTED_JLC_LINES = 27          # UNCHANGED - the 80 r6 diodes join the 1N4148 line
 
 GERBER_LAYERS = ",".join(
     [
@@ -788,6 +793,15 @@ def main() -> int:
             if p["tag"] == "JP_J16_3V3":
                 reason = ("Default-OPEN solder link (R2-4): J16 pin 5 ships NC; bridge "
                           "only for a verified 3.3V module - no part is ever fitted")
+            elif p["tag"].startswith("Cflt_"):
+                reason = ("DNP by design (r6): logic-side AC-integration / de-glitch cap. "
+                          "Fit ONLY on a channel MEASURED to carry a 60 Hz pulse train. "
+                          "2.2uF max on the MCP23017 slow channels (183 ms de-assert, and "
+                          "no slow channel may have a release budget tighter than 200 ms); "
+                          "NEVER exceed 22 nF on the RP2040 fast channels GP6-GP13 (1 ms "
+                          "edge budget). NOTE: 60 Hz integration is NOT available on the "
+                          "fast cam channels SA/SB/TA1/TA2 - see r6 spec SS B.4, that case "
+                          "needs a firmware change, not a cap.")
             elif p["tag"].endswith("_M1") or p["tag"] in M1_OPTIONAL_TAGS:
                 reason = "M1 optional channel (never metered; populate only after runbook 3.6)"
             else:
@@ -955,8 +969,14 @@ def main() -> int:
         "- kicad-cli DRC: 0 violations / 0 unconnected / 0 footprint errors",
         "  (live remediation .kicad_dru: 2.65 / 3.35 / 1.6 mm - spec R2.3).",
         "- audit_revD_board.py routed mode: ALL PASS (Safety_Rail == 13).",
-        "- BOM<->CPL<->netlist equality asserted: 271 parts / 28 DNP / 243 placed /",
-        "  226 JLC-placed / 17 hand-solder; every placed refdes present in all three.",
+        # DERIVED from the pinned constants, never a hardcoded literal: the r6
+        # spin moved all five and a fixed string silently shipped the pre-r6
+        # counts inside a 391-part package, contradicting manifest.json in the
+        # same directory.
+        f"- BOM<->CPL<->netlist equality asserted: {EXPECTED_NETLIST_PARTS} parts / "
+        f"{EXPECTED_DNP} DNP / {EXPECTED_PLACED} placed /",
+        f"  {EXPECTED_JLC_PLACED} JLC-placed / {EXPECTED_HAND_SOLDER} hand-solder; "
+        "every placed refdes present in all three.",
         "- D_PROT hard lock: D17 = MDD SS34, LCSC C8678, SMA/DO-214AC (FR-3); no SS14",
         "  anywhere.",
         "- Round-2 locks (2026-07-21): Q17-Q20 = onsemi 2N7002LT1G C16338 (R2-3);",
@@ -967,7 +987,14 @@ def main() -> int:
         "- Rev-D input-margin hardening (2026-07-23): exactly R4,R6,...,R82 = 47k,",
         "  UNI-ROYAL 0805W8F4702T5E / LCSC C17713; unrelated 10k networks unchanged.",
         "  Every populated PC817 channel still requires FA-9 at loaded-min FIELD_WET",
-        "  and temperature: C5692981 lacks a guaranteed CTR minimum at ~1.7mA IF.",
+        "  and temperature: C5692981 lacks a guaranteed CTR minimum at this board's",
+        "  operating IF. r6 (2026-07-25) INSERTED A SERIES BLOCKING DIODE in every",
+        "  channel, so the FA-9 operating point is NO LONGER ~1.7mA: it is 1.34mA at",
+        "  Vw=5.0V and ~1.12mA at the FA-9 step-3 loaded minimum (TP4 ~4.5V). Use",
+        "  those numbers, not the pre-r6 1.7mA. FA-9's <=100us edge criterion applies",
+        "  only with every Cflt_* UNFITTED (they ship DNP); a channel that later takes",
+        "  a Cflt is re-qualified against the debounce budget instead - see FA-9 and",
+        "  the DNP CSV reason text.",
         "  BINDING CONFIGURATION GATE: production RP2040 GP6-GP13 internal pulls must",
         "  be disabled (PUE=0, PDE=0), and U1/U2 MCP23017 GPPUA/GPPUB must command",
         "  and read back 0x00. An enabled internal pull invalidates the 47k-only",

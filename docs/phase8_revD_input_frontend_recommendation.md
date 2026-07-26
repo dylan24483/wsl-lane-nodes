@@ -1,7 +1,29 @@
 # Rev-D Recommendation: Per-Channel Input-Protection Provisions (DNP)
 
+> # ⛔ SUPERSEDED 2026-07-25 — DECIDED AND BUILT AS r6
+>
+> **Dylan reopened copper on 2026-07-25 and the provisions LANDED.** The implementable
+> authority is **`docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`**; the built
+> package is **`kicad/fab_revD_2026-07-25_r6/`**.
+>
+> This file remains as the **measured field evidence** that motivated the change (lane-22
+> PBZ 33 VDC, DIELL_L/R 15.4–16 V, the cam ladder). **Its §3/§4 topology proposals and its
+> §5 harness mitigation are OVERTAKEN — do not build from them:**
+>
+> - **The series position is NOT a 0 Ω link swapped per channel.** It is a **populated
+>   1N4148WS on a SOD-323 land on all 40 channels**, and the anti-parallel clamp is
+>   populated too. A 0 Ω link is an `R`-prefix part; 40 of them would have shifted every
+>   resistor refdes above R3. See r6 spec §A.4.
+> - **§5's interim harness mitigation (series 1N4007 in the harness lead for PBZ/DIELL) is
+>   SUPERSEDED — DO NOT BUILD IT.** The board provides the protection. Keep it only as a
+>   per-lane *verification* note.
+> - **Only the clamp + series diode TOGETHER close the case.** A clamp alone backfeeds `Rin`
+>   into the shared `FIELD_WET_V` rail (self-consistent solve: Vw pulled to 10.8 V at
+>   9.79 mA on PBZ); a series diode alone leaves LED reverse voltage set by a *leakage
+>   divider*, i.e. by an unspecified parameter ratio rather than by construction.
+
 **Written 2026-07-25 from measured field evidence on lane 22.** Owner: rev-D workstream.
-**Status: OPEN RECOMMENDATION — the fab/population decision is Dylan's, not this document's.**
+**Status: SUPERSEDED — decided by the owner and implemented as r6 on the same day.**
 
 > **Headline corrected 2026-07-25.** This file previously claimed the provisions are *"the
 > single change that moves the remaining field campaign OFF the critical path to a fleet

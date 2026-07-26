@@ -69,7 +69,22 @@ Rev-D deltas over rev-C (spec items A-G):
   G - OUT-B MCP23017 @0x23: DEFERRED (spec decision — not placed; a breakout
       on J16 at 0x23 provides the same capacity off-board).
 
-Expected emitted totals: 271 parts, 223 nets, 0 netlist-generation errors
+  r6 - PER-CHANNEL INPUT PROTECTION on all 40 opto channels (2026-07-25,
+      docs/phase8_revD_r6_input_protection_spec_2026-07-25.md). opto_input()
+      now emits a NEW node FIELD_RIN_<n> between Rin and the LED; a later
+      block_input_protection() inserts, per channel, a POPULATED 1N4148WS
+      SOD-323 series block (FIELD_RIN_<n> -> FIELD_LED_<n>), a POPULATED
+      1N4148WS SOD-323 anti-parallel clamp across the PC817 LED, and a DNP
+      0805 logic-side filter cap (10nF fast / 2.2uF slow). Closes the
+      measured reverse-stress case (PBZ 33 VDC = 4.5-4.7x the PC817 LED's
+      6 V V_R max; DIELL_L/R 15.4-16 V = 1.6-1.8x OVER once rev-D's own
+      1.1k bleed pulls Vw to 5-6 V; cams in the 24 VAC ladder = 4.8x peak).
+      120 parts, 40 new nets. ZERO safety copper, ZERO new part class
+      (1N4148WS/SOD-323 was already on the BOM), ZERO refdes churn.
+      Board revision stays D (never fabricated); fab package iteration r6.
+
+Expected emitted totals: 391 parts (271 + 120 r6), 263 nets (223 + 40
+FIELD_RIN_*), 0 netlist-generation errors
 (remediation spec R1.7: 252-5+15 parts, 213+4 TAP_GATE_* nets; round-2
 remediation 2026-07-21 (Codex R2-4/R2-6): +9 parts (J16 protection stack +
 REV_ID straps) and +6 nets (J16_5V/J16_3V3/J16_SDA/J16_SCL/REV_ID0/REV_ID1)
@@ -224,6 +239,11 @@ J16_SDA = Net("J16_SDA")
 J16_SCL = Net("J16_SCL")
 
 parts = {}
+# r6 (2026-07-25): channel -> (FIELD_RIN_<n>, FIELD_LED_<n>, FIELD_<n>,
+# FAST_/SLOW_<n>) handles, filled by opto_input() and consumed by
+# block_input_protection(). Keyed by channel name; insertion order is the
+# opto instantiation order (8 fast, then the 32 slow channels).
+input_protection_nodes = {}
 
 
 FAST_INPUTS = [
@@ -390,12 +410,20 @@ def opto_input(name, logic_net, field_net):
     # (3.3 V - 0.66 V) / 47k = 56 uA while keeping wetting current unchanged.
     # This value is scoped only to the 40 Rpu_* parts.
     rpu = add_res(f"Rpu_{name}", "47k")
+    # r6 input protection (2026-07-25, docs/phase8_revD_r6_input_protection_
+    # spec_2026-07-25.md §A.1): Rin's output is no longer the LED-anode node.
+    # A NEW named node FIELD_RIN_<n> sits between Rin and the series blocking
+    # diode; FIELD_LED_<n> is now the LED-anode node only (Dser cathode +
+    # Dclamp cathode + PC817 pin 1). Both parts are instantiated LATER, in
+    # block_input_protection(), so no existing refdes moves (§E.3).
+    rin_series = Net(f"FIELD_RIN_{name}")
     led_series = Net(f"FIELD_LED_{name}")
 
-    # Dry-contact default: WET -> Rin -> opto LED -> field pin. The field
-    # contact closes that pin to FIELD_GND at the connector/harness.
+    # Dry-contact default: WET -> Rin -> Dser -> opto LED -> field pin. The
+    # field contact closes that pin to FIELD_GND at the connector/harness.
     WET += rin[1]
-    led_series += rin[2], opto[1]
+    rin_series += rin[2]
+    led_series += opto[1]
     opto[2] += field_net
 
     # Logic side is 3.3 V so Pico and MCP inputs are Pi-safe.
@@ -403,7 +431,77 @@ def opto_input(name, logic_net, field_net):
     opto[3] += GND
     VCC3V3 += rpu[1]
     logic_net += rpu[2]
+    input_protection_nodes[name] = (rin_series, led_series, field_net, logic_net)
     return opto
+
+
+def block_input_protection():
+    """r6 per-channel input protection on all 40 optocoupler channels.
+
+    Spec: docs/phase8_revD_r6_input_protection_spec_2026-07-25.md §A.
+    Evidence: docs/phase8_revD_input_frontend_recommendation.md (measured
+    lane-22 field voltages) + docs/phase8_revD_round5_claude_audit_2026-07-25.md
+    §5 (the electrical case, and the four corrections the spec carries forward).
+
+    Per channel, three provisions:
+
+      Dser_<n>   1N4148WS SOD-323, SERIES BLOCK, ALWAYS POPULATED.
+                 Anode (pin 2) on FIELD_RIN_<n>, cathode (pin 1) on
+                 FIELD_LED_<n>. Blocks the reverse half-cycle / reverse DC so
+                 an over-voltage channel cannot backfeed Rin into the SHARED
+                 FIELD_WET_V rail (the unregulated TMA-0505S cannot sink it:
+                 the clamp-alone solve pulls Vw to 10.77 V at 9.79 mA on a
+                 33 VDC PBZ channel — spec §F.3). NEVER DNP: a DNP-empty
+                 series position leaves the channel OPEN-CIRCUIT (§A.3.4).
+                 CTR cost 22x -> 17.1x; the rev-D 47k collector pull-up
+                 already paid for it, so Rin STAYS 2k2 (§C).
+
+      Dclamp_<n> 1N4148WS SOD-323, ANTI-PARALLEL CLAMP across the PC817 LED.
+                 Cathode (pin 1) on FIELD_LED_<n>, anode (pin 2) on the field
+                 pin. With Dser fitted it is never a current path (leakage
+                 only, <= 15 uA), so it is a VOLTAGE-DEFINING element: it pins
+                 the LED reverse voltage at ~0.35 V against the PC817's 6 V
+                 absolute maximum (17x inside), BY CONSTRUCTION rather than by
+                 the diode/LED leakage ratio a series diode alone would rely
+                 on (§A.3.2, §F.3). Populated by default (spec §A.4 NORMATIVE);
+                 variant B = value "1N4148 DNP", copper identical (§A.6).
+
+      Cflt_<n>   0805 X7R, DNP BY DESIGN, logic side (opto collector -> GND).
+                 2.2uF on the 32 MCP23017 slow channels (60 Hz AC integration,
+                 951 nF minimum effective, 183 ms de-assert), 10nF on the 8
+                 RP2040 fast channels (de-glitch; NEVER exceed 22 nF on
+                 GP6-GP13 — the 1 ms edge budget, spec §B.3/§B.4). Fit ONLY on
+                 a channel MEASURED to carry a 60 Hz pulse train.
+
+    Instantiated AFTER every existing block so the new parts take D18-D97 and
+    C17-C56 and ZERO existing refdes moves (spec §E.3) — in particular
+    EXPECTED_OPTO_PULLUPS = {R4, R6, ... R82} in audit_revD_board.py and the
+    manual's designator tables stay correct. This is also why the series
+    element is a diode on a SOD-323 land and NOT a 0R 0805 link: 40 R-prefix
+    parts would shift every resistor above R3 by 40, and an 0805 land
+    (pads +/-0.913) and a SOD-323 land (pads +/-1.05) cannot be shared, so the
+    "0R now, diode later" swap plan does not survive a real footprint (§A.4).
+    """
+    global GND
+
+    fast_names = {n for n, _ in FAST_INPUTS}
+    for name, (rin_series, led_series, field_net, logic_net) in input_protection_nodes.items():
+        dser = Part("Device", "D", value="1N4148", footprint=FP_D_SOD323,
+                    tag=f"Dser_{name}")
+        parts[f"Dser_{name}"] = dser
+        rin_series += dser[2]   # anode  (Device:D pin 2 = A) faces Rin / the board
+        led_series += dser[1]   # cathode (pin 1 = K) faces the PC817 LED anode
+
+        dclamp = Part("Device", "D", value="1N4148", footprint=FP_D_SOD323,
+                      tag=f"Dclamp_{name}")
+        parts[f"Dclamp_{name}"] = dclamp
+        led_series += dclamp[1]  # cathode on the LED-anode node ...
+        field_net += dclamp[2]   # ... anode on the field pin => ANTI-PARALLEL
+
+        cval = "10nF X7R DNP" if name in fast_names else "2.2uF X7R DNP"
+        cflt = add_cap(f"Cflt_{name}", cval)
+        logic_net += cflt[1]
+        GND += cflt[2]
 
 
 def relay_output(name, drive_net, out_a, out_b, dnp=False):
@@ -1084,6 +1182,8 @@ def main():
     block_rail(wdog_pull, connectors["J_SAFE"])
     block_diag(pico, ne555_out)
     block_j16_protection_and_revid(pico)
+    # r6 (2026-07-25) MUST be last: refdes stability depends on it (spec §E.3).
+    block_input_protection()
 
     # Rev-D output is a NEW file — never the rev-C kicad/wsl-phase8b.net.
     out = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "kicad", "wsl-phase8b-revD.net"))

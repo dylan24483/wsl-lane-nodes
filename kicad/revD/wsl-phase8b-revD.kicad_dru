@@ -42,3 +42,73 @@
 (rule "MACHINE independent output clearance"
     (condition "A.hasNetclass('Machine_Output') && B.hasNetclass('Machine_Output') && A.NetName != B.NetName && !((A.NetName == 'OUT_S_A' || A.NetName == 'OUT_S_B' || A.NetName == 'SNUB_S') && (B.NetName == 'OUT_S_A' || B.NetName == 'OUT_S_B' || B.NetName == 'SNUB_S')) && !((A.NetName == 'OUT_T_A' || A.NetName == 'OUT_T_B' || A.NetName == 'SNUB_T') && (B.NetName == 'OUT_T_A' || B.NetName == 'OUT_T_B' || B.NetName == 'SNUB_T')) && !((A.NetName == 'OUT_SP_A' || A.NetName == 'OUT_SP_B' || A.NetName == 'SNUB_SP') && (B.NetName == 'OUT_SP_A' || B.NetName == 'OUT_SP_B' || B.NetName == 'SNUB_SP')) && !((A.NetName == 'OUT_BE_A' || A.NetName == 'OUT_BE_B' || A.NetName == 'SNUB_BE') && (B.NetName == 'OUT_BE_A' || B.NetName == 'OUT_BE_B' || B.NetName == 'SNUB_BE')) && !((A.NetName == 'OUT_M_A' || A.NetName == 'OUT_M_B' || A.NetName == 'SNUB_M') && (B.NetName == 'OUT_M_A' || B.NetName == 'OUT_M_B' || B.NetName == 'SNUB_M')) && !((A.NetName == 'OUT_M2_A' || A.NetName == 'OUT_M2_B' || A.NetName == 'SNUB_M2') && (B.NetName == 'OUT_M2_A' || B.NetName == 'OUT_M2_B' || B.NetName == 'SNUB_M2')) && !((A.NetName == 'OUT_M1_A' || A.NetName == 'OUT_M1_B' || A.NetName == 'SNUB_M1') && (B.NetName == 'OUT_M1_A' || B.NetName == 'OUT_M1_B' || B.NetName == 'SNUB_M1'))")
     (constraint clearance (min 1.6mm)))
+
+# ---------------------------------------------------------------------------
+# r6 input protection (2026-07-25) - NEW high-voltage exposure.
+# docs/phase8_revD_r6_input_protection_spec_2026-07-25.md section D.5.
+#
+# BEFORE r6, FIELD_LED_<n> could never exceed the wetting rail (5-11 V): Rin
+# and the rail clamped it. AFTER r6 the series blocking diode isolates it, so
+# the node FOLLOWS THE FIELD PIN: +32.65 V on a 33 VDC PBZ channel, and
+# +33.6 / -32.8 V on a 24 VAC channel. That is inside the >= 34 Vpk design
+# basis declared above, but it moves 31-50 V band copper out of the connector
+# / opto-pad-2 region and into the Rin-to-opto corridor.
+# IPC-2221B Table 6-1 col B1 (external, uncoated), 31-50 V band -> 0.6 mm.
+#
+# This is a GATE, not a routing constraint. The Field_Sense netclass clearance
+# stays 0.40 mm ON PURPOSE: the 40 B.Cu channel columns run at 1.05 mm pitch
+# with 0.70 mm vias and the router's via-separation heuristics were solved
+# against 0.40 - a global change would force a re-solve of the one part of
+# this board that was hand-won after autorouting failed at 473-625 violations.
+#
+# MEASURED minimum after the r6 re-route: 0.910 mm = 1.52x the 0.6 mm
+# requirement. Bracketed with kicad-cli by raising ONLY this rule's constraint:
+#   min 0.90mm -> 0 violations   min 0.95mm -> 117   min 1.00mm -> 148
+# and the 0.95 report names "actual 0.9100 mm". The binding pair is an
+# r6-INTRODUCED CLAMP PAD against the NEXT ROW'S FIELD_LED TRACK, e.g.
+#   Pad 2 [FIELD_SLOW_GS2] of D37 @ (70.0, 66.84)  vs
+#   Track [FIELD_LED_GS3]        @ (70.0, 68.20)
+# (CORRECTED 2026-07-25: this block previously claimed 1.06 mm / 1.77x and
+# described the worst case as a track-to-track pair at y-1.8 vs y-3.16. Both
+# were wrong - the margin is 16% smaller than stated and the constraint is a
+# different pair. The 0.6 mm gate still passes 0/0/0; only the recorded
+# headroom was overstated. Re-bracket after ANY change to the corridor.)
+# If this rule fires, the r6 re-route is wrong: FAIL CLOSED, DO NOT WAIVE.
+#
+# KNOWN, DISPOSITIONED, PRE-EXISTING GAP - read before "tightening" this rule.
+# This rule covers the 40 FIELD_LED_* nets ONLY. After r6 the anti-parallel
+# clamp holds FIELD_LED_<n> within ~0.35 V of its field-pin net
+# (FIELD_FAST_<n> / FIELD_SLOW_<n>), so those nets sit at the SAME potential
+# and are NOT covered here - they remain on the 0.40 mm Field_Sense netclass
+# clearance. Measured field-pin-to-field-pin minimum (via-to-via, 0.70 mm pads,
+# computed from raw .kicad_pcb geometry):
+#   0.4807 mm  FIELD_SLOW_MAN_T (38.25,158.04) vs FIELD_SLOW_TENTH (37.2,157.5)
+#   0.5297 mm  FIELD_SLOW_GS6   (25.65, 89.64) vs FIELD_SLOW_GS5   (24.6, 89.0)
+#   0.6895 mm  FIELD_SLOW_AUX6  (47.70,215.00) vs FIELD_SLOW_AUX7  (48.75,214.09)
+# Two adjacent field-pin nets can sit up to ~68 Vpk apart (one at +33.9, one at
+# -33.9) if both are populated on the 24 VAC option; IPC-2221B B1 asks 0.6 mm
+# for both the 31-50 and 51-100 V bands, and the header's +0.15 mm etch
+# allowance is not applied to the 0.40 mm netclass either.
+# WHY NOT FIXED IN r6: this geometry is PRE-EXISTING (the field-pin nets always
+# ran to the connector at machine potential; r6 moved only the return dogleg
+# 71.2 -> 68.5 and the bleed tee, neither of which touches these pairs).
+# Closing it means re-routing the hand-won 1.05 mm-pitch B.Cu channel columns,
+# which this same block forbids doing in this spin. It is recorded as an OPEN
+# fleet-revision item in the readiness checklist and the r6 spec section K, not
+# silently left to look like it meets 0.6 mm.
+#
+# TWO KiCad 10.0.2 DRU TRAPS, both hit and both silent - do not "tidy" this:
+#  1. There is NO startsWith / prefix operator. A condition using one does not
+#     merely disable its own rule: it takes the WHOLE .kicad_dru down during
+#     ZONE FILLING, so the filler falls back to bare netclass clearance and the
+#     LOGIC-MACHINE creepage contract stops being enforced (observed: +214 mm2
+#     of GND fill and 8 creepage violations at the K1-K7 machine pads).
+#     The 40 net names are therefore ENUMERATED - the spec's own contingency.
+#  2. The condition string MUST BE ONE LINE. A quoted expression broken across
+#     lines parses as an s-expression but evaluates as never-true: the rule
+#     loads, reports nothing, and looks like a pass. Verified by positive
+#     control - at (min 2.0mm) this rule MUST report violations; at 0.6 mm it
+#     must report none. Re-run that control after any edit here.
+(rule "FIELD_LED high-voltage node spacing (r6)"
+    (condition "A.NetName == 'FIELD_LED_SA' || A.NetName == 'FIELD_LED_SB' || A.NetName == 'FIELD_LED_SC' || A.NetName == 'FIELD_LED_TA1' || A.NetName == 'FIELD_LED_TA2' || A.NetName == 'FIELD_LED_TB' || A.NetName == 'FIELD_LED_DIELL_L' || A.NetName == 'FIELD_LED_DIELL_R' || A.NetName == 'FIELD_LED_GS1' || A.NetName == 'FIELD_LED_GS2' || A.NetName == 'FIELD_LED_GS3' || A.NetName == 'FIELD_LED_GS4' || A.NetName == 'FIELD_LED_GS5' || A.NetName == 'FIELD_LED_GS6' || A.NetName == 'FIELD_LED_GS7' || A.NetName == 'FIELD_LED_GS8' || A.NetName == 'FIELD_LED_GS9' || A.NetName == 'FIELD_LED_GS10' || A.NetName == 'FIELD_LED_GP' || A.NetName == 'FIELD_LED_OS' || A.NetName == 'FIELD_LED_BS' || A.NetName == 'FIELD_LED_PBZ' || A.NetName == 'FIELD_LED_PBC' || A.NetName == 'FIELD_LED_FOUL' || A.NetName == 'FIELD_LED_TENTH' || A.NetName == 'FIELD_LED_MAN_T' || A.NetName == 'FIELD_LED_MAN_S' || A.NetName == 'FIELD_LED_MAN_SWS' || A.NetName == 'FIELD_LED_MAN_SWSR' || A.NetName == 'FIELD_LED_AUX1' || A.NetName == 'FIELD_LED_AUX2' || A.NetName == 'FIELD_LED_AUX3' || A.NetName == 'FIELD_LED_AUX4' || A.NetName == 'FIELD_LED_AUX5' || A.NetName == 'FIELD_LED_AUX6' || A.NetName == 'FIELD_LED_AUX7' || A.NetName == 'FIELD_LED_AUX8' || A.NetName == 'FIELD_LED_AUX9' || A.NetName == 'FIELD_LED_AUX10' || A.NetName == 'FIELD_LED_AUX11' || B.NetName == 'FIELD_LED_SA' || B.NetName == 'FIELD_LED_SB' || B.NetName == 'FIELD_LED_SC' || B.NetName == 'FIELD_LED_TA1' || B.NetName == 'FIELD_LED_TA2' || B.NetName == 'FIELD_LED_TB' || B.NetName == 'FIELD_LED_DIELL_L' || B.NetName == 'FIELD_LED_DIELL_R' || B.NetName == 'FIELD_LED_GS1' || B.NetName == 'FIELD_LED_GS2' || B.NetName == 'FIELD_LED_GS3' || B.NetName == 'FIELD_LED_GS4' || B.NetName == 'FIELD_LED_GS5' || B.NetName == 'FIELD_LED_GS6' || B.NetName == 'FIELD_LED_GS7' || B.NetName == 'FIELD_LED_GS8' || B.NetName == 'FIELD_LED_GS9' || B.NetName == 'FIELD_LED_GS10' || B.NetName == 'FIELD_LED_GP' || B.NetName == 'FIELD_LED_OS' || B.NetName == 'FIELD_LED_BS' || B.NetName == 'FIELD_LED_PBZ' || B.NetName == 'FIELD_LED_PBC' || B.NetName == 'FIELD_LED_FOUL' || B.NetName == 'FIELD_LED_TENTH' || B.NetName == 'FIELD_LED_MAN_T' || B.NetName == 'FIELD_LED_MAN_S' || B.NetName == 'FIELD_LED_MAN_SWS' || B.NetName == 'FIELD_LED_MAN_SWSR' || B.NetName == 'FIELD_LED_AUX1' || B.NetName == 'FIELD_LED_AUX2' || B.NetName == 'FIELD_LED_AUX3' || B.NetName == 'FIELD_LED_AUX4' || B.NetName == 'FIELD_LED_AUX5' || B.NetName == 'FIELD_LED_AUX6' || B.NetName == 'FIELD_LED_AUX7' || B.NetName == 'FIELD_LED_AUX8' || B.NetName == 'FIELD_LED_AUX9' || B.NetName == 'FIELD_LED_AUX10' || B.NetName == 'FIELD_LED_AUX11'")
+    (constraint clearance (min 0.6mm)))

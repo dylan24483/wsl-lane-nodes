@@ -1736,3 +1736,282 @@ and confirms possession of the manuals.
    remains outstanding from the 2026-07-09 audit.** Note the memory
    misattributes this to `wsl-lane-nodes`; verified, `aef294a` is not a valid
    object in the lane repo.
+
+---
+
+## 2026-07-25 — r6 INPUT-PROTECTION COPPER (Dylan reopened copper; fab iteration r6)
+
+**Owner decision.** Dylan reopened copper on 2026-07-25: the first article should be
+as close to fleet-intent as possible rather than frozen-and-bodged, and the fab order
+goes out this week. Schedule risk is bench time, not design time. This supersedes the
+round-5 audit's FREEZE *schedule* recommendation; the audit's *electrical* findings are
+carried forward and were the input to the design.
+
+**Authority:** `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`.
+**Board revision stays D** (never fabricated). **Firmware NOT touched, NOT flashed.**
+
+### What landed (all 40 channels, uniform — no per-channel stuffing decision)
+
+```
+FIELD_WET_V -[Rin 2k2]- FIELD_RIN_<n> -[Dser 1N4148WS, K east]- FIELD_LED_<n> -[PC817 LED]- FIELD_<n>
+                                                                     |                          |
+                                                            [Dclamp_<n> 1N4148WS, anti-parallel]
+LOGIC SIDE:  VCC_3V3 -[Rpu 47k]- FAST_/SLOW_<n> -[Cflt_<n> 0805, DNP]- GND
+```
+
+| Provision | Refdes | Footprint | Default | Qty |
+|---|---|---|---|---|
+| Series block | `Dser_*` | `Diode_SMD:D_SOD-323` | **POPULATED** | 40 |
+| Anti-parallel clamp | `Dclamp_*` | `Diode_SMD:D_SOD-323` | **POPULATED** | 40 |
+| Logic-side filter cap | `Cflt_*` | `Capacitor_SMD:C_0805_2012Metric` | **DNP** | 40 |
+
+The series position is **never DNP-empty** — that would leave the channel open-circuit.
+It is a populated 1N4148WS on a SOD-323 land, not a 0 ohm 0805 link: a 0 ohm link is an
+`R`-prefix part and 40 of them would shift every resistor refdes above R3 by 40,
+destroying `EXPECTED_OPTO_PULLUPS` and the manual's designator tables. Diodes and caps
+instantiated after all existing blocks take **D18-D97** and **C17-C56** and change
+**zero** existing refdes.
+
+### Counts
+
+| | before | after |
+|---|---|---|
+| Parts | 271 | **391** (+40 Dser, +40 Dclamp, +40 Cflt) |
+| Nets | 223 | **263** (+40 `FIELD_RIN_<n>`) |
+| Field_Sense | 82 | **122** |
+| **Safety_Rail** | **13** | **13 — UNCHANGED. r6 adds ZERO safety copper.** |
+| Logic_Signal / Logic_Power / Machine_Output | 103 / 4 / 21 | unchanged |
+| DNP / placed / JLC-placed | 28 / 243 / 226 | **68 / 323 / 306** |
+| JLC BOM lines | 27 | **27 — no new assembled part class** |
+
+### FOOTPRINT-vs-DATASHEET REVIEWS (P1 scripture — the G5LE-1/-14 bug killed six rev-B relays)
+
+#### FR-16 — onsemi 1N4148WS (LCSC C118873) vs `Diode_SMD:D_SOD-323` — **PASS**
+
+New *usage* class (FIELD-domain series block + anti-parallel clamp); the (MPN, footprint)
+pair is already fitted 9x on this board, so this is a usage review plus a land regression,
+not a new fab part class. Ratings: V_RRM 75 V, I_F(AV) 150 mA, V_F 1.0 V @ 10 mA,
+P_D 200 mW, t_rr 4 ns, I_R 5 uA @ 75 V. Land: pads 0.60 x 0.45 mm at +/-1.05 mm vs JEDEC
+terminal 0.25-0.40 x 0.30-0.45 and terminal centres +/-1.088 -> 0.275 mm fillet, pads
+0.038 mm inboard, IPC-7351 nominal density. **PASS.**
+
+**Polarity — the specific check the G5LE precedent demands:** `Device:D` pin 1 = K,
+pin 2 = A (`generate_kicad_netlist_revD_sklib.py:100-102`); corroborated independently by
+`relay_output()`'s "diode cathode to rail" and by D1's emitted netlist (pad 1 =
+`RELAY_ENABLE_RAIL`). Footprint F.Fab cathode bar sits at x = -0.30 with its lead running
+west toward pad 1; 1N4148WS is band-marked at the cathode. **Symbol, F.Fab and package
+band all agree: pad 1 = cathode = banded end. PASS.**
+
+Worst-case stresses: `Dser` reverse 27.7 V DC (PBZ) / 28.6 Vpk (24 VAC) vs 75 V = **2.6-2.7x**;
+`Dser` forward 1.34 mA DC, 17.2 mA pk AC vs 150 mA; `Dclamp` carries leakage only (<=15 uA).
+
+#### FR-17 — Samsung CL21B225KAFNNNE 2.2 uF 25 V X7R 0805 (LCSC C19110) — **PASS (DNP)**
+
+Slow-channel (MCP23017) AC-integration cap, never JLC-assembled. Land already reviewed as
+FR-6; regression confirmation only. Value derivation: off-window 7.90 ms, hold-low needs
+tau >= 44.7 ms -> C >= 951 nF *minimum effective*. A nominal 1 uF part gives 749 nF worst case
+(tol x X7R temp x DC bias) and **FAILS**; 2.2 uF gives 1.65 uF -> tau = 77.6 ms -> 0.455 V at
+7.90 ms vs V_IL 0.66 V. **(1 uF 50 V C28323, JLCPCB Basic, was fetch-verified and REJECTED
+on this arithmetic — recorded so nobody re-proposes it.)**
+
+#### FR-18 — TORCH C0805B103K500NT 10 nF 50 V X7R 0805 (LCSC C17702767) — **PASS (DNP)**
+
+Fast-channel (RP2040) de-glitch cap. **Already a locked part on this board** (the DNP
+contact snubbers `Csnub_*`) — zero new part class. Same land as FR-17. 10 nF gives
+t = 0.49 ms against the 1 ms edge budget. **HARD RULE: never fit more than 22 nF on
+GP6-GP13.**
+
+### Placement — three implementation deviations from the spec, recorded here as the authority
+
+The spec's D.2 constants were followed, with three deviations that `place_components_revD.py`
+comments point at this entry for:
+
+1. **`Dser_SB` (row 1) — placement per spec, ROUTING absorbs the conflict.** The spec placed
+   `Dser_SB` at (62.0, 19.95) to clear the frozen item-A wet-bleed pair R122/R123, but did not
+   account for the item-A `FIELD_WET_V` **bleed tee**, which ran on F.Cu at y = 19.9 straight
+   through that land. **Resolution: the tee is re-routed onto B.Cu in `route_field_power()`;
+   the part does not move.** R122/R123 are frozen rev-D item-A copper and were not touched.
+2. **`CFLT_X` = 85.962, not the spec's 86.0.** 0.038 mm west, to put `Cflt` pin 1 exactly on
+   the `Rpu` pin-2 x-coordinate (86.912) so the logic feed is a straight 2.80 mm run.
+3. **`Cflt_AUX11` rotation 0, not the spec's 180.** The spec's own routing note targets the
+   **west** pad (`(86.912, 237.1) -> (89.05, 237.1)`), which requires the logic pad to be west;
+   rot 180 would have forced the feed to cross the GND pad. **The spec's 180 was a typo**;
+   rot 0 is what makes that route legal. (`Cflt_AUX11` also moves to x = 90.0 / y = 237.10 —
+   spec Exception 2 — because y+4.60 would put the courtyard off the 240 mm board edge.)
+
+`BOARD_W` 250 mm, `BOARD_H` 240 mm, `INPUT_PITCH` 5.7 mm, `OPTO_X`/`RIN_X`/`RPU_X` and the
+0.02 mm opto-row slack are **all unchanged** — no new part occupies any row's vertical space
+in the opto column's x-range. USB keep-out, the FIELD/LOGIC gutter and TP17-24 are intact.
+
+### Gate chain — all green
+
+`generate_kicad_netlist_revD.py` (ERC 1 waived error + 39 warnings, unchanged; 391 parts) ->
+`diff_netlist_revC_to_revD.py` (**RESULT CLEAN**, exit 0) -> `place_components_revD.py` ->
+`apply_netclasses_revD.py --write` (103/4/**13**/122/21 = 263) -> `route_revD.py --check-only`
+(0 problems) -> **kicad-cli DRC 0 / 0 / 0** including the new `FIELD_LED` 0.6 mm rule ->
+`audit_revD_board.py` **ALL PASS** (Safety_Rail == 13) -> `export_fab_revD.py --out
+kicad/fab_revD_2026-07-25_r6` -> `verify_revC_snapshot.py` **189/189, 0 failures, EXIT=0**
+(re-run after every batch, plus the tracked `release_evidence` archive gate).
+
+---
+
+## 2026-07-25 — r6 REVIEW BATCH (15 findings verified: 14 real and fixed, 1 rejected)
+
+An independent review of the r6 artifacts found 15 items. **14 reproduced and are fixed
+below; 1 is marked not-real with reasoning.** No copper changed in this batch — the
+`.kicad_pcb` is byte-identical and DRC re-verified 0/0/0.
+
+### Corrections to numbers the r6 spec asserted
+
+- **D.5 clearance margin was overstated.** The spec and the `.kicad_dru` both claimed the
+  measured minimum after the r6 re-route is **1.06 mm (1.77x)**. Bracketed with `kicad-cli`
+  by raising **only** that rule's constraint: **0.90 mm -> 0 violations, 0.95 mm -> 117,
+  1.00 mm -> 148, 1.10 mm -> 196**, and the report names `actual 0.9100 mm`. **True minimum is
+  0.910 mm = 1.52x** — 16 % less headroom than recorded. The binding pair is also different
+  from the one analysed: it is an **r6-introduced clamp pad vs the next row's `FIELD_LED`
+  track** (`Pad 2 [FIELD_SLOW_GS2] of D37 @ (70.0, 66.84)` vs
+  `Track [FIELD_LED_GS3] @ (70.0, 68.20)`), not the track-to-track pair the spec described.
+  The 0.6 mm gate still passes 0/0/0 — **not stop-ship** — but both files are corrected.
+  (DRU restored byte-identical after bracketing; baseline re-verified 0/0/0.)
+- **J5 / I.2 required an unachievable diff-gate result.** They demanded *"the sole
+  `CHANGED_PART` is still `D_PROT SS14->SS34`"*. The gate emits **38** `CHANGED_PART` lines
+  — `D_PROT`, five MCV connector footprint changes, and 32 `Rpu_*` 10k->47k — and
+  `git show HEAD` of `netlist_diff_revC_to_revD.txt` shows the **same 38 before r6**. The
+  script is self-consistent (all three classes whitelisted, `RESULT CLEAN`, exit 0); the
+  spec was wrong. **This mattered:** C.2 reason 2 rejected retuning `Rin` to 1k8 because it
+  would add *"40 more CHANGED_PARTs... converting a one-line whitelisted exception into a
+  41-line review surface"* — but the surface was already 38 lines **including 32 `Rpu_*`
+  retunes exactly analogous to the `Rin` retune being rejected**. **Reason 2 is RETRACTED.**
+  The KEEP-2k2 decision stands on reasons 1, 3, 4 and 5.
+- **F.1's "hard bound" was not a bound.** Every row of the wetting-rail budget models each
+  channel at the **dry-contact** 1.34 mA, while F.3 of the same document computes
+  **16.8 mA peak / 5.4 mA average** for a channel driven by 24 VAC — 12.5x the peak.
+  Verified from the netlist: **`FIELD_WET_V` has 43 nodes — 40 x `Rin` pin 1, R122.1,
+  R123.1, U45 pin 6 — and NO CAPACITOR OF ANY VALUE.** The unregulated TMA-0505S must serve
+  each 8.3 ms half-cycle peak instantaneously. `200 / 16.8 = 11.9`: **at ~12 coincident
+  driven channels the brick is at its instantaneous rating**, and the failure is silent and
+  total (Vw collapses every negative half-cycle -> all 40 inputs read inactive together,
+  120 times a second, including the FSM's cam-confirmation channels). **Acceptance criterion
+  J10 could not detect this because it tested the wrong load model.**
+  **Disposition (no copper this spin):** B.4 already establishes that a driven AC cam
+  channel is not functionally usable without a firmware change, so the board ships with
+  **N = 0 driven AC channels** and is not exposed *while that holds*. Added **J10b**
+  (`N <= 11`, record N at commissioning) and **J10c** (zero bulk capacitance, by
+  construction). **Bulk capacitance on the isolated field rail is escalated as an OWNER
+  DECISION for the fleet revision (K.7)** — new copper, new part class, new FR review.
+  Added measurement: scope TP4 for ripple and loaded minimum over >=10 cycles; a DMM average
+  hides this.
+- **Field-pin to field-pin clearance is NOT covered by the new 0.6 mm rule (D.5.1, new).**
+  After r6 the clamp holds `FIELD_LED_<n>` within ~0.35 V of its field-pin net, so both sit
+  at the same potential — but only `FIELD_LED_*` is enumerated in the new rule; the field-pin
+  nets remain on the 0.40 mm `Field_Sense` netclass. Measured from raw `.kicad_pcb` geometry:
+  **0.4807 mm** (`FIELD_SLOW_MAN_T` via (38.25, 158.04) vs `FIELD_SLOW_TENTH` via
+  (37.2, 157.5), both 0.70 mm pads), then 0.5297 mm and 0.6895 mm. Two adjacent field-pin
+  nets can sit ~68 Vpk apart on the 24 VAC option; IPC-2221B B1 asks 0.6 mm and the header's
+  +0.15 mm etch allowance is not applied to the 0.40 mm netclass either.
+  **Pre-existing geometry** — r6 moved only the return dogleg (71.2 -> 68.5) and the bleed
+  tee, neither of which touches these pairs — and closing it means re-routing the hand-won
+  1.05 mm-pitch B.Cu channel columns that the same DRU block forbids touching this spin.
+  **Recorded as an OPEN fleet-revision item** in the `.kicad_dru` header, spec D.5.1/K.7
+  and readiness G7. **Not** silently left looking compliant.
+
+### First-article pack — steps I.10 / I.11 had been SKIPPED; now executed
+
+- The pack, the 271-row refdes map, readiness **G7**, change-list **DC3**, this run log and
+  `manual_src` were all still describing a **bare** input front end on a board that now has
+  391 parts and D18-D97 / C17-C56. G7 literally instructed the harness crew **not to land
+  PBZ / DIELL_L / DIELL_R** — i.e. to decline the exact capability the 80 diodes provide.
+  All retracted in place, with the old text quoted so an older copy is recognisable.
+- **FA-15 added** (the r6 LED-reverse gate). The spec had allocated it **FA-10**, which is
+  **already** the MCV header mechanical gate (pack line 504, sign-off row "FA-10 MCV
+  insertion/solder fill"). The pack runs FA-1...FA-14, so **FA-15 is the next free ID**;
+  implementing the spec literally would have overwritten or duplicated FA-10.
+  Rationale recorded in the gate itself: the two clamp failure modes are **not symmetric** —
+  a reversed/shorted clamp reads as a dead channel and commissioning catches it 100 %, but an
+  **open or unplaced** clamp (tombstoned SOD-323, wrong reel, AOI miss across 80 new
+  placements) leaves the channel **fully functional in every commissioning test** while the
+  LED sits at up to 27.7 V reverse against a 6 V maximum, degrading silently to the
+  leakage-ratio case the design rejects.
+- **FA-9 was stale in exactly the parameter r6 changed.** It qualified the PC817 lot at
+  *"this board's ~1.7 mA I_F"*, which no longer exists: with the series diode, I_F is
+  **1.340 mA at Vw = 5 V** and **~1.12 mA** at FA-9 step 3's own loaded minimum (TP4 ~ 4.5 V)
+  — **21-34 % below the stated test condition**. Updated in the generator, the pack, and the
+  fab README.
+- **FA-9's <=100 us edge criterion vs the shipped DNP instruction.** FA-9 step 5 requires
+  <=100 us on **every** populated channel; the r6 DNP CSV in the fab package tells the
+  commissioning technician to fit 10 nF on GP6-GP13 (**493 us**, 4.9x over) and up to 2.2 uF
+  on MCP channels (**~180 ms**). **Resolution (documentation, no copper): FA-9 is measured
+  with every `Cflt_*` UNFITTED — they ship DNP and the first article has none. A channel that
+  later takes a `Cflt` is re-qualified against the debounce budget, NOT against <=100 us.**
+  That ordering is now stated in FA-9, the sign-off table, the DNP reason text and the README.
+- `generate_first_article_docs_revD.py` `EXPECTED_DNP` 28 -> **68** (it was failing closed and
+  refusing to regenerate, which is why the pack was stale). Pack regenerated: **391-row refdes
+  map, 120 r6 rows, FA-1...FA-15.**
+
+### Release-artifact and gate-script fixes
+
+- **`export_fab_revD.py` shipped the PRE-r6 counts in the README.** Line ~972 wrote the fixed
+  string *"271 parts / 28 DNP / 243 placed / 226 JLC-placed / 17 hand-solder"* while
+  `manifest.json` in the same directory read 391 / 68 / 323 / 306 and the CSVs measured
+  323 CPL / 68 DNP / 306 JLC rows. A reviewer reading the as-ordered package summary before
+  releasing to JLC would have concluded the r6 input protection was **absent from the
+  package**. The line is now **derived from the pinned `EXPECTED_*` constants**, never a
+  literal. The README's FA-9 "~1.7 mA" line was corrected in the same pass.
+  **`kicad/fab_revD_2026-07-25_r6/` was re-exported once, before release** (it was untracked,
+  never published, and no committed artifact referenced it). **No copper changed** — the
+  re-export's `source_board_sha256` matches the pre-fix package.
+- **`audit_revD_board.py` — IndexError instead of a clean FAIL.** The r6 filter-cap guard read
+  `if cpads == [(cpads[0][0], "1")] and len(cpads) == 1:`. Python builds the right-hand list
+  first, so `cpads[0][0]` was evaluated **before** the length check and raised `IndexError`
+  when a logic net carried no `Cflt` pad. It still failed closed (exit 1) but **aborted
+  `audit_r6_input_protection()` mid-function**, so the anti-parallel proof, the `FIELD_WET_V`
+  check and the four safety-net checks never ran — their results hidden on exactly the run
+  that had a defect. Rewritten as `if len(cpads) == 1 and cpads[0][1] == "1":` and
+  **mutation-proven**: removing C38 from `SLOW_PBZ` now yields a clean
+  `FAIL r6: 40 logic nets carry exactly one Cflt.1 (got 39)` with every downstream check still
+  reporting.
+- **`audit_revD_board.py` docstring contradicted its own constants** (Field_Sense 82 /
+  223 nets / 271 parts vs live 122 / 263 / 391). Updated, with a note that the constants are
+  the contract and the prose describes them.
+- **`tmp/r6/mutation_tests.py` — the negative-control suite NEVER RAN.** It searched for the
+  single-line forms `(node (ref "D61") (pin "1")` and `(comp (ref "D18") (value "`;
+  the emitted netlist is **pretty-printed** (each field on its own line) **and CRLF**
+  (14 728 CRLF, 0 bare LF). Every pattern was a no-op, `assert m != text` fired on M1, and the
+  suite aborted before any mutation ran — so the r6 evidence trail contained **no
+  demonstration that any gate catches an orientation or population error on the 80 new
+  diodes**, on a change whose entire safety argument is "a reversed clamp is caught".
+  Rewritten with format-aware helpers (`\r?\n` throughout, refdes **resolved from the netlist**
+  rather than hardcoded so a refdes shift cannot silently re-break it) and extended to 10
+  mutations. **Result: 10/10 caught**, including M1 (reversed anti-parallel clamp), M2 (series
+  diode DNP -> open channel), M6 (clamp dropped), M4 (safety-rail net renamed) and M10 (Dser
+  silently changed to 0R). Netlist restored byte-identical (sha256 unchanged).
+- **`kicad/revD/wsl-phase8b-revD.kicad_dru` carried two near-identical ~30-line comment
+  headers** for the same rule — an earlier draft with a weaker trap list, plus the final one.
+  The draft is deleted; the surviving block keeps **both** KiCad 10.0.2 traps (no `startsWith`
+  operator — an unevaluable condition takes the **whole** `.kicad_dru` down during zone
+  filling, observed as +214 mm2 of GND fill and 8 creepage violations at the K1-K7 pads; and
+  the condition string **must be one line** or it parses but evaluates as never-true, i.e.
+  looks like a pass).
+- **`kicad/fab_revD_2026-07-23_r5/` had no `_SUPERSEDED_DO_NOT_UPLOAD.txt`** while r1-r4 all
+  did, and `docs/HANDOFF.md` still read *"Use only r5"* — so the one directory a person was
+  documented to upload was the pre-r6 package with **bare, unprotected opto inputs**, and it
+  was the only superseded package with nothing in it saying so. Tombstone written (it states
+  explicitly *why* r5 must not be built), and HANDOFF now carries a 2026-07-25 r6 addendum
+  that supersedes every earlier fab-package pointer.
+
+### NOT REAL — 1 of 15, recorded with reasoning rather than "fixed"
+
+- The finding that *"the first-article pack still ends at FA-11"* is **wrong**: the pack runs
+  **FA-1 ... FA-14** (`## 4. First-article procedures (FA-1 ... FA-14)`, `### FA-14 —
+  Protective-earth and supply-polarity proof`). The **substantive** half of that same finding
+  — that the r6 LED-reverse gate is absent and that the ID it was allocated (FA-10) is already
+  taken — is **real and fixed above**. Only the "ends at FA-11" detail is rejected; acting on
+  it would have numbered the new gate FA-12, colliding with the J16 SDA/SCL short-recovery
+  gate.
+
+### Standing invariants re-proven after this batch
+
+rev-C sacred snapshot **189/189, failures 0, EXIT=0** (plus the tracked
+`release_evidence` archive gate); **Safety_Rail == 13**; DRC **0 / 0 / 0**;
+ERC **1 waived error + 39 warnings**; `.kicad_pcb` byte-identical.
+**Firmware NOT touched, NOT flashed.**

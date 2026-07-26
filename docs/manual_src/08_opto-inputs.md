@@ -175,15 +175,27 @@ Design contract §2.2 / §5.1 require that **every** input channel be
    discharges promptly. Contract §5.3: "24 VAC channels need rectification,
    current limiting, bleed/discharge, and opto input protection."
 
-> **Important — what the as-built netlist actually instantiates.** The current
-> `opto_input()` generator builds **only the dry-contact wetting path** (the
-> `FIELD_WET_V → Rin → LED → FIELD_<name>` loop) for all 32 channels. The 24 VAC
-> rectifier/cap/bleed parts are a documented **per-channel manual-population
-> option**, not separate placed footprints emitted for every channel in the
-> present netlist. (VERIFY: whether dedicated per-channel AC-interposer
-> footprints exist on the routed board or whether the AC option is wired on a
-> small external/daughter interposer at the affected channel — the generator's
-> `opto_input()` does not place 1N4007/10µF/100k per channel.)
+> **Important — what the as-built netlist actually instantiates (UPDATED for r6,
+> 2026-07-25).** `opto_input()` emits, for **all 40** channels:
+> `FIELD_WET_V → Rin (2k2) → **FIELD_RIN_<n>** → **Dser_<n>** (1N4148WS, series
+> block, cathode east) → **FIELD_LED_<n>** → PC817 LED → FIELD_<name>`, with an
+> **anti-parallel `Dclamp_<n>`** (1N4148WS, cathode on `FIELD_LED_<n>`, anode on
+> the field-pin net) and a **DNP** logic-side `Cflt_<n>` (0805) from the collector
+> node to GND. `Dser_*`/`Dclamp_*` = **D18–D97, POPULATED on every channel**;
+> `Cflt_*` = **C17–C56, DNP**.
+>
+> **This supersedes the earlier note that "`opto_input()` does not place
+> 1N4007/10 µF/100 k per channel" as a statement that the channels are bare.**
+> It remains true that no *rectifier interposer* (1N4007 + reservoir + bleed) is
+> placed per channel — the r6 provisions are a **series block + clamp**, which
+> protect the LED against reverse over-voltage but do **not** rectify or
+> integrate a 24 VAC waveform. A channel carrying sustained 24 VAC is
+> **electrically survivable and functionally unusable**: 60 Hz produces
+> 12 debounced edges per 100 ms against `CHATTER_MAX_CAM` = 8, so the firmware
+> chatter guard faults continuously. Closing that needs a **firmware** change
+> (pulse-train presence detection), a cap on a *slow* channel (2.2 µF, 183 ms
+> de-assert — never on GP6–GP13), or tapping the signal at the switch.
+> Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md` §A.1/§B.4.
 
 **Choosing the population per channel:** the field sheet (`A4`, `C2`, `C3`)
 captures dry-vs-AC per signal; the design defaults are: cams (SA/SB/SC/TA1/TA2/TB)

@@ -163,17 +163,42 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   fab order.
 
 ### G7 — Rev-C carried verify-items 6–7 resolved OR explicitly waived  `[~]`  **(owner + powered-session)**
-- **Item 6 — per-channel front-end (dry-contact vs 24 VAC-rectified):** rev-D carries the
-  dry-contact default on all 40 channels. Blocked on the powered at-machine metering
-  session (**meter tapped-lead live voltages BEFORE reconnecting any board** — standing
-  queue item).
-  **CORRECTED 2026-07-25:** this line previously claimed the outcome "changes population/BOM
-  per channel, not copper." That is false — verified against `kicad/wsl-phase8b-revD.net`,
-  all 40 `FIELD_LED_*` nets have exactly two nodes and **no series-diode / clamp / filter-cap
-  footprints exist on any input channel.** A non-dry-contact outcome therefore **REQUIRES
-  COPPER** and is deferred to the fleet revision. Closing this gate for the first article
-  means accepting the dry-contact default AND not landing PBZ / DIELL_L / DIELL_R on bare
-  board inputs.
+- **Item 6 — per-channel front-end (dry-contact vs 24 VAC-rectified): CLOSED IN COPPER (r6,
+  2026-07-25).**
+  **RETRACTION — read this before acting on any older copy of G7.** Between 2026-07-21 and
+  2026-07-25 this gate read: *"all 40 `FIELD_LED_*` nets have exactly two nodes and no
+  series-diode / clamp / filter-cap footprints exist on any input channel… A non-dry-contact
+  outcome therefore REQUIRES COPPER and is deferred to the fleet revision. Closing this gate
+  for the first article means accepting the dry-contact default AND not landing PBZ /
+  DIELL_L / DIELL_R on bare board inputs."* **Every clause of that is now FALSE.** Dylan
+  reopened copper on 2026-07-25 and r6 landed the provisions:
+  - Every `FIELD_LED_<n>` now has **three** nodes — `Dser_<n>.1` (series block, cathode) +
+    `Dclamp_<n>.1` (anti-parallel clamp, cathode) + `PC817.1`.
+  - `Dser_*` and `Dclamp_*` (1N4148WS, SOD-323, D18–D97) are **POPULATED on all 40 channels
+    by default**. There is no per-channel stuffing decision and no per-lane record to lose.
+  - `Cflt_*` (C17–C56, 0805) are **DNP** logic-side filter caps, fitted at commissioning
+    only on a channel *measured* to carry a 60 Hz pulse train.
+  - **PBZ, DIELL_L and DIELL_R MAY now be landed directly on board inputs**, and the harness
+    1N4007 interposer for them is **SUPERSEDED — do not build it.** Prove the clamp per
+    board with **FA-15** first (LED reverse must read **0.35 V ± 0.1 V**).
+  - Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`;
+    package `kicad/fab_revD_2026-07-25_r6/`.
+  **STILL OPEN (r6 does NOT close these) — the powered at-machine metering session is still
+  required** (**meter tapped-lead live voltages BEFORE reconnecting any board** — standing
+  queue item):
+  1. **Cam-channel AC/DC class.** SA/SB/SC/TA1/TA2/TB are still UNMEASURED. r6 makes a
+     24 VAC cam channel **electrically survivable, NOT functionally usable** — 60 Hz gives
+     12 debounced edges per 100 ms against `CHATTER_MAX_CAM` = 8, so it **faults
+     continuously**. Closing that needs a **firmware** change, not a cap. Record DC-or-AC,
+     RMS/peak and frequency per channel.
+  2. **`FIELD_WET_V` rail headroom under driven channels.** The isolated field rail has
+     **zero bulk capacitance** (43 nodes, no capacitor) and a driven 24 VAC channel draws
+     **16.8 mA peak** vs 1.34 mA dry. The board is budgeted for **N = 0** driven AC
+     channels; **N ≥ 1 reopens the budget** (r6 spec §F.1 / J10b). Scope TP4, do not DMM it.
+  3. **Field-pin ↔ field-pin clearance.** Measured minimum **0.4807 mm** against the
+     IPC-2221B B1 requirement of 0.6 mm, on nets the clamp now holds at the same potential
+     as the 0.6 mm-governed `FIELD_LED_*` nets. Pre-existing geometry, dispositioned as an
+     OPEN fleet-revision item (r6 spec §D.5.1) — **not** silently compliant.
 - **Item 7 — arc suppression sizing:** snubber positions carry DNP; size from the measured
   inductive load in the same powered session before populating.
 - Item 8 (5 V budget) is discharged on paper: spec §H.4 + SS34 swap; bench PSU ≥1 A stands.

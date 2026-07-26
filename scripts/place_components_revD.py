@@ -127,6 +127,37 @@ RIN_X = 58.0    # unchanged
 # the opto courtyard (right edge 82.72).
 RPU_X = 86.0
 
+# ---- r6 input protection (2026-07-25) ---------------------------------
+# docs/phase8_revD_r6_input_protection_spec_2026-07-25.md §D.
+#
+# BOARD_H STAYS 240, INPUT_PITCH STAYS 5.7, and the opto column's 0.02 mm
+# row slack is NEVER TOUCHED: no new part occupies any row's vertical space
+# in the opto column's x-range. The new parts live in the 13.17 mm corridor
+# between Rin's courtyard right edge (59.725) and the opto column's left
+# edge (72.895) — measured board-wide, that corridor holds exactly TWO
+# components (the item-A wet-bleed pair R122/R123, row 1) and its only
+# copper is the two nets per row being inserted into.
+#
+# Lane layout per row (courtyards):
+#   Rin column  56.275-59.725   Rin_<n>          (existing)
+#   Lane S      60.355-63.645   Dser_<n>   rot 180  pin2 (A) west toward Rin
+#   Lane M      63.645-69.005   free routing channel (holds R122/R123 @ row 1)
+#   Lane C      69.005-70.995   Dclamp_<n> rot 270  pin1 (K) north on FIELD_LED
+#   opto column 72.895-82.715   OPTO_<n>         (existing, untouched)
+#
+# rot 180 on SOD-323 puts pad 1 EAST (+1.05) and pad 2 WEST (-1.05); rot 270
+# puts pad 1 NORTH and pad 2 SOUTH (measured on the placed D1/R122: KiCad's
+# rot 90 moves pad 1 to +y, so rot 270 moves it to -y = north).
+DSER_X = 62.0
+DCLAMP_X = 70.0
+# Cflt sits in the Rpu column. x is chosen so the 0805 pad 1 (+0.95) lands
+# EXACTLY on the existing Rpu-column routing x of 86.912 — no jog stub.
+# r6 implementation deviation #2 of 3: the spec's D.2 wrote CFLT_X = 86.0.
+# 85.962 is 0.038 mm west of that, which is what makes the feed a straight
+# 2.80 mm run. AUTHORITY: docs/phase8_revD_run_log.md, "2026-07-25 - r6
+# INPUT-PROTECTION COPPER" -> "Placement - three implementation deviations".
+CFLT_X = 85.962
+
 # Item B keep-out envelope (spec B): 16 W x 12 H x 40 mm from the receptacle
 # face. With the Pico at (100, 33, 0) the receptacle face is at the module's
 # top edge y=7.5, plug axis toward -y, so only y 0..7.5 of the envelope is
@@ -470,6 +501,45 @@ def base_placement() -> dict[str, tuple[float, float, float]]:
         p[f"OPTO_{name}"] = (OPTO_X, y, 0)
         p[f"Rin_{name}"] = (RIN_X, y - 1.8, 0)
         p[f"Rpu_{name}"] = (RPU_X, y + 1.8, 0)
+        # --- r6 input protection (spec §D.2) ---
+        # Dser on the Rin run (y-1.8); Dclamp straddles the LED, pin 1 (K) at
+        # y+0.44 on a short FIELD_LED branch and pin 2 (A) at y+2.54, which is
+        # exactly the opto's pad-2 y and therefore ON the existing field-return
+        # run for the 31 rows whose solved return y equals it.
+        p[f"Dser_{name}"] = (DSER_X, y - 1.8, 180)
+        p[f"Dclamp_{name}"] = (DCLAMP_X, y + 1.49, 270)
+        p[f"Cflt_{name}"] = (CFLT_X, y + 4.60, 180)
+
+    # EXCEPTION 1 — row 1 (SB): the item-A wet-bleed pair R122/R123 occupy
+    # x 62.005-63.995 / 66.005-67.995, y 14.275-17.725, which is Lane S at
+    # this row. R122/R123 are FROZEN rev-D item-A copper, so SB's series
+    # diode moves in y instead: courtyard y 18.955-20.945 clears R122's
+    # bottom (17.725) by 1.230 mm and row 2 (SC)'s Dser top (21.605) by
+    # 0.660 mm, with no x overlap into Lane C.
+    # NOTE (r6 implementation deviation #1 of 3). AUTHORITY:
+    # docs/phase8_revD_run_log.md, section "2026-07-25 - r6 INPUT-PROTECTION
+    # COPPER" -> "Placement - three implementation deviations from the spec".
+    # The spec placed Dser_SB here without accounting for the item-A
+    # FIELD_WET_V bleed tee, which ran on F.Cu at y=19.9 straight through this
+    # land. The tee is re-routed onto B.Cu in route_field_power() instead of
+    # moving the part - placement is unchanged from the spec, routing absorbs
+    # the conflict. The other two deviations are CFLT_X = 85.962 (not the
+    # spec's 86.0) and Cflt_AUX11 rotation 0 (not the spec's 180); both are
+    # recorded in the same run-log section.
+    p["Dser_SB"] = (DSER_X, 19.95, 180)
+
+    # EXCEPTION 2 — row 39 (AUX11): y+4.60 = 239.90 puts the cap courtyard
+    # off the 240 mm board edge. Move it east of Rpu instead: courtyard
+    # x 88.255-91.745, y 236.075-238.125 — 0.530 mm from Rpu_AUX11's right
+    # edge (87.725), 1.875 mm from the board edge, clear of TP1 (x >= 98.705).
+    # r6 implementation deviation #3 of 3 — rot 0, NOT the spec's 180: the
+    # logic pad must be the WEST one so the feed from Rpu_AUX11 pad 2 does not
+    # have to cross the GND pad. The spec's own routing note
+    # ("(86.912, 237.1) -> (89.05, 237.1)") targets the west pad, so 180 there
+    # was a typo; 0 is what makes that route legal. AUTHORITY:
+    # docs/phase8_revD_run_log.md, "2026-07-25 - r6 INPUT-PROTECTION COPPER"
+    # -> "Placement - three implementation deviations from the spec".
+    p["Cflt_AUX11"] = (90.0, 237.10, 0)
 
     # Motion outputs. Coils/drivers are logic-side of each relay; contacts
     # and suppression are machine-output side near J_MOTION.

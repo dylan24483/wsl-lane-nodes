@@ -41,7 +41,11 @@ EXPECTED_COUNTS = {
     "Logic_Signal": 103,
     "Logic_Power": 4,
     "Safety_Rail": 13,
-    "Field_Sense": 82,
+    # r6 input protection (2026-07-25, docs/phase8_revD_r6_input_protection_
+    # spec_2026-07-25.md §E.1): 82 + 40 x FIELD_RIN_<n>, the series node
+    # between Rin and the blocking diode. These match the existing
+    # net_name.startswith("FIELD_") rule, so classify_net() is UNCHANGED.
+    "Field_Sense": 122,
     "Machine_Output": 21,
 }
 

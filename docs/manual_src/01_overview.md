@@ -164,7 +164,9 @@ These are the **confirmed, fab-locked** part choices for the rev-B controller bo
 | Optocoupler (input isolation) | **PC817B** | DIP-4 | U4–U35 (32 pcs) | **C5692981** | Isolates every machine input; logic side at 3.3 V, **active-low at the MCU**. |
 | Watchdog timer | **NE555** (bipolar) | SOIC-8 | U36 | **C7593** | Bipolar NE555 (`NE555DR` class) — hardware watchdog monostable. |
 | Reverse-polarity / input protection | **SS14** Schottky | SMA | D17 | **C2480** | On the 5 V input. |
-| Relay coil flyback / timing diodes | 1N4148WS | SOD-323 | D1,D3,D5,D7,D9,D11,D15,D16 | C118873 | |
+| Relay coil flyback / timing diodes | 1N4148WS | SOD-323 | D1,D3,D5,D7,D9,D11,D15,D16 | C118873 | 8 pcs — the relay/watchdog share of the line |
+| **Input-channel series block + anti-parallel clamp (r6, 2026-07-25)** | **1N4148WS** | **SOD-323** | **D18–D97** (`Dser_*` + `Dclamp_*`, 2 per channel × 40) | **C118873** | **80 pcs, POPULATED. Same BOM line as above — total qty 8 → 88, no new part class.** |
+| **Input-channel logic-side filter cap (r6)** | 2.2 µF 25 V X7R (slow, C19110) / 10 nF 50 V X7R (fast, C17702767) | 0805 | **C17–C56** (`Cflt_*`, 1 per channel × 40) | see value column | **DNP — 0 pcs assembled.** Fit at commissioning only on a channel measured to carry a 60 Hz pulse train. |
 | Relay coil drivers | MMBT3904 NPN | SOT-23 | Q1–Q6, Q15, Q16 | C909754 | Low-side coil drive + safety-chain AND transistors |
 | Status-LED drivers | 2N7002 N-FET | SOT-23 | Q8–Q11 | C916396 | Low-side LED drive for the 4 status lamps |
 | Watchdog kick FETs | AO3400A N-FET | SOT-23 | Q12, Q13 | C20917 | |

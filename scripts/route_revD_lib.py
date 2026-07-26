@@ -35,7 +35,7 @@ NETCLASS_COUNTS = {
     "Logic_Signal": 103,
     "Logic_Power": 4,
     "Safety_Rail": 13,
-    "Field_Sense": 82,
+    "Field_Sense": 122,   # r6 (2026-07-25): 82 + 40 x FIELD_RIN_<n>
     "Machine_Output": 21,
 }
 

@@ -239,7 +239,12 @@ load at the machine. Fit them per-channel only after characterizing that channel
 | M | R81 | C8 | D10 |
 | M2 | R84 | C9 | D12 |
 
-That is 6 × (R + C + MOV) = 18 suppression parts, plus the 9 M1-channel parts = **27 DNP** total.
+That is 6 × (R + C + MOV) = 18 suppression parts, plus the 9 M1-channel parts = **27** of the
+board's DNP positions. **Board DNP total is 68 (r6, 2026-07-25):** those 27, plus `JP1`
+(default-open J16 3.3 V solder link), **plus the 40 r6 `Cflt_*` logic-side filter caps
+(C17–C56)** — DNP by design, fitted at commissioning only on a channel *measured* to carry a
+60 Hz pulse train. **The r6 `Dser_*` / `Dclamp_*` diodes (D18–D97) are POPULATED and are NOT
+DNP.**
 
 > **Populated by contrast:** the 6 baseline relays are **K1–K6** (Omron G5LE-14, 5 VDC coil), their
 > drivers are **Q1–Q6** (MMBT3904), and their flyback diodes are **D1, D3, D5, D7, D9, D11**
