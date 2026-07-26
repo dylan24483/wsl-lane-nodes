@@ -46,7 +46,7 @@ switches, and relay-coil circuits on the machine. The enclosure-to-machine run i
 
 **Electrically trivial** — nothing above 33 V, nothing above ~1 A. This is a **labeling- and
 termination-intensive** assembly, not a high-voltage or high-current one. Cost lives in the
-~49 leads × 2 ends of printed markers, not in the wire.
+~53 leads × 2 ends of printed markers, not in the wire.
 
 **Environment:** indoor, unconditioned equipment area behind bowling pinsetters. Ambient to
 ~35 °C. Fine wood/pin dust and light lane-oil mist. Vibration from adjacent machinery. No
@@ -185,7 +185,7 @@ crack the plug body. Use a calibrated driver.
 
 - **Printed heat-shrink sleeve markers** (Brady PermaSleeve, Phoenix THERMOMARK, or equivalent),
   white sleeve, black print, permanent. Not wrap-around adhesive labels; not hand-marked.
-- **BOTH ends of every lead**, ~49 leads = **~98 markers per assembly.**
+- **BOTH ends of every lead**, ~53 leads = **~106 markers per assembly.**
 - Exact text is in the wire-list CSV, column `Label text`. Text is identical at both ends of a
   given lead. **Labels are deliberately short — longest string is 22 characters** (`STOP/CIS - DO NOT LAND`).
   Signal names only; no machine-specific wiring references appear on the wire, because those
@@ -282,7 +282,7 @@ carton per 6–8 assemblies with a packing list.
 
 ## 15. Attachments provided with this RFQ
 
-1. `WSL-LANE-HARNESS-A_wirelist_rev4.csv` — the 49-row from-to wire list with label text and
+1. `WSL-LANE-HARNESS-A_wirelist_rev4.csv` — the 53-lead from-to wire list with label text and
    length classes. **This is the controlling document. Where it and this RFQ disagree, the CSV wins.**
 2. `phase8_revD_harness_bom.csv` — plug + coding-profile part identities and the band-marking scheme
 3. Phoenix Contact datasheets for the five Tier-1 plugs and the CP-MSTB coding profile
