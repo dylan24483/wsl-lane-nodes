@@ -1,7 +1,7 @@
 # Phase 8 — Complete Backplate Parts List (per lane · per pair · 32-lane house)
 
 **Rev 1 · 2026-07-25.** Everything that mounts to, or connects on, the enclosure backplate.
-Board revision: **rev-D r6** (`2fd8c5e`, fab pkg `fab_revD_2026-07-25_r7`), 250 × 240 mm.
+Board revision: **rev-D r6** (`2fd8c5e`, fab pkg `fab_revD_2026-07-26_r8`), 250 × 240 mm.
 Layout: `Downloads/pair_enclosure_backplate_complete.html` Rev 2 (items ①–⑬).
 
 **House arithmetic:** 32 lanes = **32 boards** · **16 pairs** = 16 enclosures / 16 Pis.
@@ -42,7 +42,7 @@ Spares recommended at ~10% (called out per line where it matters).
 > JLC's PCBA excludes every `J*` designator as hand-solder — the upload BOM contains **zero**
 > J refdes — so the PCBA PO physically cannot supply them. Until this section existed they were
 > on **no** purchase list and 34 boards would have arrived with no connectors.
-> Source of truth: `kicad/fab_revD_2026-07-25_r7/assembly/wsl-phase8b-revD-hand-solder-bom.csv`.
+> Source of truth: `kicad/fab_revD_2026-07-26_r8/assembly/wsl-phase8b-revD-hand-solder-bom.csv`.
 
 | # | Ref | Phoenix / MFR PN | Description | Per board | ×34 boards (+~10%) |
 |---|---|---|---|---|---|

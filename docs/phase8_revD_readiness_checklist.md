@@ -14,7 +14,7 @@ Status legend: `[ ]` open · `[~]` blocked on physical verify / owner decision �
 > GPPUA/GPPUB must command and read back `0x00`. Any mismatch is STOP-SHIP.
 > `R_TAPPU_*` remains a separate, intentionally unchanged 10 kΩ tap-drain
 > network. The current immutable package is
-> **`kicad/fab_revD_2026-07-25_r7/`**; every older rev-D package — including
+> **`kicad/fab_revD_2026-07-26_r8/`**; every older rev-D package — including
 > `_r5/` and `_r6/` — is superseded
 > for ordering. ⚠️ **The FA-9 operating point below is PRE-r6 and superseded:**
 > r6 inserted a series blocking diode in every channel, so the point is
@@ -57,11 +57,11 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > Board figures anywhere below are superseded: **271 parts / 223 nets, netclasses
 > 103/4/13/82/21, 24 test pads (TP17-24 tap probe pads), ERC baseline 1+39
 > (WVR-ERC-2, pin-pair order-insensitive since round 3)**; release DRC =
-> `kicad/fab_revD_2026-07-25_r7/reports/DRC-revD-fab-export.rpt`; as-current fab package =
-> **`kicad/fab_revD_2026-07-25_r7/`** (47 kΩ PC817 pull-ups plus the J16
+> `kicad/fab_revD_2026-07-26_r8/reports/DRC-revD-fab-export.rpt`; as-current fab package =
+> **`kicad/fab_revD_2026-07-26_r8/`** (47 kΩ PC817 pull-ups plus the J16
 > protection stack with ESD VP moved
 > UPSTREAM of the polyfuse — round-3 finding 2, REV_ID straps rev-D=0b01,
-> Q17-Q20 = onsemi 2N7002LT1G C16338, 10M = C26108, gbrjob Revision "D").
+> Q17-Q20 = onsemi 2N7002LT1G C16338, 10M = C2933281 (r8 re-pin), gbrjob Revision "D").
 > `fab_revD_2026-07-21/`, `..._r2/`, `..._r3/`, `..._r4/`, `..._r5/`, and
 > `kicad/fab_revD_2026-07-25_r6/` are superseded — never
 > upload from them. Full record:
@@ -187,7 +187,7 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
     1N4007 interposer for them is **SUPERSEDED — do not build it.** Prove the clamp per
     board with **FA-15** first (LED reverse must read **0.35 V ± 0.1 V**).
   - Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`;
-    **current package `kicad/fab_revD_2026-07-25_r7/`** (release build of the r6 design —
+    **current package `kicad/fab_revD_2026-07-26_r8/`** (release build of the r6 design —
     same copper, `_r6/` tombstoned so exactly one package is current). Per-channel
     stuffing table: `docs/phase8_revD_r6_channel_stuffing.csv`.
   **STILL OPEN (r6 does NOT close these) — the powered at-machine metering session is still
@@ -284,7 +284,7 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   and the Safety_Rail==13 stop-ship invariant.
 
 ### G11 — Fab export to a NEW dated directory  `[x]`  (re-run 2026-07-25, r6 release build = package **r7**)
-- `scripts/export_fab_revD.py` RUN → **`kicad/fab_revD_2026-07-25_r7/`** (hashed
+- `scripts/export_fab_revD.py` RUN → **`kicad/fab_revD_2026-07-26_r8/`** (hashed
   as-ordered package, `manifest.json` with sha256 per file + source board/netlist hashes;
   46 members). REV and output-dir are parameters; the script **refuses to run if the output
   dir exists** (verified live — second run refused; no rmtree anywhere). `_r1`…`_r6` all
@@ -308,8 +308,12 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   distinguishes the unchanged `R_TAPPU_*` 10 kΩ diagnostic-tap drain pulls.
 - **D_PROT hard-locked**: D17 = **MDD SS34, LCSC C8678, SMA/DO-214AC** (FR-3) asserted at
   netlist, board, and JLC-BOM level; any SS14 anywhere fails the export.
-- 10M 0805 (R_TAPG_*) is pinned to UNI-ROYAL `0805W8F1005T5E`, LCSC
-  **C26108**; 1M remains C17514.
+- 10M 0805 (R_TAPG_*) is pinned to FOJAN `FRC0805F1005TS`, LCSC **C2933281**
+  (**r8 re-pin, 2026-07-26** — the former UNI-ROYAL `0805W8F1005T5E` / C26108 went
+  permanently OOS; a 26-line LCSC sweep found only three 10M 0805 1% parts with any
+  stock and only C2933281 had headroom against the 102-piece fleet need). 1M remains
+  C17514. Any future substitute must be ≥10M 0805 1% with its C-number **fetch-verified
+  on the LCSC product page** — never from a search result alone (run-log H6).
 - Package also carries the hand-solder BOM (rev-D refs incl. J15/J16 + the U37→U45 shift)
   and the **harness BOM** (see G13).
 

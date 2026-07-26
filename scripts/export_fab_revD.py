@@ -23,7 +23,8 @@ Contract (spec step I.7 / change-list P3 / remediation task H6):
   batch: +9 parts for the R2-4 J16 protection stack and R2-6 REV_ID straps; the JP1
   default-OPEN solder link is the 28th DNP.)
 - Round-2 hard locks (Codex 2026-07-21): Q17-Q20 -> onsemi 2N7002LT1G C16338 (R2-3);
-  R135/R138/R141 -> UNI-ROYAL 10M C26108 with MATCH-AT-UPLOAD rows forbidden (R2-15);
+  R135/R138/R141 -> FOJAN 10M C2933281 (r8 re-pin; C26108 retired OOS) with
+  MATCH-AT-UPLOAD rows forbidden (R2-15);
   U46 -> TCA4307DGKR C880333, U47 -> Semtech SRV05-4.TCT C13612, F1 -> Littelfuse
   1206L020YR C207035 (R2-4). Source paths DERIVE from --rev so a rev-D board can never
   be exported under another revision's label (R2-15).
@@ -303,17 +304,25 @@ PART_LOCK: dict[tuple[str, str], dict[str, str]] = {
                 "figure was retracted, Codex R2-2).",
     },
     ("10M", "R_0805_2012Metric"): {
-        # R2-15 (2026-07-21): identity PINNED - C26108 verified on LCSC as
-        # UNI-ROYAL 0805W8F1005T5E 10M 1% 0805 (the MATCH-AT-UPLOAD row is
-        # dead). Listed out-of-stock at LCSC retail 2026-07-21: confirm JLC
-        # assembly stock at order time; any substitute must be >=10M 0805 1%
-        # with its C-number fetch-verified (C325772 was a hallucinated match,
-        # rejected - see run log H6).
-        "lcsc": "C26108", "mpn": "0805W8F1005T5E", "manufacturer": "UNI-ROYAL",
+        # R8 (2026-07-26): identity RE-PINNED to FOJAN FRC0805F1005TS / C2933281.
+        # The R2-15 pin (UNI-ROYAL 0805W8F1005T5E / C26108) went permanently
+        # out of stock; a 26-part LCSC sweep of 10M 0805 1% found only THREE
+        # lines with any stock - C2933281 (FOJAN, 11,300), C46635375
+        # (CHANGLONG, 300) and C3037549 (LIZ, 100). Against a 102-piece fleet
+        # need (3/board x 34) only C2933281 has real headroom; the other two
+        # are 3x and 1x. No UNI-ROYAL 10M 0805 line has stock (C2780392 = 0),
+        # so there is no same-manufacturer rescue.
+        # Spec parity with the retired pin: 10M +/-1% 0805 150V 125mW
+        # +/-100ppm/C thick film - identical on every locked attribute.
+        # Any future substitute must still be >=10M 0805 1% with its C-number
+        # FETCH-VERIFIED on the LCSC product page (C325772 was a hallucinated
+        # match, rejected - see run log H6). Never take a C-number from a
+        # search result alone.
+        "lcsc": "C2933281", "mpn": "FRC0805F1005TS", "manufacturer": "FOJAN",
         "class": "Extended", "locked_spec": "10M 1% 1/8W 0805 resistor",
-        "note": "R_TAPG_* gate pulldowns (R135/R138/R141). Identity pinned "
-                "C26108 (R2-15); verify stock at order time (OOS at LCSC "
-                "retail 2026-07-21).",
+        "note": "R_TAPG_* gate pulldowns (R135/R138/R141). Identity re-pinned "
+                "C2933281 FOJAN at r8 (2026-07-26) after C26108 went OOS; "
+                "JLC assembly stock confirmed at order time.",
     },
     ("MCP23017 MCP_IN_A", "SOIC-28W_7.5x17.9mm_P1.27mm"): {"alias": ("MCP23017", "SOIC-28W_7.5x17.9mm_P1.27mm")},
     ("MCP23017 MCP_IN_B", "SOIC-28W_7.5x17.9mm_P1.27mm"): {"alias": ("MCP23017", "SOIC-28W_7.5x17.9mm_P1.27mm")},
@@ -1177,13 +1186,13 @@ def main() -> int:
             or str(tap_line["Designator"]) != "Q17,Q18,Q19,Q20"):
         raise SystemExit("R2-3 lock failed: Q17-Q20 must map exactly to onsemi 2N7002LT1G LCSC C16338 "
                          f"(got {tap_line})")
-    # R2-15 hard lock: the 10M gate pulldowns are R135/R138/R141 on the
-    # pinned C26108 identity (MATCH-AT-UPLOAD is dead).
-    r10m_line = by_lcsc.get("C26108")
-    if (not r10m_line or str(r10m_line["MFR Part #"]) != "0805W8F1005T5E"
+    # R2-15 hard lock, r8 re-pin: the 10M gate pulldowns are R135/R138/R141 on
+    # the pinned C2933281 identity (MATCH-AT-UPLOAD is dead; C26108 retired OOS).
+    r10m_line = by_lcsc.get("C2933281")
+    if (not r10m_line or str(r10m_line["MFR Part #"]) != "FRC0805F1005TS"
             or str(r10m_line["Designator"]) != "R135,R138,R141"):
-        raise SystemExit("R2-15 lock failed: R135/R138/R141 must map exactly to UNI-ROYAL "
-                         f"0805W8F1005T5E LCSC C26108 (got {r10m_line})")
+        raise SystemExit("R2-15/r8 lock failed: R135/R138/R141 must map exactly to FOJAN "
+                         f"FRC0805F1005TS LCSC C2933281 (got {r10m_line})")
     # Rev-D input-margin hardening: exactly the 40 optocoupler collector
     # pull-ups, and no unrelated resistor, must ride the dedicated 47k line.
     r47k_line = by_lcsc.get("C17713")

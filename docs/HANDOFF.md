@@ -81,14 +81,14 @@
 >   channel** to pass loaded-minimum FIELD_WET, ≥70 °C V_CE/capability,
 >   idle-leakage, and ≤100 µs edge measurements before fleet release.
 > - Current immutable output:
->   **`kicad/fab_revD_2026-07-25_r7/`** *(was `_r5/` when this line was written;
+>   **`kicad/fab_revD_2026-07-26_r8/`** *(was `_r5/` when this line was written;
 >   corrected 2026-07-25 — `_r5/` has bare opto inputs, never upload it)*. It contains the dedicated 47 kΩ
 >   UNI-ROYAL `0805W8F4702T5E` / LCSC C17713 BOM line, the binding pull-zero
 >   runtime gate, and production firmware identity build
 >   `rel-0c746b5747143b8011b01d43`, cfg `05d808411db4bb0d`, UF2 SHA-256
 >   `d5570efd19c374d9ca4532b78ef36577ae93b88160b5c1775e92d1ef88c40aae`.
 >   ~~It supersedes `_r4/` and every older package. Use only r5.~~
->   **SUPERSEDED 2026-07-25 by `kicad/fab_revD_2026-07-25_r7/` (the release build
+>   **SUPERSEDED 2026-07-25 by `kicad/fab_revD_2026-07-26_r8/` (the release build
 >   of the r6 input-protection design) — see the r6 addendum below. `_r5/` and
 >   `_r6/` now carry `_SUPERSEDED_DO_NOT_UPLOAD.txt` tombstones like `_r1`…`_r4`.
 >   DO NOT UPLOAD r5: it has BARE opto inputs. r6 is electrically identical to
@@ -154,7 +154,7 @@
 >   channels, scope TP4; (c) field-pin ↔ field-pin clearance measures
 >   **0.4807 mm** against an IPC-2221B 0.6 mm requirement (pre-existing geometry,
 >   dispositioned open for the fleet revision).
-> - **Current immutable output: `kicad/fab_revD_2026-07-25_r7/`** (release build of the
+> - **Current immutable output: `kicad/fab_revD_2026-07-26_r8/`** (release build of the
 >   r6 design). `_r1`…`_r6` all carry `_SUPERSEDED_DO_NOT_UPLOAD.txt`.
 >   **r7 is the SAME COPPER as r6** — identical `source_board_sha256`
 >   `695cd7b1…3de7` and `source_netlist_sha256` `c93b06fa…1fd7` in both manifests.

@@ -20,7 +20,7 @@
 > **⚠️ CURRENT PACKAGE IS NO LONGER r5 — see §K.** Copper was REOPENED on 2026-07-25
 > (Dylan's call: the first article should be fleet-intent, not frozen-and-bodged) and the
 > r6 per-channel input protection landed on all 40 opto channels. The current package is
-> **`kicad/fab_revD_2026-07-25_r7/`** (release build of the r6 design — same copper as
+> **`kicad/fab_revD_2026-07-26_r8/`** (release build of the r6 design — same copper as
 > `_r6/`, which is tombstoned so exactly one package is current). Everything below about
 > the 47 kΩ pull-ups still holds; what changed is that `Rin`'s output is no longer the LED
 > anode node. **§K is the authority for the r6 delta in this document.**
@@ -843,7 +843,7 @@ or the metering-guide fallback: **tap those cams at the switches**.
 
 ### K.5 Release artefacts
 
-- Package **`kicad/fab_revD_2026-07-25_r7/`** (r6 design, second export build; `_r6/`
+- Package **`kicad/fab_revD_2026-07-26_r8/`** (r6 design, second export build; `_r6/`
   tombstoned — identical `source_board_sha256`).
 - Per-channel stuffing table `docs/phase8_revD_r6_channel_stuffing.csv`.
 - First-article gates **FA-15** (driven reverse-bias, 0.35 V ± 0.1 V) and **FA-16**

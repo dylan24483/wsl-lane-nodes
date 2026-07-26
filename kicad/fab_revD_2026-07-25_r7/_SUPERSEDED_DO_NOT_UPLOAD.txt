@@ -1,0 +1,17 @@
+*** SUPERSEDED — DO NOT UPLOAD ***
+
+Superseded by kicad/fab_revD_2026-07-26_r8/ on 2026-07-26.
+
+Reason: the 10M gate-pulldown identity (R135/R138/R141) was re-pinned.
+r7 locks UNI-ROYAL 0805W8F1005T5E / LCSC C26108, which went permanently
+out of stock. r8 pins FOJAN FRC0805F1005TS / LCSC C2933281 (11,300 in
+stock, identical locked spec: 10M 1% 0805 150V 125mW 100ppm/C).
+
+r7 WILL FAIL AT UPLOAD - JLC cannot source C26108.
+
+The BOARD GEOMETRY IS UNCHANGED between r7 and r8. Same 391 parts /
+68 DNP / 323 placed / 306 JLC / 27 lines / 17 hand-solder, same DRC
+0/0/0, same 250 x 240 mm outline. r8 is a part-identity swap only.
+
+CURRENT PACKAGE FOR ALL ORDERING:
+  kicad/fab_revD_2026-07-26_r8/
