@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 710" width="1240" height="710" font-family="Segoe UI,Arial,sans-serif">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<g transform="translate(70,70)">
+<rect x="0" y="0" width="1100.0" height="570.0" fill="#fdfaf3" stroke="#333" stroke-width="2"/>
+<rect x="25.0" y="25.0" width="1050.0" height="520.0" fill="none" stroke="#c00" stroke-width="1" stroke-dasharray="6,4"/>
+<rect x="522.0" y="175.0" width="56.0" height="305.0" fill="#f4f4f4" fill-opacity="0.85" stroke="#b0b0b0" stroke-width="1.2" stroke-dasharray="5,3"/>
+<text x="550.0" y="325.5" font-size="9" text-anchor="middle" fill="#111">P43</text>
+<text x="550.0" y="338.5" font-size="8" text-anchor="middle" fill="#444">SEPARATION CORRIDOR — DRAWN KEEP-C</text>
+<rect x="180.0" y="225.0" width="30.0" height="255.0" fill="#f4f4f4" fill-opacity="0.85" stroke="#b0b0b0" stroke-width="1.2" stroke-dasharray="5,3"/>
+<text x="195.0" y="222.0" font-size="8" text-anchor="middle" fill="#333">P51</text>
+<rect x="210.0" y="220.0" width="250.0" height="240.0" fill="#cfe3f7" fill-opacity="0.85" stroke="#245a8d" stroke-width="1.2"/>
+<text x="335.0" y="338.0" font-size="11" text-anchor="middle" fill="#111">P01</text>
+<text x="335.0" y="351.0" font-size="10" text-anchor="middle" fill="#444">BOARD A , rev-D r6, rotation 0°</text>
+<rect x="640.0" y="220.0" width="250.0" height="240.0" fill="#cfe3f7" fill-opacity="0.85" stroke="#245a8d" stroke-width="1.2"/>
+<text x="765.0" y="338.0" font-size="11" text-anchor="middle" fill="#111">P02</text>
+<text x="765.0" y="351.0" font-size="10" text-anchor="middle" fill="#444">BOARD B , rev-D r6, rotation 0°</text>
+<rect x="436.0" y="314.0" width="12.0" height="82.0" fill="#cfe3f7" fill-opacity="0.85" stroke="#245a8d" stroke-width="1.2"/>
+<text x="442.0" y="311.0" font-size="8" text-anchor="middle" fill="#333">P05</text>
+<rect x="866.0" y="314.0" width="12.0" height="82.0" fill="#cfe3f7" fill-opacity="0.85" stroke="#245a8d" stroke-width="1.2"/>
+<text x="872.0" y="311.0" font-size="8" text-anchor="middle" fill="#333">P06</text>
+<rect x="150.0" y="130.5" width="244.0" height="35.0" fill="#d9d9d9" fill-opacity="0.85" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="272.0" y="146.0" font-size="11" text-anchor="middle" fill="#111">P10</text>
+<text x="272.0" y="159.0" font-size="10" text-anchor="middle" fill="#444">DIN rail R1a</text>
+<rect x="158.0" y="85.0" width="52.5" height="90.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="184.25" y="82.0" font-size="8" text-anchor="middle" fill="#333">P12</text>
+<rect x="215.0" y="133.0" width="24.0" height="42.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="227.0" y="130.0" font-size="8" text-anchor="middle" fill="#333">P13</text>
+<rect x="244.0" y="111.0" width="8.0" height="64.2" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="248.0" y="108.0" font-size="8" text-anchor="middle" fill="#333">P14</text>
+<rect x="252.0" y="111.0" width="8.0" height="64.2" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="256.0" y="108.0" font-size="8" text-anchor="middle" fill="#333">P15</text>
+<rect x="260.0" y="111.0" width="8.0" height="64.2" fill="#cfe3f7" fill-opacity="0.85" stroke="#245a8d" stroke-width="1.2"/>
+<text x="264.0" y="108.0" font-size="8" text-anchor="middle" fill="#333">P16</text>
+<rect x="268.0" y="111.0" width="8.0" height="64.2" fill="#cfe3f7" fill-opacity="0.85" stroke="#245a8d" stroke-width="1.2"/>
+<text x="272.0" y="108.0" font-size="8" text-anchor="middle" fill="#333">P17</text>
+<rect x="305.8" y="88.0" width="79.4" height="87.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="345.5" y="129.5" font-size="9" text-anchor="middle" fill="#111">P18</text>
+<text x="345.5" y="142.5" font-size="8" text-anchor="middle" fill="#444">C7-A Electronics-Salon D-220 IDC20</text>
+<rect x="728.0" y="130.5" width="108.0" height="35.0" fill="#d9d9d9" fill-opacity="0.85" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="782.0" y="146.0" font-size="9" text-anchor="middle" fill="#111">P21</text>
+<text x="782.0" y="159.0" font-size="8" text-anchor="middle" fill="#444">DIN rail R1b</text>
+<rect x="735.8" y="88.0" width="79.4" height="87.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="775.5" y="129.5" font-size="9" text-anchor="middle" fill="#111">P23</text>
+<text x="775.5" y="142.5" font-size="8" text-anchor="middle" fill="#444">C7-B D-220 IDC20 breakout</text>
+<rect x="820.0" y="111.0" width="8.0" height="64.2" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="824.0" y="108.0" font-size="8" text-anchor="middle" fill="#333">P24</text>
+<rect x="860.0" y="60.0" width="152.4" height="66.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="936.2" y="91.0" font-size="11" text-anchor="middle" fill="#111">P26</text>
+<text x="936.2" y="104.0" font-size="10" text-anchor="middle" fill="#444">PoE Texas GBT-12V60W splitter, pan</text>
+<rect x="68.0" y="250.0" width="35.0" height="52.0" fill="#d9d9d9" fill-opacity="0.85" stroke="#8a8a8a" stroke-width="1.2"/>
+<text x="85.5" y="247.0" font-size="8" text-anchor="middle" fill="#333">P30</text>
+<rect x="40.0" y="258.0" width="90.0" height="17.5" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="85.0" y="255.0" font-size="8" text-anchor="middle" fill="#333">P32</text>
+<rect x="53.0" y="280.0" width="64.2" height="8.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="85.1" y="277.0" font-size="8" text-anchor="middle" fill="#333">P33</text>
+<rect x="60.0" y="27.0" width="990.0" height="25.0" fill="#e8e0cf" fill-opacity="0.85" stroke="#8a7a48" stroke-width="1.2"/>
+<text x="555.0" y="37.5" font-size="11" text-anchor="middle" fill="#111">P40</text>
+<text x="555.0" y="50.5" font-size="10" text-anchor="middle" fill="#444">Lacing channel — 1×1 in slotted PV</text>
+<rect x="148.0" y="225.0" width="32.0" height="255.0" fill="#e8e0cf" fill-opacity="0.85" stroke="#8a7a48" stroke-width="1.2"/>
+<text x="164.0" y="222.0" font-size="8" text-anchor="middle" fill="#333">P41</text>
+<rect x="490.0" y="225.0" width="32.0" height="255.0" fill="#e8e0cf" fill-opacity="0.85" stroke="#8a7a48" stroke-width="1.2"/>
+<text x="506.0" y="222.0" font-size="8" text-anchor="middle" fill="#333">P42</text>
+<rect x="578.0" y="225.0" width="32.0" height="255.0" fill="#e8e0cf" fill-opacity="0.85" stroke="#8a7a48" stroke-width="1.2"/>
+<text x="594.0" y="222.0" font-size="8" text-anchor="middle" fill="#333">P44</text>
+<rect x="920.0" y="225.0" width="32.0" height="255.0" fill="#e8e0cf" fill-opacity="0.85" stroke="#8a7a48" stroke-width="1.2"/>
+<text x="936.0" y="222.0" font-size="8" text-anchor="middle" fill="#333">P45</text>
+<rect x="1035.0" y="175.0" width="35.0" height="370.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="1052.5" y="172.0" font-size="8" text-anchor="middle" fill="#333">P46</text>
+<rect x="302.0" y="187.5" width="16.0" height="32.5" fill="#cfe3f7" fill-opacity="0.85" stroke="#245a8d" stroke-width="1.2"/>
+<text x="310.0" y="184.5" font-size="8" text-anchor="middle" fill="#333">P47</text>
+<rect x="732.0" y="187.5" width="16.0" height="32.5" fill="#cfe3f7" fill-opacity="0.85" stroke="#245a8d" stroke-width="1.2"/>
+<text x="740.0" y="184.5" font-size="8" text-anchor="middle" fill="#333">P48</text>
+<rect x="300.0" y="460.0" width="60.0" height="20.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="330.0" y="468.0" font-size="9" text-anchor="middle" fill="#111">P49</text>
+<text x="330.0" y="481.0" font-size="8" text-anchor="middle" fill="#444">J13-A / J16-A fan-out</text>
+<rect x="730.0" y="460.0" width="60.0" height="20.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="760.0" y="468.0" font-size="9" text-anchor="middle" fill="#111">P50</text>
+<text x="760.0" y="481.0" font-size="8" text-anchor="middle" fill="#444">J13-B / J16-B fan-out</text>
+<rect x="470.0" y="200.0" width="15.0" height="15.0" fill="#dff0d8" fill-opacity="0.85" stroke="#4a7c3f" stroke-width="1.2"/>
+<text x="477.5" y="197.0" font-size="8" text-anchor="middle" fill="#333">P52</text>
+<defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="8" stroke="#c00" stroke-width="2" opacity="0.35"/></pattern></defs>
+<rect x="502.0" y="100.0" width="110.0" height="75.0" fill="url(#hatch)" stroke="#c00" stroke-width="2" stroke-dasharray="7,4"/>
+<text x="557.0" y="129.5" font-size="11" text-anchor="middle" fill="#900">P20</text>
+<text x="557.0" y="142.5" font-size="9" text-anchor="middle" fill="#900">Pi 4B + F-1019</text>
+<text x="557.0" y="154.5" font-size="8.5" text-anchor="middle" fill="#c00">SIZE NOT MEASURED</text>
+<circle cx="214.0" cy="224.0" r="4" fill="none" stroke="#c00" stroke-width="2"/>
+<line x1="207.0" y1="224.0" x2="221.0" y2="224.0" stroke="#c00" stroke-width="0.8"/>
+<line x1="214.0" y1="217.0" x2="214.0" y2="231.0" stroke="#c00" stroke-width="0.8"/>
+<circle cx="456.0" cy="224.0" r="4" fill="none" stroke="#c00" stroke-width="2"/>
+<line x1="449.0" y1="224.0" x2="463.0" y2="224.0" stroke="#c00" stroke-width="0.8"/>
+<line x1="456.0" y1="217.0" x2="456.0" y2="231.0" stroke="#c00" stroke-width="0.8"/>
+<circle cx="214.0" cy="456.0" r="4" fill="none" stroke="#c00" stroke-width="2"/>
+<line x1="207.0" y1="456.0" x2="221.0" y2="456.0" stroke="#c00" stroke-width="0.8"/>
+<line x1="214.0" y1="449.0" x2="214.0" y2="463.0" stroke="#c00" stroke-width="0.8"/>
+<circle cx="456.0" cy="456.0" r="4" fill="none" stroke="#c00" stroke-width="2"/>
+<line x1="449.0" y1="456.0" x2="463.0" y2="456.0" stroke="#c00" stroke-width="0.8"/>
+<line x1="456.0" y1="449.0" x2="456.0" y2="463.0" stroke="#c00" stroke-width="0.8"/>
+<circle cx="644.0" cy="224.0" r="4" fill="none" stroke="#c00" stroke-width="2"/>
+<line x1="637.0" y1="224.0" x2="651.0" y2="224.0" stroke="#c00" stroke-width="0.8"/>
+<line x1="644.0" y1="217.0" x2="644.0" y2="231.0" stroke="#c00" stroke-width="0.8"/>
+<circle cx="886.0" cy="224.0" r="4" fill="none" stroke="#c00" stroke-width="2"/>
+<line x1="879.0" y1="224.0" x2="893.0" y2="224.0" stroke="#c00" stroke-width="0.8"/>
+<line x1="886.0" y1="217.0" x2="886.0" y2="231.0" stroke="#c00" stroke-width="0.8"/>
+<circle cx="644.0" cy="456.0" r="4" fill="none" stroke="#c00" stroke-width="2"/>
+<line x1="637.0" y1="456.0" x2="651.0" y2="456.0" stroke="#c00" stroke-width="0.8"/>
+<line x1="644.0" y1="449.0" x2="644.0" y2="463.0" stroke="#c00" stroke-width="0.8"/>
+<circle cx="886.0" cy="456.0" r="4" fill="none" stroke="#c00" stroke-width="2"/>
+<line x1="879.0" y1="456.0" x2="893.0" y2="456.0" stroke="#c00" stroke-width="0.8"/>
+<line x1="886.0" y1="449.0" x2="886.0" y2="463.0" stroke="#c00" stroke-width="0.8"/>
+<line x1="0" y1="-22" x2="1100.0" y2="-22" stroke="#333" stroke-width="1"/>
+<text x="550.0" y="-28" font-size="15" text-anchor="middle" fill="#111">1100 mm</text>
+<line x1="-22" y1="0" x2="-22" y2="570.0" stroke="#333" stroke-width="1"/>
+<text x="-28" y="285.0" font-size="15" text-anchor="middle" fill="#111" transform="rotate(-90 -28 285.0)">570 mm</text>
+</g>
+<text x="70" y="688.0" font-size="15" fill="#111">PANEL-W2 &#183; plywood backing panel &#183; 1100 &#215; 570 &#215; 19.05 mm (3/4in) &#183; origin top-left, +x right, +y down</text>
+<text x="70" y="704.0" font-size="11" fill="#666">Red dashed = 25 mm box-wall land &#183; red crosses = 8 MK board holes (242 &#215; 232, the only precision drilling) &#183; red-filled = DIMENSION NOT YET MEASURED</text>
+</svg>

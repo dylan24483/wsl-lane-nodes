@@ -27,10 +27,26 @@ Spares recommended at ~10% (called out per line where it matters).
 | A2 | Raspberry Pi Pico | SC0915 castellated | 1 | 2 | **34** | Hand-solder. **NOT Pico H/WH.** ⚠ Flash BEFORE soldering |
 | A3 | Isolated DC/DC | TRACO **TMA-0505S** | 1 | 2 | **34** | Hand-solder, exact part, no substitution |
 | A4 | Board standoffs | M3 F-F, **12 mm**, brass | 4 | 8 | **128** (+16) | MK pattern **242 × 232 mm** (rev-D moved from 242×217) |
-| A5 | Standoff screws, rear | M3 × 18 pan head | 4 | 8 | **128** | Through the plywood from behind into the standoff |
+| A5 | Standoff screws, rear | **M3 × 30** pan head ⚠️ | 4 | 8 | **128** | Through the plywood from behind into the standoff. ⚠️ **CORRECTED 2026-07-27 for ¾″ ply** — see below |
 | A6 | Board screws, front | M3 × 6 | 4 | 8 | **128** | Board down onto standoff |
 | A7 | Washers | M3 flat + split | 8 | 16 | **256** | |
 | A8 | Centre support | adhesive PCB standoff / foam pad | 1 | 2 | **32** | Under the relay band — MK pattern leaves the J6–J11 torque zone unsupported |
+
+
+> **⚠️ ¾″ PLYWOOD (19.05 mm) BREAKS THE A5 SCREW — corrected 2026-07-27.** The panel is now ¾″,
+> not the ½″ (12.7 mm) originally assumed. A5's **M3 × 18 no longer reaches the standoff at all**,
+> and neither does the M3 × 20 that audit finding L-09 proposed as its fix at ½″:
+>
+> | Screw | Engagement into the 12 mm F-F standoff | |
+> |---|---|---|
+> | M3 × 18 *(old spec)* | **−2.05 mm** | ❌ does not reach |
+> | M3 × 20 *(L-09's ½″ fix)* | **−0.05 mm** | ❌ does not reach |
+> | **M3 × 30** | **9.95 mm** | ✅ **use this** |
+> | M3 × 35 | 14.95 mm | ❌ bottoms out in a 12 mm standoff |
+>
+> *(Allowing ~1 mm for the washer stack and head seat.)* Also revisit **E5 plywood cost and
+> weight** — ¾″ is ~50 % heavier at ~7.2 kg per 1100 × 570 panel, and the sheet is dearer. Sheet
+> yield is unchanged at 4 panels per 4 × 8.
 
 > **⛔ A4 is the ONLY approved conductive contact with the board.** Nothing else may touch the
 > underside (copper isolation gutters), and nothing conductive within **3 mm of the bottom edge**
