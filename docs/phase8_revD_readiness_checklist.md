@@ -517,7 +517,7 @@ Do these at the upload screen, before paying:
   A substitute is accepted only if its **minimum Ihold at 85 °C is ≥90 mA**;
   trip-current equivalence is never sufficient because PPTC trip is not a hard clamp.
 
-### G15 — EXPERIMENTAL FIRST-ARTICLE order acceptance  `[~]`  **(owner sign-off — blank, like OG-1 / H2)**
+### G15 — EXPERIMENTAL FIRST-ARTICLE order acceptance  `[x]`  **SIGNED 2026-07-27 (Dylan)**
 - This spin ships as an **experimental first-article validation build**, not a fleet
   release (R3-8). The 47 kΩ input hardening reduces required sink current to
   56.2 µA, but the UMW PC817 lot is proven empirically only AT first article by
@@ -530,7 +530,14 @@ Do these at the upload screen, before paying:
   OG-1 sign-off line in the run log). Signing accepts placing an EXPERIMENTAL order whose
   fleet-release status is contingent on FA-9 + OG-4 passing on the physical boards.
 
-  `EXPERIMENTAL-ORDER ACCEPTANCE: _____________________________ (date / decision — experimental first-article, fleet-release gated on FA-9 numeric V_CE + OG-4 at-temp)`
+  `EXPERIMENTAL-ORDER ACCEPTANCE:` **SIGNED OFF — Dylan DeYoung, 2026-07-27.**
+  Accepted at **FLEET quantity (34 boards)**, experimental first-article status understood,
+  fleet-release gated on **FA-9** numeric V_CE and **OG-4** at-temperature tap injection.
+  FA-9 de-gated as a *pre-order* blocker on the ~5x worst-case-stacked CTR margin (see the
+  margin table above); it is still to be executed at first article. OG-4 remains OPEN and is
+  **not** de-gated. Both fleet-revision items (0.4807 mm field-pin clearance, zero
+  `FIELD_WET_V` bulk capacitance) are inert under the N = 0 driven-24-VAC decision recorded
+  as DECISION RECORD item 2.
 
 > **⚠️ OWNER DECISION RECORDED 2026-07-26 — ENTERED BY CLAUDE ON THE OWNER'S INSTRUCTION,
 > NOT A SIGNATURE. Dylan should countersign the line above to close this gate formally.**

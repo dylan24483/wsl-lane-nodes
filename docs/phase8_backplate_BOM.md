@@ -183,12 +183,28 @@ cut on 4 headers per board — **136 cuts fleet-wide** — with no sacrificial s
 | # | Connector | Phoenix PN | Poles | Per lane | Per pair | ×32 house |
 |---|---|---|---|---|---|---|
 | B1 | J3 J_FAST_IN | **1840447** | 10 | 1 | 2 | **32** (+4) |
-| B2 | J4 J_SLOW_IN_A | **1840489** | 14 | 1 | 2 | **32** (+4) |
+| B2 | J4 J_SLOW_IN_A ⚠️ | **1840489** — *see lifecycle note* | 14 | 1 | 2 | **32** (+4) |
 | B3 | J5 J_SLOW_IN_B | **1840463** | 12 | 1 | 2 | **32** (+4) |
 | B4 | J13 J_LAMP_LED | **1840405** | 6 | 1 | 2 | **32** (+4) |
 | B5 | J14 J_SAFETY | **1840382** | 4 | 1 | 2 | **32** (+4) |
 | B6 | **J15 J_SLOW_IN_C** ⚠ | **1840447** — *different colour to B1* | 10 | 1 | 2 | **32** — *future/AUX; order with the fleet, land when AUX roles go live* |
 | B7 | **J16 J_EXT_I2C** ⚠ | **1840405** — *different colour to B4* | 6 | 1 | 2 | **32** — *future/expansion* |
+
+
+> **⚠️ 1840489 LIFECYCLE — the repo and DigiKey DISAGREE, resolve before treating this as a
+> lifetime buy (checked 2026-07-27).** Three rev-B-era files call it discontinued / last-time-buy
+> / "will not be replenished" (`phase8_revB_preorder_parts_list.md:13`,
+> `phase8_revB_preorder_parts.csv:12`, `cowork_cart_handoff.md:27`). **DigiKey currently lists it
+> as lifecycle ACTIVE with a 6-week manufacturer lead time** — out of stock, backorder available,
+> $16.42/1 and $13.34/10.
+>
+> Those are different situations. *Discontinued* means buy 50 now or never. *Active with a 6-week
+> lead* means order early but reorder is possible. **Confirm with a distributor before committing
+> to the lifetime quantity** — ordering early is right either way, but 50 pcs at $13.34 is ~$670
+> and the justification changes.
+>
+> ⛔ DigiKey offers **Amphenol ELXP14100** as a substitute. **Refuse it** — a substituted plug
+> breaks the CP-MSTB coding scheme and the mating contract with the board headers.
 
 J2 and J6–J11 are **wire-direct MKDS** blocks soldered to the board — **no mating plug**, ferrule only.
 J12 (M1) is **DNP** — no plug, no lead, ever.
