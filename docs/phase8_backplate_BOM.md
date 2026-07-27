@@ -187,6 +187,24 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 | C7 | **Board breakout** | **Electronics-Salon `D-220`** (IDC20 2×10) ✅ | **2** | **32** (+4) | $22–27 | one per board, DIN-mounted beside its own J1. **DIMENSIONED 2026-07-26** — see below |
 | C8 | 20-way ribbon, J1 ↔ breakout | 2×10 IDC socket-to-socket, **~150 mm** | **2** | **32** (+6) | ~$5 | ⚠ **SHORT is the requirement** — I²C integrity |
 | C9 | Pi power pigtail | USB-C to bare/ferruled, ~300 mm | 1 | **16** | ~$8 | from fuse F4; keeps the Pi's own input protection in circuit |
+| C10 | **USB composite capture dongle** ⚠️ | UVC composite-to-USB | 1 | **16** (+2) | ~$20 | **NEW 2026-07-26.** The camera's video path to the Pi. Was audit finding L-06, on no BOM line until now |
+| C11 | **Camera video coax** ⚠️ | 75 Ω composite video, ~4.7 m | **2** | **32** (+4) | ~$8 | **NEW 2026-07-26.** Machine camera → C10 dongle. See the gland warning below |
+
+
+> **⚠️ CAMERA VIDEO PATH — added 2026-07-26 after a coverage check, and it carries a gland trap.**
+> The panel layout routes two camera video coax per pair (`PANEL-W2` P46, gland **G10**) and the
+> DIELL-board deprecation gave the camera its own 12 V feed (F5, harness leads W52/W53) — but the
+> **coax itself and the capture dongle were on no BOM line at all**, and are in neither custom
+> harness. They are now C10/C11.
+>
+> ⛔ **G10 is specified M16 and that is probably too small.** The same problem was already caught
+> and fixed for Cat6 — G9 was upsized to **M25** because an RJ45 is ~13.4 mm over the latch and an
+> M20 only passes 6–12 mm (audit L-05). **A moulded RCA plug is ~9–10 mm, and G10 must pass TWO of
+> them.** Either upsize G10, or buy bulk coax and field-terminate at the box. Decide before
+> drilling the gland wall.
+>
+> **These are bought cables, not a third custom harness.** Composite coax with standard connectors
+> is a commodity; a harness shop would add cost without adding value.
 
 ## D · Power chain
 
