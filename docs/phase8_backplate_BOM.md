@@ -216,7 +216,7 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 | C1 | Raspberry Pi 4 Model B | 4 GB | 1 | **16** (+2) | ~$65 | one Pi serves BOTH lanes |
 | C2 | microSD card | 32 GB industrial/endurance | 1 | **16** (+4) | ~$12 | endurance grade — this is a 24/7 write-cycle role |
 | C3 | Pi heatsink / thermal | passive kit | 1 | **16** | ~$5 | ⚠ **height-limited — see C5 note.** Sealed box |
-| C4 | Pi DIN mount | **DINrPlate DRP2** | 1 | **16** | $12.95 | rail 2 |
+| C4 | Pi DIN mount | **DINrPlate DRP2** | 1 | **16** | $12.95 | rail 2. ✅ **KEEP — a 2026-07-26 claim that the F-1019 replaces this was WRONG** (see the C5 note); the HAT provides no mounting of its own |
 | C5 | **Pi GPIO breakout** | **CZH-LABS F-1019** | 1 | **16** (+2) | $35.00 | ✅ **STACKS DIRECTLY ON THE PI** — see note |
 | C6 | ~~40-way ribbon, Pi ↔ F-1019~~ | — | — | **DELETED** | — | ✅ **NOT REQUIRED** — C5 has a GPIO receptacle, no cable |
 
@@ -246,7 +246,19 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 > against a Pi-killer. Record the result on the F7 wire-map card.
 > *(Standing rule unchanged: never land terminal 1 `VCC_5V` or terminal 11 `VCC_3V3` on the Pi.)*
 
-> **✅ C5 FORM FACTOR CONFIRMED IN HAND (2026-07-25, part opened).** The F-1019 is **not** a
+> **✅ C5 CONFIRMED FROM PHOTOS OF THE PART, 2026-07-27 — it is a PCB HAT.** 40-pin FEMALE socket
+> underneath (seats on the Pi's GPIO header), four rows of 10 screw terminals plus a 40-pin MALE
+> pass-through IDC box header on top, four corner mounting holes, one LED. Silkscreen reads
+> "Raspberry Pi B+ Breakout / HCDC". **Terminals are labelled by BCM GPIO name** — `SDA`, `SCL`,
+> `TXD`, `RXD`, `IO4`…`IO27`, `MOSI`, `MISO`, `SCLK`, `CE0`, `CE1`, plus 3V3/5V/GND — which will make
+> the WSL-PI-LINK-B End-B assignment nameable once the Pi GPIO map is frozen.
+>
+> ⛔ **A 2026-07-26 layout claim that the F-1019 is "a complete aluminium Pi carrier with its own
+> ears" and that C4 should therefore be deleted was FALSE.** It is a bare PCB HAT with no mounting
+> hardware. **C4 stays.** Any dimension derived from that claim (the 116.5 × 62.5 × 36.7 mm in the
+> panel spec) must be re-measured.
+>
+> **Original 2026-07-25 note, still accurate:** The F-1019 is **not** a
 > remote DIN/panel module fed by a ribbon — it carries a **40-pin receptacle that seats directly
 > on the Pi's GPIO header** and sits above the board, HAT-style. Three consequences:
 > ① **C6 is deleted** (−16 ribbons, ~$96). ② **Pi + F-1019 is ONE stacked unit** on the C4 DRP2 —
