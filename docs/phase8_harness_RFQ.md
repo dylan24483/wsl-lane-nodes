@@ -1,7 +1,7 @@
 # RFQ — Custom Wire Harness Assembly (Lane Controller Field Harness)
 
 **Westside Lanes · Olympia, WA** · Issued 2026-07-25 · Contact: Dylan DeYoung
-**Assemblies:** **WSL-LANE-HARNESS-A** Rev 4  ·  **WSL-PI-LINK-B** Rev 1 *(NEW — see §16)*
+**Assemblies:** **WSL-LANE-HARNESS-A** Rev 4  ·  **WSL-PI-LINK-B** Rev 2 *(see §16)*
 **Quantity:** 1 first article → 2 pilot → balance to **34 total** (32 lanes + 2 spares).
 Option pricing requested at 48 and 64.
 
@@ -288,7 +288,7 @@ carton per 6–8 assemblies with a packing list.
 
 ## 15. Attachments provided with this RFQ
 
-1. `WSL-PI-LINK-B_wirelist_rev1.csv` — the 22-lead wire list for the SECOND assembly (§16)
+1. `WSL-PI-LINK-B_wirelist_rev2.csv` — the 22-lead wire list for the SECOND assembly (§16)
 2. `WSL-LANE-HARNESS-A_wirelist_rev4.csv` — the 53-lead from-to wire list with label text and
    length classes. **This is the controlling document. Where it and this RFQ disagree, the CSV wins.**
 2. `phase8_revD_harness_bom.csv` — plug + coding-profile part identities and the band-marking scheme
@@ -305,13 +305,13 @@ carton per 6–8 assemblies with a packing list.
 
 ---
 
-# 16. SECOND ASSEMBLY — WSL-PI-LINK-B (Rev 1)
+# 16. SECOND ASSEMBLY — WSL-PI-LINK-B (Rev 2)
 
 A small, entirely **in-enclosure** signal harness. It links each controller board's IDC20
 breakout to the Raspberry Pi's GPIO breakout, inside the same box. It never leaves the
 enclosure, sees no machine voltage, and carries nothing above 3.3 V.
 
-**Wire list attached: `WSL-PI-LINK-B_wirelist_rev1.csv`.**
+**Wire list attached: `WSL-PI-LINK-B_wirelist_rev2.csv`.**
 
 ## 16.1 What it is
 
@@ -319,7 +319,7 @@ enclosure, sees no machine voltage, and carries nothing above 3.3 V.
 |---|---|
 | Leads | **22** (11 per controller board × 2 boards) |
 | Wire | 22 AWG UL1007 300 V |
-| Both ends | Screw-terminal blocks — **ferruled both ends**, 0.34 mm² insulated, 7 mm strip |
+| Both ends | Screw-terminal blocks — **ferruled both ends**, 0.34 mm² insulated, **barrel ≤6 mm, strip 6 mm** ⚠️ *corrected in Rev 2* |
 | Finished length | **600 mm, ALL 22 leads — uniform** (see §16.3) |
 | Colours | **Black = ground. White = everything else.** Deliberately minimal — see §16.4 |
 | Quantity | **1 per enclosure · 16 enclosures + 2 spares = 18** |
@@ -339,6 +339,15 @@ assembly A, and it is why §16.3 specifies one uniform length.
 
 **Nothing about this is unusual for you** — both ends are still ferruled to the same spec, and
 the assembly is fully testable end-to-end because the wire list defines every lead's identity.
+
+
+> ⚠️ **REV 2 CORRECTION — ferrule barrel and strip length.** Rev 1 specified a **7 mm** strip on
+> both ends, copied from the Phoenix MC 1,5 figure used on assembly A. That is **wrong for this
+> assembly.** Both ends of WSL-PI-LINK-B land in **3.81 mm-pitch screw terminals whose
+> manufacturer specifies a 5 mm strip length** — a 7 mm strip leaves ~2 mm of bare conductor
+> outside the cage, on a 3.81 mm pitch, with twenty terminals in two closely-spaced rows.
+> **Rev 2 specifies a 0.34 mm² insulated ferrule with a ≤6 mm barrel, stripped 6 mm.**
+> The 0.34 mm² insulated collar (~3.0 mm OD) is comfortable on 3.81 mm pitch.
 
 ## 16.3 Why every lead is the same length
 

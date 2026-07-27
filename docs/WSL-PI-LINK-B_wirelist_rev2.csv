@@ -1,0 +1,28 @@
+Wire ID,Board,AWG,UL Style,Color,End-A (C7 breakout),End-A Terminal,End-A Termination,End-B (F-1019 / Pi),End-B Termination,Length Class,Finished Length (mm),Label Text (both ends),Twist Partner,Notes
+P01,A,22,UL1007 300V,Black,C7-A,2,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A GND-SDA,P02,"I2C return for SDA. TWISTED PAIR with P02 - this pairing is electrically required, not cosmetic."
+P02,A,22,UL1007 300V,White,C7-A,3,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A SDA,P01,I2C data. TWISTED with its own GND return P01.
+P03,A,22,UL1007 300V,White,C7-A,4,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A SCL,P04,I2C clock. TWISTED with its own GND return P04.
+P04,A,22,UL1007 300V,Black,C7-A,12,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A GND-SCL,P03,I2C return for SCL. TWISTED PAIR with P03.
+P05,A,22,UL1007 300V,White,C7-A,5,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A UART TX,,
+P06,A,22,UL1007 300V,White,C7-A,6,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A UART RX,,
+P07,A,22,UL1007 300V,White,C7-A,7,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A WDOG KICK,,
+P08,A,22,UL1007 300V,White,C7-A,8,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A ARM PERMIT,,
+P09,A,22,UL1007 300V,White,C7-A,9,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A MCP INT A,,
+P10,A,22,UL1007 300V,White,C7-A,10,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A MCP INT B,,
+P11,A,22,UL1007 300V,White,C7-A,13,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,A RP2040 OK,,
+P12,B,22,UL1007 300V,Black,C7-B,2,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B GND-SDA,P13,I2C return for SDA. TWISTED PAIR with P13. Board B's bus is BIT-BANGED and is the more timing-fragile of the two - the twist matters more here.
+P13,B,22,UL1007 300V,White,C7-B,3,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B SDA,P12,I2C data (bit-banged bus). TWISTED with its own GND return P12.
+P14,B,22,UL1007 300V,White,C7-B,4,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B SCL,P15,I2C clock (bit-banged bus). TWISTED with its own GND return P15.
+P15,B,22,UL1007 300V,Black,C7-B,12,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B GND-SCL,P14,I2C return for SCL. TWISTED PAIR with P14.
+P16,B,22,UL1007 300V,White,C7-B,5,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B UART TX,,
+P17,B,22,UL1007 300V,White,C7-B,6,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B UART RX,,
+P18,B,22,UL1007 300V,White,C7-B,7,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B WDOG KICK,,
+P19,B,22,UL1007 300V,White,C7-B,8,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B ARM PERMIT,,
+P20,B,22,UL1007 300V,White,C7-B,9,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B MCP INT A,,
+P21,B,22,UL1007 300V,White,C7-B,10,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B MCP INT B,,
+P22,B,22,UL1007 300V,White,C7-B,13,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",LAND ON SITE,"0.34mm2 insulated ferrule, barrel <=6mm; strip 6mm",P1,600,B RP2040 OK,,
+,,,,,C7-A,1,DO NOT POPULATE,,,,,VCC_5V - NEVER LAND,,⛔ FORBIDDEN. Board is powered from J2; the Pi from its own USB-C. Landing this fights the rails.
+,,,,,C7-A,11,DO NOT POPULATE,,,,,VCC_3V3 - NEVER LAND,,⛔ FORBIDDEN - same reason.
+,,,,,C7-B,1,DO NOT POPULATE,,,,,VCC_5V - NEVER LAND,,⛔ FORBIDDEN - same reason.
+,,,,,C7-B,11,DO NOT POPULATE,,,,,VCC_3V3 - NEVER LAND,,⛔ FORBIDDEN - same reason.
+,,,,,C7-A/B,14-20,DO NOT POPULATE,,,,,unused,,J1 pins 14-20 carry no net on rev-D. No lead.
