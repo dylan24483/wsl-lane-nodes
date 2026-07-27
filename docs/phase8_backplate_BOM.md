@@ -414,7 +414,7 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 > orderable (M Series is winding down — Mouser already flags it obsolete) or harvest from the
 > 32 retired OEM control boxes, which is the primary plan and carries zero ID risk.
 | G6 | PoE head-end | — | — | **18 injectors** (TL-POE170S ~$50) or 2× 16-port bt switch | |
-| G7 | Cat6 runs | — | 1/pair | **16 runs** | one per enclosure; carries power AND data |
+| G7 | **Cat6 runs, switch → enclosure** | solid-core Cat6, **1000 ft box** | 1/pair | **16 runs · ~752 ft** | one per enclosure; carries **power AND data** (802.3bt). Cut list below |
 | G8 | J14 Stop/CIS interface | 1 | 2 | **32** | ⛔ **DECISION OPEN** — control-power sensing relay ± pit interlock, ~$25/lane |
 | G9 | **Ball-detect sensors** (replaces OEM DIELL) | 2 | 4 | **64** (+8) | ~$40–65 ea. M18 retroreflective NPN-NO, 10–30 VDC, IP67. **NEW 2026-07-26** — see below |
 
@@ -430,6 +430,39 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 > Rankin USA. Full spec, the two-ground-domain rule, and the BOM deltas:
 > **`docs/phase8_diell_board_deprecation_2026-07-26.md`**.
 > *(This also CLOSES audit finding M-21 — the camera's 12 V died with T-VISION.)*
+
+
+> **📏 CAT6 CUT LIST — measured on site 2026-07-27.** Switch sits between lanes 21 and 22.
+> **Measured path to the first Pi in each direction = 12 ft** (this figure already includes the drop
+> to the Pi **and** its slack). **Each subsequent Pi is +10 ft.**
+>
+> **Cut = 12 + 10(N−1) ft. Nothing is added** — the slack is already inside the 12.
+>
+> | Pi from switch | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+> |---|---|---|---|---|---|---|---|---|
+> | **Cut (ft)** | **12** | **22** | **32** | **42** | **52** | **62** | **72** | **82** |
+>
+> ×2 directions = **752 ft**. A 1000 ft box leaves ~250 ft spare for re-pulls.
+>
+> ⚠️ **Confirm the split before cutting the two longest.** 8 Pis each direction gives the table
+> above. If lanes number 1–32 sequentially, pair 11 (lanes 21+22) straddles the switch and the
+> split is **10 low / 5 high / 1 at the switch** — which adds **92 ft** and **102 ft** on the low
+> side and stops the high side at 52 ft (~742 ft total). Same box either way.
+>
+> ⭐ **Cut, terminate and TEST the first cable before cutting the other fifteen.** That validates the
+> path measurement, the slack and the crimp technique on one cable instead of discovering a
+> systematic error sixteen times.
+>
+> **Build notes:**
+> - ⚠️ **SOLID core, not stranded.** Stranded is for patch cords and attenuates more over these runs.
+> - Plugs must be **rated for solid core** (or pass-through). Crimper + tester required.
+> - PoE is not a constraint: 802.3bt reaches 100 m (328 ft); the longest run here is ~82 ft.
+> - ⭐ **Terminate INSIDE the enclosure.** Only bare cable then passes the gland, so **G9 drops from
+>   M25 back to M16** — and the seal actually works. An M25 gland gapes around a 5.5–6.5 mm Cat6
+>   jacket even with the correct insert; that was a latent IP-rating problem in the M25 fix, which
+>   had been sized to pass a moulded RJ45 (~13.4 mm over the latch, audit L-05).
+> - **Label both ends as you pull.** Sixteen identical grey cables in a machine room is where an
+>   afternoon disappears.
 
 ---
 
