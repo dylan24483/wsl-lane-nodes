@@ -72,6 +72,38 @@ use. If JLC ever proposes swapping back, refuse.
 | A16 | J1 | CNC Tech **3020-20-0100-00** | 2×10 IDC/box header, 2.54 mm | 1 | **38** ✅ |
 | A17 | — | **sacrificial MCV headers** | 2 × 1843680 + 2 × 1843648 + spares | — | **~10** |
 
+> **🔎 JLC PART-IDENTITY VERIFICATION — 2026-07-27. All five resolve to the EXACT required MPNs;
+> the problem is stock, not identity.** JLC proposed C-numbers for every A′.2 line and each was
+> checked against its own part-detail page (not a search result — searching JLC by bare numeric
+> Phoenix MPN returns false negatives).
+>
+> | Ref | JLC C-number | Resolves to | Stock | Need | Verdict |
+> |---|---|---|---|---|---|
+> | J13, J16 | **C5443576** | Phoenix **1843648** ✅ | 503 | 72 | **ACCEPT — proceed** |
+> | J3, J15 | C3585531 | Phoenix **1843680** ✅ | **0** | 72 | stock-blocked |
+> | J4 | C3582595 | Phoenix **1843729** ✅ | **0** | 38 | stock-blocked |
+> | J5 | C3019636 | Phoenix **1843703** ✅ | **3** | 38 | stock-blocked |
+> | J1 | C17373551 | CNC Tech **3020-20-0100-00** ✅ | **0** | 38 | stock-blocked |
+> | U45 | — | *no match in JLC's library* | — | 38 | not sourceable via JLC |
+>
+> **✅ Mechanically this is the best possible answer: no substitution is on the table**, so FR-2/FR-9
+> stay closed, no re-route is triggered, and the five mating plugs + CP-MSTB coding scheme + the 185
+> vendor-fitted harness plugs all remain valid. The exposure is **purely procurement**.
+>
+> ⚠️ **Two anomalies to resolve before paying:**
+> **(a) C3585531 is priced $11.31 ea** — against $2.48 for the 12-pole sibling and $1.10 for the
+> 4-pole. A 10-pole costing more than a 12-pole is spot pricing, not a catalogue progression.
+> 72 × $11.31 = **$814**. Requote it.
+> **(b) C3582595 is listed "Assembly Type: SMT Assembly"** on a through-hole part, while its 12-pole
+> sibling is correctly listed Wave Soldering. Probably bad JLC data — but it can mis-route the process.
+>
+> ⛔ **Zero stock on a 2-per-board connector is exactly where a contract manufacturer proposes a
+> "dimensionally similar" swap at build time. Restate NO SUBSTITUTIONS per line on the order.**
+>
+> **All four short lines are stocked at franchised distributors** (Digi-Key alone lists 2,958 of the
+> J1 header), so buying them ourselves — which §A′.2 already plans, and which the "order these first"
+> block already calls the gating family — preserves the exact MPNs either way.
+
 **A′.2 is a WAVE-2 CANDIDATE.** These four MCV part numbers are unresolved in JLC's library —
 not absent, *unresolved*: searching JLC by bare numeric Phoenix MPN returns **false negatives**
 (`searchTxt=1843622` → "0 Found" while `partdetail/C480549` shows it in stock). A free Global
