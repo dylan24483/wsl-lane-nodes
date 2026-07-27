@@ -84,7 +84,9 @@ def main() -> None:
         sys.exit(f"missing {SRC}")
 
     md = SRC.read_text(encoding="utf-8")
-    rev_m = re.search(r"WSL-LANE-HARNESS-A\s*[·.]?\s*\*\*Rev (\d+)\*\*", md)
+    # Tolerant of markup and of the header listing more than one assembly:
+    # "**WSL-LANE-HARNESS-A** Rev 4  ·  **WSL-PI-LINK-B** Rev 1" must still yield 4.
+    rev_m = re.search(r"WSL-LANE-HARNESS-A\**[\s·.]*\**Rev\**\s*(\d+)", md)
     rev = rev_m.group(1) if rev_m else "X"
     md, replaced = preprocess(md)
     print(f"RFQ Rev {rev}: {replaced} unsafe glyph(s) replaced with plain text")
