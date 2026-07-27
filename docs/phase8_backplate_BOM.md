@@ -216,7 +216,7 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 | C1 | Raspberry Pi 4 Model B | 4 GB | 1 | **16** (+2) | ~$65 | one Pi serves BOTH lanes |
 | C2 | microSD card | 32 GB industrial/endurance | 1 | **16** (+4) | ~$12 | endurance grade — this is a 24/7 write-cycle role |
 | C3 | Pi heatsink / thermal | passive kit | 1 | **16** | ~$5 | ⚠ **height-limited — see C5 note.** Sealed box |
-| C4 | Pi DIN mount | **DINrPlate DRP2** | 1 | **16** | $12.95 | rail 2. ✅ **KEEP — a 2026-07-26 claim that the F-1019 replaces this was WRONG** (see the C5 note); the HAT provides no mounting of its own |
+| ~~C4~~ | ~~Pi DIN mount~~ | ~~DINrPlate DRP2~~ | — | **DELETED** | ~~$12.95~~ | ⛔ **DELETED 2026-07-27 — the F-1019's own metal carrier is the mount.** Saves ~$207 fleet. See the C5 note |
 | C5 | **Pi GPIO breakout** | **CZH-LABS F-1019** | 1 | **16** (+2) | $35.00 | ✅ **STACKS DIRECTLY ON THE PI** — see note |
 | C6 | ~~40-way ribbon, Pi ↔ F-1019~~ | — | — | **DELETED** | — | ✅ **NOT REQUIRED** — C5 has a GPIO receptacle, no cable |
 
@@ -253,10 +253,24 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 > `TXD`, `RXD`, `IO4`…`IO27`, `MOSI`, `MISO`, `SCLK`, `CE0`, `CE1`, plus 3V3/5V/GND — which will make
 > the WSL-PI-LINK-B End-B assignment nameable once the Pi GPIO map is frozen.
 >
-> ⛔ **A 2026-07-26 layout claim that the F-1019 is "a complete aluminium Pi carrier with its own
-> ears" and that C4 should therefore be deleted was FALSE.** It is a bare PCB HAT with no mounting
-> hardware. **C4 stays.** Any dimension derived from that claim (the 116.5 × 62.5 × 36.7 mm in the
-> panel spec) must be re-measured.
+> ✅ **CARRIER CONFIRMED 2026-07-27 — the F-1019 ships as TWO parts, and C4 IS deleted after all.**
+> Besides the green HAT there is a two-piece **black metal carrier** (`CZH-LABS / For RPi 4 Model B /
+> Model F-1019`) with four Pi standoff posts and **outward mounting flanges**. Trial fit by the owner:
+> **Pi onto the standoffs → HAT onto the GPIO header → lid on, terminals still accessible.**
+>
+> *History, so the flip-flop stays legible: a 2026-07-26 layout agent called the F-1019 "a complete
+> aluminium Pi carrier with its own ears" and deleted C4. Photos of the green PCB appeared to disprove
+> that, so C4 was reinstated on 2026-07-27. Photos of the carrier then showed the agent was
+> substantially right. **C4 is deleted.** The only genuinely wrong part of the original claim was that
+> the breakout PCB itself was the carrier — it is a separate metal part in the same box.*
+>
+> **Two benefits beyond the $207:** the metal shell restores EMI shielding the plastic enclosure gives
+> up — most valuable for board B's **bit-banged** I²C bus — and gives the Pi a conducted thermal path.
+>
+> ⚠️ **Still to measure:** carrier outline and flange hole pattern (caliper, no Pi needed — **this
+> gates the plywood drilling**), and whether the **C3 heatsink** clears the HAT. The heatsink sits on the
+> SoC in the gap between the Pi's top face and the HAT's underside; a tall one will foul it. If so, fit a
+> low-profile heatsink — that is a C3 change, not a reason to drop the carrier.
 >
 > **Original 2026-07-25 note, still accurate:** The F-1019 is **not** a
 > remote DIN/panel module fed by a ribbon — it carries a **40-pin receptacle that seats directly
