@@ -1,10 +1,16 @@
 # RFQ — Custom Wire Harness Assembly (Lane Controller Field Harness)
 
 **Westside Lanes · Olympia, WA** · Issued 2026-07-25 · Contact: Dylan DeYoung
-**Assembly:** WSL-LANE-HARNESS-A · **Rev 4**
+**Assemblies:** **WSL-LANE-HARNESS-A** Rev 4  ·  **WSL-PI-LINK-B** Rev 1 *(NEW — see §16)*
 **Quantity:** 1 first article → 2 pilot → balance to **34 total** (32 lanes + 2 spares).
 Option pricing requested at 48 and 64.
 
+> **THIS RFQ NOW COVERS TWO ASSEMBLIES.** Everything from §0 to §15 describes
+> **WSL-LANE-HARNESS-A** (the machine field harness, 53 leads, one per LANE, qty 34).
+> **§16 adds WSL-PI-LINK-B** — a small in-enclosure signal harness, 22 leads, one per
+> ENCLOSURE, qty 18. Please quote them **separately**, and also tell us the NRE effect of
+> taking both together (§16.6).
+>
 > **Rev 4 supersedes Rev 3 — quote against Rev 4 only.** Neither Rev 2 nor Rev 3 was issued.
 > **Rev 4 change:** **four new leads (W50–W53), two power pairs.** We are removing a legacy
 > interface board from the machine and powering its sensors and a camera ourselves.
@@ -282,7 +288,8 @@ carton per 6–8 assemblies with a packing list.
 
 ## 15. Attachments provided with this RFQ
 
-1. `WSL-LANE-HARNESS-A_wirelist_rev4.csv` — the 53-lead from-to wire list with label text and
+1. `WSL-PI-LINK-B_wirelist_rev1.csv` — the 22-lead wire list for the SECOND assembly (§16)
+2. `WSL-LANE-HARNESS-A_wirelist_rev4.csv` — the 53-lead from-to wire list with label text and
    length classes. **This is the controlling document. Where it and this RFQ disagree, the CSV wins.**
 2. `phase8_revD_harness_bom.csv` — plug + coding-profile part identities and the band-marking scheme
 3. Phoenix Contact datasheets for the five Tier-1 plugs and the CP-MSTB coding profile
@@ -295,6 +302,93 @@ carton per 6–8 assemblies with a packing list.
 > **Plug-body labels:** the J14 plug body carries `J14 SAFE LOOP - SHORT 1-2` (text is in the
 > wire list). The other four plug bodies need identification text we have **not** yet specified —
 > quote plug-body labeling as a **separate line item** and we will supply the text on PO.
+
+---
+
+# 16. SECOND ASSEMBLY — WSL-PI-LINK-B (Rev 1)
+
+A small, entirely **in-enclosure** signal harness. It links each controller board's IDC20
+breakout to the Raspberry Pi's GPIO breakout, inside the same box. It never leaves the
+enclosure, sees no machine voltage, and carries nothing above 3.3 V.
+
+**Wire list attached: `WSL-PI-LINK-B_wirelist_rev1.csv`.**
+
+## 16.1 What it is
+
+| | |
+|---|---|
+| Leads | **22** (11 per controller board × 2 boards) |
+| Wire | 22 AWG UL1007 300 V |
+| Both ends | Screw-terminal blocks — **ferruled both ends**, 0.34 mm² insulated, 7 mm strip |
+| Finished length | **600 mm, ALL 22 leads — uniform** (see §16.3) |
+| Colours | **Black = ground. White = everything else.** Deliberately minimal — see §16.4 |
+| Quantity | **1 per enclosure · 16 enclosures + 2 spares = 18** |
+
+Note the quantity differs from assembly A: **A is per LANE (34), B is per ENCLOSURE (18).**
+
+## 16.2 ⚠️ Scope boundary — one end is deliberately unassigned
+
+- **End A (the C7 breakout end): FULLY DEFINED.** Every lead's terminal number is fixed in the
+  wire list and will not change.
+- **End B (the Pi breakout end): FERRULED AND LABELLED, BUT NOT ASSIGNED TO A TERMINAL.**
+
+We are still finalising which Pi GPIO carries which signal. Rather than hold this quote, every
+lead is **identified by its signal name on a printed marker at both ends** and we land End B
+ourselves on site from a wire-map card. This is the same approach we use for the machine end of
+assembly A, and it is why §16.3 specifies one uniform length.
+
+**Nothing about this is unusual for you** — both ends are still ferruled to the same spec, and
+the assembly is fully testable end-to-end because the wire list defines every lead's identity.
+
+## 16.3 Why every lead is the same length
+
+Because End B is unassigned, **any lead must be able to reach any terminal.** A mixed-length
+build would create leads that physically cannot serve their eventual destination. 600 mm covers
+the worst routed path in our enclosure with service slack; we trim on site.
+
+**Please do not optimise these to differing lengths.** Uniformity is the requirement.
+
+## 16.4 Colours — intentionally minimal, and why
+
+Assembly A's colours are functionally meaningful and tightly specified (§6). Assembly B
+deliberately uses **only Black and White** so that **no colour on B can ever be mistaken for a
+coded colour on A** if both assemblies are ever open in the same enclosure at the same time —
+which they will be.
+
+Identification on B is by **printed marker only**. 22 leads × 2 ends = **44 markers**.
+
+## 16.5 The one construction requirement that is not optional
+
+**Four twisted pairs, two per controller board.** Each I²C signal must be twisted with its own
+dedicated ground return, as paired in the wire list:
+
+| Pair | Twist |
+|---|---|
+| P01 ↔ P02 | board A ground ↔ board A SDA |
+| P03 ↔ P04 | board A SCL ↔ board A ground |
+| P12 ↔ P13 | board B ground ↔ board B SDA |
+| P14 ↔ P15 | board B SCL ↔ board B ground |
+
+**This is electrical, not cosmetic.** These are I²C buses running past switched relay coils, and
+one of the two buses is bit-banged in software and therefore more timing-fragile than a hardware
+bus. Roughly 1 twist per 25–35 mm is what we are after. If your standard practice differs,
+tell us what you do rather than dropping the twist.
+
+## 16.6 Quantities and what we would like to know
+
+| Stage | Qty |
+|---|---|
+| First article | **1** |
+| Pilot | **1** |
+| Balance | **16** |
+| **Total** | **18** |
+
+Please tell us:
+1. Unit price at 18, and at 1 (we will buy a first article either way).
+2. **Does taking BOTH assemblies together reduce total NRE**, versus quoting A alone? If some
+   setup carries across, we would rather know now than add B later.
+3. Whether the uniform-length, unassigned-End-B approach causes you any difficulty. If a defined
+   End B would be materially cheaper, say so — we may be able to freeze it sooner.
 
 ---
 
