@@ -104,6 +104,35 @@ use. If JLC ever proposes swapping back, refuse.
 > J1 header), so buying them ourselves — which §A′.2 already plans, and which the "order these first"
 > block already calls the gating family — preserves the exact MPNs either way.
 
+> **✅ DISTRIBUTOR SOURCING VERIFIED 2026-07-27 — the stock block is JLC's, not the market's.**
+> Every short line is available in quantity at a franchised distributor, so **consignment (or
+> buying + hand-soldering) preserves the exact MPNs and hand-soldering is NOT forced.**
+>
+> | Part | Ref | Need | Distributor stock | |
+> |---|---|---|---|---|
+> | Phoenix **1843680** | J3, J15 | 72 | **Mouser 722** · DigiKey 52 | ✅ |
+> | Phoenix **1843729** | J4 | 38 | DigiKey lists it @ $5.72, count not readable | ⚠️ confirm |
+> | Phoenix **1843703** | J5 | 38 | **DigiKey 2,139** @ $4.04/10+ | ✅ |
+> | Phoenix **1843648** | J13, J16 | 72 | **JLC 503** — use JLC, no consignment | ✅ |
+> | CNC Tech **3020-20-0100-00** | J1 | 38 | **DigiKey 2,958** | ✅ |
+> | TRACO **TMA 0505S** | U45 | 38 | **DigiKey 5,964** @ $4.16/50+ | ✅ |
+>
+> **Parts total ≈ $925**; consignment overhead ≈ $125–195 → **~$1,050–1,120 all in**.
+>
+> 💡 **The overpricing on ONE line exceeds the entire consignment overhead.** JLC quoted
+> C3585531 (1843680) at **$11.31 × 72 = $814**; Mouser stock is ~$5.02 → **~$361**. Buying it
+> ourselves saves **~$450 on that line alone** — more than consignment costs in total.
+>
+> ⚠️ **Buy from shelf stock, never backorder.** Both 1843680 and the TMA 0505S show a **12-week
+> manufacturer lead time** beyond stock. Taking Mouser's 722 and DigiKey's 5,964 avoids that
+> entirely; a backorder would put the whole build behind the harness.
+>
+> ⚠️ **Do not construct distributor URLs to check a part.** During this verification a guessed
+> DigiKey product-detail link returned **1830680** — an 11-position 3.81 mm part, 0 stock —
+> instead of the intended 1843703. Different pole count, different pitch, and it would have been
+> fatal. Same failure class as the `C325772` hallucination in the run log. Search by MPN; never
+> assume a product ID.
+
 **A′.2 is a WAVE-2 CANDIDATE.** These four MCV part numbers are unresolved in JLC's library —
 not absent, *unresolved*: searching JLC by bare numeric Phoenix MPN returns **false negatives**
 (`searchTxt=1843622` → "0 Found" while `partdetail/C480549` shows it in stock). A free Global
