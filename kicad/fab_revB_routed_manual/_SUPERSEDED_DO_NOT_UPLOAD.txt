@@ -12,7 +12,7 @@ Uploading anything from here builds a REV-C board:
        across a 6 V-rated PC817 LED.
 
 CURRENT PACKAGE FOR ALL ORDERING:
-  kicad/fab_revD_2026-07-26_r9/
+  kicad/fab_revD_2026-07-27_r10/
 
 Gate checklist:
   docs/phase8_revD_readiness_checklist.md

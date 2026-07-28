@@ -13,7 +13,7 @@
 > **HISTORICAL REV-B BOM — NOT A REV-D ORDER SOURCE.** Current Rev-D/r7 uses
 > exactly forty 47 kΩ `Rpu_*` refs (`R4,R6,…,R82`), UNI-ROYAL
 > `0805W8F4702T5E` / LCSC C17713. Unrelated 10 kΩ networks remain unchanged.
-> Use `kicad/fab_revD_2026-07-26_r9/manifest.json` and its package README for
+> Use `kicad/fab_revD_2026-07-27_r10/manifest.json` and its package README for
 > current fabrication data; the Rev-D board remains NO-GO for ordering pending
 > the recorded physical release gates.
 
@@ -317,7 +317,7 @@ This maps every source document, script, runbook, and key artifact to what it au
 | `docs/phase8b_pcb_revB_netclass_creepage.md` | The routing contract: 5 net classes, 4-layer stack, domain rooms, plane keepouts, creepage/clearance policy (conservative 250 VAC; relaxable to 24 VAC). |
 | `docs/phase8b_revB_netclass_inventory.md` | All 184 nets mapped to domains; 0 unknown nets. |
 | `docs/phase8b_revB_route_pass1_findings.md` | Routing status + **every Claude/Codex audit verdict** + the FreeRouting-rejection log + the false-green netclass catch. |
-| `docs/phase8b_revB_fab_order_checklist.md` | ⛔ **HISTORICAL REV-B/C ONLY — NOT AN ORDER SOURCE.** Points at `kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/`, which builds a **rev-C** board. For rev-D use `kicad/fab_revD_2026-07-26_r9/` + `docs/phase8_revD_readiness_checklist.md`. |
+| `docs/phase8b_revB_fab_order_checklist.md` | ⛔ **HISTORICAL REV-B/C ONLY — NOT AN ORDER SOURCE.** Points at `kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/`, which builds a **rev-C** board. For rev-D use `kicad/fab_revD_2026-07-27_r10/` + `docs/phase8_revD_readiness_checklist.md`. |
 | `docs/phase8b_revB_pcba_parts_worklist.md` | PCBA parts work tracking. |
 | `docs/phase8_channel_allocation.md` | ⚠️ **GPIO column is STALE** (says GP0–GP7). Useful for channel *intent*, but for GPIO numbers use `config.h` (GP6–GP13). |
 

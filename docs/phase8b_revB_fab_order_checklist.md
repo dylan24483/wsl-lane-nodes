@@ -7,7 +7,7 @@
 > input protection** — landing PBZ (33 VDC) or DIELL_L/R (15.4–16 V) on it puts those
 > rails across a 6 V-rated PC817 LED.
 >
-> **Current package:** `kicad/fab_revD_2026-07-26_r9/`
+> **Current package:** `kicad/fab_revD_2026-07-27_r10/`
 > **Current gate checklist:** `docs/phase8_revD_readiness_checklist.md`
 >
 > *Banner added 2026-07-25 per pre-order audit finding S3

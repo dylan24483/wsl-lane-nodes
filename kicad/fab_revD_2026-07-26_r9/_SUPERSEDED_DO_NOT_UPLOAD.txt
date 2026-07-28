@@ -1,0 +1,18 @@
+*** SUPERSEDED — DO NOT UPLOAD ***
+
+Superseded by kicad/fab_revD_2026-07-27_r10/ on 2026-07-27.
+
+Reason: WAVE 2 ASSEMBLY SPLIT. r9 has JLC placing 314 parts with 9 hand-soldered
+(A1, J1, J3, J4, J5, J13, J15, J16, U45). r10 moves all nine to JLC:
+323 placed / 37 BOM lines / ZERO hand-solder.
+
+Uploading r9 is not dangerous - it builds a correct board - but you would then
+hand-solder nine parts per board, including A1's 40 castellated Pico pads, that
+JLC can place.
+
+THE BOARD GEOMETRY IS UNCHANGED between r9 and r10. Same 391 parts / 68 DNP /
+323 placed, same DRC 0/0/0, same 250 x 240 mm outline. No re-route, no netlist
+regeneration. Only the assembly split moved.
+
+CURRENT PACKAGE FOR ALL ORDERING:
+  kicad/fab_revD_2026-07-27_r10/

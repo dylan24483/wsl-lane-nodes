@@ -480,7 +480,7 @@ lamps are not motors and are not forwarded.
 #### 20.6.5 Historical Rev-B JLCPCB Standard-PCBA order
 
 > **HISTORICAL REV-B ONLY — DO NOT ORDER FROM THIS SECTION.** The current
-> Rev-D/r7 immutable package is `kicad/fab_revD_2026-07-26_r9/`, with forty
+> Rev-D/r7 immutable package is `kicad/fab_revD_2026-07-27_r10/`, with forty
 > 47 kΩ `Rpu_*` parts and the binding internal-pulls-off runtime gate. The
 > Rev-D board is **NO-GO and not authorized for upload or purchase** until the
 > recorded sign-offs, JLC preview, first-article, FA-9, powered, and bench gates
@@ -702,6 +702,6 @@ procedure is `docs/phase_8a_infrastructure_plan.md`. The shape:
 | Stop auto-scoring now | `systemctl edit lane-node` → `WSL_LANE_SCORING_MODE=manual` → `restart`. No machine impact. |
 | Check the server is up | `curl http://<WSL-SRV>:8766/api/health`. |
 | Open the scoring display | `http://<WSL-SRV>:8766/display?lane=21` (and `?lane=22`). |
-| Verify the current fab package | Use the immutable `kicad/fab_revD_2026-07-26_r9/` manifest and README; do not regenerate or substitute a Rev-B or earlier Rev-D package. Every rev-D package before `_r6/` has **bare opto inputs**. |
+| Verify the current fab package | Use the immutable `kicad/fab_revD_2026-07-27_r10/` manifest and README; do not regenerate or substitute a Rev-B or earlier Rev-D package. Every rev-D package before `_r6/` has **bare opto inputs**. |
 | Order the board | **NO-GO. Do not upload or purchase** until every current Rev-D release gate closes; then use only the approved **r7** package and its recorded JLC preview. |
 | Verify the on-board pin maps before trusting hardware | Run `controller_io.py` as a script (KiCad python not needed) — its `__main__` asserts `OUT_A_MAP`/`IN_A_MAP` match the netlist generator and fails on drift. |

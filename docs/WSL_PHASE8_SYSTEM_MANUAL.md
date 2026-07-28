@@ -2393,7 +2393,7 @@ Where a section number is uncertain, cross-reference by title.
 > **Current Rev-D/r7 amendment.** This chapter preserves the Rev-B topology and
 > BOM facts where they are explicitly labeled Rev-B. For current Rev-D/r7 work,
 > `scripts/generate_kicad_netlist_revD.py` and
-> `kicad/fab_revD_2026-07-26_r9/manifest.json` supersede the old resistor value:
+> `kicad/fab_revD_2026-07-27_r10/manifest.json` supersede the old resistor value:
 > exactly forty collector pull-ups `Rpu_*` (`R4,R6,…,R82`) are **47 kΩ**
 > (`0805W8F4702T5E`, LCSC C17713), while unrelated 10 kΩ networks are unchanged.
 > RP2040 GP6–GP13 internal pulls are disabled, and U1/U2 MCP23017
@@ -7875,7 +7875,7 @@ lamps are not motors and are not forwarded.
 #### 20.6.5 Historical Rev-B JLCPCB Standard-PCBA order
 
 > **HISTORICAL REV-B ONLY — DO NOT ORDER FROM THIS SECTION.** The current
-> Rev-D/r7 immutable package is `kicad/fab_revD_2026-07-26_r9/`, with forty
+> Rev-D/r7 immutable package is `kicad/fab_revD_2026-07-27_r10/`, with forty
 > 47 kΩ `Rpu_*` parts and the binding internal-pulls-off runtime gate. The
 > Rev-D board is **NO-GO and not authorized for upload or purchase** until the
 > recorded sign-offs, JLC preview, first-article, FA-9, powered, and bench gates
@@ -8097,7 +8097,7 @@ procedure is `docs/phase_8a_infrastructure_plan.md`. The shape:
 | Stop auto-scoring now | `systemctl edit lane-node` → `WSL_LANE_SCORING_MODE=manual` → `restart`. No machine impact. |
 | Check the server is up | `curl http://<WSL-SRV>:8766/api/health`. |
 | Open the scoring display | `http://<WSL-SRV>:8766/display?lane=21` (and `?lane=22`). |
-| Verify the current fab package | Use the immutable `kicad/fab_revD_2026-07-26_r9/` manifest and README; do not regenerate or substitute a Rev-B or earlier Rev-D package. Every rev-D package before `_r6/` has **bare opto inputs**. |
+| Verify the current fab package | Use the immutable `kicad/fab_revD_2026-07-27_r10/` manifest and README; do not regenerate or substitute a Rev-B or earlier Rev-D package. Every rev-D package before `_r6/` has **bare opto inputs**. |
 | Order the board | **NO-GO. Do not upload or purchase** until every current Rev-D release gate closes; then use only the approved **r7** package and its recorded JLC preview. |
 | Verify the on-board pin maps before trusting hardware | Run `controller_io.py` as a script (KiCad python not needed) — its `__main__` asserts `OUT_A_MAP`/`IN_A_MAP` match the netlist generator and fails on drift. |
 
@@ -9147,7 +9147,7 @@ loop:
 > **HISTORICAL REV-B BOM — NOT A REV-D ORDER SOURCE.** Current Rev-D/r7 uses
 > exactly forty 47 kΩ `Rpu_*` refs (`R4,R6,…,R82`), UNI-ROYAL
 > `0805W8F4702T5E` / LCSC C17713. Unrelated 10 kΩ networks remain unchanged.
-> Use `kicad/fab_revD_2026-07-26_r9/manifest.json` and its package README for
+> Use `kicad/fab_revD_2026-07-27_r10/manifest.json` and its package README for
 > current fabrication data; the Rev-D board remains NO-GO for ordering pending
 > the recorded physical release gates.
 
@@ -9451,7 +9451,7 @@ This maps every source document, script, runbook, and key artifact to what it au
 | `docs/phase8b_pcb_revB_netclass_creepage.md` | The routing contract: 5 net classes, 4-layer stack, domain rooms, plane keepouts, creepage/clearance policy (conservative 250 VAC; relaxable to 24 VAC). |
 | `docs/phase8b_revB_netclass_inventory.md` | All 184 nets mapped to domains; 0 unknown nets. |
 | `docs/phase8b_revB_route_pass1_findings.md` | Routing status + **every Claude/Codex audit verdict** + the FreeRouting-rejection log + the false-green netclass catch. |
-| `docs/phase8b_revB_fab_order_checklist.md` | ⛔ **HISTORICAL REV-B/C ONLY — NOT AN ORDER SOURCE.** Points at `kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/`, which builds a **rev-C** board. For rev-D use `kicad/fab_revD_2026-07-26_r9/` + `docs/phase8_revD_readiness_checklist.md`. |
+| `docs/phase8b_revB_fab_order_checklist.md` | ⛔ **HISTORICAL REV-B/C ONLY — NOT AN ORDER SOURCE.** Points at `kicad/fab_revB_routed_manual/JLC_UPLOAD_READY/`, which builds a **rev-C** board. For rev-D use `kicad/fab_revD_2026-07-27_r10/` + `docs/phase8_revD_readiness_checklist.md`. |
 | `docs/phase8b_revB_pcba_parts_worklist.md` | PCBA parts work tracking. |
 | `docs/phase8_channel_allocation.md` | ⚠️ **GPIO column is STALE** (says GP0–GP7). Useful for channel *intent*, but for GPIO numbers use `config.h` (GP6–GP13). |
 

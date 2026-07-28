@@ -35,7 +35,7 @@
 > and PC817 pull-up statements below.** Exactly the 40 `Rpu_*` parts
 > (`R4,R6,…,R82`) are **47 kΩ**; unrelated 10 kΩ networks are unchanged.
 > The board stays 271 parts / 223 nets with unchanged copper and netclasses.
-> Current immutable package: **`kicad/fab_revD_2026-07-26_r9/`**, 391 / 68 DNP /
+> Current immutable package: **`kicad/fab_revD_2026-07-27_r10/`**, 391 / 68 DNP /
 > 323 placed / 306 JLC / **27 JLC lines** / 17 hand-solder — the r6
 > input-protection build. *(The superseded `_r5/` figures were 271 / 28 / 243 /
 > 226 / 27 / 17; `_r5/` has bare opto inputs and must never be uploaded.)* The dedicated
@@ -450,7 +450,7 @@ Deferred with DC1.
   (prove per board with **FA-15**: LED reverse = 0.35 V ± 0.1 V), and the **harness 1N4007
   interposer is SUPERSEDED — do not build it.**
   Authority: `docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`; **current package
-  `kicad/fab_revD_2026-07-26_r9/`** — the release build of the r6 design (same copper,
+  `kicad/fab_revD_2026-07-27_r10/`** — the release build of the r6 design (same copper,
   identical `source_board_sha256`; `_r6/` is tombstoned so exactly one package is current).
   **Per-channel stuffing table: `docs/phase8_revD_r6_channel_stuffing.csv`** (also inside
   the package). It states in one place what the crew asks: all 40 channels take

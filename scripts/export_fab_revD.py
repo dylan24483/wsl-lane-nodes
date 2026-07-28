@@ -94,12 +94,11 @@ FW_RELEASE_MANIFEST = ROOT / "firmware" / "rp2040" / "release" / "firmware_manif
 EXPECTED_NETLIST_PARTS = 391     # 271 + 120 r6
 EXPECTED_DNP = 68                # 28 + 40 Cflt (Dser/Dclamp are POPULATED)
 EXPECTED_PLACED = 323            # 391 - 68
-EXPECTED_HAND_SOLDER = 9         # r9 wave 1: A1, J1, J3, J4, J5, J13, J15, J16, U45
-                                 # (J2, J6-J11, J14 moved to JLC - see PART_LOCK wave-1 block)
-EXPECTED_JLC_PLACED = 314        # 323 - 9  (r9 wave 1: +8 placements)
-EXPECTED_JLC_LINES = 30          # 27 + 3 (r9 wave 1: MKDS-3, MKDS-2, MCV-4).
-                                 # J6-J11 collapse to ONE line via PART_LOCK aliases;
-                                 # without them the six J_MOTION_* values would emit 35.
+EXPECTED_HAND_SOLDER = 0         # r10 wave 2: ZERO hand-solder. Every placement is JLC-placed.
+EXPECTED_JLC_PLACED = 323        # r10: ALL placed parts (323 - 0 hand-solder)
+EXPECTED_JLC_LINES = 37          # 30 + 7 (r10 wave 2: Pico, IDC header, MCV-10, MCV-14,
+                                 # MCV-12, MCV-6, TRACO). J15->J3 and J16->J13 collapse via
+                                 # aliases, as J6-J11 already do; without them it would be 39.
 
 # ---- r6 per-channel input-protection equality gate (2026-07-25) ---------------------
 # The pre-r6 gate asserted TOTALS only (parts/DNP/placed/CPL). Totals cannot tell
@@ -142,14 +141,10 @@ PDF_LAYERS = ",".join(
 
 # Board refs installed AFTER JLC assembly (hand solder). J12 is DNP (M1 channel) and is
 # NOT in this set - it lives in the DNP list.
-HAND_SOLDER_REFS = {
-    "A1",                                    # Raspberry Pi Pico module (C-number pending)
-    "J1",                                    # CANDIDATE identity - keying never verified
-    "J3", "J4", "J5",                        # MCV headers - unresolved in JLC library
-    "J13", "J15", "J16",                     # MCV headers - unresolved in JLC library
-    "U45",                                   # TRACO TMA-0505S (rev-C U37 - refdes shifted)
-    # r9 wave 1 REMOVED (now JLC-placed): J2, J6, J7, J8, J9, J10, J11, J14
-}
+HAND_SOLDER_REFS: set[str] = set()   # r10: EMPTY. Nothing is hand-soldered any more.
+# History: 17 at r8 -> 9 at r9 (wave 1: J2, J6-J11, J14) -> 0 at r10 (wave 2: A1, J1, J3,
+# J4, J5, J13, J15, J16, U45). The sourcing route per part - JLC stock, Global Sourcing or
+# consigned - is chosen at ORDER time and does not affect this split.
 
 # M1-optional tags (mirror of place_components_revD.is_m1_optional_tag - the DNP rule).
 M1_OPTIONAL_TAGS = {"K_M1", "MOV_M1", "Csnub_M1", "Dfly_M1", "Rb_M1", "Rpd_M1", "Rsnub_M1"}
@@ -327,6 +322,69 @@ PART_LOCK: dict[tuple[str, str], dict[str, str]] = {
         "note": "R_TAPG_* gate pulldowns (R135/R138/R141). Identity re-pinned "
                 "C2933281 FOJAN at r8 (2026-07-26) after C26108 went OOS; "
                 "JLC assembly stock confirmed at order time.",
+    },
+    # ---- WAVE 2 (r10, 2026-07-27): the last NINE placements move to JLC ----------------
+    # Hand-solder goes to ZERO. Every C-number below was verified against its own JLC
+    # part-detail page (searching JLC by bare numeric Phoenix MPN returns FALSE NEGATIVES).
+    # Sourcing route is chosen per-part AT ORDER TIME - JLC stock, Global Sourcing, or
+    # consigned - and does not change this BOM. JLC 2026-07-27: "indicate your components
+    # in the BOM and CPL files ... select the corresponding components when placing the order."
+    # NOTE: several of these show 0 stock in JLC's library today; that is a PROCUREMENT
+    # question, not an identity one. All resolve to the EXACT required MPNs, so no
+    # substitution is in play and FR-2/FR-9 stay closed.
+    ("RP2040 Pico", "RaspberryPi_Pico_SMD"): {
+        "lcsc": "C7203002", "mpn": "SC0915", "manufacturer": "Raspberry Pi",
+        "class": "Extended", "locked_spec": "Raspberry Pi Pico, RP2040, bare castellated module",
+        "note": "A1. JLC confirmed IN WRITING 2026-07-27: 'the Raspberry Pi Pico model "
+                "provided by JLCPCB is SC0915' = BARE module, RP2040, NO pre-soldered headers. "
+                "MUST NOT be SC0917 (Pico H, headers fitted - cannot be reflow-mounted) and MUST "
+                "NOT be an RP2350 Pico 2 - the firmware is RP2040-only. Require a silkscreen "
+                "photo at G12 before payment.",
+    },
+    ("J_PI", "IDC-Header_2x10_P2.54mm_Vertical"): {
+        "lcsc": "C17373551", "mpn": "3020-20-0100-00", "manufacturer": "CNC Tech",
+        "class": "Extended", "locked_spec": "2x10 shrouded IDC box header, 2.54mm, vertical THT",
+        "note": "J1. Keying verified 2026-07-27: pin-1 row faces the board interior, matching "
+                "rev-B/C. This is the ONE connector where a conforming DIN 41651 / IEC 60603-13 "
+                "equivalent is acceptable; every Phoenix part is exact-only.",
+    },
+    ("J_SLOW_IN_C", "PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4"): {"alias": ("J_FAST_IN", "PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4")},
+    ("J_FAST_IN", "PhoenixContact_MCV_1,5_10-G-3.5_1x10_P3.50mm_Vertical_D1.4"): {
+        "lcsc": "C3585531", "mpn": "1843680", "manufacturer": "Phoenix Contact",
+        "class": "Extended", "locked_spec": "Phoenix MCV 1,5/10-G-3,5 10-pos vertical header, 3.5mm",
+        "note": "J3 + J15, 2/board. JLC price is $11.31 and they confirmed 2026-07-27 they CANNOT "
+                "adjust it (supplier-set) against Mouser ~$5.02 with 722 in stock - so this line "
+                "is a DECIDED buy-ourselves/consign, ~$453 saved. J3/J15 are an electrically "
+                "SILENT cross-mate: CP-MSTB coding is what prevents it.",
+    },
+    ("J_SLOW_IN_A", "PhoenixContact_MCV_1,5_14-G-3.5_1x14_P3.50mm_Vertical_D1.4"): {
+        "lcsc": "C3582595", "mpn": "1843729", "manufacturer": "Phoenix Contact",
+        "class": "Extended", "locked_spec": "Phoenix MCV 1,5/14-G-3,5 14-pos vertical header, 3.5mm",
+        "note": "J4. JLC's listing shows 'Assembly Type: SMT Assembly' on a through-hole part; "
+                "they confirmed 2026-07-27 the default is WAVE SOLDERING and the attribute is a "
+                "data error. Its mating plug 1840489 is the discontinued lifetime-buy line.",
+    },
+    ("J_SLOW_IN_B", "PhoenixContact_MCV_1,5_12-G-3.5_1x12_P3.50mm_Vertical_D1.4"): {
+        "lcsc": "C3019636", "mpn": "1843703", "manufacturer": "Phoenix Contact",
+        "class": "Extended", "locked_spec": "Phoenix MCV 1,5/12-G-3,5 12-pos vertical header, 3.5mm",
+        "note": "J5. DigiKey holds 2,139 against a need of 38 if JLC cannot supply.",
+    },
+    ("J_EXT_I2C", "PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4"): {"alias": ("J_LAMP_LED", "PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4")},
+    ("J_LAMP_LED", "PhoenixContact_MCV_1,5_6-G-3.5_1x06_P3.50mm_Vertical_D1.4"): {
+        "lcsc": "C5443576", "mpn": "1843648", "manufacturer": "Phoenix Contact",
+        "class": "Extended", "locked_spec": "Phoenix MCV 1,5/6-G-3,5 6-pos vertical header, 3.5mm",
+        "note": "J13 + J16, 2/board. The ONLY A'.2 line JLC can fill from stock today (503 vs 72 "
+                "needed). J13/J16 cross-mate is a DAMAGE path - a J13 lamp plug in J16 lands "
+                "resistorless LEDs across 5V and wedges I2C. CP-MSTB coding prevents it.",
+    },
+    ("TMA-0505S", "Converter_DCDC_TRACO_TMA-05xxS_12xxS_Single_THT"): {
+        "lcsc": "C5454708", "mpn": "TMA 0505S", "manufacturer": "TRACO Power",
+        "class": "Extended", "locked_spec": "TRACO TMA 0505S 1W isolated DC/DC, 5V/5V 200mA, 1kV, 6-SIP THT",
+        "note": "U45. Sole source of FIELD_WET_V - the ENTIRE opto front end depends on its 1kV "
+                "isolation. NO SUBSTITUTION without pinout and isolation review. Found only via a "
+                "no-space MPN search ('TMA0505S'); JLC support had said it was not in the library. "
+                "JLC package reads SIP 19.5x6.1mm against TRACO's 0.77x0.24in = 19.56x6.10mm - "
+                "exact match. Stock 16 vs 38 needed, so expect to consign.",
     },
     # ---- WAVE 1 (r9, 2026-07-26): three connector types moved from hand-solder to JLC ----
     # Library-native, in stock, unique PN, uncoded and unkeyed. JLC marks all three
@@ -534,58 +592,7 @@ for _i in range(1, 12):
 
 
 # ---- hand-solder BOM (rev-C pattern, rev-D refs incl. J15/J16 + the U37->U45 shift) --
-HAND_SOLDER_ROWS = [
-    {"Ref": "A1", "Qty": 1, "Role": "RP2040 module", "Manufacturer": "Raspberry Pi",
-     "MFR Part #": "SC0915",
-     "Description": "Raspberry Pi Pico, castellated module, no pre-soldered headers",
-     "Source": "DigiKey 2648-SC0915CT-ND or official Raspberry Pi reseller",
-     "Status": "Locked",
-     "Notes": "Program with firmware v1.2 (remediation R3) after assembly; do not use Pico H/WH."},
-    {"Ref": "J1", "Qty": 1, "Role": "Pi IDC/header", "Manufacturer": "CNC Tech candidate",
-     "MFR Part #": "3020-20-0100-00",
-     "Description": "20-position 2x10 2.54mm vertical through-hole box/IDC header candidate",
-     "Source": "DigiKey 1175-1612-ND candidate", "Status": "Candidate - verify body/keying",
-     "Notes": "Verify shroud, key slot, pin-1 orientation vs KiCad footprint before ordering."},
-    {"Ref": "J3", "Qty": 1, "Role": "FAST field input header", "Manufacturer": "Phoenix Contact",
-     "MFR Part #": "1843680",
-     "Description": "MCV 1,5/10-G-3,5, 10-position vertical PCB header, 3.5mm pitch",
-     "Source": "Phoenix Contact", "Status": "Locked",
-     "Notes": "Board drills 1.4mm per the Phoenix drilling plan (FR-9 _D1.4 footprints). "
-              "Mating plug 1840447 on the harness BOM. CODED: keep-out profile pairing vs J15."},
-    {"Ref": "J4", "Qty": 1, "Role": "SLOW A field input header", "Manufacturer": "Phoenix Contact",
-     "MFR Part #": "1843729",
-     "Description": "MCV 1,5/14-G-3,5, 14-position vertical PCB header, 3.5mm pitch",
-     "Source": "Phoenix Contact", "Status": "Locked",
-     "Notes": "Mating plug 1840489 on the harness BOM."},
-    {"Ref": "J5", "Qty": 1, "Role": "SLOW B field input header", "Manufacturer": "Phoenix Contact",
-     "MFR Part #": "1843703",
-     "Description": "MCV 1,5/12-G-3,5, 12-position vertical PCB header, 3.5mm pitch",
-     "Source": "Phoenix Contact", "Status": "Locked",
-     "Notes": "Mating plug 1840463 on the harness BOM."},
-    {"Ref": "J13", "Qty": 1, "Role": "LED lamp header", "Manufacturer": "Phoenix Contact",
-     "MFR Part #": "1843648",
-     "Description": "MCV 1,5/ 6-G-3,5, 6-position vertical PCB header, 3.5mm pitch",
-     "Source": "Phoenix Contact", "Status": "Locked",
-     "Notes": "Mating plug 1840405 on the harness BOM. CODED: keep-out profile pairing vs J16."},
-    {"Ref": "J15", "Qty": 1, "Role": "SLOW C field input header (AUX4-11, NEW in rev-D)",
-     "Manufacturer": "Phoenix Contact", "MFR Part #": "1843680",
-     "Description": "MCV 1,5/10-G-3,5, 10-position vertical PCB header, 3.5mm pitch",
-     "Source": "Phoenix Contact", "Status": "Locked",
-     "Notes": "SAME header PN as J3 - the CP-MSTB coding (harness BOM) is what tells the "
-              "plugs apart. Silk: KEYED: NOT J3."},
-    {"Ref": "J16", "Qty": 1, "Role": "External I2C expansion header (NEW in rev-D)",
-     "Manufacturer": "Phoenix Contact", "MFR Part #": "1843648",
-     "Description": "MCV 1,5/ 6-G-3,5, 6-position vertical PCB header, 3.5mm pitch",
-     "Source": "Phoenix Contact", "Status": "Locked",
-     "Notes": "SAME header PN as J13 - CP-MSTB coding required. Silk: KEYED: NOT J13 LAMP. "
-              "DNP-tolerant: may be left unpopulated on early articles."},
-    {"Ref": "U45", "Qty": 1, "Role": "Isolated field supply (rev-C refdes U37 - SHIFTED)",
-     "Manufacturer": "TRACO Power", "MFR Part #": "TMA 0505S",
-     "Description": "Isolated 5V-to-5V 1W SIP DC/DC converter, 5V 200mA output",
-     "Source": "DigiKey 1951-1003-ND / TME / Mouser equivalent", "Status": "Locked exact part",
-     "Notes": "Do not substitute without pinout and isolation review. Rev-D refdes is U45; "
-              "U37 on a rev-D board is the AUX5 optocoupler (first-article doc pack)."},
-]
+HAND_SOLDER_ROWS: list[dict[str, object]] = []   # r10: empty, see HAND_SOLDER_REFS
 
 # ---- HARNESS BOM (Codex H7 deliverable) ---------------------------------------------
 # Termination data verbatim from the Phoenix MC 1,5/..-ST-3,5 plug data (1840447 family):
@@ -1436,13 +1443,20 @@ def main() -> int:
         "  ENIG, confirm preview reads 250 x 240 mm - REV-D IS 240 mm TALL).",
         f"- assembly/{stem}-jlc-standard-pcba-upload-bom.csv + -cpl.csv -> Standard PCBA.",
         "",
-        "Hand-solder after JLC (9 refdes - r9 WAVE 1 reduced this from 17):",
-        "  A1, J1, J3, J4, J5, J13, J15, J16, U45.",
-        "  U45 is the TMA-0505S (rev-C called it U37 - 46 refdes shifted; use",
-        "  docs/phase8_revD_first_article_pack.md, never rev-C bench notes).",
-        "  J1 stays hand because its identity is CANDIDATE (CNC Tech 3020-20-0100-00,",
-        "  body/keying never verified against the KiCad footprint) - not for any",
-        "  process reason. A1/U45 and the six MCV headers await part sourcing.",
+        "Hand-solder after JLC: NONE. r10 WAVE 2 took it to ZERO.",
+        "  Every one of the 323 placed parts is JLC-placed. The nine that were",
+        "  hand-solder at r9 - A1, J1, J3, J4, J5, J13, J15, J16, U45 - now carry",
+        "  pinned C-numbers, each verified against its own JLC part-detail page.",
+        "  A1 = C7203002, confirmed IN WRITING by JLC 2026-07-27 as order code",
+        "  SC0915: the BARE RP2040 module. NOT SC0917 (Pico H, headers fitted) and",
+        "  NOT an RP2350 Pico 2 - the firmware is RP2040-only. Require a silkscreen",
+        "  photo before payment.",
+        "",
+        "  PROCUREMENT IS SEPARATE FROM THIS BOM. Several lines show 0 stock in",
+        "  JLC's library today. The route per part - JLC stock / Global Sourcing /",
+        "  consigned - is selected at ORDER time and does not change these files.",
+        "  Per JLC 2026-07-27, consigned and JLC parts may coexist on one order for",
+        "  DIFFERENT parts, but never for the SAME part - so each line is all-one-way.",
         "",
         "r9 WAVE 1: J2, J6-J11 and J14 are now JLC-PLACED (8 placements/board, 19 THT",
         "  joints/board, 646 fleet-wide). All three are library-native Phoenix Contact,",

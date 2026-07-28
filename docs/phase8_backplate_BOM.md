@@ -1,7 +1,7 @@
 # Phase 8 — Complete Backplate Parts List (per lane · per pair · 32-lane house)
 
 **Rev 1 · 2026-07-25.** Everything that mounts to, or connects on, the enclosure backplate.
-Board revision: **rev-D r6** (`2fd8c5e`, fab pkg `fab_revD_2026-07-26_r9`), 250 × 240 mm.
+Board revision: **rev-D r6** (`2fd8c5e`, fab pkg `fab_revD_2026-07-27_r10`), 250 × 240 mm.
 Layout: `Downloads/pair_enclosure_backplate_complete.html` Rev 2 (items ①–⑬).
 
 **House arithmetic:** 32 lanes = **32 boards** · **16 pairs** = 16 enclosures / 16 Pis.
@@ -52,20 +52,30 @@ Spares recommended at ~10% (called out per line where it matters).
 > underside (copper isolation gutters), and nothing conductive within **3 mm of the bottom edge**
 > (rev-D SLOW_AUX11 copper runs to 1.28 mm from it).
 
-## A′ · Board-side connectors — HAND-SOLDER, NOT SUPPLIED BY JLC ⚠️
+## A′ · Board-side connectors — ALL JLC-PLACED as of r10 ✅
 
 > **These are the parts that go ON the board, not the plugs that mate with it (§B).**
-> JLC's PCBA excludes every `J*` designator as hand-solder — the upload BOM contains **zero**
-> J refdes — so the PCBA PO physically cannot supply them. Until this section existed they were
-> on **no** purchase list and 34 boards would have arrived with no connectors.
-> Source of truth: `kicad/fab_revD_2026-07-26_r9/assembly/wsl-phase8b-revD-hand-solder-bom.csv`.
+>
+> ✅ **r10 (2026-07-27) TOOK HAND-SOLDER TO ZERO.** JLC now places all 323 parts. The
+> hand-solder count went **17 → 9 → 0** across r9 and r10, eliminating ~4,150 through-hole joints
+> including A1's 40 castellated Pico pads — the hardest operation on the board.
+>
+> ⚠️ **"JLC PLACES IT" IS NOT THE SAME AS "JLC BUYS IT."** Placement is settled; **sourcing is
+> not**. For several lines we still buy the part ourselves and consign it — JLC just solders it.
+> The split below is now about **who buys**, not who solders.
+>
+> Per JLC 2026-07-27, consigned and JLC-library parts may coexist on one order for **different**
+> parts, but never for the **same** part — so each line is all-one-way. Partial stock does not help.
+>
+> Source of truth: `kicad/fab_revD_2026-07-27_r10/assembly/wsl-phase8b-revD-jlc-standard-pcba-part-lock.csv`.
+> The hand-solder BOM in that package is now **header-only, by design**.
 
-> **🔄 UPDATED 2026-07-26 — WAVE 1: three of these are now SUPPLIED AND FITTED BY JLC.**
-> Fab package `r9` moves **J2, J6–J11 and J14** into the JLC assembly BOM (hand-solder count
-> 17 → 9). **DO NOT BUY THEM — that would be a double-buy**, the same trap §B carries.
-> JLC sources them from its own library at ~$15 fleet-wide in labour.
+> **🔄 WAVE 1 (r9, 2026-07-26):** J2, J6–J11 and J14 moved to JLC, sourced from their own
+> library. **DO NOT BUY THEM — that would be a double-buy**, the same trap §B carries.
+> **WAVE 2 (r10, 2026-07-27):** the remaining nine — A1, J1, J3, J4, J5, J13, J15, J16, U45 —
+> moved to JLC placement. Their **sourcing** is resolved per line in A′.2 below.
 
-### A′.1 — DO NOT BUY · supplied and fitted by JLC (fab pkg r9)
+### A′.1 — ⛔ DO NOT BUY · JLC sources AND places these
 
 | # | Ref | Phoenix PN | JLC part | Per board | Stock at LCSC |
 |---|---|---|---|---|---|
@@ -77,7 +87,23 @@ Spares recommended at ~10% (called out per line where it matters).
 cited before) held only ~239 pcs against a **204-piece** fleet need. `C480516` is the line to
 use. If JLC ever proposes swapping back, refuse.
 
-### A′.2 — STILL OWNER-BUY · hand-soldered after JLC
+### A′.2 — JLC PLACES THEM · but we may still have to BUY them
+
+> **All nine are in the r10 assembly BOM with pinned C-numbers — JLC solders every one.** What is
+> unresolved is *where the part comes from*. Lines JLC cannot fill from stock go to Global
+> Sourcing or, more likely, we buy and consign. **Buying these is still on us; soldering them
+> is not.**
+
+| Ref | JLC part | Source decision |
+|---|---|---|
+| **A1** Pico | `C7203002` | ✅ **JLC** — confirmed SC0915, in library |
+| **J13, J16** | `C5443576` | ✅ **JLC** — 503 in stock vs 72 needed |
+| **J3, J15** | `C3585531` | ⛔ **BUY OURSELVES** — JLC $11.31 is supplier-set and unmovable vs Mouser ~$5.02 (722 stock). ~$453 saved |
+| **J4** | `C3582595` | ⏳ 0 stock — Global Sourcing quote pending, else consign |
+| **J5** | `C3019636` | ⏳ 3 stock vs 38 — same |
+| **J1** | `C17373551` | ⏳ 0 stock — same. DigiKey holds 2,958 |
+| **U45** | `C5454708` | ⏳ 16 stock vs 38 — expect to consign. DigiKey holds 5,964 |
+
 
 | # | Ref | Phoenix / MFR PN | Description | Per board | ×34 boards (+~10%) |
 |---|---|---|---|---|---|

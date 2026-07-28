@@ -4,7 +4,7 @@
 >
 > **Dylan reopened copper on 2026-07-25 and the provisions LANDED.** The implementable
 > authority is **`docs/phase8_revD_r6_input_protection_spec_2026-07-25.md`**; the released
-> package is **`kicad/fab_revD_2026-07-26_r9/`** (release build of the r6 design — same
+> package is **`kicad/fab_revD_2026-07-27_r10/`** (release build of the r6 design — same
 > copper as `_r6/`, which is tombstoned so exactly one package is current). The per-channel
 > stuffing table is **`docs/phase8_revD_r6_channel_stuffing.csv`**.
 >

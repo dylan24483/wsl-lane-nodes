@@ -28,7 +28,7 @@ Where a section number is uncertain, cross-reference by title.
 > **Current Rev-D/r7 amendment.** This chapter preserves the Rev-B topology and
 > BOM facts where they are explicitly labeled Rev-B. For current Rev-D/r7 work,
 > `scripts/generate_kicad_netlist_revD.py` and
-> `kicad/fab_revD_2026-07-26_r9/manifest.json` supersede the old resistor value:
+> `kicad/fab_revD_2026-07-27_r10/manifest.json` supersede the old resistor value:
 > exactly forty collector pull-ups `Rpu_*` (`R4,R6,…,R82`) are **47 kΩ**
 > (`0805W8F4702T5E`, LCSC C17713), while unrelated 10 kΩ networks are unchanged.
 > RP2040 GP6–GP13 internal pulls are disabled, and U1/U2 MCP23017

@@ -13,7 +13,7 @@ Uploading anything from here builds a REV-C board:
        across a 6 V-rated PC817 LED.
 
 CURRENT PACKAGE FOR ALL ORDERING:
-  kicad/fab_revD_2026-07-26_r9/
+  kicad/fab_revD_2026-07-27_r10/
     - wsl-phase8b-revD-gerber-drill.zip                     -> PCB order
     - assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-bom.csv  -> PCBA
     - assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-cpl.csv  -> PCBA
