@@ -464,6 +464,29 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 > - **Label both ends as you pull.** Sixteen identical grey cables in a machine room is where an
 >   afternoon disappears.
 
+
+> **📨 JLC ANSWERS — 2026-07-27 (Dorae). Four things resolved, one decided against us.**
+>
+> | # | Question | Answer | Consequence |
+> |---|---|---|---|
+> | 6 | Pico **C7203002** order code | ✅ **"the Raspberry Pi Pico model provided by JLCPCB is SC0915"** | **Bare RP2040 module, no headers.** A1 is unblocked — the FA-4 acceptance is no longer conditional |
+> | 4 | **C3582595** listed "SMT Assembly" on a THT part | ✅ **"the default assembly method for this component is Wave Soldering"** | Data-error theory confirmed. Anomaly closed |
+> | 3 | **C3585531** at $11.31 | ⛔ **"we are currently unable to determine or adjust the component price … pricing is provided by the supplier"** | **The $11.31 stands.** See below |
+> | 7 | Process rails at 250 × 240 | ⚠️ They will follow instructions **only if put in the PCBA remark** — they did NOT confirm rails are unnecessary | Must be written into the order remark |
+> | 5 | Consignment fees | Visible on the platform once the flow is started | The previously-unverified ~$45 figure will be confirmed in-flow |
+>
+> ⛔ **1843680 (J3/J15) IS NOW A DECIDED BUY-OURSELVES.** JLC cannot move the price and it is
+> supplier-set, so the choice is $11.31 × 72 = **$814** through JLC against Mouser's ~$5.02 × 72 =
+> **~$361** from 722 in stock. **~$453 saved on one line** — more than the entire consignment
+> overhead. There is nothing further to negotiate here.
+>
+> ⭐ **TWO PARTS CAN MOVE TO JLC RIGHT NOW WITH NO SOURCING FRICTION AT ALL:**
+> - **A1** → `C7203002`, now confirmed SC0915, in their library, Standard PCBA, reflow-capable.
+> - **J13 / J16** → `C5443576` = Phoenix 1843648, **503 in stock** against a need of 72.
+>
+> Neither needs Global Sourcing or consignment. Moving them alone drops hand-solder **9 → 6** and
+> removes the hardest hand-solder operation on the board (A1's 40 castellated pads).
+
 ---
 
 ## Cost roll-up (backplate scope, sections A–F only)

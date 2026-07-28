@@ -467,8 +467,9 @@ it requires JLC's rendered preview, which does not exist until the files are upl
 Do these at the upload screen, before paying:
 
 - `[ ]` Preview reads **250 × 240 mm** — rev-D is 240 mm tall, not rev-C's 225.
-- `[ ]` ⚠️ **EDGE RAIL: if JLC proposes a break-away rail it must go on the LEFT or RIGHT edge,
-  never the BOTTOM.** Three JLC-placed parts sit inside the usual 5 mm bottom keep-out —
+- `[ ]` ⚠️ **EDGE RAIL — PUT IT IN THE PCBA REMARK, do not assume.** JLC confirmed 2026-07-27 that their engineers add process rails when a board is under 70 × 70 mm (ours is 250 × 240, so rails should not be needed) **but they did NOT confirm none will be added** — they said they will follow instructions *if written in the PCBA remark*. Required remark text:
+  > *"Board is 250 × 240 mm. No process rails should be required. If any process rail IS added, it must be on the LEFT or RIGHT edge ONLY — never the top or bottom edge. Components sit within 5 mm of the top and bottom edges (nearest 0.52 mm at U45, 0.63 mm at U43) and depanelisation there would damage them. A left/right rail changes the outline; this is pre-approved."*
+- `[ ]` **Original wording, retained:** if a rail is proposed it must go on the LEFT or RIGHT edge, never the BOTTOM. Three JLC-placed parts sit inside the usual 5 mm bottom keep-out —
   `U43` at **1.360 mm**, `D97` at 1.860, `R82` at 2.200. V-scoring 1.36 mm from a DIP-4 body
   risks cracked joints fleet-wide. Left/right edges are >56 mm clear.
   **Pre-approve the resulting outline change** so a side rail does not read as a 250 × 240 mismatch.
