@@ -478,9 +478,9 @@ line mislabeled the rear screw as the standoff and dropped the rest):**
 | G5 | Crimp + extraction tooling | 2 sets | size-16 crimper w/ positioner + AMF `030 004 031` |
 | G5a | Guide pins/sockets, spring clips, strain clamps | 32 sets | `000028442` · `000028441` · `000029013` · `000029093` (C1) / `000029896` (C2A) |
 | G6 | PoE head-end | 18 injectors **or** 2 × 16-port bt switch | TL-POE170S ~$50 |
-| G7 | **Cat6 solid-core, 1000 ft box** | 1 box | cut list below |
+| G7 | **Cat6 solid-core, 1000 ft box** | 1 box | ✅ **ON HAND 2026-07-29** — cut list below |
 | G8 | J14 Stop/CIS interface | 32 | ⛔ **DECISION OPEN** ~$25/lane |
-| G9 | **Ball-detect sensors** | **72** | Datasensing **SSC/AN-0C** ~$64 · Rankin USA · ⚠️ **fleet lead time UNKNOWN, not ordered** |
+| G9 | **Ball-detect sensors** | ~~72~~ **8–12 spares** | ⭐ **RESPEC'd 2026-07-29: KEEP the existing 64 DIELL LSC/AN-2C6J heads, replace as they fail.** They are NPN active-low (proven: ~16 V clear / ~0.7 V blocked) and the new architecture feeds them from the isolated 12 V (D7→F6) — **GATE: bench one head at 12 VDC and prove clear/blocked switching before this decision is final.** Buy only a spare-attrition batch of spec-compliant M18 retroreflective NPN-NO 10–30 VDC units (SSC/AN-0C or any brand meeting the deprecation-doc spec table — never diffuse). Full 72-unit fleet buy CANCELLED (~$4.6k saved). |
 
 > ⛔ **Retroreflective or through-beam ONLY — never diffuse.** A bowling ball is dark and glossy.
 > ⚠️ **G2/G3 housings: AMP M Series is winding down** (Mouser already flags it obsolete). The
