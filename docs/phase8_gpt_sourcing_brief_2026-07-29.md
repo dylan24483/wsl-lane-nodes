@@ -50,3 +50,33 @@ Pi before buying the fleet quantity — rank by probability of passing that test
 
 **Out of scope** (already ordered elsewhere): DIN rail, duct, terminal blocks, fuses,
 sensors, reflectors, M12 cordsets, ferrules, 18 AWG wire, SD cards, IDC ribbon, heatsinks.
+
+
+---
+
+# RESULTS — GPT audit returned 2026-07-29, dispositioned same day
+
+**Capture:** DO NOT fleet-order yet. Sample = **Diamond VC500 (non-SE, NOT VC500SE)** ~$39.99
+— historically Geniatech OTG102 (1f4d:0102) on mainline `cx231xx`, revision-sensitive; Amazon/FBA
+exposes qty ≥30. Runners-up: AVerMedia C039 (07ca:c039, cx231xx — strongest driver evidence,
+over $50/OOS) · TR Video-2-Pi (UVC, exact Pi still-frame evidence, no US qty). REJECTED: VIXLW
+(Windows-only evidence), generic EasyCAP (chipset roulette), current Hauppauge USB-Live2
+(revision drift), Sabrent AVCPT (discontinued). **Acceptance = GPT's script:** clean Bookworm
+64-bit, driver must resolve to uvcvideo/cx231xx/usbtv/stk1160, NTSC 720×480 still, **100
+open/capture/close cycles** (no black/green/stale frames), dmesg clean of URB/reset/timeout,
+**5 cold boots**, then the seller same-revision/VID:PID letter BEFORE the 17-unit follow-on.
+If the $11 clone test unit arrives, test it with the same script — first pass wins.
+
+**Brief-2 picks (GPT):** uxcell USB-C 22 AWG 0.5 m ×20 (RELEASE — with the undervolt gate AND
+the DDR-60G-5 output-trim mitigation: set rail ~5.15–5.2 V at commissioning, watch
+`vcgencmd get_throttled` on the first pair) · Calrad **55-877-20** RCA/RG59 20 ft ×36 (HOLD:
+36-qty confirmation from Calrad) · Beisit **M2012B ×108 + M1608B ×90** + locknuts via Aim
+Dynamics (**PA66 hold WAIVED by Claude 2026-07-29** — indoor duty, any PA at IP68 acceptable;
+ORDER) · Qualtek **FAD1-04010BBMW11** ×20 (Mouser) · Amphenol LTW **VENT-PS1YBK-N8001** ×16
+(Mouser, ePTFE M12) · QSFPTEK 0.5 m Cat6 ×18 · ElecDirect 3/8" loom ×2×250 ft · CM75-0C
+mounts ×400 · 4" ties ×500 · M4 brass screws+nuts ×25 + Yageo **FMF1WSFTE52-1M** 1 MΩ 1 W ×25
+· Remington 10-color 22 AWG kit (**has NO PINK** — GPT corrected the brief; pink 100 ft spool
+from Holland Computers eBay ~$9.99). Planning subtotal ~$803 + 18×VC500 $720.
+
+**Outstanding before full release:** Calrad qty letter · Remington variant ETA · ZIP-date
+check on CHECKOUT rows · VC500 sample pass + revision letter.
