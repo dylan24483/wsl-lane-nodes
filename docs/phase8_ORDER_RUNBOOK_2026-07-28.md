@@ -162,6 +162,23 @@ placed AND paid.**
 Part 3, Group 1 is the list as it stands from external data. **Step 3's screen is authoritative** —
 add or remove lines from it. Buy everything with **+25 % overage**.
 
+> ✅ **STEP 3 EXECUTED 2026-07-29** — matching export archived at
+> `docs/phase8_jlc_bom_matching_2026-07-29.xlsx` (JLC download 10:34, qty-50 basis).
+> **37/37 lines matched by C-number, zero warnings, part-lock held.** Result:
+> - **CONSIGN (6 lines, stock 0/short):** 1843680 (0) · 1843729 (0) · 1843703 (3) ·
+>   3020-20-0100-00 (0) · **TMA 0505S (16 — consign ALL, no-mixing rule)** · 10 µF C89827 (1).
+>   Buy at the Group 1 quantities: 95 / 48 / 48 / 48 / 48 / 200.
+> - **DROP from consign (JLC covered the full need):** C5443576 **100 ✓ → stays a JLC line,
+>   Group 1 row 13 is DEAD** (keep it in the no-sub remark) · C116963 relay 300 ✓ ·
+>   C47023 150 ✓ · C17513 610 ✓ · C2933281 160 ✓ · C880333 50 ✓ · C17702767 56 ✓ ·
+>   Pico 50 ✓ · C118873 4,406 ✓ · C17713 2,010 ✓.
+> - **PC817B C5692981: 2,003 ✓ — DECISION (Dylan):** JLC can supply the whole build.
+>   Consigning never resolved the B-bin question (no distributor states it either).
+>   Recommended: JLC-supply, drop the 1,900-pc consign buy, enforce B-rank via the remark +
+>   reel-label check at incoming + FA-9. Consign only for chain-of-custody.
+> - ⚠️ Covered = allocated-at-match, not pool depth. **Re-match if >24 h pass before payment.**
+> - ⚠️ The 2026-07-29 session ran at qty 50 — re-quote at **34** before paying.
+
 ## STEP 5 — Open the consignment flow
 
 Follow `phase8_jlc_consignment_runbook.md` — **§3–§5 flow mechanics ONLY.** Its §1 decision
