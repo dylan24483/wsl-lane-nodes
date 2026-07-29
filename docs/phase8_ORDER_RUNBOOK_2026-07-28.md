@@ -539,7 +539,9 @@ Switch sits between lanes 21 and 22. Path to the first Pi in each direction = **
 **ORDERED:** DigiKey main (13 lines ≈ $5,041 — consignment 5 + plugs 1840447×76/1840405×76/1840382×72
 + stars ×30 + DDR-15G-12 ×18 + DDR-60G-5 ×18 + Pi 4B ×18 @$100 + heatsinks ×16) ·
 Mouser ($1,104 — 1843680 ×125 consign · 1840463 ×40 · 1831293 ×10 practice, BACKORDERED) ·
-CZH-Labs ($1,296 — F-1019 ×18 · MD-D220T-1 ×36) · B&H (SanDisk High Endurance 32 GB ×20, $460).
+CZH-Labs ($1,296 — F-1019 ×18 · MD-D220T-1 ×36) · B&H (SanDisk High Endurance 32 GB ×20, $460) ·
+**OnlineComponents.com (ORDERED 2026-07-29): 1840489 ×50 @ $16.26 = $813 against the inbound
+100 due 8/12** — the #1 long pole now has a PO; Newark hedge still optional.
 
 **CARTS BUILT / PENDING:** OnlineComponents 1840489 ×50 @$16.26 = $813 against the 100 due
 8/12 (⭐ submit; ground shipping — the harness-PO clock is the constraint, not transit) +
