@@ -513,6 +513,43 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 > Neither needs Global Sourcing or consignment. Moving them alone drops hand-solder **9 → 6** and
 > removes the hardest hand-solder operation on the board (A1's 40 castellated pads).
 
+
+> **💰 GLOBAL SOURCING QUOTE RECEIVED — 2026-07-28, ref `XOB2026072800482-12616613A`.
+> IT REVERSES THE EARLIER BUY-OURSELVES DECISION ON PRICE, AND EXPOSES ONE 15-WEEK LINE.**
+>
+> | MPN | Ref | Qty | GS unit | GS total | Distributor | Dist. total | Δ | Lead |
+> |---|---|---:|---:|---:|---:|---:|---:|---:|
+> | 1843680 | J3, J15 | 72 | **$2.0515** | $147.71 | ~$5.02 Mouser | $361.44 | **−$213.73** | 8 bd |
+> | 1843729 | J4 | 38 | **$1.9898** | $75.61 | $5.72 DigiKey | $217.36 | **−$141.75** | ⚠️ **75 bd** |
+> | 1843703 | J5 | 38 | **$1.7056** | $64.81 | $4.04 DigiKey | $153.52 | **−$88.71** | 21 bd |
+> | 3020-20-0100-00 | J1 | 38 | $1.3522 | $51.38 | ~$0.93 DigiKey | $35.34 | +$16.04 | 21 bd |
+> | TMA0505S | U45 | 38 | $5.4409 | $206.75 | $4.16 DigiKey | $158.08 | +$48.67 | 7 bd |
+> | **TOTAL** | | | | **$546.27** | | **$925.74** | **−$379.47** | |
+>
+> ⚠️ **THE $11.31 ADVICE IS SUPERSEDED AND WAS WRONG ONCE QUOTED.** JLC's catalogue spot price
+> for C3585531 was $11.31 with 0 stock, and on that basis this file recorded 1843680 as a
+> "decided buy-ourselves, ~$453 saved". **Global Sourcing quotes the same part at $2.0515** — 59 %
+> *below* Mouser, not 125 % above. The spot price was a zero-stock artefact, not the real cost of
+> the part. **Buying that line ourselves would now LOSE ~$214.**
+>
+> **Global Sourcing is ~$379 cheaper on parts, and additionally avoids the ~$125–195 consignment
+> overhead, the freight, the customs paperwork and JLC's quality-liability disclaimer on consigned
+> stock — a total advantage of roughly $500–575.**
+>
+> ⛔ **BUT 1843729 (J4) QUOTES AT 75 BUSINESS DAYS ≈ 15 CALENDAR WEEKS.** Every other line is
+> ≤ 21 bd (≤ 4.2 weeks). The harness critical path is ~11 weeks (3 wk first article + 8 wk
+> balance), so **an all-Global-Sourcing order makes the BOARD the critical path** and pushes the
+> programme out by roughly a month beyond the harness.
+>
+> **⭐ THE ONE CHECK THAT DECIDES IT: does any franchised distributor hold 1843729 in stock?**
+> DigiKey lists it at $5.72 but the stock count could not be read through automated tools — it is
+> a 30-second look on their site. If stock exists, split J4 out (buy + consign it, ~$217 + logistics)
+> and take Global Sourcing on the other four at ≤ 21 bd. If nobody holds stock, 75 bd is simply the
+> market lead for that part and Global Sourcing is the right route for all five.
+>
+> **Quote expiry:** 1843703 / 1843729 / TMA0505S **Aug 13** · 1843680 **Aug 14** ·
+> 3020-20-0100-00 **Aug 24** (all GMT+8). Roughly two weeks to decide.
+
 ---
 
 ## Cost roll-up (backplate scope, sections A–F only)
