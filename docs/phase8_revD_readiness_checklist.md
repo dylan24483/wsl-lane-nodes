@@ -21,7 +21,7 @@ on the G15 line to close that gate formally.
 | 10 | **OEM DIELL interface board DEPRECATED.** Confirmed at the machine that it feeds/outputs only the DIELL sensors and the camera — nothing else. We power both ourselves. | Dylan, 2026-07-26 | Retires 32 boards + 64 no-NA-distribution sensors + 42 VAC from the ball path. Harness **Rev 4** (+W50–W53); D3 4→6; new isolated 12 V DC-DC. **Closes audit M-21.** Full record: `phase8_diell_board_deprecation_2026-07-26.md` |
 | 6 | **WAVE 1 assembly move approved** — J2, J6–J11, J14 to JLC. | Dylan | Fab package **r9**; hand-solder 17 → 9; 646 THT joints eliminated |
 | 7 | **FA-4 RISK ACCEPTED** — JLC may place A1 (Pico) without a first article proving USB access. | Dylan, 2026-07-26 | See below. **Conditional on the Pico C-number being confirmed as bare RP2040** |
-| 8 | **Pico C-number resolution delegated to Claude.** | Dylan | **UNRESOLVED from public data — escalated to JLC support.** See below |
+| 8 | **Pico C-number resolution delegated to Claude.** | Dylan | ✅ **RESOLVED 2026-07-27 — JLC confirmed in writing: C7203002 = SC0915 bare RP2040 module.** A1 is a JLC-placed line in r10 (`PART_LOCK` carries C7203002); the G12 silkscreen-photo gate applies at the preview. The "stays hand-solder" text below is historical |
 
 ### Item 9 — J1 keying VERIFIED · 2026-07-26 · the "Candidate" hold is released
 
@@ -101,10 +101,11 @@ JLC's library also carries **Pico 2 / RP2350** entries, and this project's firmw
 **RP2040-only** (`build_options.pico_board = "pico"`, UF2 `d5570efd…`). Pinning the wrong
 variant would put unusable silicon on 34 boards, discovered only at flash time.
 
-**Resolution: question 2 of `docs/phase8_jlc_support_email_2026-07-26.md`.** Until JLC confirms
-in writing, **A1 stays hand-solder** and no Pico C-number enters `PART_LOCK`. When it is
-confirmed, add a G12 **silkscreen photo gate** — a photograph showing the module reads
-"Raspberry Pi Pico" (RP2040) — before payment.
+**Resolution: question 2 of `docs/phase8_jlc_support_email_2026-07-26.md`.**
+✅ **ANSWERED 2026-07-27: JLC confirmed C7203002 = SC0915 (bare RP2040) in writing.** A1 moved
+onto the JLC lines in r10 WAVE 2 and C7203002 is in `PART_LOCK`. The G12 **silkscreen photo
+gate** — a photograph showing the module reads "Raspberry Pi Pico" (RP2040) — still applies
+before payment.
 
 ### Item 2 — the 24 VAC population decision, reasoning
 
@@ -186,9 +187,11 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
 > TP-pad-only probing, FA-9 per-channel PC817B qualification at min FIELD_WET +
 > ≥ 70 °C [R2-7], FA-12 J16 SDA/SCL short recovery [R2-4]); the PC817B
 > disposition is remediation spec §R4 (revised 2026-07-23).
-> Board figures anywhere below are superseded: **271 parts / 223 nets, netclasses
-> 103/4/13/82/21, 24 test pads (TP17-24 tap probe pads), ERC baseline 1+39
-> (WVR-ERC-2, pin-pair order-insensitive since round 3)**; release DRC =
+> Board figures anywhere below are superseded: **391 parts / 263 nets, netclasses
+> 103/4/13/122/21** *(counts refreshed 2026-07-28 — the r6 input-protection copper added 120
+> parts / 40 nets to Field_Sense; the banner previously still carried the pre-r6 271/223)*,
+> 24 test pads (TP17-24 tap probe pads), ERC baseline 1+39
+> (WVR-ERC-2, pin-pair order-insensitive since round 3); release DRC =
 > `kicad/fab_revD_2026-07-27_r10/reports/DRC-revD-fab-export.rpt`; as-current fab package =
 > **`kicad/fab_revD_2026-07-27_r10/`** (47 kΩ PC817 pull-ups plus the J16
 > protection stack with ESD VP moved
@@ -415,7 +418,7 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   stub placement severed a zone neck at (160, 83–84) and was caught and re-placed north)
   and the Safety_Rail==13 stop-ship invariant.
 
-### G11 — Fab export to a NEW dated directory  `[x]`  (re-run 2026-07-25, r6 release build = package **r7**)
+### G11 — Fab export to a NEW dated directory  `[x]`  (re-run 2026-07-27, r10 WAVE-2 release = package **r10**; counts refreshed 2026-07-28)
 - `scripts/export_fab_revD.py` RUN → **`kicad/fab_revD_2026-07-27_r10/`** (hashed
   as-ordered package, `manifest.json` with sha256 per file + source board/netlist hashes;
   46 members). REV and output-dir are parameters; the script **refuses to run if the output
@@ -427,7 +430,9 @@ detail), `phase8_revD_run_log.md` (gate records FR-1…FR-7, WVR-ERC-1, COR-1, O
   `.kicad_dru`; `audit_revD_board.py` routed mode **ALL PASS**.
 - **BOM↔CPL↔netlist equality ASSERTED** (not sampled): every placed refdes present in all
   three with matching value+footprint; pinned counts **391 parts / 68 DNP / 323 placed /
-  306 JLC-placed / 27 JLC lines / 17 hand-solder**. Since r7 the equality is also asserted
+  323 JLC-placed / 37 JLC lines / 0 hand-solder** *(r10 WAVE-2 figures; r7's 306/27/17 are
+  historical — r9 WAVE-1 and r10 WAVE-2 moved every hand-solder part onto JLC lines)*.
+  Since r7 the equality is also asserted
   **per part class, per channel** for the 120 r6 parts — see **G17**.
 - **PC817 pull-up scope hard-locked:** `R4,R6,…,R82` are exactly 40 × 47 kΩ,
   UNI-ROYAL `0805W8F4702T5E`, LCSC **C17713**. The exporter rejects a missing

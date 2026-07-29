@@ -1,5 +1,10 @@
 # Phase 8 rev-D r6 — FINAL PRE-ORDER VERDICT
 
+> ⛔ **SUPERSEDED 2026-07-28 — DO NOT UPLOAD r7.** The current package is
+> **`kicad/fab_revD_2026-07-27_r10/`** (zero hand-solder, 323 JLC-placed / 37 lines) and the
+> current ordering document is **`phase8_ORDER_RUNBOOK_2026-07-28.md`**. This file's upload
+> instructions and its 34-board quantity basis are historical; its findings record remains valid.
+
 **Date:** 2026-07-25 · **Repo HEAD:** `85dfce7` · **Package under audit:** `kicad/fab_revD_2026-07-25_r7/`
 **Scope:** 34 assembled controller PCBs · 16 pair backplate sets · 34 field harnesses · machine interposer connectors
 **Basis:** 10-dimension adversarial audit, findings survived independent refutation. Refuted claims are listed in §9 so they are not re-raised.

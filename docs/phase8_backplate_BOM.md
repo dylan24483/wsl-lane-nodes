@@ -1,5 +1,16 @@
 # Phase 8 — Complete Backplate Parts List (per lane · per pair · 32-lane house)
 
+> ⛔ **ORDERING STRATEGY IN THIS FILE IS SUPERSEDED — 2026-07-28.**
+> Work ONLY from **`phase8_ORDER_RUNBOOK_2026-07-28.md`** when placing orders. In particular:
+> the §A'.2 / J4 option blocks recommending **Global Sourcing are REVERSED** (runbook Part 1:
+> consign, cost is not a factor); the **A2/A3 "Hand-solder" notes are DEAD** (r10 = zero
+> hand-solder, JLC places A1 and U45; flashing happens at incoming inspection); the §B
+> "double-buy DECISION OPEN" note is **CLOSED → free-issue all five plugs**; §D/§E/§F never
+> absorbed the PANEL-W2 deltas (D5 KN-G10 is FORBIDDEN, D7 = DDR-15G-12, gland size mix,
+> E2 = 96, fan/lacing-duct/split-loom/Cat6-patch lines) — the runbook Groups 4–7 carry the
+> corrected lines; and the "Board lead 4.2 wk" figure at ~:557 is the PARTS lead, not
+> board-in-hand. This file remains valid as the per-lane/per-pair quantity reference.
+
 **Rev 1 · 2026-07-25.** Everything that mounts to, or connects on, the enclosure backplate.
 Board revision: **rev-D r6** (`2fd8c5e`, fab pkg `fab_revD_2026-07-27_r10`), 250 × 240 mm.
 Layout: `Downloads/pair_enclosure_backplate_complete.html` Rev 2 (items ①–⑬).

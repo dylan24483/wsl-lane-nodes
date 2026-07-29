@@ -4,7 +4,17 @@
 literally. Sources: JLCPCB's own help article *How to consign parts to JLCPCB*, plus Dorae's
 email reply of 2026-07-27 confirming the mixing rule.
 
-> **⚠️ CONSIGNMENT MAY NOT BE NEEDED.** It is the fallback, not the plan. Work §1 first — if the
+> ⛔ **DECISION STATE + QUANTITIES SUPERSEDED — 2026-07-28.** The GS-vs-consign decision was
+> MADE on 2026-07-28: **CONSIGN** (Global Sourcing rejected on lead time — see
+> `phase8_ORDER_RUNBOOK_2026-07-28.md` Part 1). The §1 gates below and the §2 quantity table
+> (5 lines at 72/38/38/38/38) are historical — the real list is **13 lines at 38-set +25 %**
+> in the order runbook's **Part 3 Group 1**. Use ONLY §3–§5 of this document (declare → ship →
+> confirm mechanics). Also stale: §3.2's "no JLC library entry" premise for the TRACO —
+> **C5454708 exists**; try Parts Manager matching first. §7's Pico question was answered in
+> writing 2026-07-27: **SC0915 confirmed**; pin the order to C7203002.
+
+> **⚠️ CONSIGNMENT MAY NOT BE NEEDED.** *(superseded by the banner above — kept for history)*
+> It is the fallback, not the plan. Work §1 first — if the
 > Global Sourcing quote comes back near catalogue price with an acceptable lead time, **let JLC
 > buy** and stop reading. Consignment costs freight, customs paperwork, and JLC's quality-liability
 > disclaimer. Only take it if Global Sourcing is slow or overpriced.

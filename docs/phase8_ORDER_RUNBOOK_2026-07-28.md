@@ -92,7 +92,17 @@ not a JLC commitment — see the questions in Part 2, Step 2.
 ## STEP 1 — Verify package integrity
 
 ```bash
-cd "C:/Users/Dylan DeYoung/wsl-lane-nodes" && python scripts/verify_fab_package.py kicad/fab_revD_2026-07-27_r10
+cd "C:/Users/Dylan DeYoung/wsl-lane-nodes" && py -3 scripts/verify_fab_package.py kicad/fab_revD_2026-07-27_r10
+```
+
+*(Script written 2026-07-28 — verifies all 46 manifest hashes, the live board/netlist
+hashes, the 391/68/323/323/37/0 counts, BOM↔CPL refdes equality, and the 0/0/0 DRC
+report. Always `py -3`, never `python` — the bare `python` is the broken MS-Store stub.)*
+
+Also re-verify the rev-C sacred snapshot (checklist G6's standing pre-order requirement):
+
+```bash
+cd "C:/Users/Dylan DeYoung/wsl-lane-nodes" && py -3 scripts/verify_revC_snapshot.py --compare-checkout
 ```
 
 ⚠️ **Re-verify `source_board_sha256` against `manifest.json` immediately before upload.**
@@ -113,10 +123,12 @@ Three quote lines lapse **Aug 13 GMT+8**, so there is time for one round trip.
 >    wave-soldered through-hole?
 > 3. Do you begin the SMT pass on library-stock parts while a consigned or Global Sourcing line
 >    is still inbound, or is the whole job held for a complete kit?
-> 4. **Through-hole capacity:** this order carries **≈8,400 through-hole joints** — 1,520 ×
->    PC817B DIP-4, 228 × G5LE-14 relays, 380 × Phoenix terminal blocks. Can you confirm in
->    writing that wave/THT capacity is available for this quantity, and what it adds to the
->    build time?
+> 4. **Through-hole capacity:** this order carries **≈9,900 through-hole joints across the
+>    34 boards** — 1,360 × PC817B DIP-4, 204 × G5LE-14 relays, 476 × Phoenix terminal
+>    blocks (14 bodies / 77 pins per board), 34 × 2×10 IDC, 34 × SIP DC/DC. Can you confirm
+>    in writing that wave/THT capacity is available for this quantity, and what it adds to
+>    the build time? *(figures corrected 2026-07-28 to the 34-board placement counts — the
+>    old text mixed in 38-set purchase quantities)*
 > 5. For a **consigned** part, how many days between receiving our parcel and starting the
 >    build (receiving, counting, incoming inspection)?
 > 6. What is the earliest **ship date** you can commit to if we order this week, and what
@@ -128,9 +140,9 @@ threat than any stock line in this document.
 
 ## STEP 3 — Read the TRUE stock (⭐ the highest-value 60 seconds in this runbook)
 
-**16 of 32 JLC-supplied lines have unreadable stock** — `jlcpcb.com/partdetail/<C#>` injects the
-number via JavaScript, so it can't be read externally. LCSC's retail pool is a **different pool**
-and disagreed by ~2× on three lines.
+Roughly **half of the ~24 lines JLC would supply** (37 upload lines − 13 consigned) have
+unreadable stock — `jlcpcb.com/partdetail/<C#>` injects the number via JavaScript, so it can't
+be read externally. LCSC's retail pool is a **different pool** and disagreed by ~2× on three lines.
 
 1. Log in to JLC → **SMT Assembly quote → BOM upload / parts-matching**
 2. Upload `assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-bom.csv`, keyed on **C-number,
@@ -138,7 +150,9 @@ and disagreed by ~2× on three lines.
 3. That screen prints live assembly stock + an insufficient-stock flag for every line at once
 4. **Screenshot it.** Pay closest attention to:
    `C17513` (1k) · `C116963` (relay) · `C5692981` (PC817B) · `C5443576` (Phoenix 6-pos) ·
-   `C47023` (MCP23017) · `C17520` (2.2k) · `C89827` (10 µF) · `C17702767` (10 nF) · `C2933281` (10M)
+   `C47023` (MCP23017) · `C17520` (2.2k) · `C89827` (10 µF) · `C17702767` (10 nF) ·
+   `C2933281` (10M) · `C17713` (47k — 40/bd, one of only three 1,500-piece-scale lines) ·
+   `C118873` (1N4148WS — 88/bd, the largest line in the build)
 
 ⚠️ **"My Part Lib" is a bookmark, not an allocation. Nothing is reserved until the order is
 placed AND paid.**
@@ -150,8 +164,16 @@ add or remove lines from it. Buy everything with **+25 % overage**.
 
 ## STEP 5 — Open the consignment flow
 
-Follow `phase8_jlc_consignment_runbook.md`. Get from JLC: the consignment order number, the
-receiving address, the parcel labeling requirement, and the fee schedule (visible in-flow).
+Follow `phase8_jlc_consignment_runbook.md` — **§3–§5 flow mechanics ONLY.** Its §1 decision
+gates (GS-first) and §2 quantity table (5 lines at 72/38/38/38/38) are SUPERSEDED by Part 1
+decisions 2–3 and the Group 1 table above. A literal follower of that doc buys 5 lines at the
+old quantities and under-declares 8 lines — JLC then can't kit the build.
+⭐ Also: its "TRACO has no JLC library entry" premise is stale — **C5454708 exists.** Try
+matching it in Parts Manager first; only fall back to the direct-consign/email-approval path
+if it doesn't match. That skips the review round-trip the doc plans its schedule around.
+
+Get from JLC: the consignment order number, the receiving address, the parcel labeling
+requirement, and the fee schedule (visible in-flow).
 
 ⚠️ `phase8_jlc_consignment_runbook.md:117` — *"Confirm they appear before releasing the board
 order."* **Ask whether that blocks *placing* the order or only *releasing* it to the line.**
@@ -163,8 +185,13 @@ It is worth 1.5–2.5 weeks either way.
 
 **Files:**
 - PCB → `wsl-phase8b-revD-gerber-drill.zip`
-- PCBA → `assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-bom.csv`
-- PCBA → `assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-cpl.csv`
+- PCBA BOM → `assembly/wsl-phase8b-revD-jlc-standard-pcba-upload-bom.csv`
+- PCBA CPL → `assembly/wsl-phase8b-revD-jlc-standard-pcba-cpl.csv`
+
+⚠️ **CPL filename corrected 2026-07-28** — there is NO `…-upload-cpl.csv` in the package.
+⛔ **Do NOT grab `wsl-phase8b-revD-cpl.csv`** (the similarly-named file next to it) — that is
+the raw KiCad export in a different column format. The JLC one is the
+`…-jlc-standard-pcba-cpl.csv` with `Designator / Mid X / Mid Y / Layer / Rotation` headers.
 
 **Service tier:** ⚠️ **Standard PCBA, not Economic.** `C7203002` (Pico) is the only line flagged
 *"Standard Only"* — **that single part forces the whole order onto Standard.** Confirm it's priced
@@ -177,8 +204,10 @@ that way.
 > 5 mm of the top and bottom edges (nearest 0.52 mm at U45, 0.63 mm at U43) and depanelisation
 > there would damage them. A left/right rail changes the outline; this is pre-approved.
 >
-> NO SUBSTITUTIONS on: C8678, C16338, C5692981, C47023, C880333, C13612, and all Phoenix parts
-> (C480520, C480516, C5443576, C480549). C19184134 must ship as the RS-branded part, NOT
+> NO SUBSTITUTIONS on: C8678, C16338, C5692981, C47023, C880333, C13612, C207035,
+> C116963 (Omron G5LE-14 5VDC — exact coil voltage, no -CF/-ASI suffix), and every Phoenix
+> line on this order whether JLC-supplied or consigned (C480520, C480516, C5443576, C480549,
+> C3585531, C3582595, C3019636). C19184134 must ship as the RS-branded part, NOT
 > Fujicon C18214278. C5692981 PC817B must be **B rank (CTR 130–260 %)** with the bin stated on
 > the CoC / reel label.
 
@@ -210,7 +239,8 @@ cart immediately before paying.
 - **Semtech marking** on SRV05-4 (clones share the marking)
 - **Phoenix pitch — 3.5 mm, not 3.81 mm.** Wrong pitch is invisible until it won't seat.
 - Then: **FA-16 before FA-1** (unpowered, 40/40, volts recorded — the only gate that catches a
-  reversed `Dser`), then FA-15, then FA-1…FA-12.
+  reversed `Dser`), then FA-15, then FA-1…FA-14 per the pack (FA-13 Stop-interlock P0 and
+  FA-14 mains/PE are at-machine gates — later in sequence, not absent).
 
 ---
 
@@ -220,23 +250,35 @@ cart immediately before paying.
 
 *Bought by us, shipped to JLC, soldered by JLC. Quantities include ~25 % overage.*
 
-| # | Part | LCSC ref | Order | Source | Why |
-|---|---|---|---:|---|---|
-| 1 | Phoenix **1843680** MCV 1,5/10-G-3,5 | C3585531 | **85** | Mouser (722) | J3 + J15 |
-| 2 | Phoenix **1843729** MCV 1,5/14-G-3,5 | C3582595 | **43** | DigiKey (117) | J4 — GS quoted 75 bd |
-| 3 | Phoenix **1843703** MCV 1,5/12-G-3,5 | C3019636 | **43** | DigiKey (2,139) | J5 |
-| 4 | CNC Tech **3020-20-0100-00** 2×10 IDC | C17373551 | **43** | DigiKey (2,958) | J1 |
-| 5 | TRACO **TMA 0505S** | C5454708 | **43** | DigiKey (5,964) | U45 — sole source of `FIELD_WET_V` |
-| 6 | **PC817B — B RANK, bin on CoC** | C5692981 | **1,600** | — | ⚠️ rank unverifiable at distributor |
-| 7 | 10 µF 16 V X5R 0805 | C89827 | **200** | DigiKey/Mouser | ⛔ JLC pool = **1** |
-| 8 | 1 kΩ 1 % 0805 | C17513 | **5,000** (reel) | any | ⛔ LCSC 0 |
-| 9 | 10 nF 50 V X7R 0805 | C17702767 | **100** | any | 90 in pool + MOQ-100 checkout trap |
-| 10 | Omron **G5LE-14 5VDC** — exact, no -CF/-ASI | C116963 | **300** | — | JLC pool unreadable |
-| 11 | **MCP23017-E/SO** (I²C, not MCP23S17) | C47023 | **130** | — | <1,000 in pool, single-source |
-| 12 | **TCA4307DGKR** (recovery variant) | C880333 | **50** | — | lowest absolute stock in group |
-| 13 | Phoenix **1843648** MCV 1,5/6-G-3,5 | C5443576 | **100** | LCSC/Newark | J13 + J16, thinnest Phoenix line |
-| *opt* | 1N4148WS | C118873 | 4,000 | — | largest line in the build (88/bd) |
-| *opt* | Raspberry Pi Pico (SC0915) | — | 40 | DigiKey/PiShop | zero LCSC backfill exists |
+> ⚠️ **Quantities recomputed 2026-07-28.** The original table was silently computed on a
+> 34-board ×1.25 basis; decision #4 is **38 sets, then +25 %** on consigned lines. Every line
+> below is now `ceil(per-board × 38 × 1.25)` (rounded up to sane pack sizes). The worst
+> offender was PC817B: 1,600 was only +5.3 % over the 1,520-piece 38-set need — on the one
+> line whose CTR-bin rejection risk is the program's #2 accepted risk.
+
+| # | Part | LCSC ref | /bd | Order | Source | Why |
+|---|---|---|---:|---:|---|---|
+| 1 | Phoenix **1843680** MCV 1,5/10-G-3,5 | C3585531 | 2 | **95** | Mouser (722) | J3 + J15 |
+| 2 | Phoenix **1843729** MCV 1,5/14-G-3,5 | C3582595 | 1 | **48** | DigiKey (117) | J4 — GS quoted 75 bd |
+| 3 | Phoenix **1843703** MCV 1,5/12-G-3,5 | C3019636 | 1 | **48** | DigiKey (2,139) | J5 |
+| 4 | CNC Tech **3020-20-0100-00** 2×10 IDC | C17373551 | 1 | **48** | DigiKey (2,958) | J1 |
+| 5 | TRACO **TMA 0505S** | C5454708 | 1 | **48** | DigiKey (5,964) | U45 — sole source of `FIELD_WET_V` |
+| 6 | **PC817B — B RANK, bin on CoC** | C5692981 | 40 | **1,900** | — | ⚠️ rank unverifiable at distributor |
+| 7 | 10 µF 16 V X5R 0805 | C89827 | 1 | **200** | DigiKey/Mouser | ⛔ JLC pool = **1** |
+| 8 | 1 kΩ 1 % 0805 | C17513 | 12 | **5,000** (reel) | any | ⛔ LCSC 0 |
+| 9 | 10 nF 50 V X7R 0805 | C17702767 | 1 | **100** | any | 90 in pool + MOQ-100 trap; also the Cflt-fast field-stuff part (DNP, ours) |
+| 10 | Omron **G5LE-14 5VDC** — exact, no -CF/-ASI | C116963 | 6 | **300** | — | JLC pool unreadable (need+25 % = 285) |
+| 11 | **MCP23017-E/SO** (I²C, not MCP23S17) | C47023 | 3 | **145** | — | <1,000 in pool, single-source |
+| 12 | **TCA4307DGKR** (recovery variant) | C880333 | 1 | **50** | — | lowest absolute stock in group |
+| 13 | Phoenix **1843648** MCV 1,5/6-G-3,5 | C5443576 | 2 | **100** | LCSC/Newark | J13 + J16 — ⚠️ see the dual-status note below |
+| *opt* | 1N4148WS | C118873 | 88 | 4,200 | — | largest line in the build |
+| *opt* | Raspberry Pi Pico (SC0915) | — | 1 | 48 | DigiKey/PiShop | zero LCSC backfill exists |
+
+> ⚠️ **C5443576 dual status — resolve at Step 3, do not do both.** It is simultaneously a
+> Group 1 consign line here AND in the Step 6 no-substitution remark as a JLC-supplied line.
+> JLC **cannot mix their stock and consigned stock for the same part** (confirmed 2026-07-27).
+> At the parts-matching screen: if JLC assembly stock covers 76 + attrition → leave it a JLC
+> line and DROP this row; if not → consign it and strike it from the JLC no-sub remark.
 
 ⚠️ **Substitution PROHIBITED** on 1, 2, 3, 5, 6, 10, 11, 12, 13 — and on `C8678` (SS34) and
 `C16338` (2N7002LT1G) which stay with JLC. Phoenix 3,5 vs 3,81 mm pitch is the invisible trap.
@@ -244,20 +286,31 @@ cart immediately before paying.
 ## GROUP 2 — Board field plugs ⛔ #1 LONG POLE
 
 ⭐ **DECISION: FREE-ISSUE these to the harness shop.** The RFQ Tier 1 currently has the vendor
-source 185 fitted plugs; Phoenix lead times swing **8–20 weeks**. Buying them ourselves removes
-the vendor's purchasing department from the critical path and closes the §B double-buy question.
+source **148** fitted plugs (4 PNs × 37 — 1840489 is already customer free-issue in the RFQ);
+Phoenix lead times swing **8–20 weeks**. Buying them ourselves removes the vendor's purchasing
+department from the critical path and closes the §B double-buy question.
 
-| # | Connector | Phoenix PN | Poles | ×32 lanes |
+> ⚠️ **Quantities raised 2026-07-28.** The old 36-per-type figure couldn't even cover the
+> RFQ's own commitment of 34 assemblies + 3 spare plug sets = **37 per type**, before the
+> vendor's scrap buffer. J15/J16 at 32 gave the two spare boards zero plugs. New basis:
+> harness-carried types 40 (37 + buffer), board-spare types 36 (34 + 2).
+
+| # | Connector | Phoenix PN | Poles | Buy |
 |---|---|---|---:|---:|
-| B1 | J3 J_FAST_IN | **1840447** | 10 | 36 |
-| **B2** | **J4 J_SLOW_IN_A** | **1840489** | 14 | **36** ⛔ |
-| B3 | J5 J_SLOW_IN_B | **1840463** | 12 | 36 |
-| B4 | J13 J_LAMP_LED | **1840405** | 6 | 36 |
-| B5 | J14 J_SAFETY | **1840382** | 4 | 36 |
-| B6 | J15 J_SLOW_IN_C | **1840447** *(different colour to B1)* | 10 | 32 |
-| B7 | J16 J_EXT_I2C | **1840405** *(different colour to B4)* | 6 | 32 |
+| B1 | J3 J_FAST_IN | **1840447** | 10 | 40 |
+| **B2** | **J4 J_SLOW_IN_A** | **1840489** | 14 | **40** ⛔ (50 if the lifetime buy lands) |
+| B3 | J5 J_SLOW_IN_B | **1840463** | 12 | 40 |
+| B4 | J13 J_LAMP_LED | **1840405** | 6 | 40 |
+| B5 | J14 J_SAFETY | **1840382** | 4 | 40 ⚠️ see J14 note |
+| B6 | J15 J_SLOW_IN_C | **1840447** *(different colour to B1)* | 10 | 36 |
+| B7 | J16 J_EXT_I2C | **1840405** *(different colour to B4)* | 6 | 36 |
 
-Totals: **1840447 × 68 · 1840489 × 36 · 1840463 × 36 · 1840405 × 68 · 1840382 × 36**
+Totals: **1840447 × 76 · 1840489 × 40 (or 50) · 1840463 × 40 · 1840405 × 76 · 1840382 × 40**
+
+> ⚠️ **J14 open question (decide before the parcel ships):** the fleet harness BOM carries a
+> **+1 spare J14 plug per lane** rule (2/lane → ~64+ fleet-wide). Either that rule stands —
+> then buy ~72 of 1840382 — or it was a lane-21 pilot artifact — then strike it from the
+> harness BOM note. The two documents must not disagree on the safety-loop plug.
 
 > ⛔ **1840489 IS THE #1 LONG POLE IN THE ENTIRE PROGRAMME.**
 > DigiKey: lifecycle **ACTIVE**, **zero stock, 6-week manufacturer lead**, $16.42/1 · $13.34/10.
@@ -274,7 +327,7 @@ Totals: **1840447 × 68 · 1840489 × 36 · 1840463 × 36 · 1840405 × 68 · 18
 
 | Item | PN | Qty | Notes |
 |---|---|---:|---|
-| Coding profiles | Phoenix **CP-MSTB 1734634** | ~25 stars (6/star) | Code J3@pole 1 · J15@pole 10 · J13@pole 1 · J16@pole 6 |
+| Coding profiles | Phoenix **CP-MSTB 1734634** | **28–30 stars** (6/star) | Code J3@pole 1 · J15@pole 10 · J13@pole 1 · J16@pole 6 — 136+ profiles needed; the old ~25-star figure left ~10 % margin on an irreversible press, and FA-8 practice consumes profiles |
 | Sacrificial MCV headers | mixed MCV 1,5-G-3,5 | ~10 | FA-8 step 1 proves the rib cut on a scrap part first |
 | Harness band colours | — | — | J3 white · J15 yellow · J13 white · J16 blue |
 
@@ -292,9 +345,9 @@ Totals: **1840447 × 68 · 1840489 × 36 · 1840463 × 36 · 1840405 × 68 · 18
 | C2 | microSD, industrial/endurance 32 GB | — | 20 |
 | C3 | Pi heatsink | **low-profile** | 16 ⚠️ must clear the F-1019 HAT |
 | C5 | Pi GPIO breakout | **CZH-LABS F-1019** | 18 · ships with its own metal carrier = the mount |
-| C7 | Board breakout | **Electronics-Salon D-220** | **36** ⚠️ check one seller holds 36 |
-| C8 | 20-way IDC ribbon, socket–socket **~150 mm** | — | 38 · ⚠️ SHORT is the requirement (I²C) |
-| C9 | Pi power pigtail, USB-C to ferruled ~300 mm | — | 16 |
+| C7 | Board breakout | **Electronics-Salon MD-D220T-1** ⛔ exact variant — the T carrier is removable; bare "D-220"/-1/S variants lose the mount flexibility PANEL-W2 depends on | **36** ⚠️ check one seller holds 36 |
+| C8 | 20-way IDC ribbon, socket–socket **~150 mm** | — | 38 · ⚠️ SHORT is the requirement (I²C) · also satisfies the checklist G13 "J1 mate" line — no separate 3030-20-0102-00 socket buy |
+| C9 | Pi power pigtail, USB-C to ferruled **~600 mm** *(was 300 — F4 sits at x 256, the Pi USB-C face at x ~560; 300 mm cannot reach on PANEL-W2)* | — | 16 |
 | C10 | USB composite capture dongle (UVC) | — | 18 |
 | C11 | 75 Ω composite video coax ~4.7 m | — | 36 |
 
@@ -305,14 +358,16 @@ Totals: **1840447 × 68 · 1840489 × 36 · 1840463 × 36 · 1840405 × 68 · 18
 | D1 | PoE splitter | PoE Texas **GBT-12V60W — INDOOR** (6 × 2.6 × 1.4 in) | 18 |
 | D2 | DC-DC converter | Mean Well **DDR-60G-5** | 18 |
 | D3 | Fuse terminal blocks | Konnect-It **KN-F10** | 96 (6/pair) |
-| D4 | Fuses 5×20 mm | 3 A · 2 A fast ×2 · 4 A time-delay | 96 |
-| D5 | Ground terminal blocks | Konnect-It **KN-G10** | 32 |
+| D4 | Fuses 5×20 mm | 3 A · 2 A fast ×2 · 4 A time-delay | 96 — ⚠️ F5/F6 ratings are sized at commissioning; buy an assortment so 2 of 6 positions aren't left empty |
+| D5 | **5 V return bus** | ⛔ **NOT KN-G10** — **4 × insulated feed-through (KN-T/KN-S class) + jumper comb per pair** | **64 blocks (+8) + 16 combs** |
 | D6 | Terminal markers | printed strip | 16 sets |
-| D7 | **Isolated 12 V DC-DC**, ≥5 W, 12 V→12 V | — | 18 |
+| D7 | **Isolated 12 V DC-DC** | **Mean Well DDR-15G-12** ⛔ exact — 4 kVdc I/O, 0–1.25 A load range (no dummy load), same 90 × 54.5 envelope as the DDR-60G-5. A generic "≥5 W isolated" buy risks envelope, isolation, or a minimum-load requirement | 18 |
 
 > ⛔ **TWO GROUND DOMAINS — DO NOT MERGE.** F6 → sensors runs off the **isolated** D7 because the
 > sensors sink to `FIELD_GND`. Powering them from the ordinary 12 V rail bonds `FIELD_GND` to
 > logic ground and **defeats the TMA-0505S isolation the entire input design rests on.**
+> The D5 change above is the same rule in copper: green/yellow PE-class KN-G10 blocks on the
+> logic 0 V bus invite an earth bond (PANEL-W2 M-04). There is no earth job left in this box.
 > F5 → camera runs off ordinary 12 V (its return reaches logic ground through the dongle anyway).
 > Harness colours: **Violet/Grey = isolated sensor pair · Brown/Pink = camera pair** (W50–W53).
 
@@ -324,15 +379,28 @@ Totals: **1840447 × 68 · 1840489 × 36 · 1840463 × 36 · 1840405 × 68 · 18
 
 | # | Item | Spec | Qty |
 |---|---|---|---:|
-| E1 | DIN rail 35 mm slotted | AD DN-R35S1-2 | 5 packs (~10 m) |
-| E2 | End brackets | Konnect-It KN-EB3 | 64 |
-| E3 | Wire duct + cover | 1×2 in slotted PVC, 2 m | 8 sticks |
+| E1 | DIN rail 35 mm slotted | AD DN-R35S1-2 | 4 packs (~450 mm/pair, 3 segments) |
+| E2 | End brackets | Konnect-It KN-EB3 | **96 (+8)** — PANEL-W2 has THREE rail segments/pair (R1a, R1b, vertical R2) = 6/pair, not 4 |
+| E3 | Wire duct + cover | 1×2 in slotted PVC, 2 m — **cover PN is a separate line item, order it** | 9 sticks |
 | E4 | **Enclosure** | custom plastic box | 16 (+1) |
 | E5 | **Backplate** | **¾″ plywood, 1100 × 570 mm** | 16 → **~5 sheets (4×8)** · primer + 2 coats both sides & edges |
-| E6 | Backplate mounting | per box | 16 sets |
-| E7 | Cable glands | M20 nylon IP68 | 144 (+20) |
-| E8 | Breather plug | Gore-type M12 | 16 (optional) |
-| A5 | Board standoffs | **M3 × 30** | 8/board → ~280 |
+| E6 | Backplate mounting | per box — ⚠️ the old "4 collar studs" note is DEAD (PANEL-W2 6.1: no collar studs exist) | 16 sets |
+| E7 | Cable glands | ⚠️ **SIZE MIX, not all-M20:** **64 (+8) × M20 + 96 (+12) × M16** nylon IP68 · zero M25 *(G9 Cat6 = M16, terminate RJ45 inside; G10 camera = M16 spec but probably too small for two moulded RCA plugs — decide upsize vs field-terminate BEFORE drilling)* | 160 (+20) |
+| E8 | Breather plug | Gore-type M12 — **REQUIRED** for the sealed plastic box, not optional | 16 |
+| E12 | **Internal circulation fan** | 40 × 40 × 10 mm, **5 V, ball bearing**, ~0.7 W, continuous low RPM — nothing may depend on it | 16 (+2) |
+| E13 | **Lacing-channel duct** | 1×1 in slotted PVC + cover, ~990 mm/pair | ~16 m → 8 sticks |
+| — | **In-box Cat6 patch** (closes L-05) | ~500 mm, splitter LAN → Pi Ethernet | 16 (+2) |
+
+**Board mounting hardware (family restored 2026-07-28 — the old single "A5 standoffs M3×30"
+line mislabeled the rear screw as the standoff and dropped the rest):**
+
+| # | Item | Spec | Qty |
+|---|---|---|---:|
+| A4 | Board standoffs | **M3 F-F 12 mm brass** | 128 (+16) — 4/board × 32, 8 holes per pair box |
+| A5 | Rear screws | **M3 × 30** (through ¾″ ply into the standoff) | 144 |
+| A6 | Front screws | **M3 × 6** (board side) | 144 |
+| A7 | Washers | M3 flat + split, **plus M3 fender washers ≥16 mm OD on the rear face** (L-09 — bearing face on painted ply) | 256 + 144 fender |
+| A8 | Board centre supports | **12 mm SCREWED NYLON standoffs, 3/board** — ⛔ NOT adhesive pads (PANEL-W2: adhesive fails) | 96 (+10) |
 
 > ⚠️ **Gland sizing, twice corrected:**
 > **G9 (Cat6) = M16** — terminate the RJ45 *inside* the enclosure so only bare cable passes.
@@ -349,10 +417,12 @@ Totals: **1840447 × 68 · 1840489 × 36 · 1840463 × 36 · 1840405 × 68 · 18
 | F2 | Hook-up wire 18 AWG UL1015 | ~50 m |
 | F3 | Ferrules 0.34 mm² insulated | 1000-pk |
 | F4 | Ferrules 0.75 mm² insulated | 500-pk |
-| F5 | Adhesive tie mounts | 200 · within 50 mm of every MCV plug row |
+| F5 | Adhesive tie mounts | **400** · within 50 mm of every MCV plug row *(old 200 missed the 9 gland-wall mounts/pair, the J14 anchors and the riser lane — PANEL-W2 counts ~24/pair)* |
 | F6 | Cable ties 4 in | 500 |
 | F7 | **Wire-map cards**, printed + laminated | 16 · **MANDATORY, taped inside every door** |
 | F8 | Label stock, heat-shrink / vinyl | — |
+| F9 | **Split loom 10 mm** (L-04) | ~136 m · ~4 m/lane, B1 and B3 in separate looms — **without it the IP68 gland seal never forms** |
+| F10 | **ESD bleed stud** | 16 · M4 brass stud + 1 MΩ 1 W resistor to logic 0 V (plastic box, dry dusty room) |
 
 ## GROUP 8 — Off-plate (§G)
 
@@ -403,8 +473,9 @@ Switch sits between lanes 21 and 22. Path to the first Pi in each direction = **
 
 | # | Action | Blocking? |
 |---|---|---|
+| 0 | **`git push origin fable-audit-fixes`** — this runbook's commit is the ONLY artifact that exists solely on this laptop; the off-disk mirror is r7-era and on the same volume | ⭐ 2 seconds; do it first |
 | 1 | **Hunt Phoenix 1840489** — TTI, Powell, Mouser, Newark, RS, Arrow, Phoenix direct | ⛔ #1 long pole; blocks harness FA |
-| 2 | **Place the harness PO** (G13) — and get competing quotes | ⛔ ~12 wk clock hasn't started |
+| 2 | **Place the harness PO** (Group 8 G1) — and get competing quotes | ⛔ ~12 wk clock hasn't started |
 | 3 | **Email JLC the six questions** (Step 2) | free; 3 quote lines lapse Aug 13 |
 | 4 | **Sign G8 + G7** in `phase8_revD_run_log.md` | ⛔ blocks the fab order · ~5 min |
 | 5 | **Upload BOM to parts-matching**, screenshot the true stock (Step 3) | ⛔ sets the final consign list |

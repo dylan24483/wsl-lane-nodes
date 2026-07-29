@@ -2169,3 +2169,29 @@ firmware NOT touched, NOT flashed). Source git HEAD recorded in the manifest.
 
 **Still OPEN (owner, unchanged):** `WSL_Backups` sits on the **same physical volume** as the
 repo. The off-disk copy remains a manual Dylan item.
+
+---
+
+## 2026-07-28 — CATCH-UP RECORD: r8 / r9 / r10 exports (appended during the final pre-order audit)
+
+The three exports after r7 were recorded in the readiness checklist, package READMEs and
+commit messages but never entered here. Appended so the ledger reaches the package actually
+being uploaded; evidence lives in each package's `manifest.json` + `README-fab-package.txt`.
+
+| Package | Date | What changed | Counts (parts/DNP/placed/JLC/lines/hand) |
+|---|---|---|---|
+| `kicad/fab_revD_2026-07-26_r8/` | 2026-07-26 | 10 M gate pulldowns re-pinned FOJAN **C2933281** (C26108 retired OOS) | 391/68/323/306/27/17 |
+| `kicad/fab_revD_2026-07-26_r9/` | 2026-07-26 | **WAVE 1** — J2, J6–J11, J14 moved onto JLC lines (hand-solder 17 → 9; 646 THT joints to JLC) | 391/68/323/314/30/9 |
+| `kicad/fab_revD_2026-07-27_r10/` | 2026-07-27 | **WAVE 2** — hand-solder to **ZERO**: A1 (Pico, C7203002 = SC0915 confirmed in writing by JLC 2026-07-27), U45 + remaining THT onto JLC lines | **391/68/323/323/37/0** |
+
+All three: same copper — `source_board_sha256` `695cd7b1…3de7` unchanged since r6; DRC 0/0/0
+re-proven in-process at each export; r8/r9 tombstoned. **r10 is the only current package.**
+2026-07-28: `scripts/verify_fab_package.py` written + run against r10 → ALL CHECKS PASS
+(46/46 hashes, live source match, counts, BOM↔CPL equality, DRC 0/0/0).
+
+Gate closures recorded elsewhere, mirrored here for ledger continuity: **G14 CLOSED
+2026-07-26** (checklist); **G15 SIGNED 2026-07-27, Dylan** (commit `fccca1b`); decision-record
+items 6/7/8 (WAVE 1 approval, FA-4 risk acceptance, Pico C-number RESOLVED).
+
+**OG-1 / G8 sign-off: still awaiting Dylan's line below (the 2-minute item in the order
+runbook Step 0). G7 waiver-or-session: also Dylan's, below.**
