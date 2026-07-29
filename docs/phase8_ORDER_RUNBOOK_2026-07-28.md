@@ -544,12 +544,16 @@ CZH-Labs ($1,296 — F-1019 ×18 · MD-D220T-1 ×36) · B&H (SanDisk High Endura
 **CARTS BUILT / PENDING:** OnlineComponents 1840489 ×50 @$16.26 = $813 against the 100 due
 8/12 (⭐ submit; ground shipping — the harness-PO clock is the constraint, not transit) +
 cancellable Newark hedge · AutomationDirect (KN-F10 ×2pk + KN-EB3 100+10 = $376.50 confirmed;
-add: WDN-1022G-1 duct ×9 (cover incl.) · lacing duct — find true **1×1**, only accept the
-2.25"-tall T1E-1022G1-1 after checking the §4.1 fuse-lid swing · **single-level** feed-throughs
-×64 + 16 four-pole jumpers (⛔ NOT the double-level KN-PD25-2-2 — the 0 V bus must be common)
-· fuses **GMA-2 ×8pk / GMA-3 ×4pk / S506-4-R ×4pk** + 1pk each GMA-1/S506-1-R/S506-2-R
-(⚠️ suffix trap: S506-**25**-R = 0.25 A) · F18RP-0N-0E ×12 · RL110-1 ×20 · **M12 4-pin A-coded
-FEMALE cordsets ×12** (⛔ not the $80 D-coded Ethernet patch) · marker cards · MTW 18 AWG spools)
+add — FINAL PNs 2026-07-29: WDN-1022G-1 duct ×9 (cover incl.) · lacing duct =
+**WDN-1015G-1 ×8** (1.00×1.57 in / 25×40 mm — no true 1×1 exists in the WDN line; width is the
+binding constraint) · feed-throughs = **KN-T12 ×3 packs** SINGLE-level (⛔ not KN-D12/PD dual) +
+**KN-4J12 ×2 packs** (4-pole jumpers) + the KN-T12-page end cover ×1 pack · fuses (ALL 5/pack)
+**GMA-2 ×8pk / GMA-3 ×4pk / S506-4-R ×4pk** + GMA-1 + S506-2-R + **GMC-1 (sub for backordered
+S506-1-R)** (⚠️ suffix trap: S506-**25**-R = 0.25 A) · F18RP-0N-0E ×12 · RL110-1 ×20 ·
+M12 cordsets = **Murr 7024-12341-3210300** right-angle 3 m ×12 (⛔ not the $80 D-coded Ethernet
+patch) · D6 marker cards DROPPED — P-touch + F7 wire-map cards cover it · MTW 18 AWG spools)
+· capture dongle: the $11 VIXLW 4-head clone is chipset roulette — **buy ONE, Pi-test
+(/dev/video0 + one ffmpeg frame), then 17× the passing listing**
 · DigiKey add-on (M3DDA-2006J ×50 ⚠️ EOL shelf stock · CNC 3030-20-0103-00 ×100 · 3M 3365/20
 ×17 ft · practice headers **1779420 ×10**).
 
