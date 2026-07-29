@@ -541,7 +541,14 @@ Switch sits between lanes 21 and 22. Path to the first Pi in each direction = **
 Mouser ($1,104 — 1843680 ×125 consign · 1840463 ×40 · 1831293 ×10 practice, BACKORDERED) ·
 CZH-Labs ($1,296 — F-1019 ×18 · MD-D220T-1 ×36) · B&H (SanDisk High Endurance 32 GB ×20, $460) ·
 **OnlineComponents.com (ORDERED 2026-07-29): 1840489 ×50 @ $16.26 = $813 against the inbound
-100 due 8/12** — the #1 long pole now has a PO; Newark hedge still optional.
+100 due 8/12** — the #1 long pole now has a PO; Newark hedge still optional ·
+**AutomationDirect (ORDERED 2026-07-29, ≈$1,650 after final audit corrections):** KN-F10 ×2pk ·
+KN-EB3 100+10 · DN-R35S1-2 ×4 · WDN-1022G-1 ×9 · **WDN-1015W-1 ×8** (white subs for the
+backordered gray lacing duct) · **KN-T12SP4 ×1** (100/pk) + **KN-2JM12 ×1** + KN-ECT12SP4 ·
+fuses GMA-2 ×8 / GMA-3 ×4 / S506-4-R ×4 / GMA-1 / S506-2-R / **GMC-1** · F18RP-0N-0E **×4**
+(Dylan cut from 12) · RL110-1 ×15 · Murr cordsets **×6** · MTW18 BK/RD/WH(1000ft)/OR.
+Capture dongle + USB-C pigtail + remaining Amazon-class lines handed to GPT — brief at
+`phase8_gpt_sourcing_brief_2026-07-29.md`.
 
 **CARTS BUILT / PENDING:** OnlineComponents 1840489 ×50 @$16.26 = $813 against the 100 due
 8/12 (⭐ submit; ground shipping — the harness-PO clock is the constraint, not transit) +
