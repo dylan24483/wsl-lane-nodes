@@ -354,6 +354,29 @@ Totals: **1840447 × 76 · 1840489 × 40 (or 50) · 1840463 × 40 · 1840405 × 
 > then buy ~72 of 1840382 — or it was a lane-21 pilot artifact — then strike it from the
 > harness BOM note. The two documents must not disagree on the safety-loop plug.
 
+> ✅ **2026-07-29 SOURCING HUNT (4-agent, verified-on-page unless noted):**
+> - **1840489 path found:** part is **ACTIVE** (the "discontinued" note traces to a UK
+>   retailer's own end-of-line, not Phoenix). Authorized shelf stock today = 1 pc (RS
+>   Americas $16.42) + 4 (Quest). **BEST: Master Electronics / OnlineComponents.com —
+>   100 pcs ON ORDER, "can ship 8/12/26" (~2 wk), $16.26 @ 50 — place a 50-pc order
+>   against that inflow NOW**, plus a cancellable Newark backorder as hedge (deliveries
+>   from 9/3/26, $14.46 @ 50). Mouser/TTI/Sager/TME/Farnell all 0. Brokers if desperate:
+>   Vyrian claims 8,862 (RFQ, unverified); ⛔ avoid Unikey's 24 @ $4.32 (far under market
+>   — re-mark risk). eBay: zero.
+> - **C8 IDC ribbon:** buy **3M M3DDA-2006J** (2×10, 152.4 mm, keyed, socket–socket) —
+>   DigiKey 1,706 in stock @ $5.01/50 — ⚠️ *Discontinued-at-DigiKey shelf stock, no
+>   restock: buy 50 NOW (~$250).* Renewable repair path: CNC Tech 3030-20-0103-00
+>   sockets ×100 ($44) + 3M 3365/20 ribbon 17 ft ($20). Wurth 6876xx is 0.5 mm FFC —
+>   wrong class; Samtec HCSD is build-to-order; every other pre-made 150 mm jumper is EOL.
+> - **G9 sensor spares:** **AutomationDirect ProSense F18RP-0N-0E** — $41, 35 in stock,
+>   M18 **polarized** retro (polarized matters on a glossy ball), NPN, light/dark-on
+>   selectable (set DARK-ON to mimic DIELL), M12 QD (buy cables) + **RL110-1 reflector
+>   $2.25 (547 stock — Micro Detectors, same family as the existing heads)**. Skip the
+>   $11 Baomain tier (non-polarized, IP unstated).
+> - **KN pricing mystery SOLVED — those were PACK prices on automationdirect.com, no
+>   scalping:** KN-F10 = $156/**pack of 50** ($3.12 ea, 43 packs avail) → buy 2 packs;
+>   KN-EB3 = $57/**pack of 100** ($0.57 ea) → 1 pack + 1× KN-EB3-10 ($7.50). ~$376 total.
+>
 > ⛔ **1840489 IS THE #1 LONG POLE IN THE ENTIRE PROGRAMME.**
 > DigiKey: lifecycle **ACTIVE**, **zero stock, 6-week manufacturer lead**, $16.42/1 · $13.34/10.
 > Authorized distribution reads 0/on-order. RFQ `:114, :120-124` makes it **customer free-issue** —
