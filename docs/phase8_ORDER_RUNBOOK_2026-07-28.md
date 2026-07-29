@@ -546,8 +546,12 @@ CZH-Labs ($1,296 — F-1019 ×18 · MD-D220T-1 ×36) · B&H (SanDisk High Endura
 cancellable Newark hedge · AutomationDirect (KN-F10 ×2pk + KN-EB3 100+10 = $376.50 confirmed;
 add — FINAL PNs 2026-07-29: WDN-1022G-1 duct ×9 (cover incl.) · lacing duct =
 **WDN-1015G-1 ×8** (1.00×1.57 in / 25×40 mm — no true 1×1 exists in the WDN line; width is the
-binding constraint) · feed-throughs = **KN-T12 ×3 packs** SINGLE-level (⛔ not KN-D12/PD dual) +
-**KN-4J12 ×2 packs** (4-pole jumpers) + the KN-T12-page end cover ×1 pack · fuses (ALL 5/pack)
+binding constraint) · feed-throughs = **KN-T12SP4 ×1 pack** (100/pk — spec-verified: single-level,
+common-point, 4 landings/block; 2 blocks/pair = 8 landings) + **KN-2JM12 ×1 pack** (25/pk —
+⛔ NOT KN-4J12: the SP4's For-Use-With list is the JM12 family only) + **KN-ECT12SP4** covers
+×1 pack · lacing duct: WDN-1015G-1 BACKORDERED → substitute +8 more WDN-1022G-1 (width is
+the binding constraint) · F18RP cut to ×4 (Dylan, cost), cordsets to ×6, RL110-1 ×15 ·
+wire = MTW18BK/RD/WH + the OR spool, deliberately NO green/yellow (M-04) · fuses (ALL 5/pack)
 **GMA-2 ×8pk / GMA-3 ×4pk / S506-4-R ×4pk** + GMA-1 + S506-2-R + **GMC-1 (sub for backordered
 S506-1-R)** (⚠️ suffix trap: S506-**25**-R = 0.25 A) · F18RP-0N-0E ×12 · RL110-1 ×20 ·
 M12 cordsets = **Murr 7024-12341-3210300** right-angle 3 m ×12 (⛔ not the $80 D-coded Ethernet
