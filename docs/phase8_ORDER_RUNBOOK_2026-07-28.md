@@ -534,6 +534,36 @@ Switch sits between lanes 21 and 22. Path to the first Pi in each direction = **
 
 ---
 
+# APPENDIX 0 — PROCUREMENT STATUS 2026-07-29 (end of ordering session 1)
+
+**ORDERED:** DigiKey main (13 lines ≈ $5,041 — consignment 5 + plugs 1840447×76/1840405×76/1840382×72
++ stars ×30 + DDR-15G-12 ×18 + DDR-60G-5 ×18 + Pi 4B ×18 @$100 + heatsinks ×16) ·
+Mouser ($1,104 — 1843680 ×125 consign · 1840463 ×40 · 1831293 ×10 practice, BACKORDERED) ·
+CZH-Labs ($1,296 — F-1019 ×18 · MD-D220T-1 ×36) · B&H (SanDisk High Endurance 32 GB ×20, $460).
+
+**CARTS BUILT / PENDING:** OnlineComponents 1840489 ×50 @$16.26 = $813 against the 100 due
+8/12 (⭐ submit; ground shipping — the harness-PO clock is the constraint, not transit) +
+cancellable Newark hedge · AutomationDirect (KN-F10 ×2pk + KN-EB3 100+10 = $376.50 confirmed;
+add: WDN-1022G-1 duct ×9 (cover incl.) · lacing duct — find true **1×1**, only accept the
+2.25"-tall T1E-1022G1-1 after checking the §4.1 fuse-lid swing · **single-level** feed-throughs
+×64 + 16 four-pole jumpers (⛔ NOT the double-level KN-PD25-2-2 — the 0 V bus must be common)
+· fuses **GMA-2 ×8pk / GMA-3 ×4pk / S506-4-R ×4pk** + 1pk each GMA-1/S506-1-R/S506-2-R
+(⚠️ suffix trap: S506-**25**-R = 0.25 A) · F18RP-0N-0E ×12 · RL110-1 ×20 · **M12 4-pin A-coded
+FEMALE cordsets ×12** (⛔ not the $80 D-coded Ethernet patch) · marker cards · MTW 18 AWG spools)
+· DigiKey add-on (M3DDA-2006J ×50 ⚠️ EOL shelf stock · CNC 3030-20-0103-00 ×100 · 3M 3365/20
+×17 ft · practice headers **1779420 ×10**).
+
+**AMAZON CART CORRECTIONS:** keep XHF ferrule kits; **REMOVE StarTech SVID2USB232 ×18 —
+Windows-only, NOT UVC, will never work on the Pis.** The bench-proven dongle is the **VIXLW**
+— but it was proven on the *Windows laptop* only: **bench-test it on a Pi first**
+(`/dev/video0` + a v4l2 grab), then buy 18 of whatever passes. REMOVE micro-USB pigtails
+(Pi 4 = USB-C, need ~600 mm ×16) · REMOVE 8" T&G rail (AD 2 m sticks cover it) · REMOVE bulk
+RG59 (route = pre-made moulded RCA-RCA 75 Ω ~15 ft ×36). Still to add: glands 108×M20/90×M16 ·
+fans ×18 · breathers ×16 · Cat6 patch ×18 · split loom ~136 m · tie mounts ×400 · ESD studs ×16
+· Remington UL1007 22 AWG color set (violet/grey/brown/pink + std).
+
+---
+
 # APPENDIX — ORDER OF OPERATIONS THIS WEEK
 
 | # | Action | Blocking? |
