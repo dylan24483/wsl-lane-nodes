@@ -99,7 +99,7 @@ use. If JLC ever proposes swapping back, refuse.
 | **A1** Pico | `C7203002` | ✅ **JLC** — confirmed SC0915, in library |
 | **J13, J16** | `C5443576` | ✅ **JLC** — 503 in stock vs 72 needed |
 | **J3, J15** | `C3585531` | ✅ **GLOBAL SOURCING** — quoted **$2.0515** (59 % under Mouser), 8 bd. *The earlier $11.31 buy-ourselves call is SUPERSEDED — see the quote block below* |
-| **J4** | `C3582595` | ⚠️ **DECIDES THE SCHEDULE** — GS quoted **$1.9898** but **75 bd ≈ 15 weeks**. Check distributor stock before accepting |
+| **J4** | `C3582595` | ⚠️ **DECIDES THE SCHEDULE.** GS quoted **$1.9898 / 75 bd ≈ 15 wk**; **DigiKey holds 117 @ $5.72** (confirmed 2026-07-28). See the option table below |
 | **J5** | `C3019636` | ✅ **GLOBAL SOURCING** — quoted **$1.7056** (58 % under DigiKey), 21 bd |
 | **J1** | `C17373551` | ✅ **GLOBAL SOURCING** — $1.3522, 21 bd. ~$16 dearer than DigiKey but avoids consigning |
 | **U45** | `C5454708` | ✅ **GLOBAL SOURCING** — $5.4409, **7 bd** (fastest line). ~$49 dearer than DigiKey but avoids consigning |
@@ -549,6 +549,34 @@ J12 (M1) is **DNP** — no plug, no lead, ever.
 >
 > **Quote expiry:** 1843703 / 1843729 / TMA0505S **Aug 13** · 1843680 **Aug 14** ·
 > 3020-20-0100-00 **Aug 24** (all GMT+8). Roughly two weeks to decide.
+
+
+> **🚦 J4 (1843729) DECISION — DigiKey stock CONFIRMED at 117 vs 38 needed, 2026-07-28.**
+> That was the one unread figure, and it opens the split.
+>
+> | Option | Cost | Board lead | Extra work |
+> |---|---:|---:|---|
+> | **A** — all Global Sourcing | **$546** | **15.0 wk** | none |
+> | **B** — GS ×4 + **consign** J4 | $848 | 4.2 wk | consign one line |
+> | **C** — GS ×4 + **hand-solder** J4 | $688 | 4.2 wk | r11 + 476 joints |
+>
+> ⚠️ **The saving is ~4 programme weeks, not ~11.** The harness critical path is ~11 weeks, so
+> B or C pulls the programme from 15 wk to 11 wk — they do not pull it to 4.2. **And that 4 weeks
+> is only real if the harness actually starts now.** It is currently with MiniProto only, with no
+> competitive quote; if it sits another three weeks, Option A's 15 weeks stops being the binding
+> constraint and its simplicity wins.
+>
+> ⭐ **TRY THIS FIRST — it is free and may dissolve the whole problem.** Global Sourcing is meant to
+> buy from Western distributors, yet JLC quoted **75 bd on a part DigiKey holds 117 of**. That
+> smells like a factory-lead quote rather than a distributor check. **Ask them to re-quote J4
+> against distributor stock.** If it comes back near 21 bd, Option A wins outright at $546 with no
+> consignment and no hand-solder. The quote does not lapse until **Aug 13**, so there is time for
+> one 1–4 day round trip.
+>
+> **If the re-quote fails, prefer C over B.** Consignment overhead (~$125–195) is poor value spent
+> on a *single* line — full customs and freight for one part, plus JLC's quality-liability
+> disclaimer and an international shipment in the critical path. 476 joints on a 14-pin **3.5 mm
+> pitch** connector is straightforward work, perhaps 4–5 hours. The trade is ~$160 against ~5 hours.
 
 ---
 
