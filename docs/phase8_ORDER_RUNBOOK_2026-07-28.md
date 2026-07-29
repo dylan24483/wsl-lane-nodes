@@ -192,11 +192,15 @@ add or remove lines from it. Buy everything with **+25 % overage**.
 > - **J14 plug 1840382 = 72** (the harness BOM's +1-spare-per-lane rule stands; Group 2 note closed).
 > - **G10 camera entry = TWO M20 glands per pair, one per coax** (passes a moulded RCA,
 >   seals on the cable, zero field termination). **E7 becomes 96 (+12) M20 + 80 (+10) M16.**
-> - **Lead-time strategy:** ask JLC (chat, today) whether the order can be PAID now with the
->   6 consigned lines inbound (~2 wk) and fab starting immediately. If yes, pay at once —
->   it locks the tight covered lines (C880333 = 50 exact · C47023 = 150 · C2933281 = 160)
->   and runs fab in parallel with the parcel. If no, re-match + pay the day the consigned
->   parts appear in Parts Lib.
+> - **Lead-time strategy — ANSWERED by JLC chat 2026-07-29 (Mitchell Chen):** ⛔ **NO
+>   pay-now.** *"We do not support such process to produce the PCB firstly … wait until the
+>   part in stock then to place the PCBA order later."* The consignment parcel IS the
+>   critical path; fab starts only after receiving. Consequences: buy + ship the 6 lines
+>   IMMEDIATELY; **re-match the BOM at payment** — the tight covered lines (C880333 = 50
+>   exact · C47023 = 150 · C2933281 = 160) are unprotected during the ~2-wk wait; if one
+>   drains, buy it at a distributor same-day and send a small second consignment parcel.
+>   Consignment declarations submitted 2026-07-29 (6 lines; TRACO matched C5454708 — no
+>   email-approval gate; attrition shown in-UI: 0 on all THT lines, min-20+6 on C89827).
 > - Production-file approval rule: accept 250×240 (no rails) or **260×240** (left/right
 >   rails); **REJECT 250×250** (top/bottom rails — component damage at U45/U43/row-39).
 
