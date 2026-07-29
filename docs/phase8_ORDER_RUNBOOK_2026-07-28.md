@@ -179,6 +179,27 @@ add or remove lines from it. Buy everything with **+25 % overage**.
 > - ⚠️ Covered = allocated-at-match, not pool depth. **Re-match if >24 h pass before payment.**
 > - ⚠️ The 2026-07-29 session ran at qty 50 — re-quote at **34** before paying.
 
+> ✅ **2026-07-29 FINAL ORDER DECISIONS (supersede the two lines above where they conflict):**
+> - **QTY = 50 assembled boards** (Dylan — JLC custom-qty constraint; 16 assembled spares
+>   beyond the G15 fleet 34. Note next to the OG-1 signature in the run log).
+> - **PC817B = JLC-SUPPLIED.** The 1,900-pc consign buy is DEAD. Enforcement = B-rank/CoC
+>   demand in the PCBA remark + reel-label check at incoming (Step 8) + FA-9 per channel.
+> - **Consignment = exactly 6 lines**, scaled to 50 boards +25 %:
+>   **1843680 ×125 (Mouser)** · **1843729 ×65 (DK)** · **1843703 ×65** ·
+>   **3020-20-0100-00 ×65** · **TMA 0505S ×65** (consign ALL — no-mixing rule; JLC's 16
+>   are unusable alongside ours) · **10 µF C89827 ×200**. Confirm JLC's attrition
+>   requirement per line BEFORE the parcel ships (consignment runbook §3.3).
+> - **J14 plug 1840382 = 72** (the harness BOM's +1-spare-per-lane rule stands; Group 2 note closed).
+> - **G10 camera entry = TWO M20 glands per pair, one per coax** (passes a moulded RCA,
+>   seals on the cable, zero field termination). **E7 becomes 96 (+12) M20 + 80 (+10) M16.**
+> - **Lead-time strategy:** ask JLC (chat, today) whether the order can be PAID now with the
+>   6 consigned lines inbound (~2 wk) and fab starting immediately. If yes, pay at once —
+>   it locks the tight covered lines (C880333 = 50 exact · C47023 = 150 · C2933281 = 160)
+>   and runs fab in parallel with the parcel. If no, re-match + pay the day the consigned
+>   parts appear in Parts Lib.
+> - Production-file approval rule: accept 250×240 (no rails) or **260×240** (left/right
+>   rails); **REJECT 250×250** (top/bottom rails — component damage at U45/U43/row-39).
+
 ## STEP 5 — Open the consignment flow
 
 Follow `phase8_jlc_consignment_runbook.md` — **§3–§5 flow mechanics ONLY.** Its §1 decision
