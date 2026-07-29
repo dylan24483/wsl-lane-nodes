@@ -98,11 +98,11 @@ use. If JLC ever proposes swapping back, refuse.
 |---|---|---|
 | **A1** Pico | `C7203002` | ✅ **JLC** — confirmed SC0915, in library |
 | **J13, J16** | `C5443576` | ✅ **JLC** — 503 in stock vs 72 needed |
-| **J3, J15** | `C3585531` | ⛔ **BUY OURSELVES** — JLC $11.31 is supplier-set and unmovable vs Mouser ~$5.02 (722 stock). ~$453 saved |
-| **J4** | `C3582595` | ⏳ 0 stock — Global Sourcing quote pending, else consign |
-| **J5** | `C3019636` | ⏳ 3 stock vs 38 — same |
-| **J1** | `C17373551` | ⏳ 0 stock — same. DigiKey holds 2,958 |
-| **U45** | `C5454708` | ⏳ 16 stock vs 38 — expect to consign. DigiKey holds 5,964 |
+| **J3, J15** | `C3585531` | ✅ **GLOBAL SOURCING** — quoted **$2.0515** (59 % under Mouser), 8 bd. *The earlier $11.31 buy-ourselves call is SUPERSEDED — see the quote block below* |
+| **J4** | `C3582595` | ⚠️ **DECIDES THE SCHEDULE** — GS quoted **$1.9898** but **75 bd ≈ 15 weeks**. Check distributor stock before accepting |
+| **J5** | `C3019636` | ✅ **GLOBAL SOURCING** — quoted **$1.7056** (58 % under DigiKey), 21 bd |
+| **J1** | `C17373551` | ✅ **GLOBAL SOURCING** — $1.3522, 21 bd. ~$16 dearer than DigiKey but avoids consigning |
+| **U45** | `C5454708` | ✅ **GLOBAL SOURCING** — $5.4409, **7 bd** (fastest line). ~$49 dearer than DigiKey but avoids consigning |
 
 
 | # | Ref | Phoenix / MFR PN | Description | Per board | ×34 boards (+~10%) |
