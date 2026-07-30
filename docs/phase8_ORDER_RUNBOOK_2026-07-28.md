@@ -229,9 +229,12 @@ It is worth 1.5–2.5 weeks either way.
 > (banner: "shipping address and customs prepayment rules have changed"). Photograph EVERY
 > bag label (PN + COO) before sealing — stated requirement. Combined invoice PDF =
 > `Downloads/JLC_consignment_invoices_DK129986470_Mouser91667952.pdf`.
-> ✅ **CLAUSE 1 RESOLVED 2026-07-30 (Dorae, chat, screenshot kept):** the rule is SAME-part
-> source mixing only — "for different parts, you can use JLC parts for part A and consigned
-> parts for part B." Our 24-JLC + 6-consigned structure is VALID. ✅ TMA date code verified
+> ✅ **CLAUSE 1 RESOLVED — governed by Dorae's LOGGED 2026-07-27 written reply** (not a fresh
+> chat answer; a re-confirmation sat unanswered in chat 2026-07-30 and is NOT a ship blocker):
+> the rule is SAME-part source mixing only — "for different parts, you can use JLC parts for
+> part A and consigned parts for part B." Our 24-JLC + 6-consigned structure is VALID.
+> Residual worst case surfaces at the order screen BEFORE payment (flip the 24 JLC lines to
+> Global Sourcing); the 6 consigned lines are needed under any structure → parcel risk zero. ✅ TMA date code verified
 > on the cans: **1023 (Oct 2023)** — the packlist's "Jun-2010" was a data artifact; clause-5
 > concern closed. **PARCEL CLEARED TO SHIP** (photos of all 6 bag labels kept in a folder
 > named WBG2026073100878 — produced only if JLC/customs asks).
