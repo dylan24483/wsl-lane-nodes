@@ -229,12 +229,14 @@ It is worth 1.5–2.5 weeks either way.
 > (banner: "shipping address and customs prepayment rules have changed"). Photograph EVERY
 > bag label (PN + COO) before sealing — stated requirement. Combined invoice PDF =
 > `Downloads/JLC_consignment_invoices_DK129986470_Mouser91667952.pdf`.
-> ⛔ **UNRESOLVED — do not ship until answered in writing:** consignment T&C clause 1
-> ("consign parts can only be used together with global sourcing parts, instead of JLCPCB
-> parts") contradicts Dorae's 2026-07-27 mixing confirmation. If enforced, the 24 JLC-library
-> lines must flip to Global Sourcing at order time. Chat question drafted 2026-07-30.
-> Also: T&C clause 5 (expiration) makes the TMA "Jun-2010 date code" bench check MANDATORY
-> pre-ship. DigiKey card decline (code 89, $6,394.99) deadline ~Jul 31 10 PM — resolve.
+> ✅ **CLAUSE 1 RESOLVED 2026-07-30 (Dorae, chat, screenshot kept):** the rule is SAME-part
+> source mixing only — "for different parts, you can use JLC parts for part A and consigned
+> parts for part B." Our 24-JLC + 6-consigned structure is VALID. ✅ TMA date code verified
+> on the cans: **1023 (Oct 2023)** — the packlist's "Jun-2010" was a data artifact; clause-5
+> concern closed. **PARCEL CLEARED TO SHIP** (photos of all 6 bag labels kept in a folder
+> named WBG2026073100878 — produced only if JLC/customs asks).
+> ⚠️ Still open, unrelated to the box: DigiKey code-89 decline ($6,394.99) — deadline
+> ~Jul 31 10 PM.
 
 ## STEP 6 — Place the PCB + PCBA order
 
