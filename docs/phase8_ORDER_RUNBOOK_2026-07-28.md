@@ -223,6 +223,19 @@ It is worth 1.5–2.5 weeks either way.
 
 ⚠️ **JLC disclaims quality liability on consigned stock.** That is what the overage is for.
 
+> 🔄 **2026-07-30 SHIPMENT STATE:** declaration WBG2026073100878 submitted, 6/6 lines
+> "Reviewing". **SHIP-TO CHANGED — Hong Kong, NOT Zhuhai:** Rebecca (12616613A),
+> +852 5421 0550, Block 1 Room 3B, 3 Hung Cheung Road, Tuen Mun, New Territories, Hong Kong
+> (banner: "shipping address and customs prepayment rules have changed"). Photograph EVERY
+> bag label (PN + COO) before sealing — stated requirement. Combined invoice PDF =
+> `Downloads/JLC_consignment_invoices_DK129986470_Mouser91667952.pdf`.
+> ⛔ **UNRESOLVED — do not ship until answered in writing:** consignment T&C clause 1
+> ("consign parts can only be used together with global sourcing parts, instead of JLCPCB
+> parts") contradicts Dorae's 2026-07-27 mixing confirmation. If enforced, the 24 JLC-library
+> lines must flip to Global Sourcing at order time. Chat question drafted 2026-07-30.
+> Also: T&C clause 5 (expiration) makes the TMA "Jun-2010 date code" bench check MANDATORY
+> pre-ship. DigiKey card decline (code 89, $6,394.99) deadline ~Jul 31 10 PM — resolve.
+
 ## STEP 6 — Place the PCB + PCBA order
 
 **Files:**
