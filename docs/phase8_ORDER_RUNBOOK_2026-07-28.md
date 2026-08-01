@@ -240,6 +240,14 @@ It is worth 1.5–2.5 weeks either way.
 > named WBG2026073100878 — produced only if JLC/customs asks).
 > ⚠️ Still open, unrelated to the box: DigiKey code-89 decline ($6,394.99) — deadline
 > ~Jul 31 10 PM.
+> ✅ **2026-08-01:** PUSHED to origin (994ce79..1452985). **OG-1/G8 + G7 SIGNED** — all fab
+> gates closed. DigiKey code-89 RESOLVED. ORDERED: DK add-on (M3DDA-2006J ×50 secured + fans
+> + vents + patches + loom + mounts/ties + ribbon 25 ft + grey/violet/brown stranded) ·
+> **Calrad 55-877-20 ×36** · **Siemon Z-PLUG + Z-TOOL**. Amazon remainder still open, NOW
+> +**1,000 ft Cat6 (attic runs to the overhead displays — forgotten scope**; CMR/riser
+> jacket for attic; check Z-plug count + PoE/switch PORT count cover the display drops too).
+> Still homeless: VC500 ×1 · uxcell pigtails ×20 · Aim Dynamics glands (status unconfirmed) ·
+> Zoro brass · pink spool · 1 MΩ 1 W ×25.
 > 📦 **2026-07-31:** parcel SHIPPED — FedEx **875182889683** to the Tuen Mun address; JLC
 > declaration still "Reviewing" so tracking not yet attachable (ping if not cleared by
 > ~Aug 3). AD + DK main + Mouser orders ARRIVED. Amazon/GPT basket + DK add-on
