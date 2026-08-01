@@ -240,6 +240,12 @@ It is worth 1.5–2.5 weeks either way.
 > named WBG2026073100878 — produced only if JLC/customs asks).
 > ⚠️ Still open, unrelated to the box: DigiKey code-89 decline ($6,394.99) — deadline
 > ~Jul 31 10 PM.
+> 📦 **2026-07-31:** parcel SHIPPED — FedEx **875182889683** to the Tuen Mun address; JLC
+> declaration still "Reviewing" so tracking not yet attachable (ping if not cleared by
+> ~Aug 3). AD + DK main + Mouser orders ARRIVED. Amazon/GPT basket + DK add-on
+> (⚠️ M3DDA-2006J is vanishing EOL stock) + VC500 sample + Siemon Z-PLUG+Z-TOOL (verify
+> solid-23AWG variant) NOT yet ordered. Plywood: cut+prime today, DRILLING gated on the
+> F-1019 caliper (CZH inbound). Harness shop quiet on Rev 2 (nudge Mon; quote to Aug 26).
 
 ## STEP 6 — Place the PCB + PCBA order
 
