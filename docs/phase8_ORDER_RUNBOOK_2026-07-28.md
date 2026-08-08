@@ -525,7 +525,15 @@ line mislabeled the rear screw as the standoff and dropped the rest):**
 
 | # | Item | Qty | Status |
 |---|---|---:|---|
-| G1 | **Field harness assembly** | **40 quoted** | ✅ **QUOTED 2026-07-30 — MiniProto Q26208-17-001** (expires Aug 26): HARNESS-A ×40 @ $334 + PI-LINK-B ×20 @ $82; **Rush 10–20 bd = $19,500** / Std $15,000. Vendor answers audited — all conformant; accept UL1007 + 1.0 mm² ferrules + stripped machine ends. ⛔ **Before approving: quote line says PI-LINK-B Rev 1 — must be Rev 2 (strip length)**; reconcile qty 40 vs 34+3 on the review page; get the per-PN plug-sourcing matrix + on-hand stock + all-five no-sub lock in writing (email covers J3/J13 vendor-sourced + 1840489 hands-off only). Free-issue 1840489 ×42 ships ~Aug 12–15. **Take Rush — harness stops being the long pole; boards become critical path.** |
+| G1 | **Field harness assembly** | **40 quoted** | ✅ **QUOTED 2026-07-30 — MiniProto Q26208-17-001** (expires Aug 26): HARNESS-A ×40 @ $334 + PI-LINK-B ×20 @ $82; **Rush 10–20 bd = $19,500** / Std $15,000. Vendor answers audited — all conformant; accept UL1007 + 1.0 mm² ferrules + stripped machine ends. ⛔ **Before approving: quote line says PI-LINK-B Rev 1 — must be Rev 2 (strip length)**; reconcile qty 40 vs 34+3 on the review page; get the per-PN plug-sourcing matrix + on-hand stock + all-five no-sub lock in writing (email covers J3/J13 vendor-sourced + 1840489 hands-off only). Free-issue 1840489 ×42 ships ~Aug 12–15. **Take Rush — harness stops being the long pole; boards become critical path.**
+✅ **2026-08-01 — ALL conditions SETTLED IN WRITING (Alex Malcoci):** Rev 2 re-issued at no
+cost (their AI 0,34-6 TQ ferrule already has the 6.0 mm barrel); plug matrix per PN — MiniProto
+sources J3/J5/J13/J14 at PO (not on hand; **falls back to our free-issue per line rather than
+slip, with notice**), J4 free-issue; no-sub rule on all five PNs incl. FMC; labels + L1 locked;
+Aug 12–15 1840489 hand-off meshes with the rush slot; FA→approval→pilot+balance confirmed.
+**Unanswered: the 40-vs-37 qty question + review-page spares/NRE + >$10K payment path** —
+recommendation ACCEPT 40 (6 spare harnesses = sane insurance) and approve at the review link
+with Rush selected. |
 | G2 | Interposer C1 housing (34-pos) — **we supply MALE/pins** | 36 | AMP **1-201357-1** (AMF `000025144`) |
 | G3 | Interposer C2A housing (50-pos) — **we supply FEMALE/sockets** | 36 | AMP **201358-1** (AMF `000028409`) |
 | G4a | **Pin** contacts `.062` (size 16) | ~30/lane +25 % | AMF `760011197` |
