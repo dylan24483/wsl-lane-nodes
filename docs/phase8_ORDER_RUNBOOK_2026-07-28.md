@@ -248,6 +248,16 @@ It is worth 1.5–2.5 weeks either way.
 > jacket for attic; check Z-plug count + PoE/switch PORT count cover the display drops too).
 > Still homeless: VC500 ×1 · uxcell pigtails ×20 · Aim Dynamics glands (status unconfirmed) ·
 > Zoro brass · pink spool · 1 MΩ 1 W ×25.
+> ⚠️ **2026-08-07 — PACKING ERROR, contained:** JLC HK found TWO undeclared bags in the
+> parcel: **1840463 ×40** (Mouser, J5 field plug, $561) and **1840405 ×76** (DK, J13/J16
+> plug, $434) — the keep-at-home free-issue stock, boxed by mistake. Caught in HK BEFORE
+> mainland customs → no declaration issue (the 6 declared lines match the invoice exactly).
+> Asked Lyvia: process the 6 lines without delay; hold the 2 stray bags as customer property
+> and return them WITH the PCBA order shipment (fallback: SF return at our cost). Impact
+> ~zero: MiniProto self-sources J5/J13 (our stock was fallback only; both PNs re-buyable),
+> J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
+> return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
+> plug stock is ZERO at home.**
 > 📦 **2026-07-31:** parcel SHIPPED — FedEx **875182889683** to the Tuen Mun address; JLC
 > declaration still "Reviewing" so tracking not yet attachable (ping if not cleared by
 > ~Aug 3). AD + DK main + Mouser orders ARRIVED. Amazon/GPT basket + DK add-on
