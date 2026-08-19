@@ -258,6 +258,13 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> 🔄 **2026-08-19 — stray-bag return in motion:** JLC cannot ride-along loose parts with the
+> PCBA shipment (Jax). Return via SF Express, receiver pays; details + HS codes + invoices
+> sent to Lyvia (1840463→8536.69.4040, 1840405→8536.90.4000, re-import as HTS 9801.00.10
+> returned goods, ~$995 value vs ~$50-100 freight). ⚠️ Six declared lines STILL not
+> confirmed received as of Aug 19 (delivered Aug 5!) — confirmation requested in the same
+> email; **escalate to Lorraine (lorraine@jlcpcb.com) with the FedEx POD if not resolved
+> within ~2 business days — the PCBA order is blocked on this.**
 > 📦 **2026-07-31:** parcel SHIPPED — FedEx **875182889683** to the Tuen Mun address; JLC
 > declaration still "Reviewing" so tracking not yet attachable (ping if not cleared by
 > ~Aug 3). AD + DK main + Mouser orders ARRIVED. Amazon/GPT basket + DK add-on
