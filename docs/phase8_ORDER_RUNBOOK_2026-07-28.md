@@ -258,6 +258,15 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> ⚠️ **2026-08-23 — TWO JLC LINES DRAINED during the 3.5-week wait:** C118873 1N4148WS
+> 3,815 vs 4,406 (**591 short**) · C116963 G5LE-14 205 vs 300 (**95 short**) — the relay is
+> the line we DROPPED from consignment when it read covered. Fix = **Parts Manager → Order
+> Parts into personal inventory** (LCSC transfer, 1–3 days, no customs, legally combines
+> with the public pool): C118873 ×700 · C116963 ×105 (exact G5LE-14 5VDC, no -CF/-ASI) +
+> thin-line buffers C880333 ×10, C13612 ×10 (both pools exactly at need). ⛔ NOT a
+> substitution, NOT a consign-delta (same-part mixing forbidden). Re-match after stock-in,
+> then G12-B → pay. If C116963 unavailable at pre-order: fallback = GS that line (legal
+> beside consigned), then consign-all as last resort.
 > ✅ **2026-08-22 — ALL SIX CONSIGNED LINES CHECKED IN** (My Parts Lib: 65/65/65/125/65/200
 > — exactly as declared). Package re-verified same day: 46/46 hashes, live board match,
 > DRC 0/0/0. **BOARD ORDER UNBLOCKED — proceed to Step 6: match (6 lines from Consigned
