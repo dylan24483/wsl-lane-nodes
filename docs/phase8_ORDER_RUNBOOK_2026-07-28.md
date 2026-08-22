@@ -258,6 +258,11 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> ✅ **2026-08-22 — ALL SIX CONSIGNED LINES CHECKED IN** (My Parts Lib: 65/65/65/125/65/200
+> — exactly as declared). Package re-verified same day: 46/46 hashes, live board match,
+> DRC 0/0/0. **BOARD ORDER UNBLOCKED — proceed to Step 6: match (6 lines from Consigned
+> Parts; re-check C880333/C47023/C2933281), G12-B preview, PAY.** Then: production-file
+> approval (reject 250×250) + first-article photo (Pico silkscreen).
 > 🔄 **2026-08-19 — stray-bag return in motion:** JLC cannot ride-along loose parts with the
 > PCBA shipment (Jax). Return via SF Express, receiver pays; details + HS codes + invoices
 > sent to Lyvia (1840463→8536.69.4040, 1840405→8536.90.4000, re-import as HTS 9801.00.10
