@@ -258,6 +258,14 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> 🎉 **2026-08-23 — PCB + PCBA ORDER PAID (~$4,100).** 50 boards, all 37 lines sourced
+> (31 JLC + 6 consigned), full-quantity requirement, ENIG, fully e-tested. **POST-PAYMENT
+> WATCH: (1) production-file approval — accept 250×240 or ~260×240, REJECT 250×250 (the
+> order metadata still reads 250×250 = the system's top/bottom rail default; the remark +
+> this gate are the control); (2) placement confirmation (F1 −90°/U46 0°/U47 180°/Q17–Q20
+> 180°, optos uniform); (3) first-article photo (Pico silkscreen).** Boards ≈ mid-Sept.
+> ⚠️ HARNESS PO: funding gap — MiniProto quote **expires Aug 26**; extension request or
+> staged PO (FA + pilot now, balance later) must move before then.
 > ✅ **2026-08-23 (later) — SHORTFALLS CLEARED WITHOUT ACTION:** re-match shows 1N4148WS
 > 4,406/4,406 and G5LE-14 300/300 (JLC replenished from LCSC); all 31 JLC lines + 6 consigned
 > covered. **CLEARED TO PAY — same session, before the pool moves again.**
