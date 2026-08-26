@@ -258,6 +258,9 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> ✅ **2026-08-23 (later) — SHORTFALLS CLEARED WITHOUT ACTION:** re-match shows 1N4148WS
+> 4,406/4,406 and G5LE-14 300/300 (JLC replenished from LCSC); all 31 JLC lines + 6 consigned
+> covered. **CLEARED TO PAY — same session, before the pool moves again.**
 > ⚠️ **2026-08-23 — TWO JLC LINES DRAINED during the 3.5-week wait:** C118873 1N4148WS
 > 3,815 vs 4,406 (**591 short**) · C116963 G5LE-14 205 vs 300 (**95 short**) — the relay is
 > the line we DROPPED from consignment when it read covered. Fix = **Parts Manager → Order
