@@ -258,6 +258,11 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> ✅ **2026-08-24 — RAIL TRIPWIRE DISARMED:** JLC engineering (swee@) quoted the remark back
+> and proposed **LEFT/RIGHT rails** with a render showing exactly the pre-approved geometry
+> — approved same day with the no-top/bottom prohibition restated + depanel-before-delivery
+> reconfirmed. The remark mechanism worked as designed. Remaining watch: placement
+> confirmation + first-article photo (Pico silkscreen, opto uniformity).
 > 🎉 **2026-08-23 — PCB + PCBA ORDER PAID (~$4,100).** 50 boards, all 37 lines sourced
 > (31 JLC + 6 consigned), full-quantity requirement, ENIG, fully e-tested. **POST-PAYMENT
 > WATCH: (1) production-file approval — accept 250×240 or ~260×240, REJECT 250×250 (the
