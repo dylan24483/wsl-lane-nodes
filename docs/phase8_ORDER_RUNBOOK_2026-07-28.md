@@ -258,7 +258,14 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
-> ✅ **2026-08-24 — RAIL TRIPWIRE DISARMED:** JLC engineering (swee@) quoted the remark back
+> ⛔ **2026-08-25 — PRODUCTION FILE Y5 REJECTED (the tripwire fired for real):** despite the
+> approved left/right EQ, the Y5 CAM shipped **250×250 with rails TOP/BOTTOM and horizontal
+> V-cuts at Y=5/Y=245** — scored edges 0.52 mm from U45 / 0.63 mm from U43. Proven by parse:
+> 884/884 drill match at rotation 0, board at panel Y 5–245 full-width. Source gerbers inside
+> Y5 = byte-identical to r10 (16/16) — design untouched, panelization alone wrong. Rejection
+> sent citing the Aug-24 approved render; required: ≈260×240, vertical V-cuts, top/bottom
+> edges free of scoring. **Do not confirm any production file without re-running this parse.**
+> ✅ **2026-08-24 — RAIL TRIPWIRE DISARMED** *(premature — see above)*: JLC engineering (swee@) quoted the remark back
 > and proposed **LEFT/RIGHT rails** with a render showing exactly the pre-approved geometry
 > — approved same day with the no-top/bottom prohibition restated + depanel-before-delivery
 > reconfirmed. The remark mechanism worked as designed. Remaining watch: placement
