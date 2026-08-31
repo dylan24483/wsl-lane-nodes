@@ -258,6 +258,12 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> ✅ **2026-08-26 — REVISED PRODUCTION FILE VERIFIED AND APPROVED:** parse-proven panel
+> **260.00×240.00**, board X 5–255 / Y 0–240 (884/884 drill fit), rails LEFT+RIGHT 5 mm,
+> **vertical** V-cuts at X=5/255 (8–9 mm from nearest parts), board top/bottom edges free of
+> internal scoring (Y=0/240 marks = mother-array boundary, separated at bare-board stage),
+> source gerbers 16/16 identical to r10. Production released. Remaining gates: first-article
+> photo (Pico silkscreen, opto uniformity) → ship.
 > ⛔ **2026-08-25 — PRODUCTION FILE Y5 REJECTED (the tripwire fired for real):** despite the
 > approved left/right EQ, the Y5 CAM shipped **250×250 with rails TOP/BOTTOM and horizontal
 > V-cuts at Y=5/Y=245** — scored edges 0.52 mm from U45 / 0.63 mm from U43. Proven by parse:
