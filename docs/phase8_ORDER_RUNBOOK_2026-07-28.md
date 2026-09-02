@@ -258,6 +258,13 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> ✅ **2026-09-02 — PLACEMENT CONFIRMATION (THT polarity/orientation) VERIFIED:** JLC's 3D
+> preview cross-checked against a fresh `kicad-cli pcb render` of the r10 board — J6–J11
+> MKDS wire entry outward at the right edge, J2 outward at the top edge, J13/J16/J14 MCV
+> vertical headers, K1–K6 uniform (rotations identical to the rev-B JLC CPL) — all match
+> design intent. Confirmed to Rosy with the consigned-part orientation notes (J1 key, U45
+> SIP pin 1, J3/J4/J5/J15 pin 1, A1 USB toward top edge — all per silkscreen). Last gate:
+> first-article photo.
 > ✅ **2026-08-26 — REVISED PRODUCTION FILE VERIFIED AND APPROVED:** parse-proven panel
 > **260.00×240.00**, board X 5–255 / Y 0–240 (884/884 drill fit), rails LEFT+RIGHT 5 mm,
 > **vertical** V-cuts at X=5/255 (8–9 mm from nearest parts), board top/bottom edges free of
