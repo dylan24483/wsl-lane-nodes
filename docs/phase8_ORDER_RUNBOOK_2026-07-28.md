@@ -258,6 +258,12 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> ⛔ **2026-09-16 — PHOTO CONFIRMATION WITHHELD:** JLC's "Photo Confirmation before Shipment"
+> attached photos of a BARE, UNPOPULATED board (our board, rotated 90° — no relays, headers,
+> optos or Pico; featureless bottom). Cannot verify the first-article gates from it. Answered
+> via the "No" path with a request for assembled-board photos both sides (Pico silkscreen +
+> USB orientation, U4–U43 orientation, consigned J3/J4/J5/J15 + U45 soldered, K1–K6).
+> Do NOT approve until the assembled board is in frame.
 > ✅ **2026-09-02 — PLACEMENT CONFIRMATION (THT polarity/orientation) VERIFIED:** JLC's 3D
 > preview cross-checked against a fresh `kicad-cli pcb render` of the r10 board — J6–J11
 > MKDS wire entry outward at the right edge, J2 outward at the top edge, J13/J16/J14 MCV
