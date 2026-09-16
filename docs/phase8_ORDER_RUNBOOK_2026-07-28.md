@@ -258,6 +258,17 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> ⛔ **2026-09-16 (later) — FIRST ARTICLE BUILT WITHOUT THE CONSIGNED PARTS.** A real
+> assembled-board photo surfaced: every JLC-sourced line populated and correctly oriented
+> (relays, optos, 3× MCP23017, J2/J6–J11/J13/J14/J16, Pico USB-to-edge with silkscreen) —
+> but **J3/J4/J5/J15 (consigned Phoenix headers) are BARE**; J1/U45/C14 (also consigned)
+> presumed missing pending a hi-res look. Likely cause: the six consigned lines never
+> entered the production BOM (exports only ever listed 31 JLC lines; the preview's bare
+> outlines were consistent with either). Rejected via "No, doesn't match" with a demand to
+> install all six consigned lines on all 50 boards from consigned stock + new photo; asked
+> whether the lines were in the production BOM + stock balances. Owner to check the order's
+> BOM tab. Possible J12 (M1 DNP) populated — harmless, noted. Fallback (NOT the plan):
+> ship + return parts, hand-solder ~30 h, breaks decision #1.
 > ⛔ **2026-09-16 — PHOTO CONFIRMATION WITHHELD:** JLC's "Photo Confirmation before Shipment"
 > attached photos of a BARE, UNPOPULATED board (our board, rotated 90° — no relays, headers,
 > optos or Pico; featureless bottom). Cannot verify the first-article gates from it. Answered
