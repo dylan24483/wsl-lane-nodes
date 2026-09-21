@@ -258,6 +258,11 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> 🔄 **2026-09-21 — HARNESS: review page edited to 34/18 + Standard ($12,832); NOT approved.**
+> Quantities and tier verified correct (RFQ program, price breaks, board slip). Approval gated on
+> Alex's written answers — expiry, NRE/labels = $0 add-on, FA flow under Standard, Rev 4/Rev 2 on
+> the PO record, payment path + ship-to, J5/J13 stock. Full detail in Group 8 G1. Free-issue
+> 1840489 ×40 ships after the acknowledgment. Standing decision #2 superseded for this line.
 > 🔄 **2026-09-21 — JLC ASKS WHETHER TO USE THE CONSIGNED PARTS (answer: YES, all six, all 50).**
 > JLC's reply to the rejection confirms the cause: production never pulled the consigned
 > library, and asked "do you need us to take the following parts from your consigned parts
@@ -639,7 +644,33 @@ slip, with notice**), J4 free-issue; no-sub rule on all five PNs incl. FMC; labe
 Aug 12–15 1840489 hand-off meshes with the rush slot; FA→approval→pilot+balance confirmed.
 **Unanswered: the 40-vs-37 qty question + review-page spares/NRE + >$10K payment path** —
 recommendation ACCEPT 40 (6 spare harnesses = sane insurance) and approve at the review link
-with Rush selected. |
+with Rush selected.
+🔄 **2026-09-21 — REVIEW PAGE RE-OPENED: 34 × HARNESS-A @ $334 + 18 × PI-LINK-B @ $82, STANDARD
+20–40 bd = $12,832** (+ freight; + ~10 % WA use tax if MiniProto has no nexus → fund ≈ $14.3k).
+Quantities = RFQ §12/§16.6 program EXACTLY (34 per LANE incl. 2 spares; 18 per ENCLOSURE incl.
+2 spares), both sitting on the 34+/18+ breaks — never edit down (33 → $428, 17 → $94). The July
+40/20 was MiniProto's figure, never explained; the "37" in our Jul-30 email conflated the RFQ's
+3 spare plug SETS with spare assemblies. "ACCEPT 40" RETIRED; +6 spares (+$2,004 at $334) stays an
+option, not a default. **Standing decision #2 ("take Rush") SUPERSEDED for the harness** by the
+funding gap + the October board slip: from cleared payment, Rush ships Oct 5–19, Standard
+Oct 19–Nov 16, Economy Nov 2–Dec 16 (+2–6 d ground). Rush buys nothing the boards or the
+unreported bench gates can use; Economy puts the FA in Christmas week. ⛔ **NOT YET APPROVED —
+six things in writing from Alex FIRST:** (1) quote honoured past its Aug 26 expiry at $334/$82 on
+Standard (T&C: 30 days or a >10 % material move); (2) **NRE = $0 and the five plug-body labels
+inside the unit price** — MiniProto's Jul-30 letter said both were "separate line items on the
+quote", the page shows neither, our Jul-30 item 8 was never answered; (3) FA-first → our 5-bd
+approval → pilot + balance restated for STANDARD (confirmed only "within the 10–20 bd tier"),
+FA shipped ahead at our freight cost; (4) the PO record states **HARNESS-A Rev 4 / PI-LINK-B
+Rev 2** — the portal line is still titled "Rev 1", unchanged since the Jul-27 PDF; Alex's reply
+item 1 is the ONLY Rev 2 record and RFQ §14 makes the revision stated on the PO controlling;
+(5) >$10K payment mechanism (T&C: full payment before production, card preferred <$10K → ACH/wire)
++ MiniProto's receiving address (only "FOB Kingston, NY" exists anywhere); (6) J5 1840463 / J13
+1840405 ordered FIRST at PO with stock confirmed — the free-issue fallback for those two is VOID
+until the HK stray bags come back with the boards. Free-issue 1840489: count the OnlineComponents
+bag, ship **40** (34 + 2-per-release × FA/pilot/balance) after the order acknowledgment, keep 10.
+Declined: 10 % spare leads + 3 spare plug sets. Never split FA/pilot/balance through the page
+(re-prices to the 1+ tier unless the 34+ break is held in writing). Read what "Approve Quote"
+does before clicking — if it drops into a card form for $12,832, stop and take the ACH path. |
 | G2 | Interposer C1 housing (34-pos) — **we supply MALE/pins** | 36 | AMP **1-201357-1** (AMF `000025144`) |
 | G3 | Interposer C2A housing (50-pos) — **we supply FEMALE/sockets** | 36 | AMP **201358-1** (AMF `000028409`) |
 | G4a | **Pin** contacts `.062` (size 16) | ~30/lane +25 % | AMF `760011197` |
