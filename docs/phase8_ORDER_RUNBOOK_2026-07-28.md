@@ -258,6 +258,22 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> 🔄 **2026-09-21 — JLC ASKS WHETHER TO USE THE CONSIGNED PARTS (answer: YES, all six, all 50).**
+> JLC's reply to the rejection confirms the cause: production never pulled the consigned
+> library, and asked "do you need us to take the following parts from your consigned parts
+> lib?" — with a **garbled mapping** (C3582595 "on J5", C3019636 "on J15", J4 absent). True
+> mapping per the uploaded BOM/CPL: C3585531 (10-pos) → J3+J15 · **C3582595 (14-pos) → J4** ·
+> **C3019636 (12-pos) → J5** · C17373551 → J1 · C5454708 → U45 · C89827 → C14. Replied with the
+> corrected table + orientation notes, citing WBG2026073100878 / Aug-22 check-in / pre-payment
+> "Consigned Parts" matching. **C14 (C89827, 10 µF 0805) CANNOT be added — SMT stage closed.**
+> Netlist: C14 = `C_3V3_BULK`, the only 10 µF on VCC_3V3 (fed from the Pi header J1; the rail
+> keeps C1/C2/C3/C16 100 nF locals + the Pi's regulator caps) → board functions without it,
+> loses header-transient margin. **Disposition: proceed without C14, do NOT hold the order**;
+> JLC may hand-fit it only if it costs no lead time; **all 200 pcs C89827 + the unused balance
+> of the other five lines returned to us** (with the boards if allowed, else in the SF return
+> with the two stray bags). **C14 becomes a 50-joint hand-fit at incoming inspection (Step 8)
+> — the one exception to standing decision #1; ~1 h total, 0805 with tweezers.** Gate still
+> open: NEW assembled-board photo, both sides, J1/J3/J4/J5/J15/U45 visible → approve → DHL.
 > ⛔ **2026-09-16 (later) — FIRST ARTICLE BUILT WITHOUT THE CONSIGNED PARTS.** A real
 > assembled-board photo surfaced: every JLC-sourced line populated and correctly oriented
 > (relays, optos, 3× MCP23017, J2/J6–J11/J13/J14/J16, Pico USB-to-edge with silkscreen) —
@@ -392,6 +408,12 @@ Stock is only yours once payment clears. Re-read `C17520` (2.2k) and `C118873` (
 cart immediately before paying.
 
 ## STEP 8 — Incoming inspection when the boards land
+
+> ⚠️ **Added 2026-09-21:** boards arrive **without C14** (10 µF 0805, VCC_3V3 bulk — JLC could not
+> add the consigned SMT line after reflow). Hand-fit one C89827 per board from the returned
+> 200-pc reel at the C14 pads (top side, X 140 / Y 78 from the CPL, next to the header J1 side of
+> the 3V3 rail) before the FA-9 bench pass. Non-polar. This is the only hand-solder joint on rev D.
+
 
 - **PC817B CTR bin** on the reel label / CoC
 - **Semtech marking** on SRV05-4 (clones share the marking)
