@@ -258,6 +258,21 @@ It is worth 1.5–2.5 weeks either way.
 > J16 plugs not needed until commissioning ≈ board-arrival time. Home stock ledger until
 > return: 1840447 ×76 · 1840489 ×50 (inbound) · 1840382 ×72 · coding stars ×30 — **J5/J13/J16
 > plug stock is ZERO at home.**
+> ⛔ **2026-10-05 — SECOND REJECTION: JLC's "most recent" photo is the SAME STATE as Sep 16.**
+> Full-board top-side photo read against the r10 CPL (photo rotated 90°, ~7.7 px/mm) by me and
+> three independent readers (coordinate lens / silkscreen lens / adversarial lens): **unanimous
+> ALL SIX CONSIGNED POSITIONS BARE** — J1 (20 open holes, no shroud), J3/J4/J5/J15 (10/14/12/10
+> open holes under their upside-down labels), U45 (4 open SIP holes, no block), C14 (two bare
+> 0805 pads, waived). Every JLC-sourced line present and correctly oriented: K1–K6 uniform,
+> 40/40 PC817, U1–U3 pin-1 consistent, C11 stripe opposite the "+", Pico USB to the board top
+> edge, J2/J6–J11/J13/J14/J16/U44/U46/U47 fitted; no solder defect at this resolution. Every
+> other bare footprint = the 68 designed DNPs exactly (40 Cflt, 7×3 snubber, K7/J12/Q7 + M1
+> driver parts, JP1). **Nothing requested on Sep 21 is visible; 14 days lost.** Rejected again,
+> this time with escalation (Lorraine CC) demanding: is this a pre-rework photo re-attached or
+> has the rework not happened; written confirmation the five THT consigned lines are in the
+> production BOM with the library deduction visible (125/65/65/65/65 → 25/15/15/15/15 after 50);
+> a named owner + rework date; a post-rework photo, both sides, before any shipment. Boards now
+> late October at best. **Do NOT approve any photo without the headers, J1 and U45 in frame.**
 > 🔄 **2026-09-21 — HARNESS: review page edited to 34/18 + Standard ($12,832); NOT approved.**
 > Quantities and tier verified correct (RFQ program, price breaks, board slip). Approval gated on
 > Alex's written answers — expiry, NRE/labels = $0 add-on, FA flow under Standard, Rev 4/Rev 2 on
